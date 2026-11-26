@@ -1009,7 +1009,7 @@ pub(super) fn route(
         // The grade of the road as laid: the bends drawn below are levelled platforms.
         let grade = measured_grade(f, &routed);
         let width = profile::width(class, level, p);
-        let path = curve_hairpins(f, p, &routed, width, limit);
+        let path = curve_hairpins(f, p, &routed, limit);
         let length: f64 = path.windows(2).map(|w| w[0].distance(w[1])).sum();
         *out.length_by_class
             .entry(CLASSES[class].into())
@@ -1286,12 +1286,12 @@ fn smooth_path(f: &Fields, profile: &Profile, raw: &[Point], limit: f64) -> Vec<
     out.push(p[last]);
     out
 }
-/// The hairpins of a laid road with a visible radius and its ruler-straight hillside legs bowed, on dry passable
+/// The hairpins of a laid road rounded as teeth inside their V and its ruler-straight hillside legs bowed, on dry passable
 /// ground: the legs within the class limit (or the grade they had). Every dry tip gets its bend, whatever the face
 /// the search turned on: a road is cut and walled into it (the search charged the turn for it), where a town
 /// street keeps to `hairpins::PLATFORM`. A notched tip becomes a single one, and two tips at one corner give way to
 /// a straight run where it holds the grade of the legs it joins.
-fn curve_hairpins(f: &Fields, profile: &Profile, path: &[Point], width: f64, limit: f64) -> Vec<Point> {
+fn curve_hairpins(f: &Fields, profile: &Profile, path: &[Point], limit: f64) -> Vec<Point> {
     let dry = |line: &[Point]| line.windows(2).all(|w| clear(f, profile, w[0], w[1])) && line.iter().all(|&q| f.r.water[f.index(q)] == 0);
     let steepest = |line: &[Point]| line.windows(2).map(|w| grade(f, w[0], w[1])).fold(0.0, f64::max);
     // The legs a run joins are its first and last pieces: the tips between them run down the slope.
@@ -1302,7 +1302,7 @@ fn curve_hairpins(f: &Fields, profile: &Profile, path: &[Point], width: f64, lim
     let unjogged = hairpins::unjog(path, |old, new| dry(new) && steepest(new) <= limit.max(legs(old)) + 0.005);
     let path = unjogged.as_deref().unwrap_or(path);
     let bowed = hairpins::bow(path, |q| f.height_at(q), |old, new| dry(new) && steepest(new) <= limit.max(steepest(old)) + 0.005);
-    hairpins::round_as(&bowed, width, &[], &hairpins::TIGHT, |_, new| dry(new)).unwrap_or(bowed)
+    hairpins::fillet(&bowed, |_, new| dry(new)).unwrap_or(bowed)
 }
 /// Wet runs along the path ([`deck::spans`]).
 fn crossings(f: &Fields, path: &[Point], class: usize) -> Vec<Crossing> {

@@ -16,18 +16,6 @@ const TIP: f64 = 100.0;
 const WIDEST: f64 = 14.0;
 const LEAD: (f64, f64) = (3.5, 2.6);
 
-/// The size of the bends [`round_as`] draws: radius per metre of width, between `least` and `widest` (m), and the
-/// share of the radius each leg gives to it (wished, at least).
-pub(crate) struct Bends {
-    per_width: f64,
-    least: f64,
-    widest: f64,
-    lead: (f64, f64),
-}
-/// Town streets: wide bends whose legs swing round to meet them, a U.
-pub(crate) const WIDE: Bends = Bends { per_width: 1.5, least: 9.0, widest: WIDEST, lead: LEAD };
-/// Roads on a mountain face: a tight bend at the tip of legs that keep their V, the look of a mountain switchback.
-pub(crate) const TIGHT: Bends = Bends { per_width: 1.1, least: 6.0, widest: 8.0, lead: (3.0, 2.4) };
 /// Angle (radians) of one piece of a bend.
 const ARC: f64 = 0.32;
 /// A straight run of a leg: largest deviation, shortest and longest length, piece and largest bow (m).
@@ -38,6 +26,10 @@ const BOW: f64 = 9.0;
 /// Shortest rung of a switchback (m): the leg between two tips. A shorter one is a jog, two tight hairpins at one
 /// corner of the ladder.
 const RUNG: f64 = 60.0;
+/// The rounded tooth of a mountain road: its largest radius (m), and the share of the half leg on each side of the tip
+/// it rounds.
+const TOOTH: f64 = 20.0;
+const TOOTH_LEG: f64 = 0.7;
 
 fn distance(a: Point, b: Point) -> f64 {
     (b.x - a.x).hypot(b.y - a.y)
@@ -166,17 +158,13 @@ fn bend(path: &[Point], cum: &[f64], i: usize, r: f64, reach: f64) -> Option<Vec
 /// bend that replaces it. The path is kept as it is from each of `joints` (arc lengths where other ways meet it) on,
 /// save a joint on the tip itself, which stays on the bend. None when nothing changes.
 pub(crate) fn round(path: &[Point], width: f64, joints: &[f64], fits: impl Fn(&[Point], &[Point]) -> bool) -> Option<Vec<Point>> {
-    round_as(path, width, joints, &WIDE, fits)
-}
-/// [`round`] with bends of the size `bends`.
-pub(crate) fn round_as(path: &[Point], width: f64, joints: &[f64], bends: &Bends, fits: impl Fn(&[Point], &[Point]) -> bool) -> Option<Vec<Point>> {
     if path.len() < 3 {
         return None;
     }
     let cum = stations(path);
     let length = cum[cum.len() - 1];
     let found = tips(path, &cum);
-    let big = (bends.per_width * width).clamp(bends.least, bends.widest);
+    let big = (1.5 * width).clamp(9.0, WIDEST);
     let mut out: Vec<Point> = vec![];
     let mut from = 0.0;
     let mut changed = false;
@@ -194,8 +182,8 @@ pub(crate) fn round_as(path: &[Point], width: f64, joints: &[f64], bends: &Bends
         }
         let room = (s - low).min(high - s);
         let bent = [big, 0.8 * big, 0.65 * big, (0.5 * width + 2.0).max(5.0)].into_iter().find_map(|r| {
-            let reach = (bends.lead.0 * r).min(room);
-            if reach < bends.lead.1 * r {
+            let reach = (LEAD.0 * r).min(room);
+            if reach < LEAD.1 * r {
                 return None;
             }
             // The neck of a wide bend stays open: legs closer than their own width would draw a closed loop.
@@ -221,6 +209,68 @@ pub(crate) fn round_as(path: &[Point], width: f64, joints: &[f64], bends: &Bends
             from = s + reach + 1e-6;
             changed = true;
         }
+    }
+    out.extend(cum.iter().zip(path).filter(|&(&c, _)| c >= from).map(|(_, &p)| p));
+    changed.then_some(out)
+}
+
+/// A mountain road whose tips are rounded teeth: each tip becomes the arc of the circle that touches both its legs,
+/// inside the V, so the road keeps its zigzag and never swells into a loop beyond the tip. The arc takes `TOOTH_LEG` of
+/// the half leg on each side, its radius at most `TOOTH`. `fits` receives the stretch and its tooth. None when nothing
+/// changes.
+pub(crate) fn fillet(path: &[Point], fits: impl Fn(&[Point], &[Point]) -> bool) -> Option<Vec<Point>> {
+    if path.len() < 3 {
+        return None;
+    }
+    let cum = stations(path);
+    let length = cum[cum.len() - 1];
+    let found = tips(path, &cum);
+    let mut out: Vec<Point> = vec![];
+    let mut from = 0.0;
+    let mut changed = false;
+    for (k, &i) in found.iter().enumerate() {
+        let s = cum[i];
+        let low = if k == 0 { 0.0 } else { 0.5 * (cum[found[k - 1]] + s) };
+        let high = found.get(k + 1).map_or(length, |&n| 0.5 * (cum[n] + s));
+        let room = TOOTH_LEG * (s - low).min(high - s);
+        let tip = path[i];
+        let (a, b) = (at(path, &cum, s - room), at(path, &cum, s + room));
+        let (u, v) = (unit(tip, a), unit(tip, b));
+        let half = 0.5 * dot(u, v).clamp(-1.0, 1.0).acos();
+        let d = distance(tip, a).min(distance(tip, b)).min(TOOTH / half.tan().max(1e-9));
+        if half < 0.02 || d < 1.0 {
+            continue;
+        }
+        // The circle that touches both legs `d` from the tip.
+        let r = d * half.tan();
+        let l = (u.x + v.x).hypot(u.y + v.y);
+        let center = Point { x: tip.x + (u.x + v.x) / l * d / half.cos(), y: tip.y + (u.y + v.y) / l * d / half.cos() };
+        let (enter, leave) = (Point { x: tip.x + u.x * d, y: tip.y + u.y * d }, Point { x: tip.x + v.x * d, y: tip.y + v.y * d });
+        let angle = |p: Point| (p.y - center.y).atan2(p.x - center.x);
+        let (start, sweep) = (angle(enter), wrap(angle(leave) - angle(enter)));
+        let n = (sweep.abs() / ARC).ceil().max(2.0) as usize;
+        let mut tooth = vec![a];
+        if distance(a, enter) > 0.5 {
+            tooth.push(enter);
+        }
+        tooth.extend((1..n).map(|j| {
+            let t = start + sweep * j as f64 / n as f64;
+            Point { x: center.x + r * t.cos(), y: center.y + r * t.sin() }
+        }));
+        tooth.push(leave);
+        if distance(leave, b) > 0.5 {
+            tooth.push(b);
+        }
+        let mut old = vec![a];
+        old.extend(cum.iter().zip(path).filter(|&(&c, _)| c > s - room && c < s + room).map(|(_, &p)| p));
+        old.push(b);
+        if !fits(&old, &tooth) {
+            continue;
+        }
+        out.extend(cum.iter().zip(path).filter(|&(&c, _)| c >= from && c < s - room - 1e-6).map(|(_, &p)| p));
+        out.extend(tooth);
+        from = s + room + 1e-6;
+        changed = true;
     }
     out.extend(cum.iter().zip(path).filter(|&(&c, _)| c >= from).map(|(_, &p)| p));
     changed.then_some(out)
@@ -454,15 +504,15 @@ mod tests {
     }
 
     #[test]
-    fn a_mountain_road_keeps_its_legs_and_a_tight_bend() {
-        let path = points(&[(0.0, 0.0), (50.0, 8.0), (100.0, 16.0), (50.0, 24.0), (0.0, 32.0)]);
-        let wide = round(&path, 6.0, &[], |_, _| true).expect("a wide bend");
-        let tight = round_as(&path, 6.0, &[], &TIGHT, |_, _| true).expect("a tight bend");
-        // The legs of a narrow V swing out to the bend over a short stretch: the curve stays wider than half the road.
-        assert!(tight.contains(&path[2]) && radius(&tight) >= 3.0, "{}", radius(&tight));
-        // The legs keep more of their line: the bend leaves them nearer the tip.
-        let leaves = |p: &[Point]| p.iter().filter(|q| !path.contains(q)).map(|q| q.x).fold(f64::INFINITY, f64::min);
-        assert!(radius(&tight) < radius(&wide) && leaves(&tight) > leaves(&wide) + 5.0, "{tight:?}");
+    fn a_mountain_road_tip_is_a_round_tooth_inside_its_v() {
+        let ladder = points(&[(0.0, 0.0), (150.0, 36.0), (0.0, 72.0), (150.0, 108.0), (0.0, 144.0)]);
+        let teeth = fillet(&ladder, |_, _| true).expect("the tips are rounded");
+        assert_eq!((teeth[0], teeth[teeth.len() - 1]), (ladder[0], ladder[4]));
+        // Inside the V: never beyond a tip, so no loop; a round arc, and no tip left.
+        assert!(teeth.iter().all(|p| (-1e-9..=150.0).contains(&p.x)), "{teeth:?}");
+        assert!(radius(&teeth) >= 8.0, "{}", radius(&teeth));
+        assert!(tips(&teeth, &stations(&teeth)).is_empty(), "{teeth:?}");
+        assert!(fillet(&ladder, |_, _| false).is_none());
     }
 
     #[test]
