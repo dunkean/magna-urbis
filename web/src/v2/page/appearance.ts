@@ -10,6 +10,7 @@ import { mountRenderControls, currentComposition, writeAppearanceControl, PRESET
 import { MAP_GPU_FAILED_EVENT, MAP_GPU_LIGHTER_EVENT, MAP_GPU_LIGHTER_MESSAGE, isMapContextLost, type MapContextLostError } from '../../ui/glContextRecovery';
 import { mountViewLoadingIndicator, watchDisplayPending } from '../viewLoadingIndicator';
 import { $, esc } from './dom';
+import { handheldDevice } from '../../../../rust/bridge/deviceClass';
 
 export function createAppearanceActions(state: PageState, actions: PageActions) {
   async function refreshAppearance(): Promise<void> {
@@ -46,7 +47,8 @@ export function createAppearanceActions(state: PageState, actions: PageActions) 
     // The map's GPU context was lost for good: the renderer already dropped it. Never a dead map: re-render from a fresh
     // context in the light profile, or (second time) switch to the CPU-drawn parchment map.
     if (isMapContextLost(error)) {
-      if ((error as MapContextLostError).final) {
+      const lost = error as MapContextLostError;
+      if (lost.final && !lost.preserveStyle) {
         writeAppearanceControl(state.settings, 'appearance.composition.preset', 'parchment');
         state.projectRevision++;
         $<HTMLSelectElement>('#map-style').value = state.settings.appearance!.composition!.preset;
@@ -75,7 +77,16 @@ export function createAppearanceActions(state: PageState, actions: PageActions) 
   /** A burst of control changes repaints once, 120 ms after the last one. */
   function scheduleAppearance(): void {
     clearTimeout(state.renderTimer);
-    state.renderTimer = setTimeout(() => void actions.refreshAppearance(), 120);
+    document.removeEventListener('visibilitychange', runScheduledAppearance);
+    state.renderTimer = setTimeout(runScheduledAppearance, 120);
+  }
+
+  function runScheduledAppearance(): void {
+    if (handheldDevice() && document.hidden) {
+      document.addEventListener('visibilitychange', runScheduledAppearance, { once: true });
+      return;
+    }
+    void actions.refreshAppearance();
   }
 
   function writeRecipe(path: string, value: unknown): void {

@@ -31,6 +31,7 @@ import { isTilted } from '../../render/world/camera';
 import type { WorldRelief } from '../../render/world/contract';
 import type { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
 import { suspendFantasyRaster } from '../../ui/fantasyRaster';
+import { handheldDevice } from '../../../../rust/bridge/deviceClass';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
 import { ComposedView, GROUND_WARMING, type MapPick } from './composedView';
 import type { AppearanceListener, DisplayParts, ViewFrame, ViewStatus } from './contract';
@@ -73,13 +74,25 @@ export class MapView implements AppearanceListener, ViewStatus {
     // The display quality and the vector engine are part of what every retained picture shows.
     const offQuality = onDisplayQualityChange(this.styleChanged),
       offEngine = onVectorEngineChange(this.styleChanged);
+    if (handheldDevice()) document.addEventListener('visibilitychange', this.visibilityChanged);
     this.unlisten = () => {
       offQuality();
       offEngine();
+      document.removeEventListener('visibilitychange', this.visibilityChanged);
     };
   }
 
+  private visibilityChanged = (): void => {
+    this.composed.syncWork();
+    this.parts.ground.gpu?.setLivePaused(this.map.preparing || document.hidden);
+    if (document.hidden) {
+      this.motion.restDone();
+      this.suspendStepwisePaints();
+    } else if (this.map.world) this.map.repaint();
+  };
+
   draw(view: View, w: number, h: number, dpr: number): void {
+    if (handheldDevice() && document.hidden) return;
     const map = this.map;
     // A failed program is reported by settled()/exactReady() (the appearance status); the view keeps its picture.
     initializeDisplayQuality();
@@ -189,7 +202,7 @@ export class MapView implements AppearanceListener, ViewStatus {
   endAppearanceChange(): void {
     const map = this.map;
     map.preparing = false;
-    this.parts.ground.gpu?.setLivePaused(false);
+    this.parts.ground.gpu?.setLivePaused(handheldDevice() && document.hidden);
     this.frozen?.element.remove();
     this.frozen = undefined;
     this.fallback.thaw();

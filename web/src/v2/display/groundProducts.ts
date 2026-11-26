@@ -15,6 +15,8 @@ import { localEditRegions } from '../localEditRegion';
 import type { ForestField, ForestOccupation } from '../../../../rust/bridge/terrainForest';
 import { activityScene } from '../activitySites';
 import { terrainStyle } from '../../render/terrainStyle';
+import { renderTerrainPixels } from '../../render/raster';
+import { handheldDevice } from '../../../../rust/bridge/deviceClass';
 import { moonlightSvg } from '../../render/materialLook';
 import { renderRustTerrain, renderTerrainCanopy, terrainLandClip } from '../../../../rust/bridge/terrainRender';
 import { seaDistanceSurface, seaMaterialSvg } from '../../render/terrainWater';
@@ -128,7 +130,8 @@ export class GroundProducts implements Ground {
     const final = ++this.gpuLosses > 1;
     if (final) this.gpuUnavailable = true;
     this.map.stats.gpuFallback = final ? 'Map GPU context lost twice: CPU raster' : 'Map GPU context lost: fresh context, light profile';
-    return new MapContextLostError(final ? MAP_GPU_FAILED_MESSAGE : MAP_GPU_LIGHTER_MESSAGE, final);
+    const preserveStyle = handheldDevice() && (this.map.resolved?.ground.traits.satelliteVariant ?? 0) > 0;
+    return new MapContextLostError(final && !preserveStyle ? MAP_GPU_FAILED_MESSAGE : MAP_GPU_LIGHTER_MESSAGE, final, preserveStyle);
   }
   async exactReady(): Promise<void> {
     while (this.forestJob) await this.forestJob;
@@ -245,6 +248,30 @@ export class GroundProducts implements Ground {
         frame: layers.frame,
         background: terrainStyle(style, colors).palette.paper,
       });
+      return;
+    }
+    if (handheldDevice() && r.target === 'view2d' && layers.relief && r.ground.traits.satelliteVariant > 0) {
+      // A lost GPU must not trigger a full satellite raster and shader rebuild on the UI thread.
+      const palette = biomePalette(terrainStyle(style, colors).palette, displayBiomeName(settings, world));
+      const pixels = renderTerrainPixels(
+        world,
+        { ...palette, paper: layers.water && t.globalMinHeight < 0 ? palette.seaFill : palette.paper, hypso: layers.hypsometry ? palette.hypso : [[0, palette.paper], [1, palette.paper]], hatch: 0, grain: 0 },
+        { pixels: 512, lighting, heightRange: { min: Math.max(0, t.globalMinHeight), max: Math.max(1, t.globalMaxHeight) } },
+      );
+      const canvas = document.createElement('canvas');
+      canvas.width = pixels.w;
+      canvas.height = pixels.h;
+      const context = canvas.getContext('2d')!;
+      const image = context.createImageData(pixels.w, pixels.h);
+      for (let i = 0, p = 0; i < image.data.length; i += 4, p += 3) {
+        image.data[i] = pixels.rgb[p];
+        image.data[i + 1] = pixels.rgb[p + 1];
+        image.data[i + 2] = pixels.rgb[p + 2];
+        image.data[i + 3] = 255;
+      }
+      context.putImageData(image, 0, 0);
+      this.base = canvas;
+      this.fantasy = undefined;
       return;
     }
     if (isFantasyStyle(style)) {
@@ -433,7 +460,7 @@ export class GroundProducts implements Ground {
       if (!patchBackgroundCapture(image, native.width, this.backgroundRegions, halo, (region, size) => (light ? this.captureLiveGround(gpu, region, size) : gpu.captureMapPatch(region, size)))) this.backgroundImage = undefined;
       this.backgroundRegions = undefined;
     }
-    if (light) return (this.backgroundImage ??= this.captureLiveGround(gpu, { x: 0, y: 0, width: this.map.native!.width }, 1024));
+    if (light) return (this.backgroundImage ??= this.captureLiveGround(gpu, { x: 0, y: 0, width: this.map.native!.width }, handheldDevice() ? 512 : 1024));
     return (this.backgroundImage ??= gpu.captureMap(1024));
   }
 

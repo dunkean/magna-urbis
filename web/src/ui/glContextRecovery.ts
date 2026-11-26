@@ -28,6 +28,7 @@ export class MapContextLostError extends Error {
   constructor(
     message = MAP_GPU_FAILED_MESSAGE,
     readonly final = false,
+    readonly preserveStyle = false,
   ) {
     super(message);
     this.name = 'MapContextLostError';

@@ -56,6 +56,8 @@ import { getDisplayQuality } from '../../render/displayQuality';
 import { LIVE_LOOK_QUALITY, liveLookPixelRatio } from '../../render/composition';
 import { StepwisePaint } from '../../render/stepwisePaint';
 import { isFantasyStyle } from '../../../../rust/bridge/fantasyTerrain';
+import { handheldDevice } from '../../../../rust/bridge/deviceClass';
+import { RESTORE_TIMEOUT_MS } from '../../ui/glContextRecovery';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
 import type { TerrainRenderer } from '../../ui/terrainRenderer';
 import type { NativeCityMap } from '../nativeCityMap';
@@ -123,6 +125,8 @@ export class ComposedView {
    * tried again a few times, further apart. */
   private refusedUntil = 0;
   private refusals = 0;
+  private restoreTimer?: ReturnType<typeof setTimeout>;
+  private retryTimer?: ReturnType<typeof setTimeout>;
   /** The objects the live layers were made from: a new terrain renderer, cartography or city map gets new layers. */
   private owners: { gpu?: TerrainRenderer; terrain?: TerrainData; cartography?: CanvasRenderer; city?: NativeCityMap; text?: boolean; volumes?: boolean; /** The ground layer had a renderer to bake from. */ ground?: boolean } = {};
   /** The compositor's canvas and the exact canvases are in the page. */
@@ -278,18 +282,23 @@ export class ComposedView {
       return 'no hardware WebGL2';
     }
     if (!live.active()) {
+      this.restoreTimer ??= setTimeout(() => {
+        this.restoreTimer = undefined;
+        if (map.disposed || this.live !== live || live.active()) return;
+        this.restartCompositor();
+        map.compose();
+      }, RESTORE_TIMEOUT_MS);
       return 'context lost';
     }
+    clearTimeout(this.restoreTimer);
+    this.restoreTimer = undefined;
     try {
       this.syncLayers(live);
     } catch (error) {
       // A layer factory of another module threw: the map is not composed, rather than failing every frame.
       console.warn('Live compositor: layer setup failed, the map is not composed.', error);
       // The next try starts from a new compositor and new layers.
-      this.leave();
-      this.dispose();
-      this.owners = {};
-      this.refuse();
+      this.restartCompositor();
       map.stats.liveError = String(error);
       return 'layer setup failed';
     }
@@ -302,11 +311,18 @@ export class ComposedView {
     return undefined;
   }
 
+  private restartCompositor(): void {
+    this.leave();
+    this.dispose();
+    this.owners = {};
+    this.refuse();
+  }
+
   /** Notes a refusal and schedules the frame of the next try. */
   private refuse(): void {
     const wait = COMPOSITOR_RETRY_MS[this.refusals++];
     this.refusedUntil = wait === undefined ? Infinity : performance.now() + wait;
-    if (wait !== undefined) setTimeout(this.map.compose, wait + 50);
+    if (wait !== undefined) this.retryTimer = setTimeout(this.map.compose, wait + 50);
     reportMachineCompositor(false);
   }
   private syncLayers(live: LiveCompositor): void {
@@ -477,7 +493,7 @@ export class ComposedView {
   /** The compositor's preparation runs while it is on screen (or warming) and the terrain renderer's state is still:
    * no tile is baked while the passes change it, nor behind another view. */
   syncWork(): void {
-    this.live?.setPaused(this.map.preparing || !(this.onPage || this.warming));
+    this.live?.setPaused(this.map.preparing || (handheldDevice() && document.hidden) || !(this.onPage || this.warming));
   }
   private applyVisibility(): void {
     if (this.overlayOnPage) this.overlayOnPage.style.visibility = !this.volumeBuildings && atOrAbove('overlay', this.shownFrom) ? 'visible' : 'hidden';
@@ -843,6 +859,9 @@ export class ComposedView {
   }
   dispose(): void {
     clearTimeout(this.tiltTimer);
+    clearTimeout(this.restoreTimer);
+    clearTimeout(this.retryTimer);
+    this.restoreTimer = this.retryTimer = undefined;
     this.live?.dispose();
     this.live = undefined;
     this.buildings = undefined;
