@@ -83,7 +83,7 @@ export function createStatusActions(state: PageState, actions: PageActions) {
   function dialog(id: string): void {
     if (id === '#export-dialog') {
       // "Save map" has its own button and leaves the format on the project file; the dialog is for map exports, whose
-      // options (layers, size, area) only show for PNG and SVG.
+      // options (layers, size, area) only show for map images and Universal VTT.
       const format = $<HTMLSelectElement>('#export-format');
       if (format.value === 'binary') format.value = 'png';
       actions.syncExportOptions();

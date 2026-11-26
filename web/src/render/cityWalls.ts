@@ -69,6 +69,7 @@ export interface WallDetail {
   bank: boolean;
   stakes: boolean;
   pieces: WallPiece[];
+  gates: [Point, Point][];
   polys: WallPoly[];
   box: Box;
 }
@@ -203,18 +204,17 @@ export function wallDetail(e: Enclosure): WallDetail | undefined {
   }
   return d ?? undefined;
 }
-function buildDetail(e: Enclosure): WallDetail | undefined {
-  const r = ringOf(e.path);
-  if (!r) return undefined;
-  const family = familyOf(e),
-    style = e.style ?? '',
-    wall = e.kind === 'wall';
-  const width = (e.curtain_width_m ?? 0) > 0 ? e.curtain_width_m! : wall ? 3 : 1.5,
-    h = wall ? 1.5 : 0.75;
-  const bank = style === 'gord' || (family === 'timber' && width > 3),
-    stakes = family === 'timber' || family === 'hedge';
+/** The curtain centre lines and the actual gaps that a VTT door can close. */
+export function enclosureSightLines(e: Enclosure): Pick<WallDetail, 'pieces' | 'gates'> {
+  const detail = wallDetail(e);
+  if (detail) return detail;
+  const ring = ringOf(e.path);
+  return ring ? curtainPlan(e, ring, 0, true) : { pieces: [], gates: [] };
+}
+
+function curtainPlan(e: Enclosure, r: Ring, offset: number, legacy = false): Pick<WallDetail, 'pieces' | 'gates'> {
   // Water spans: the curtain between the two banks of a water gate stands on arches.
-  const cuts: Array<{ a: number; b: number; water: boolean }> = [],
+  const cuts: Array<{ a: number; b: number; kind: 'water' | 'shore' | 'gate' }> = [],
     waterEnds: number[] = [];
   for (const g of e.gatehouses ?? [])
     if (['water', 'shore'].includes(g.kind) && g.passage?.length === 2) {
@@ -222,15 +222,15 @@ function buildDetail(e: Enclosure): WallDetail | undefined {
         sb = project(r, g.passage[1]).s,
         ab = wrap(r, sb - sa);
       if (ab < 1e-3 || r.length - ab < 1e-3) continue;
-      if (g.kind === 'shore' || ab <= r.length / 2) cuts.push({ a: sa, b: sa + ab, water: g.kind === 'water' });
-      else cuts.push({ a: sb, b: sb + r.length - ab, water: g.kind === 'water' });
+      if (g.kind === 'shore' || ab <= r.length / 2) cuts.push({ a: sa, b: sa + ab, kind: g.kind === 'shore' ? 'shore' : 'water' });
+      else cuts.push({ a: sb, b: sb + r.length - ab, kind: g.kind === 'shore' ? 'shore' : 'water' });
       waterEnds.push(sa, sb);
     }
   // Land gates: the passage of the gatehouse (street width + 1), measured along the curtain.
   e.gates.forEach((gate, i) => {
     const at = project(r, gate);
     if (waterEnds.some(s => Math.min(wrap(r, s - at.s), wrap(r, at.s - s)) < 2)) return;
-    let half = 3,
+    let half = legacy ? 6 : 3,
       best = Infinity;
     for (const g of e.gatehouses ?? [])
       if (g.gate === i && !['water', 'shore'].includes(g.kind) && g.passage?.length === 2) {
@@ -243,29 +243,26 @@ function buildDetail(e: Enclosure): WallDetail | undefined {
         half = (g.passage_width_m > 0 ? g.passage_width_m : 6) / 2 / Math.max(0.5, sin);
         best = near;
       }
-    cuts.push({ a: at.s - half - 0.25, b: at.s + half + 0.25, water: false });
+    const gap = half + (legacy ? 0 : 0.25);
+    cuts.push({ a: at.s - gap, b: at.s + gap, kind: 'gate' });
   });
   const pieces: WallPiece[] = [],
-    offset = width / 2 - h;
-  const piece = (points: Point[], closed: boolean, water: boolean): void => {
-    if (points.length >= 2) pieces.push({ points: offsetLine(points, offset, r.out, closed), closed, water });
-  };
-  if (!cuts.length) piece(r.pts, true, false);
+    gates: [Point, Point][] = [];
+  if (!cuts.length) pieces.push({ points: offsetLine(r.pts, offset, r.out, true), closed: true, water: false });
   else {
-    const kind = (s: number): 0 | 1 | 2 => {
-      // 0 gap, 1 water, 2 solid
-      let water = false;
+    const kind = (s: number): 'gate' | 'shore' | 'water' | 'curtain' => {
+      let section: 'gate' | 'water' | 'curtain' = 'curtain';
       for (const c of cuts) {
         const t = wrap(r, s - c.a);
         if (t < c.b - c.a) {
-          if (!c.water) return 0;
-          water = true;
+          if (c.kind === 'shore') return 'shore';
+          if (c.kind === 'gate' || section === 'curtain') section = c.kind;
         }
       }
-      return water ? 1 : 2;
+      return section;
     };
     const marks = [...new Set(cuts.flatMap(c => [wrap(r, c.a), wrap(r, c.b)]).map(s => Math.round(s * 1000) / 1000))].sort((a, b) => a - b);
-    const runs: Array<{ a: number; b: number; k: 0 | 1 | 2 }> = [];
+    const runs: Array<{ a: number; b: number; k: ReturnType<typeof kind> }> = [];
     for (let i = 0; i < marks.length; i++) {
       const a = marks[i],
         b = i + 1 < marks.length ? marks[i + 1] : marks[0] + r.length;
@@ -283,8 +280,33 @@ function buildDetail(e: Enclosure): WallDetail | undefined {
         runs.pop();
       }
     }
-    for (const run of runs) if (run.k) piece(subPath(r, run.a, run.b), false, run.k === 1);
+    const lines = runs.map(run => offsetLine(subPath(r, run.a, run.b), offset, r.out, false));
+    const drawable = (k: ReturnType<typeof kind>): boolean => k === 'water' || k === 'curtain';
+    for (const [i, run] of runs.entries()) {
+      const line = lines[i];
+      if (drawable(run.k)) pieces.push({ points: line, closed: false, water: run.k === 'water' });
+      if (run.k !== 'gate') continue;
+      const prev = (i + runs.length - 1) % runs.length,
+        next = (i + 1) % runs.length;
+      const a = drawable(runs[prev].k) ? lines[prev].at(-1)! : line[0],
+        b = drawable(runs[next].k) ? lines[next][0] : line.at(-1)!;
+      if (dist(a, b) > 1e-3) gates.push([a, b]);
+    }
   }
+  return { pieces, gates };
+}
+function buildDetail(e: Enclosure): WallDetail | undefined {
+  const r = ringOf(e.path);
+  if (!r) return undefined;
+  const family = familyOf(e),
+    style = e.style ?? '',
+    wall = e.kind === 'wall';
+  const width = (e.curtain_width_m ?? 0) > 0 ? e.curtain_width_m! : wall ? 3 : 1.5,
+    h = wall ? 1.5 : 0.75;
+  const bank = style === 'gord' || (family === 'timber' && width > 3),
+    stakes = family === 'timber' || family === 'hedge';
+  const offset = width / 2 - h;
+  const { pieces, gates } = curtainPlan(e, r, offset);
   const polys: WallPoly[] = [],
     add = (cat: Cat, shape: Shape | undefined, fam: Family = family): void => {
       if ((shape?.outer?.length ?? 0) >= 3) polys.push({ cat, family: fam, shape: shape! });
@@ -350,7 +372,7 @@ function buildDetail(e: Enclosure): WallDetail | undefined {
   box.minY -= width;
   box.maxX += width;
   box.maxY += width;
-  return { kind: e.kind, style, family, width, offset, edge: Math.min(2, Math.max(0.5, width * 0.2)), bank, stakes, pieces, polys, box };
+  return { kind: e.kind, style, family, width, offset, edge: Math.min(2, Math.max(0.5, width * 0.2)), bank, stakes, pieces, gates, polys, box };
 }
 
 const sceneDetails = new WeakMap<CityScene, Array<WallDetail | undefined>>();

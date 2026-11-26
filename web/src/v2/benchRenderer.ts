@@ -34,7 +34,7 @@ import { AppearancePasses } from './display/appearance';
 import { CartographyProducts } from './display/cartographyProducts';
 import { ContourInk } from './display/contours';
 import type { SharedPassResources } from './display/contract';
-import { ExactFrame } from './display/exactFrame';
+import { ExactFrame, type ExportFrame } from './display/exactFrame';
 import { GroundProducts } from './display/groundProducts';
 import { MapState } from './display/mapState';
 import { MapView } from './display/mapView';
@@ -150,11 +150,11 @@ export class BenchRenderer {
   draw(view: View, w: number, h: number, dpr: number, canvas = this.surface): HTMLCanvasElement {
     return this.exact.paint(canvas, view, w, h, dpr, { stepwise: false, groundBeneath: false });
   }
-  /** The whole map at `size` pixels, with other export layers when given. */
-  async capture(size: number, layers?: Partial<ExportLayers>): Promise<HTMLCanvasElement> {
+  /** The export frame, defaulting to the whole map at the given size. */
+  async capture(size: number, layers?: Partial<ExportLayers>, frame?: ExportFrame): Promise<HTMLCanvasElement> {
     const capture = new RenderReadiness('capture');
     if (layers) await this.set(this.map.world!, this.map.settings!, this.map.resolved!, layers);
-    return this.exact.capture(size, this.surface, capture);
+    return this.exact.capture(size, this.surface, capture, frame);
   }
   /** An exact frame of the view on screen, laid over it for a screenshot. */
   prepareCapture(): void {

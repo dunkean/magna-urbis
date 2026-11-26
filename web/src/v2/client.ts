@@ -28,6 +28,7 @@ import type { FrameRequest } from '../ui/viewer';
 import type { ExportLayers } from '../render/exportLayers';
 import type { MapPick } from './display/composedView';
 import { screenToWorld } from '../render/view';
+import type { ExportFrame } from './display/exactFrame';
 import { createCameraPose, groundPoint, isTilted, poseCamera } from '../render/world/camera';
 import { publishWasmThreads, wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
 import { loadRenderGeometry, renderGeometryReady } from '../../../rust/bridge/renderGeometry';
@@ -770,7 +771,7 @@ export class StudioClient {
       throw error;
     }
   }
-  async exportBench(settings: V2Settings, resolved: ResolvedAppearance, size: number, layers: Partial<ExportLayers>): Promise<HTMLCanvasElement> {
+  async exportBench(settings: V2Settings, resolved: ResolvedAppearance, size: number, layers: Partial<ExportLayers>, frame?: ExportFrame): Promise<HTMLCanvasElement> {
     // Style switches may still be preparing the shared GPU resources. Export waits for that work.
     for (;;) {
       const work = this.appearanceWork;
@@ -798,9 +799,10 @@ export class StudioClient {
     let rendered: HTMLCanvasElement | undefined;
     try {
       await renderer.set(world, snapshot, resolved, layers);
-      rendered = await renderer.capture(size);
+      rendered = await renderer.capture(size, undefined, frame);
       const copy = document.createElement('canvas');
-      copy.width = copy.height = size;
+      copy.width = rendered.width;
+      copy.height = rendered.height;
       copy.getContext('2d')!.drawImage(rendered, 0, 0);
       return copy;
     } finally {

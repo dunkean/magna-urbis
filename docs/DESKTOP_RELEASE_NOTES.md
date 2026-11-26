@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Export a region, town or selected area as Universal VTT with detailed overhead buildings, a configurable grid, and fortification walls and gates. Building footprints can also block vision.
 - On newly generated vector maps, the river deletion preview distinguishes separate watercourses even when their drawn endpoints overlap.
 - Rural land cover stops at the drawn coastline and follows island shores.
 - House and parcel edits reuse unchanged 3D fences, hedges and fortifications, reducing redraw work in large towns.

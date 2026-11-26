@@ -17,6 +17,12 @@ import { reportDrawnLabels } from '../drawnLabels';
 import type { DisplayParts, ExactPaint } from './contract';
 import type { MapState } from './mapState';
 
+export interface ExportFrame {
+  view: View;
+  width: number;
+  height: number;
+}
+
 export class ExactFrame {
   constructor(
     private readonly map: MapState,
@@ -110,18 +116,18 @@ export class ExactFrame {
     return canvas;
   }
 
-  /** The whole map at `size` pixels into `canvas`, once every product it needs is ready at that density. */
-  async capture(size: number, canvas: HTMLCanvasElement, capture: RenderReadiness): Promise<HTMLCanvasElement> {
+  /** Paint an export frame at its own density, defaulting to the whole map. */
+  async capture(size: number, canvas: HTMLCanvasElement, capture: RenderReadiness, frame?: ExportFrame): Promise<HTMLCanvasElement> {
     const { ground, water, contours, town } = this.parts,
       mapSize = this.map.world!.mapSize;
     await ground.exactReady();
     if (ground.gpuActive) await ground.gpu!.variantReady(); // the paint is synchronous: it would create a missing pipeline in place
     capture.mark('programs-ready');
-    const view = { cx: mapSize / 2, cy: mapSize / 2, scale: size / mapSize };
-    await contours.contoursAt(view.scale, viewRect(view, size, size));
-    await water.vectorsReadyFor(view, size, size, 1);
+    const { view, width, height } = frame ?? { view: { cx: mapSize / 2, cy: mapSize / 2, scale: size / mapSize }, width: size, height: size };
+    await contours.contoursAt(view.scale, viewRect(view, width, height));
+    await water.vectorsReadyFor(view, width, height, 1);
     await town.prepare();
-    const image = this.paint(canvas, view, size, size, 1, { stepwise: false, groundBeneath: false });
+    const image = this.paint(canvas, view, width, height, 1, { stepwise: false, groundBeneath: false });
     capture.mark('capture-complete');
     return image;
   }

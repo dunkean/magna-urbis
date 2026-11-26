@@ -1,12 +1,14 @@
 /**
- * The export dialog: exact PNG and SVG maps (whole or cropped), projects, recipes, seeds and heightmaps, and the
+ * The export dialog: PNG, SVG and Universal VTT maps (whole or cropped), projects, recipes, seeds and heightmaps, and the
  * Save map shortcut. Also opens the page's dialogs, refreshing the export options first for the export dialog.
  */
 import type { PageActions, PageState } from './contract';
-import { setText, bindTree, translate, registerMessages } from '../i18n';
+import { setText, bindTree, translate, registerMessages, numberLocale } from '../i18n';
 import { mapPresentation } from '../mapPresentation';
 import { ruralSemanticLegend } from '../../render/semanticLayer';
 import { resolveSettingsAppearance, resolvedDisplayOptions } from '../appearance';
+import { presetComposition } from '../../render/composition';
+import { uvttDocument, uvttFrame, uvttImageData } from '../uvtt';
 import type { World } from '../../gen/types';
 import type { ExportLayers } from '../../render/exportLayers';
 import { chooseExportArea, chooseExportCrop } from '../../ui/exportCrop';
@@ -113,6 +115,57 @@ export function createExportsActions(state: PageState, actions: PageActions) {
     }
   }
 
+  async function uvttMapExport(width: number, crop: boolean): Promise<{ blob: Blob; metres: number } | null> {
+    const world = state.world!;
+    const base = state.settings;
+    const initial = resolveSettingsAppearance(base, world, 'export');
+    const composition = initial.composition.recipe;
+    const settings = {
+      ...base,
+      appearance: {
+        ...base.appearance,
+        style: base.options.style,
+        diagnostic: 'none' as const,
+        city: { ...base.appearance?.city, view: 'buildings' as const, diagnostic: 'none' as const, layers: { ...base.appearance?.city?.layers, enclosures: true } },
+        composition: {
+          ...composition,
+          ground: (initial.city.buildingStyle === 'silhouette' || composition.ground.look === 'atlas') ? presetComposition('parchment').ground : composition.ground,
+          buildings: { ...composition.buildings, visible: true, look: 'detailed-volumes' as const, roof: 'crafted' as const },
+          annotations: { legend: false, cartouche: false },
+        },
+      },
+    };
+    const resolved = resolveSettingsAppearance(settings, world, 'export');
+    const layers = exportLayers();
+    const map = { x: 0, y: 0, width: world.mapSize, height: world.mapSize };
+    let rect = map;
+    if (crop) {
+      const preview = await state.client.exportBench(settings, resolved, 1200, layers);
+      try {
+        const area = await chooseExportArea(await canvasPng(preview), map, width, bindTree);
+        if (!area) return null;
+        rect = area.rect;
+      } finally {
+        preview.width = preview.height = 0;
+      }
+    }
+    const grid = $<HTMLInputElement>('#export-vtt-grid');
+    if (!grid.checkValidity()) throw new Error(translate('Enter a positive distance per VTT grid cell.'));
+    const frame = uvttFrame(rect, width, grid.value === '' ? undefined : grid.valueAsNumber);
+    if (frame.pixelsPerGrid < 50) throw new Error(translate('Use a larger distance per cell, a higher resolution, or a smaller export area. The VTT grid needs at least 50 pixels per cell.'));
+    if (!Number.isFinite(frame.pixelsPerGrid) || frame.pixelsPerGrid > Math.max(frame.width, frame.height)) throw new Error(translate('The VTT grid cell is larger than the export area.'));
+    setText($('#export-note'), 'Rendering the VTT map…');
+    const canvas = await state.client.exportBench(settings, resolved, width, layers, frame);
+    try {
+      const image = await uvttImageData(await canvasPng(canvas));
+      const obstacles = $<HTMLInputElement>('#export-vtt-building-walls').checked;
+      const output = uvttDocument(world, frame, image, obstacles, layers.city !== false);
+      return { blob: new Blob([JSON.stringify(output)], { type: 'application/json' }), metres: frame.metresPerGrid };
+    } finally {
+      canvas.width = canvas.height = 0;
+    }
+  }
+
   /** The SVG export never reads the native town snapshots: they are not cloned into its worker. */
   function exportWorld(world: World): World {
     if (!world.debug?.v2RustCities) return world;
@@ -145,7 +198,8 @@ export function createExportsActions(state: PageState, actions: PageActions) {
     const select = $<HTMLSelectElement>('#export-format');
     if (!available && select.value === 'svg') select.value = 'png';
     const format = select.value;
-    $('#export-map-options').hidden = !['png', 'svg'].includes(format);
+    $('#export-map-options').hidden = !['png', 'svg', 'dd2vtt'].includes(format);
+    $('#export-vtt-options').hidden = format !== 'dd2vtt';
     setText(
       $('#export-note'),
       format === 'binary'
@@ -160,12 +214,14 @@ export function createExportsActions(state: PageState, actions: PageActions) {
                 ? 'The seed alone contains neither your settings nor your edits.'
                 : format === 'names'
                   ? 'Renamed places and edited labels, which the short code does not carry.'
-                : !available
+                : format === 'dd2vtt'
+                  ? 'Exports a detailed overhead map, walls and gates. Set the cell distance in your VTT after importing.'
+                  : !available
                   ? 'SVG is unavailable for the current style. Use PNG.'
                   : 'Visual exports use the current map without rerunning generation.',
     );
   }
-  return { download, svgExport, pngMapExport, heightmapBlob, syncExportOptions };
+  return { download, svgExport, pngMapExport, uvttMapExport, heightmapBlob, syncExportOptions };
 }
 
 export function mountExports(state: PageState, actions: PageActions): void {
@@ -175,6 +231,15 @@ export function mountExports(state: PageState, actions: PageActions): void {
   registerMessages({
     'SVG is unavailable for the current style. Use PNG.': { en: 'SVG is unavailable for the current style. Use PNG.', fr: 'Le SVG n’est pas disponible pour le style actuel. Utilisez le PNG.' },
     'SVG vector map · unavailable for this style': { en: 'SVG vector map · unavailable for this style', fr: 'Carte vectorielle SVG · indisponible pour ce style' },
+    'Universal VTT · .dd2vtt': { en: 'Universal VTT · .dd2vtt', fr: 'Universal VTT · .dd2vtt' },
+    'Metres per VTT grid cell': { en: 'Metres per VTT grid cell', fr: 'Mètres par case VTT' },
+    'Buildings block vision': { en: 'Buildings block vision', fr: 'Les bâtiments bloquent la vision' },
+    'Exports a detailed overhead map, walls and gates. Set the cell distance in your VTT after importing.': { en: 'Exports a detailed overhead map, walls and gates. Set the cell distance in your VTT after importing.', fr: 'Exporte une carte détaillée vue du dessus, les murs et les portes. Réglez la distance par case dans le VTT après l’import.' },
+    'Enter a positive distance per VTT grid cell.': { en: 'Enter a positive distance per VTT grid cell.', fr: 'Saisissez une distance positive par case VTT.' },
+    'Use a larger distance per cell, a higher resolution, or a smaller export area. The VTT grid needs at least 50 pixels per cell.': { en: 'Use a larger distance per cell, a higher resolution, or a smaller export area. The VTT grid needs at least 50 pixels per cell.', fr: 'Augmentez la distance par case ou la résolution, ou réduisez la zone. La grille VTT nécessite au moins 50 pixels par case.' },
+    'The VTT grid cell is larger than the export area.': { en: 'The VTT grid cell is larger than the export area.', fr: 'La case VTT est plus grande que la zone à exporter.' },
+    'Rendering the VTT map…': { en: 'Rendering the VTT map…', fr: 'Rendu de la carte VTT…' },
+    'VTT export downloaded. Set the grid to {distance} m per cell.': { en: 'VTT export downloaded. Set the grid to {distance} m per cell.', fr: 'Export VTT téléchargé. Réglez la grille sur {distance} m par case.' },
     'Encoding PNG…': { en: 'Encoding PNG…', fr: 'Encodage du PNG…' },
     'Names · JSON': { en: 'Names · JSON', fr: 'Noms · JSON' },
     'Renamed places and edited labels, which the short code does not carry.': { en: 'Renamed places and edited labels, which the short code does not carry.', fr: 'Les lieux renommés et les étiquettes modifiées, que le code court ne contient pas.' },
@@ -194,6 +259,7 @@ export function mountExports(state: PageState, actions: PageActions): void {
     $<HTMLButtonElement>('#export-go').disabled = true;
     $<HTMLButtonElement>('#save-map').disabled = true;
     let exportError: string | undefined;
+    let success = 'Export downloaded.';
     try {
       const name = `magna-urbis-${state.settings.options.seed.replace(/[^\w-]/g, '_').slice(0, 45)}`;
       if (format === 'binary') {
@@ -226,7 +292,11 @@ export function mountExports(state: PageState, actions: PageActions): void {
           crop = $<HTMLInputElement>('#export-crop').checked;
         let blob: Blob | null;
         if (format === 'png') blob = await exporter.pngMapExport(width, crop);
-        else {
+        else if (format === 'dd2vtt') {
+          const result = await exporter.uvttMapExport(width, crop);
+          blob = result?.blob ?? null;
+          if (result) success = translate('VTT export downloaded. Set the grid to {distance} m per cell.').replace('{distance}', result.metres.toLocaleString(numberLocale(), { maximumSignificantDigits: 4 }));
+        } else {
           const svg = await exporter.svgExport();
           blob = crop ? ((await chooseExportCrop(svg, width, bindTree))?.blob ?? null) : svg;
         }
@@ -234,7 +304,7 @@ export function mountExports(state: PageState, actions: PageActions): void {
         actions.download(blob, `${name}.${format}`);
       }
       actions.log(`Export : ${format}`);
-      actions.toast('Export downloaded.');
+      actions.toast(success);
       $<HTMLDialogElement>('#export-dialog').close();
     } catch (e) {
       exportError = e instanceof Error ? e.message : String(e);
