@@ -18,6 +18,7 @@ import { WATER_STYLE_GLSL } from '../../../render/waterStyle';
 import { SHORE_DETAIL_GLSL } from '../../../render/shoreDetail';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL } from '../../../render/materialLook';
 import { WATER_FRESH_ICE_GLSL, WATER_REGIME_GLSL } from '../../../render/waterRegime';
+import { SATELLITE_FRESH_WATER_GLSL } from '../../../render/waterPalette';
 import { RIVER_NOISE_GLSL } from '../../../render/riverSurface';
 import { LAKE_GLSL } from '../../lakeGeometry';
 import { TERRAIN_3D_NOISE_GLSL } from '../../terrain3dNoise';
@@ -221,6 +222,7 @@ ${WATER_REGIME_GLSL}
 
 ${WATER_STYLE_GLSL}
 ${MATERIAL_WATER_GLSL}
+${SATELLITE_FRESH_WATER_GLSL}
 ${RENDER_V2_COAST_GLSL}
 ${MOONLIGHT_GLSL}
 ${CROWN_WATER_GLSL}
@@ -546,7 +548,10 @@ void main() {
           // Dry season of a dry climate: the lake draws down, leaving a pale exposed shore inside its rim.
           float drop=waterLakeDrop()*80.;
           if(drop>1.&&uHasLake>0){
-            float ring=step(0.,inside)*(1.-smoothstep(.85*drop,drop,inside*uPx));
+            // Narrow, steep margins expose little sediment; shallow coves expose broad bars.
+            float deposit=v2Pattern(vec3(world,0.),180.,uPx,uMaterialSeed+905u);
+            float retreat=drop*mix(.16,1.,smoothstep(-1.,1.,deposit)) / (1.+8.*grad);
+            float ring=step(0.,inside)*(1.-smoothstep(.58*retreat,retreat,inside*uPx));
             wBase=mix(wBase,waterExposedShore(world),wCover*ring);wCover*=1.-ring;
           }
           // Fresh water freezes with the snow of the land at its own altitude (v2WinterFresh, set by v2Local): a lake
@@ -579,10 +584,12 @@ void main() {
           // The aux-texture variant only mixes wBase where water remains: a fully dry or frozen bed is the ground itself.
           color=wBase;
         } else {
-          // The short river ribbon overlaps the coast and blends into the sea by depth, without an offshore plume.
+          // The river ribbon and its optical plume blend into the sea by coverage and depth.
           // A dry bed (painted sandy) ends at the coastline: no bed shows under the sea.
           float running=water.a*(1.-smoothstep(.05,.15,(water.r-water.b)/max(water.a,1e-3)));
-          wEst=running*(1.-smoothstep(0.,3.,-s.x));
+          float mixingDepth=3.;
+          if(running>.002)mixingDepth+=1.4*v2Pattern(vec3(world,0.),95.,uPx,uMaterialSeed+906u);
+          wEst=running*(1.-smoothstep(0.,max(1.,mixingDepth),-s.x));
           wFresh=wEst;
           wRiver=running;
         }
@@ -662,8 +669,17 @@ void main() {
       if(wLake>0.)color=mix(color,v2LakeSurface(color,world,uPx,wLake),wCover);
       // Climate and season of the fresh water (waterPalette.ts), one tone for rivers, lakes and the estuary's river share;
       // under the ice of a frozen sea.
-      color=mix(color,freshWaterTone(color),wFresh*wCover*(1.-wSeaIce));
-      if(wKind>2.5&&uRenderV2==1)color+=vec3(.74,.91,1.)*(.72*riverLight*wCover);
+      if(wFresh*wCover>0.){
+        vec3 toned=uRenderV2==1?satelliteFreshWater(color,world,uPx):freshWaterTone(color);
+        color=mix(color,toned,wFresh*wCover*(1.-wSeaIce));
+      }
+      if(wKind>2.5&&uRenderV2==1&&wCover>0.){
+        // Broad sky reflections reveal the free surface even in rust-coloured water.
+        vec2 wind=vec2(.89*world.x+.46*world.y,-.46*world.x+.89*world.y);
+        float sheen=v2Pattern(vec3(wind*vec2(.28,1.),0.),18.,uPx,uMaterialSeed+907u);
+        color=mix(color,vec3(.51,.62,.65),wCover*(.035+.085*smoothstep(.05,1.45,sheen)));
+        color+=vec3(.74,.91,1.)*(.72*riverLight*wCover);
+      }
     }
     if(uPaperMap==1&&v2w&&wCover>0.&&!underdark){
       vec3 paper=paperWater(wKind,paperShore(world));
@@ -779,6 +795,18 @@ void main() {
     float m = lakeShore(uOrigin + vP * uPx, uHasLake == 1);
     alpha *= 1. - clamp(m / max(fwidth(m), 1e-4) + .5, 0., 1.);
   }
+  // Dissolved sediment leaves the mouth along its last bearing. The plume
+  // widens while its concentration falls, with a soft lateral mixing zone.
+  if(vColor.b<0.){
+    if(uFlatWater.a>=0. || dot(pa,ba)<0.) discard;
+    vec2 world=uOrigin+vP*uPx;
+    float eddy=riverNoise(world/73.);
+    float lateral=d/max(.5,mix(vHalf.x,vHalf.y,h));
+    alpha*=vColor.r*(1.-smoothstep(.0,1.,h))*
+           (1.-smoothstep(.12+.2*eddy,.88+.12*eddy,lateral));
+    outColor=vec4(vec3(1.,1.,.12)*alpha,alpha);
+    return;
+  }
   if (alpha <= 0.0) discard;
   // Premultiplied; blended with MAX so overlapping capsules cover like one stroke.
   vec3 color = uFlatWater.a > 0. ? uFlatWater.rgb : vColor;
@@ -797,6 +825,17 @@ void main() {
       float crest=1.-smoothstep(.025,.14,abs(riverNoise(q)-.54));
       glint=vColor.b/.45*smoothstep(.48,.80,pocket)*crest
            *smoothstep(.4,2.,bank)*(1.-smoothstep(.45,2.,uPx));
+    }
+    if(vColor.r<.001){
+      // A signed cross-section gives a wadi one wandering scour, even when
+      // the running strand has disappeared. Both coordinates are in metres.
+      vec2 world=uOrigin+vP*uPx;
+      float halfWidth=max(mix(vHalf.x,vHalf.y,h),.5);
+      float side=dot(pa-ba*h,vec2(-ba.y,ba.x))/max(length(ba)*halfWidth,1.e-4);
+      float wander=riverNoise(world/57.)-.5;
+      float gravel=riverNoise(world/11.);
+      float scour=1.-smoothstep(.03,.32,abs(side-1.35*wander-.25*(gravel-.5)));
+      core=.30*scour;
     }
     color.b=core+.70*glint;
   }

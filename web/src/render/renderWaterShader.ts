@@ -40,11 +40,14 @@ void main() {
   vec2 f = gl_FragCoord.xy;
   vec4 own = tap(f);
   float a = own.a;
+  vec2 world = uOrigin + vec2(f.x, uCanvas.y - f.y) * uPx;
   // Land side: how close the water is, over three rings within the bank width.
   float bank = 0.;
   vec4 near = vec4(0.);
+  float margin=uBankPx;
+  if(a<.999)margin*=mix(.3,1.25,riverNoise(world/43.));
   if (a < .999) for (int k = 1; k <= 3; k++) {
-    float r = uBankPx * float(k) / 3., m = 0.;
+    float r = margin * float(k) / 3., m = 0.;
     for (int i = 0; i < 8; i++) { vec4 t = tap(f + DIRS[i] * r); if (t.a > m) { m = t.a; if (k == 1) near = t; } }
     bank += m / 3.;
   }
@@ -86,7 +89,6 @@ void main() {
     // Wide water: still water a few pixels away from the nearest bank.
     if(uRegime==0)wide = cover(f - nearest * 5. * uDpr);
   }
-  vec2 world = uOrigin + vec2(f.x, uCanvas.y - f.y) * uPx;
   // The style's depth ramp over the distance to the bank, as for the sea and lakes.
   vec3 color = styledWater(capsule ? 0. : .85 * depth * uPx / uBand);
   // Shallow shelf: a lighter, greener teal over the first pixels.
@@ -111,7 +113,16 @@ void main() {
     if(pools<1.) {
       float wash=riverNoise(world/61.);
       float grain=riverNoise(world/4.7+vec2(3.2*wash,-1.7*wash));
-      vec3 bed=waterDryBed(world,capsule?deep:centre)+vec3(.10*(wash-.5)+.035*(grain-.5)*(1.-smoothstep(.7,3.,uPx)));
+      // The dry capsule carries a signed-section scour. Raster banks use
+      // their resolved depth and local gravel patches instead.
+      float scour=capsule?deep:centre*smoothstep(.35,.68,wash);
+      float bar=smoothstep(.36,.78,.65*wash+.35*grain)*(1.-scour);
+      float detail=1.-smoothstep(1.,5.,uPx);
+      vec3 gravel=mix(uWaterBed,vec3(.66,.63,.56),.50);
+      vec3 bed=mix(gravel,uWaterBed*1.09,bar)*mix(1.,.72,scour)
+              +vec3(.10*(wash-.5)+.13*(grain-.5)*detail);
+      // The satellite decodes exposed sediment by red minus blue before toning.
+      bed.b=min(bed.b,bed.r-.155);
       color=mix(bed,color,pools);
     }
     // Ice follows the bed: shore ice grows from both banks (up to 40 m) and closes the whole course when frozen,

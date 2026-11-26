@@ -205,7 +205,7 @@ describe('continuous vector water', () => {
     expect(Math.abs(input - output - evaporation)).toBeLessThan(input * 1e-6);
   });
 
-  it('keeps humid river mouths connected without offshore sediment capsules or SVG plumes', async () => {
+  it('keeps the optical mixing fan separate from the physical river mouth and its SVG', async () => {
     const source = await basin(),
       line: RiverLine = { points: [600, 3250, 350, 3250, 150, 3250], area: [1e6, 8e6, 16e6], level: [3, 1, 0], kind: [0, 0, 0] },
       water = { ...source, rivers: { ...source.rivers!, rivers: [line], braids: [], oxbows: [], distributaries: [] } },
@@ -214,6 +214,12 @@ describe('continuous vector water', () => {
     expect(segments.length).toBeGreaterThan(9);
     for (let i = 0; i < segments.length; i += 9) expect(segments[i + 8]).toBe(0);
     expect(segments[segments.length - 7]).toBeLessThan(195);
+    const mouthMix: number[] = [];
+    expect(riverSegments(water, wet, mouthMix)).toEqual(segments);
+    expect(mouthMix).toHaveLength(9);
+    expect(mouthMix[2]).toBeLessThan(mouthMix[0]);
+    expect(mouthMix[5]).toBeGreaterThan(mouthMix[4]);
+    expect(mouthMix[8]).toBe(-1);
     const svg = vectorWaterSvg(water, { ...wet, material: false });
     expect(svg).toContain('class="water"');
     expect(svg).not.toContain('fill-opacity=');

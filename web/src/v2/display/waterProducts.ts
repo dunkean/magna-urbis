@@ -84,8 +84,16 @@ export class WaterProducts implements Water {
       if (t.water) {
         // The painted compositor (natural water) reads the seasonal regime from the segment colour.
         const material = !ink && water.overlay === 'none',
-          rivers = visible ? riverSegments(t.water, { ...water, material, thread: true }) : undefined;
-        this.parts.ground.gpu!.setWater(rivers ? { lake: water.showLakes ? t.water.lakeField.values : undefined, n: t.water.hydro.n, rivers, regime: material } : undefined);
+          mouthMix: number[] | undefined = material && r.ground.traits.satelliteVariant === 1 && !r.ground.traits.paperMap ? [] : undefined,
+          rivers = visible ? riverSegments(t.water, { ...water, material, thread: true }, mouthMix) : undefined;
+        // Only the colour pass sees dissolved sediment. Towns keep the physical banks.
+        let painted = rivers;
+        if (rivers && mouthMix?.length) {
+          painted = new Float32Array(rivers.length + mouthMix.length);
+          painted.set(rivers);
+          painted.set(mouthMix, rivers.length);
+        }
+        this.parts.ground.gpu!.setWater(painted ? { lake: water.showLakes ? t.water.lakeField.values : undefined, n: t.water.hydro.n, rivers: painted, regime: material } : undefined);
         // Natural water only: ink styles draw their water as vectors in the overlay, which the town keeps.
         this.cityWater = rivers && !ink && !isFantasyStyle(style) ? rivers : undefined;
         this.parts.ground.gpu!.setOverlay(vectorOverlayPixels(t.water, water.overlay, t.conditioning?.delta ? { values: t.conditioning.delta, n: t.conditioning.n } : undefined));

@@ -2,7 +2,7 @@
  *
  * Dry climates: only the largest flows stay perennial; smaller courses become intermittent, then ephemeral beds
  * (wadis) that dry out in the dry season, and lakes draw down to a pale exposed shore. Cold climates: rivers and lakes
- * freeze in winter and thaw in spring. Wet climates affect inland water turbidity; no offshore sediment is drawn.
+ * freeze in winter and thaw in spring. Wet climates affect inland water turbidity.
  * The zone calendar (terrainRenderV2Zones.ts) drives everything: its rain regime places the dry season, its low-ground
  * snow places the freeze. Ink styles draw the regime as symbols (vectorWaterRender.ts); the material styles get it
  * encoded in the river segment colour (`regimeRgb`) and read it in their water shaders (WATER_REGIME_GLSL).
@@ -151,9 +151,10 @@ vec3 waterIceColor(vec2 world,float edge,float cracks,vec2 along){
 vec3 waterDryBed(vec2 world,float centre){
   return uWaterBed*mix(.88,1.,smoothstep(0.,.35,centre));
 }
-// Draw-down changes the amount of open water uniformly, never into mottled pools.
+// Intermittent water collects in deeper pockets. A fully dry bed stays exposed.
 float waterDryPools(vec2 world,float dry,float centre){
-  return 1.-smoothstep(.15,.55,dry);
+  float pocket=.18+.44*centre+.18*waterRegimeNoise(world/63.);
+  return 1.-smoothstep(pocket-.16,pocket+.16,dry);
 }
 // Exposed lake shore of the dry season: the bed of its rivers, with a faint drying mottle.
 vec3 waterExposedShore(vec2 world){

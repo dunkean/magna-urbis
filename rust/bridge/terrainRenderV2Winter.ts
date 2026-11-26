@@ -51,16 +51,25 @@ float v2WinterPackLimit(float concentration){return mix(1.,.3,clamp(concentratio
 // freeze: v2WinterFresh. channel: 1 where a river fragment lies further than v2WinterShelf from every bank.
 // still: 1 inside a lake; shore: lake only, 1 at the shore fading to 0 inside. edge: 1 on the bank line.
 // A river grows border ice from its banks inward. A lake is one sheet whose shore opens first while it thaws.
+vec4 v2IcePlate(vec2 world,float scale,uint salt);
 vec4 v2FreshIce(vec2 world,float fp,float freeze,float channel,float still,float shore,float edge){
-  float closed=step(.97,freeze);
+  float closed=sstep(.91,.99,freeze);
   float river=max(closed,(1.-channel)*sstep(0.,.08,freeze));
   float lake=max(closed,sstep(-.05,.05,freeze-.92*shore));
   float tone=0.;
   if(uQuality==0)tone=v2Pattern(vec3(world,0.),150.,fp,uMaterialSeed+771u);
   // Bare ice is a blue-grey darker than snow; a deep freeze carries wind-blown snow and pales toward the land's
   // white without reaching it, and the bank keeps a darker line: a frozen course still reads in a white landscape.
-  vec3 ice=mix(vec3(.62,.71,.78),vec3(.83,.87,.90),clamp(.35+.18*tone+.45*freeze,0.,1.));
-  ice=mix(ice,vec3(.36,.46,.55),.85*edge*mix(1.,closed,still));
+  vec3 ice=mix(vec3(.33,.56,.66),vec3(.79,.88,.91),sstep(-.9,1.4,tone+.58*freeze));
+  if(uQuality==0 && fp<5.){
+    vec4 plate=v2IcePlate(world+vec2(2.7,-1.8)*tone,31.,uMaterialSeed+772u);
+    float frost=v2Pattern(vec3(world,0.),11.,fp,uMaterialSeed+773u);
+    float seam=(1.-sstep(.12,.38+fp,plate.x))*min(1.,.5/max(fp,.1));
+    float detail=1.-sstep(.8,5.,fp);
+    ice+=vec3(.038*frost+.035*(plate.y-.5))*detail;
+    ice=mix(ice,vec3(.26,.48,.57),.50*seam*detail);
+  }
+  ice=mix(ice,vec3(.30,.50,.59),.61*edge*mix(1.,closed,still));
   return vec4(ice,mix(river,lake,still));
 }
 `;

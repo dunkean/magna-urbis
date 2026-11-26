@@ -404,7 +404,10 @@ function threadStrands(geo: DrawnCourse, states: readonly RiverState[], thread: 
       end = smoothstep(0, 3, Math.min(q, along[n - 1] - q)),
       broken = smoothstep(0.4, 0.8, mix(states[k].dry, states[next].dry)),
       pool = 1 - broken * (1 - smoothstep(-0.05, 0.4, strandNoise(seed + 3, q / 3))),
-      width = Math.min(bed, at(thread) * pool * (1 + 0.5 * broken)),
+      // Shallow crossings spread across the bed; deeper runs leave wider bars.
+      // Taper the variation at joins so tributaries still meet their trunk.
+      spread = 1 + 0.52 * end * strandNoise(seed + 6, q / 4.2),
+      width = Math.min(bed, at(thread) * spread * pool * (1 + 0.5 * broken)),
       room = 0.47 * Math.max(0, bed - width),
       wander = 1.5 * (0.62 * strandNoise(seed, q / 5.5) + 0.28 * strandNoise(seed + 1, q / 2.1) + 0.1 * strandNoise(seed + 2, q / 0.9)),
       bend = at(outerBend),
@@ -471,8 +474,10 @@ const riffleStrength = (fall: number, dx: number, dy: number): number => (fall >
 /**
  * River segments for the GPU, in drawing order (oxbows, braids, distributaries,
  * rivers): x0, y0, x1, y1, widths at both ends in metres, then r, g, b.
+ * The optional mouthMix output collects colour-only fans for the satellite pass.
+ * Their last three floats are the running share, 1 and a negative plume marker.
  */
-export function riverSegments(water: VectorWater, display: WaterDisplay): Float32Array {
+export function riverSegments(water: VectorWater, display: WaterDisplay, mouthMix?: number[]): Float32Array {
   const { hydro: h } = water,
     n = h.n,
     cell = h.width / n;
@@ -496,6 +501,32 @@ export function riverSegments(water: VectorWater, display: WaterDisplay): Float3
       { points, kind, widths } = geo;
     const states = climate || display.material ? riverStates(water, geo, climate ?? { aridity: 0, rain: 1, ice: 0, sediment: 0, drop: 0 }, threshold, l) : undefined;
     const thread = display.thread && climate ? threadWidths(water, widths, states) : undefined;
+    if (mouthMix && !thinner && geo.sea > 0 && geo.sea < widths.length) {
+      const k = geo.sea - 1,
+        x = points[2 * k],
+        y = points[2 * k + 1];
+      const dx = points[2 * k + 2] - x,
+        dy = points[2 * k + 3] - y,
+        length = Math.hypot(dx, dy);
+      const width = thread?.[k] ?? widths[k];
+      const flow = 1 - (states?.[k].dry ?? 0);
+      if (length > 0.01 && flow > 0.15 && width > 2) {
+        const ux = dx / length,
+          uy = dy / length,
+          limit = Math.min(350, 4 * width);
+        let reach = 0;
+        // Keep the fan in navigable water up to the next headland or island.
+        for (let j = 1; j <= 8; j++) {
+          const along = (limit * j) / 8,
+            radius = 0.5 * width + 0.24 * along;
+          const cx = x + ux * along,
+            cy = y + uy * along;
+          if ([-1, 0, 1].some(side => surfaceHeight(h, cx - uy * radius * side, cy + ux * radius * side) >= 0)) break;
+          reach = along;
+        }
+        if (reach > width * 0.5) mouthMix.push(x, y, x + ux * reach, y + uy * reach, width, width + 0.48 * reach, flow, 1, -1);
+      }
+    }
     for (let i = 1; i < widths.length; i++) {
       const x0 = points[2 * i - 2],
         y0 = points[2 * i - 1],

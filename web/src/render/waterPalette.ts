@@ -5,7 +5,7 @@
  * - Natural water over another ground takes most of it.
  * - Map styles keep the value of their own ink and take a share of the hue (`MEDIUM`); monochrome styles take none.
  * Dry beds and drawn-down lake shores are the same ground: `waterBed`. Sea water is not here: it stays on the style's ramp. */
-import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
+import { CLIMATE_ZONES, type ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { seasonWeights } from '../../../rust/bridge/terrainRenderV2Zones';
 import { mapSeasonState } from './seasonPalette';
 import type { WaterStyle } from './waterStyle';
@@ -25,76 +25,76 @@ const FRESH: Readonly<Record<ClimateZone, Year>> = {
   temperate: [
     [0.17, 0.24, 0.24, 0.45],
     [0.24, 0.28, 0.21, 0.5],
-    [0.11, 0.27, 0.25, 0.5],
+    [0.065, 0.34, 0.24, 0.7],
     [0.17, 0.24, 0.2, 0.45],
   ],
   // Clear in summer, troubled by the winter rains.
   mediterranean: [
     [0.23, 0.31, 0.28, 0.45],
     [0.15, 0.33, 0.33, 0.5],
-    [0.12, 0.35, 0.35, 0.5],
+    [0.08, 0.4, 0.4, 0.68],
     [0.2, 0.31, 0.29, 0.5],
   ],
   // Snowmelt silt, then a light tea.
   continental: [
     [0.15, 0.21, 0.23, 0.4],
     [0.28, 0.27, 0.2, 0.5],
-    [0.13, 0.22, 0.18, 0.5],
+    [0.1, 0.3, 0.21, 0.65],
     [0.16, 0.2, 0.16, 0.5],
   ],
   // Boreal tea.
   nordic: [
     [0.11, 0.13, 0.14, 0.5],
     [0.17, 0.14, 0.09, 0.6],
-    [0.14, 0.12, 0.08, 0.65],
+    [0.12, 0.19, 0.17, 0.66],
     [0.13, 0.11, 0.08, 0.65],
   ],
   // Glacial flour: milky turquoise while the glaciers melt.
   alpine: [
     [0.14, 0.32, 0.36, 0.45],
     [0.25, 0.43, 0.43, 0.5],
-    [0.34, 0.55, 0.54, 0.6],
+    [0.3, 0.58, 0.57, 0.76],
     [0.2, 0.43, 0.45, 0.5],
   ],
   arctic: [
     [0.2, 0.3, 0.34, 0.4],
     [0.26, 0.34, 0.33, 0.5],
-    [0.26, 0.4, 0.41, 0.5],
+    [0.23, 0.4, 0.46, 0.62],
     [0.2, 0.31, 0.33, 0.45],
   ],
   steppe: [
     [0.23, 0.27, 0.25, 0.45],
     [0.37, 0.34, 0.24, 0.55],
-    [0.28, 0.31, 0.23, 0.5],
+    [0.24, 0.35, 0.25, 0.65],
     [0.26, 0.28, 0.22, 0.5],
   ],
   // Jade, loaded with fine silt.
   desert: [
     [0.22, 0.33, 0.29, 0.5],
     [0.3, 0.35, 0.27, 0.5],
-    [0.29, 0.35, 0.26, 0.5],
+    [0.12, 0.38, 0.31, 0.72],
     [0.24, 0.33, 0.28, 0.5],
   ],
   // Olive in the dry season, lateritic ochre in the rains (summer).
   savanna: [
     [0.23, 0.28, 0.19, 0.5],
     [0.32, 0.28, 0.17, 0.55],
-    [0.45, 0.33, 0.18, 0.7],
+    [0.46, 0.25, 0.16, 0.76],
     [0.36, 0.3, 0.18, 0.6],
   ],
   // Brown-green, browner in the rains.
   tropical: [
-    [0.21, 0.26, 0.14, 0.55],
+    [0.09, 0.32, 0.21, 0.72],
     [0.25, 0.26, 0.14, 0.55],
-    [0.33, 0.28, 0.16, 0.65],
+    [0.36, 0.31, 0.19, 0.72],
     [0.29, 0.27, 0.15, 0.6],
   ],
   // Tannin-stained water: a cool winter surface, tea-brown in the growing season.
   wetland: [
     [0.16, 0.18, 0.15, 0.6],
     [0.21, 0.21, 0.14, 0.7],
-    [0.19, 0.19, 0.12, 0.75],
-    [0.20, 0.18, 0.12, 0.73],
+    [0.13, 0.23, 0.16, 0.73],
+    [0.2, 0.18, 0.12, 0.73],
   ],
 };
 /** Bare channel and shore ground. Every bed leans red (r - b of at least .15): the terrain shader tells the ground of the
@@ -195,4 +195,34 @@ export function dryDitchColour(): string {
 export const FRESH_WATER_GLSL = `
 uniform vec4 uFreshWater;
 vec3 freshWaterTone(vec3 c){return mix(c,uFreshWater.rgb,uFreshWater.a);}
+`;
+
+/** Second water colour within a climatic zone. Broad, seeded reaches grade between
+ * it and the seasonal tone. Both are applied after the satellite decodes the bed mask. */
+const REACH_TONE: Record<ClimateZone, Rgb> = {
+  temperate: [0.12, 0.38, 0.3],
+  mediterranean: [0.2, 0.45, 0.38],
+  continental: [0.29, 0.33, 0.24],
+  nordic: [0.27, 0.19, 0.13],
+  alpine: [0.1, 0.38, 0.46],
+  arctic: [0.32, 0.49, 0.53],
+  steppe: [0.45, 0.3, 0.19],
+  desert: [0.49, 0.26, 0.17],
+  savanna: [0.15, 0.34, 0.23],
+  tropical: [0.48, 0.24, 0.16],
+  wetland: [0.31, 0.21, 0.14],
+};
+
+export const SATELLITE_FRESH_WATER_GLSL = `
+const vec3 reachTone[${CLIMATE_ZONES.length}]=vec3[${CLIMATE_ZONES.length}](${CLIMATE_ZONES.map(z => `vec3(${REACH_TONE[z].join(',')})`).join(',')});
+vec3 satelliteFreshWater(vec3 water,vec2 world,float footprint){
+  if(uMaterialZone<=0||uFreshWater.a<=0.)return water;
+  float basin=v2Pattern(vec3(world,0.),2600.,footprint,uMaterialSeed+903u);
+  float reach=v2Pattern(vec3(world,0.),420.,footprint,uMaterialSeed+904u);
+  float blend=smoothstep(-.55,1.25,basin+.22*reach);
+  vec3 tone=mix(uFreshWater.rgb,reachTone[waterZone()],blend);
+  // Keep the depth and sky light of the underlying water even under dense sediment.
+  float light=dot(water,vec3(.213,.715,.072));
+  return mix(water,tone*(.83+.85*light),min(.88,uFreshWater.a+.12));
+}
 `;
