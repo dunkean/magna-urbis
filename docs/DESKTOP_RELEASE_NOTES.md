@@ -290,6 +290,7 @@ The Apple Silicon DMG is signed ad hoc and distributed without Apple notarizatio
 - Changing season on a Parchment map reuses recorded land-use washes and field strips, along with the ink and wash masks for open-land symbols.
 
 - Editing a quarter reuses city volumes outside it when the surrounding street and block layout stays in place.
+- Water can breach basins with stepped banks again. Both bank profiles follow buried river bends when draining a lake.
 
 ## Alpha 0.3.10
 

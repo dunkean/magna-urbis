@@ -38,7 +38,7 @@ describe('relief conditioning', () => {
     expect(mismatches).toBe(0);
   });
 
-  it('breaches along the drowned valley floor, not across the lake', async () => {
+  it.each(['default', 'step'] as const)('breaches along the drowned valley floor, not across the lake (%s banks)', async banks => {
     // A 30 m plain draining west to the sea; a lake on a 20 m floor sloping to its channel, whose
     // outlet is a notch in its western rim; a sinuous drowned channel climbing
     // from the lake bottom, at its eastern end, to the notch.
@@ -52,7 +52,9 @@ describe('relief conditioning', () => {
         else if (x >= 12 && x < 60 && Math.abs(y - 128) <= 1) z = Math.min(plain, 25 - 0.1 * (59 - x));
         lake[y * n + x] = z;
       }
-    const result = await conditionRelief(lake, n, width, { mode: 'breach', strength: 2, maxDepth: 30, maxLength: 5000 });
+    const result = await conditionRelief(lake, n, width, {
+      mode: 'breach', strength: 2, maxDepth: 30, maxLength: 5000, ...(banks === 'step' ? { banks } : {}),
+    });
     // Share of the cut inside the lake lying away from the channel.
     let volume = 0,
       far = 0;

@@ -135,6 +135,72 @@ fn breaches_leave_no_closed_pocket() {
     assert!(deepest <= 0.3, "no pond is left behind the swell ({deepest:.3} m)");
 }
 
+/// The 5 km drowned-channel fixture from the Water -> relief bridge test. Both bank profiles
+/// must cut a draining bed along the buried channel; only valley grades its shoulders.
+#[test]
+fn breach_bank_profiles_follow_a_drowned_channel_to_the_sea() {
+    let (n, width) = (256_usize, 5000.0);
+    let cell = width / n as f64;
+    let axis = |x: usize| 128.0 + 30.0 * (std::f64::consts::TAU * (x as f64 - 60.0) / 140.0).sin();
+    let height: Vec<f32> = (0..n * n).map(|c| {
+        let (x, y) = (c % n, c / n);
+        let plain = 30.0 + 0.004 * x as f64 * cell;
+        let d = (y as f64 - axis(x)).abs();
+        let z = if x < 12 {
+            -5.0
+        } else if (60..=200).contains(&x) && y.abs_diff(128) < 70 {
+            if d <= 1.5 { 16.0 + 2.0 * (200 - x) as f64 / 140.0 } else { 20.0 + 0.02 * d }
+        } else if x < 60 && y.abs_diff(128) <= 1 {
+            plain.min(25.0 - 0.1 * (59 - x) as f64)
+        } else {
+            plain
+        };
+        z as f32
+    }).collect();
+    let run = |banks: &str| {
+        let settings = Conditioning {
+            mode: "breach".into(), strength: 2.0, max_depth: 30.0, max_length: width,
+            banks: banks.into(), ..Default::default()
+        };
+        let start = std::time::Instant::now();
+        let result = condition_relief(&height, n, width, &settings, true);
+        let elapsed = start.elapsed();
+        assert!(result.breaches > 0);
+        assert_eq!(result.after.depressions, 0);
+        let (mut total, mut far) = (0.0, 0.0);
+        for (c, &delta) in result.delta.iter().enumerate() {
+            let (x, y) = (c % n, c / n);
+            assert!(delta.is_finite());
+            if x < 12 {
+                assert_eq!(delta, 0.0);
+            }
+            if (60..=200).contains(&x) && delta < 0.0 {
+                total -= delta as f64;
+                if (y as f64 - axis(x)).abs() > 3.0 {
+                    far -= delta as f64;
+                }
+            }
+        }
+        let hydro = result.hydrology.unwrap();
+        let mut c = 128 * n + 200; // Bottom at the eastern end, upstream of the western sea.
+        for _ in 0..n * n {
+            let r = hydro.grids.receiver[c];
+            if r < 0 { break; }
+            let down = r as usize;
+            assert!(result.height[down] <= result.height[c]);
+            c = down;
+        }
+        assert!(c % n < 12 && hydro.grids.receiver[c] < 0);
+        eprintln!("banks={banks:?} time={elapsed:?} breaches={} cut={total} far={far} share={:.6}% depressions={}",
+            result.breaches, 100.0 * far / total, result.after.depressions);
+        assert!(total > 0.0 && far / total < 0.1, "banks={banks:?} far={far} total={total}");
+        total
+    };
+    let step_cut = run("step");
+    let valley_cut = run(""); // The default profile in V2.
+    assert!(valley_cut > step_cut, "the graded valley cuts more bank than the short talus");
+}
+
 /// Zero means none: river density 0 draws no course and `no_lakes` no lake, on a relief with a pond and no conditioning.
 #[test]
 fn zero_rivers_and_zero_lakes_leave_none() {

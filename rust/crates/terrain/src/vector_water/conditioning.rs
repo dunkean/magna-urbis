@@ -303,7 +303,7 @@ fn banks(height: &mut [f32], n: usize, cell: f64, chain: &[usize], levels: &[f64
                 beyond[k][side] = ((ground_at(xs[k] + nx * 4.5, ys[k] + ny * 4.5) - near) / (2.0 * cell)).max(0.0)
             }
         }
-        most = most.max(area.get(chain[k]).map_or(0.0, |&v| v as f64));
+        most = most.max(area[chain[k]] as f64);
         upstream[k] = most
     }
     // Slow variation over the map (metres), one field per side: three crossed waves of 350 to 600 m.
@@ -417,13 +417,62 @@ const BREACH_SMOOTH: usize = 5;
 /// Wavelengths and largest lateral offset in physical channel widths, independent of the source raster.
 const BREACH_WAVES: [f64; 2] = [32.0, 14.0];
 const BREACH_SWING: f64 = 4.0;
+/// Bed and short talus together, measured from the centreline in cells.
+const TALUS_RADIUS: f64 = 1.6;
+
+/// A least-cost route can hug either edge of a flat-bottomed channel. Across its D8 direction,
+/// find the first shoulders within reach of the proposed winding bed. As for a headwater valley
+/// cell, require a resolved rise (one metre and a 3% slope) on both sides. Centre on the
+/// contiguous floor where the cross-slope is no steeper than the along-channel grade. This keeps
+/// a sharp asymmetric V at its low point. An open floor or a single hillside leaves the meander free.
+fn thalweg_offset(height: &[f32], n: usize, cell: f64, c: usize, to: usize, reach: f64) -> Option<(f64, f64)> {
+    let (x, y) = ((c % n) as isize, (c / n) as isize);
+    let (nx, ny) = (y - (to / n) as isize, (to % n) as isize - x);
+    let step = (nx as f64).hypot(ny as f64);
+    let along = (height[to] as f64 - height[c] as f64).abs();
+    let floor_to_bank = |side: isize| {
+        let mut floor = 0;
+        for k in 1..=((reach / step) as isize).min(n as isize - 1) {
+            let (xx, yy) = (x + side * k * nx, y + side * k * ny);
+            if xx < 0 || yy < 0 || xx >= n as isize || yy >= n as isize {
+                break;
+            }
+            let rise = height[yy as usize * n + xx as usize] as f64 - height[c] as f64;
+            if rise >= (0.03 * k as f64 * step * cell).max(1.0) {
+                return Some(floor);
+            }
+            if k == floor + 1 && rise.abs() <= k as f64 * along {
+                floor = k;
+            }
+        }
+        None
+    };
+    let mid = (floor_to_bank(1)? - floor_to_bank(-1)?) as f64 * 0.5;
+    Some((mid * nx as f64, mid * ny as f64))
+}
+
+#[cfg(test)]
+#[test]
+fn asymmetric_drowned_banks_keep_the_low_point() {
+    let n = 9;
+    let c = 4 * n + 4;
+    let mut heights = vec![10.0; n * n];
+    heights[c - n] = 14.0; // One bank alone leaves an open floor.
+    assert_eq!(thalweg_offset(&heights, n, 20.0, c, c + 1, 4.0), None);
+    heights[c + 3 * n] = 14.0;
+    assert_eq!(thalweg_offset(&heights, n, 20.0, c, c + 1, 4.0), Some((0.0, 1.0)));
+    heights[c + n] = 10.5; // The same shoulders now enclose a V with its low point at c.
+    heights[c + 2 * n] = 11.0;
+    assert_eq!(thalweg_offset(&heights, n, 20.0, c, c + 1, 4.0), Some((0.0, 0.0)));
+}
+
 /// Invariant: a breach is not a ruled line. Its chain follows the grid (least-cost steps between drowned floors,
 /// then the receivers of the flood), straight along one of the eight directions for kilometres on even ground; the
 /// smoothed centreline (`xs`, `ys`, in cells) is moved sideways by two seeded waves of some tens of channel widths,
-/// up to `BREACH_SWING` widths, tapered to nothing at both ends. The trench is cut along that centreline with the
-/// levels of the chain, which descend along it, so it drains as the chain did; the pockets it leaves beside it are
-/// silted (`silt`). `seed`: the first cell of the chain.
-fn wind(xs: &mut [f64], ys: &mut [f64], seed: usize, cell: f64, channel: f64) {
+/// up to `BREACH_SWING` widths, tapered to nothing at the ends and where existing banks confine the bed. The trench
+/// descends along that centreline with the levels of the chain; the pockets it leaves beside it are silted (`silt`).
+/// `seed`: the first cell of the chain.
+fn wind(xs: &mut [f64], ys: &mut [f64], seed: usize, cell: f64, channel: f64, confined: &[usize]) {
     let m = xs.len();
     if m < 4 {
         return;
@@ -432,7 +481,9 @@ fn wind(xs: &mut [f64], ys: &mut [f64], seed: usize, cell: f64, channel: f64) {
     for k in 1..m {
         arc[k] = arc[k - 1] + cell * (xs[k] - xs[k - 1]).hypot(ys[k] - ys[k - 1])
     }
-    let total = arc[m - 1];
+    let mut fixed = confined.iter().copied();
+    let mut start = 0;
+    let mut end = fixed.next().unwrap_or(m - 1);
     let mut hash = (seed as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
     let mut draw = || {
         hash ^= hash >> 29;
@@ -442,6 +493,11 @@ fn wind(xs: &mut [f64], ys: &mut [f64], seed: usize, cell: f64, channel: f64) {
     let phases = [draw() * std::f64::consts::TAU, draw() * std::f64::consts::TAU];
     let (ox, oy) = (xs.to_vec(), ys.to_vec());
     for k in 1..m - 1 {
+        if k == end {
+            start = end;
+            end = fixed.next().unwrap_or(m - 1);
+            continue;
+        }
         let (a, b) = (k.saturating_sub(2), (k + 2).min(m - 1));
         let (tx, ty) = (ox[b] - ox[a], oy[b] - oy[a]);
         let l = tx.hypot(ty);
@@ -449,7 +505,8 @@ fn wind(xs: &mut [f64], ys: &mut [f64], seed: usize, cell: f64, channel: f64) {
             continue;
         }
         let taper = {
-            let t = (arc[k].min(total - arc[k]) / (0.5 * BREACH_WAVES[0] * channel)).min(1.0);
+            let free = (arc[k] - arc[start]).min(arc[end] - arc[k]);
+            let t = (free / (0.5 * BREACH_WAVES[0] * channel)).min(1.0);
             t * t * (3.0 - 2.0 * t)
         };
         let s = arc[k] * std::f64::consts::TAU;
@@ -467,7 +524,7 @@ fn breach_winding_has_the_same_physical_scale_on_fine_and_coarse_grids() {
         let count = (4000.0 / cell) as usize;
         let mut xs: Vec<f64> = (0..=count).map(|k| 100.0 / cell + k as f64).collect();
         let mut ys = vec![1000.0 / cell; count + 1];
-        wind(&mut xs, &mut ys, 123, cell, 12.0);
+        wind(&mut xs, &mut ys, 123, cell, 12.0, &[]);
         xs.into_iter().zip(ys).map(|(x, y)| (x * cell, y * cell)).collect::<Vec<_>>()
     };
     let (fine, coarse) = (run(20.0), run(40.0));
@@ -478,8 +535,32 @@ fn breach_winding_has_the_same_physical_scale_on_fine_and_coarse_grids() {
         assert!((x - fine[2 * k].0).abs() < 1e-8 && (y - fine[2 * k].1).abs() < 1e-8);
     }
 }
-/// `original`: the relief before this breaching pass, for valley banks (empty: the short talus only); `area`: its
-/// upstream areas (m²); `kept`: the lakes kept and their rim, which no cut touches.
+
+#[cfg(test)]
+#[test]
+fn step_beds_on_even_drowned_ground_wind_with_their_catchment() {
+    let (n, cell) = (256, 20.0);
+    let chain: Vec<usize> = (20..236).map(|x| 128 * n + x).collect();
+    let levels: Vec<f64> = (0..chain.len()).map(|k| 18.0 - 0.001 * k as f64 * cell).collect();
+    let swing = |area| {
+        let mut height = vec![20.0; n * n];
+        let flood = crate::priority_flood::FloodGrids {
+            filled: vec![25.0; n * n], accumulation: vec![area; n * n], ..Default::default()
+        };
+        let mut drained = vec![0; n * n];
+        carve(&mut height, n, cell, &chain, &levels, &mut drained, &[], &flood, &[]);
+        let lateral = drained.iter().enumerate().filter(|(_, bed)| **bed != 0)
+            .map(|(c, _)| (c / n).abs_diff(128)).max().unwrap();
+        lateral as f64 * cell
+    };
+    let small = swing(1e6); // Subject to the 12 m minimum channel width.
+    let large = swing(4e8);
+    assert!(small > cell);
+    assert!(large > BREACH_SWING * 12.0 + cell, "large catchment exceeds the small channel's swing");
+    assert!(large > small);
+}
+/// `original`: the relief before this breaching pass, for valley banks (empty: the short talus only);
+/// `flood`: spill levels and upstream areas (m²) for both profiles; `kept`: protected lakes and their rims.
 #[allow(clippy::too_many_arguments)]
 fn carve(
     height: &mut [f32],
@@ -489,26 +570,41 @@ fn carve(
     levels: &[f64],
     drained: &mut [u8],
     original: &[f32],
-    area: &[f32],
+    flood: &crate::priority_flood::FloodGrids,
     kept: &[u8],
 ) {
     let m = chain.len();
     // Ground under the chain before its bed is cut.
     let before: Vec<f64> = chain.iter().map(|&c| height[c] as f64).collect();
+    let area = &flood.accumulation;
+    let channel = super::rivers::channel_width(area[chain[m / 2]] as f64, 1.0).max(12.0);
+    let reach = BREACH_SWING * channel / cell + TALUS_RADIUS;
+    let mut confined = Vec::new();
+    let mut bed = Vec::with_capacity(m);
+    for (k, &c) in chain.iter().enumerate() {
+        let (mut x, mut y) = ((c % n) as f64, (c / n) as f64);
+        if k > 0 && k + 1 < m && flood.filled[c] > height[c]
+            && let Some((dx, dy)) = thalweg_offset(height, n, cell, c, chain[k + 1], reach)
+        {
+            x += dx;
+            y += dy;
+            confined.push(k);
+        }
+        bed.push((x, y));
+    }
     let mut xs = vec![0.0; m];
     let mut ys = xs.clone();
     for k in 0..m {
         let w = BREACH_SMOOTH.min(k).min(m - 1 - k);
         let (mut sx, mut sy) = (0.0, 0.0);
-        for j in k - w..=k + w {
-            sx += (chain[j] % n) as f64;
-            sy += (chain[j] / n) as f64
+        for &(x, y) in &bed[k - w..=k + w] {
+            sx += x;
+            sy += y
         }
         xs[k] = sx / (2 * w + 1) as f64 + 0.5;
         ys[k] = sy / (2 * w + 1) as f64 + 0.5
     }
-    let channel = super::rivers::channel_width(area[chain[m / 2]] as f64, 1.0).max(12.0);
-    wind(&mut xs, &mut ys, chain[0], cell, channel);
+    wind(&mut xs, &mut ys, chain[0], cell, channel, &confined);
     for k in 0..m {
         let last = k == m - 1;
         let samples = if last {
@@ -536,7 +632,7 @@ fn carve(
                         continue;
                     }
                     let d = (xx as f64 + 0.5 - px).hypot(yy as f64 + 0.5 - py);
-                    if d > 1.6 {
+                    if d > TALUS_RADIUS {
                         continue;
                     }
                     let c = yy as usize * n + xx as usize;
@@ -564,11 +660,8 @@ fn carve(
 fn breach(height: &mut [f32], n: usize, width: f64, s: &Conditioning, pass: usize, kept: &mut Vec<u8>) -> usize {
     let cell = width / n as f64;
     let (max_depth, max_length, valley) = (s.max_depth.max(0.0), s.max_length.max(0.0), s.banks != "step");
-    let h = if valley {
-        crate::priority_flood::flood_areas(height, n, cell * cell)
-    } else {
-        crate::priority_flood::flood_surface(height, n, true)
-    };
+    // Catchment sizes the winding bed in both modes. Only valley mode grades its banks.
+    let h = crate::priority_flood::flood_areas(height, n, cell * cell);
     if pass == 0 {
         *kept = kept_lakes(height, &h.filled, n, width, s)
     }
@@ -634,7 +727,7 @@ fn breach(height: &mut [f32], n: usize, width: f64, s: &Conditioning, pass: usiz
                 continue;
             }
             if cut > 0 {
-                carve(height, n, cell, &chain, &levels, &mut drained, &original, &h.accumulation, kept);
+                carve(height, n, cell, &chain, &levels, &mut drained, &original, &h, kept);
                 breaches += 1
             }
             if level == height[bottom] as f64 {
