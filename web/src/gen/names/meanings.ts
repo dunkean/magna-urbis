@@ -96,6 +96,7 @@ export function roleNoun(role: string): string {
   return 'building';
 }
 export function roleText(role: string, language: NameDisplayLanguage): string | undefined {
-  const noun = roleNoun(role), row = roleRows[noun];
+  const noun = roleNoun(role),
+    row = roleRows[noun];
   return (row && communityText(language, 'names', 'roleRows', noun)) ?? row?.[LANGUAGES.indexOf(language)] ?? row?.[0];
 }
