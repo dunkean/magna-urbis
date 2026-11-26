@@ -1,4 +1,6 @@
 import './vectorWaterWasm';
+import { splineSample } from '../src/v2/shoreline';
+import { shoreOffset } from '../src/render/shoreDetail';
 import { describe, expect, it } from 'vitest';
 import { lakeField, lakeSample } from '../src/ui/lakeGeometry';
 import { computeHydrology, waterBodies } from '../src/ui/simpleHydrology';
@@ -220,6 +222,11 @@ describe('continuous vector water', () => {
     expect(mouthMix[2]).toBeLessThan(mouthMix[0]);
     expect(mouthMix[5]).toBeGreaterThan(mouthMix[4]);
     expect(mouthMix[8]).toBe(-1);
+    const [x, y, endX, endY, width] = mouthMix;
+    const h = water.hydro, cell = h.width / h.n;
+    const [height, dx, dy] = splineSample({ data: h.height, n: h.n }, h.width, x, y);
+    expect(Math.abs(height + shoreOffset(x, y, height, Math.hypot(dx, dy), cell))).toBeLessThan(.001);
+    expect(Math.hypot(endX - x, endY - y)).toBeGreaterThan(4 * width);
     const svg = vectorWaterSvg(water, { ...wet, material: false });
     expect(svg).toContain('class="water"');
     expect(svg).not.toContain('fill-opacity=');

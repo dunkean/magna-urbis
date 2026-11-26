@@ -4,7 +4,7 @@ import type { ForestOccupation } from '../../rust/bridge/terrainForest';
 import type { Building3dScene } from '../src/render/urbanBuildingGeometry';
 import type { World } from '../src/gen/types';
 import { shoreRingFor, shoreRingGrid, retainShoreRing } from '../../rust/bridge/terrainForestBeach';
-import { lakeDistances, seaDistanceSurface, planningWaterDistances } from '../src/render/terrainWater';
+import { hasLakeSurface, lakeTextureData, lakeDistances, seaDistanceSurface, planningWaterDistances } from '../src/render/terrainWater';
 import { withBuildingOccupation, occupationMergeSlot } from '../src/ui/forestOccupation';
 import { withBuildingOccupationAsync } from '../src/v2/displayForest';
 import { floatPyramid } from '../src/render/floatPyramid';
@@ -16,6 +16,21 @@ import './vectorWaterWasm';
 import { loadRenderGeometry } from '../../rust/bridge/renderGeometry';
 
 const surface = (n = 8, width = 128) => ({ x: 0, y: 0, width, n, data: Float32Array.from({ length: n * n }, (_, i) => (i % n) - n / 2) });
+it('omits only unambiguously dry lake fields and retains the signed sea-distance cap on one-sided maps', async () => {
+  await loadRenderGeometry();
+  const n = 8, dry = new Float32Array(n * n).fill(-4);
+  expect(lakeTextureData(dry, n, 128)).toBeUndefined();
+  const shore = dry.slice();
+  shore[26] = -.2;
+  expect(hasLakeSurface(shore)).toBe(true);
+  for (const height of [-3, 8]) {
+    const data = new Float32Array(n * n).fill(height);
+    const { distance } = seaDistanceSurface({ height: data, resolution: n, width: 128, x: 0, y: 0 }, 256);
+    expect(distance[0]).toBe(height < 0 ? 256 : -256);
+    expect(distance.at(-1)).toBe(distance[0]);
+  }
+});
+
 const sourceOccupation = (): ForestOccupation => ({ x: 0, y: 0, width: 16, n: 8, rgba: new Uint8Array(8 * 8 * 4), key: 'base' });
 const scene = (): Building3dScene =>
   ({

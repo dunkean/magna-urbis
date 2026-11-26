@@ -60,6 +60,29 @@ export function waterMaterialPixels(distance: Float32Array, material: WaterStyle
   }
   return pixels;
 }
+// Lake coefficients are immutable display products. A cubic B-spline is a convex
+// combination; below -.8 even the procedural sub-cell shore displacement is zero.
+const lakePresence = new WeakMap<Float32Array, boolean>();
+export function hasLakeSurface(field: Float32Array): boolean {
+  const cached = lakePresence.get(field);
+  if (cached !== undefined) return cached;
+  let present = false;
+  for (let i = 0; i < field.length && !present; i++) present = field[i] > -.8;
+  lakePresence.set(field, present);
+  return present;
+}
+
+/** Shared RG32F upload layout of both GPU backends. Empty lake fields need no texture or shore samples. */
+export function lakeTextureData(field: Float32Array, n: number, width: number): Float32Array | undefined {
+  if (!hasLakeSurface(field)) return undefined;
+  const distance = lakeDistances(field, n, width), packed = new Float32Array(n * n * 2);
+  for (let i = 0; i < field.length; i++) {
+    packed[2 * i] = field[i];
+    packed[2 * i + 1] = distance[i];
+  }
+  return packed;
+}
+
 /** Raw lake and distance mips share the same immutable numeric cache as terrain heights. */
 export function lakeDistancePyramid(field: Float32Array, n: number, width: number, referenceWidth = width): Float32Array[] {
   return floatPyramid(lakeDistances(field, n, width, referenceWidth), n);
@@ -140,8 +163,15 @@ export function seaDistanceSurface(data: { height: Float32Array; resolution: num
   if (cached) return cached;
   const result = measureDisplayProduct('sea', () => {
     const n = Math.min(1024, Math.max(512, field.n));
-    const surface = resampleTerrainSurface({ w: field.n, data: field.data }, n);
-    return { distance: coastDistances(surface, n, data.width / n, referenceWidth), n, width: data.width, x: data.x, y: data.y, referenceWidth };
+    // A strictly one-sided spline has no zero contour. The signed transform
+    // returns the same capped distance everywhere on these inland or marine tiles.
+    const land = field.data[0] > 0;
+    let uniform = true;
+    for (let i = 0; i < field.data.length && uniform; i++) uniform = land ? field.data[i] > 0 : field.data[i] < 0;
+    const distance = uniform
+      ? new Float32Array(n * n).fill(land ? -referenceWidth : referenceWidth)
+      : coastDistances(resampleTerrainSurface({ w: field.n, data: field.data }, n), n, data.width / n, referenceWidth);
+    return { distance, n, width: data.width, x: data.x, y: data.y, referenceWidth };
   });
   entries.set(key, result);
   return result;

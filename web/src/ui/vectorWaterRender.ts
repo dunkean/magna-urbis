@@ -1,4 +1,6 @@
 /** SVG of the vector water chain and its diagnostics, in map metres. */
+import { splineSample } from '../v2/shoreline';
+import { shoreOffset } from '../render/shoreDetail';
 import type { RenderColors } from '../render/customColors';
 import { encodePng, pngDataUrl } from '../render/raster';
 import type { TerrainStyle } from '../../../rust/bridge/terrainRender';
@@ -476,7 +478,7 @@ const riffleStrength = (fall: number, dx: number, dy: number): number => (fall >
  * River segments for the GPU, in drawing order (oxbows, braids, distributaries,
  * rivers): x0, y0, x1, y1, widths at both ends in metres, then r, g, b.
  * The optional mouthMix output collects colour-only fans for the satellite pass.
- * Their last three floats are the running share, 1 and a negative plume marker.
+ * Their last three floats are the running share, local shoreline skew and a negative plume marker.
  */
 export function riverSegments(water: VectorWater, display: WaterDisplay, mouthMix?: number[]): Float32Array {
   const { hydro: h } = water,
@@ -502,7 +504,7 @@ export function riverSegments(water: VectorWater, display: WaterDisplay, mouthMi
       { points, kind, widths } = geo;
     const states = climate || display.material ? riverStates(water, geo, climate ?? { aridity: 0, rain: 1, ice: 0, sediment: 0, drop: 0 }, threshold, l) : undefined;
     const thread = display.thread && climate ? threadWidths(water, widths, states) : undefined;
-    if (mouthMix && !thinner && geo.sea > 0 && geo.sea < widths.length) {
+    if (mouthMix && !thinner && geo.sea > 1 && geo.sea < widths.length) {
       const k = geo.sea - 1,
         x = points[2 * k],
         y = points[2 * k + 1];
@@ -514,18 +516,23 @@ export function riverSegments(water: VectorWater, display: WaterDisplay, mouthMi
       if (length > 0.01 && flow > 0.15 && width > 2) {
         const ux = dx / length,
           uy = dy / length,
-          limit = Math.min(350, 4 * width);
+          limit = Math.min(1600, 12 * width);
         let reach = 0;
-        // Keep the fan in navigable water up to the next headland or island.
-        for (let j = 1; j <= 8; j++) {
-          const along = (limit * j) / 8,
-            radius = 0.5 * width + 0.24 * along;
-          const cx = x + ux * along,
-            cy = y + uy * along;
-          if ([-1, 0, 1].some(side => surfaceHeight(h, cx - uy * radius * side, cy + ux * radius * side) >= 0)) break;
+        // Project one continuous surface plume out to open water. Only the
+        // centreline limits its reach; the per-pixel coastline clips either flank.
+        const steps = Math.max(12, Math.ceil(limit / Math.max(5, cell * .45)));
+        for (let j = 1; j <= steps; j++) {
+          const along = (limit * j) / steps;
+          if (surfaceHeight(h, x + ux * along, y + uy * along) >= 0) break;
           reach = along;
         }
-        if (reach > width * 0.5) mouthMix.push(x, y, x + ux * reach, y + uy * reach, width, width + 0.48 * reach, flow, 1, -1);
+        if (reach > width * .25) {
+          const normal = Math.max(1, Math.min(width * .15, cell * .25));
+          const gx = surfaceHeight(h, x + normal, y) - surfaceHeight(h, x - normal, y);
+          const gy = surfaceHeight(h, x, y + normal) - surfaceHeight(h, x, y - normal);
+          const skew = Math.max(-2, Math.min(2, (-gx * uy + gy * ux) / Math.max(.0001, -(gx * ux + gy * uy))));
+          mouthMix.push(x, y, x + ux * reach, y + uy * reach, width, width + 1.55 * reach, flow, skew, -1);
+        }
       }
     }
     for (let i = 1; i < widths.length; i++) {
@@ -720,26 +727,8 @@ function endsInSea(water: VectorWater, line: RiverLine): boolean {
 /** Signed height (m, sea level 0) of the drawn relief: the same uniform cubic B-spline of the cell-centred heights as
  * the GPU ground (terrainGl level()), so the coast found here is the coastline on screen. */
 function surfaceHeight(h: VectorWater['hydro'], px: number, py: number): number {
-  const n = h.n,
-    cell = h.width / n,
-    gx = px / cell - 0.5,
-    gy = py / cell - 0.5,
-    fx = Math.floor(gx),
-    fy = Math.floor(gy);
-  const bw = (t: number): number[] => {
-    const t2 = t * t,
-      t3 = t2 * t,
-      u = 1 - t;
-    return [(u * u * u) / 6, (3 * t3 - 6 * t2 + 4) / 6, (-3 * t3 + 3 * t2 + 3 * t + 1) / 6, t3 / 6];
-  };
-  const wx = bw(gx - fx),
-    wy = bw(gy - fy);
-  let v = 0;
-  for (let j = 0; j < 4; j++) {
-    const row = Math.min(n - 1, Math.max(0, fy - 1 + j)) * n;
-    for (let i = 0; i < 4; i++) v += h.height[row + Math.min(n - 1, Math.max(0, fx - 1 + i))] * wx[i] * wy[j];
-  }
-  return v;
+  const [height, sx, sy] = splineSample({ data: h.height, n: h.n }, h.width, px, py);
+  return height + shoreOffset(px, py, height, Math.hypot(sx, sy), h.width / h.n);
 }
 
 /** A course never runs under the sea: a vertex stands on the coastline, and past it only a short run is left (half the
@@ -749,13 +738,11 @@ function coastGeometry(water: VectorWater, line: RiverLine, geo: HeadwaterGeomet
     n = geo.widths.length,
     height = (k: number): number => surfaceHeight(water.hydro, p[2 * k], p[2 * k + 1]);
   if (n < 2 || !endsInSea(water, line)) return { ...geo, sea: n };
-  // First vertex of the drowned end, and the heights on both sides of the coastline above it.
+  // Find the last land-to-sea crossing. A wholly submerged course has no mouth to feed a plume.
   let first = n,
-    above = height(n - 1),
-    below = above;
+    above = height(n - 1);
   while (above < 0 && first > 0) {
     first--;
-    below = above;
     if (first > 0) above = height(first - 1);
   }
   if (first === n) return { ...geo, sea: n };
@@ -775,8 +762,17 @@ function coastGeometry(water: VectorWater, line: RiverLine, geo: HeadwaterGeomet
   };
   let from = 0;
   if (first > 0) {
-    from = above / Math.max(1e-9, above - below);
-    if (from > 0.02 && from < 0.98) add(shore, from);
+    // Solve the detailed shoreline, including almost-endpoint crossings.
+    // Linear interpolation of vertex heights can miss it by an entire bank width.
+    let lo = 0, hi = 1;
+    const x = p[2 * shore - 2], y = p[2 * shore - 1];
+    for (let k = 0; k < 18; k++) {
+      const mid = (lo + hi) / 2;
+      if (surfaceHeight(water.hydro, x + mid * (p[2 * shore] - x), y + mid * (p[2 * shore + 1] - y)) >= 0) lo = mid;
+      else hi = mid;
+    }
+    from = (lo + hi) / 2;
+    if (from > 0) add(shore, from);
   }
   const sea = widths.length;
   let left = 0.5 * widths[sea - 1];

@@ -61,7 +61,7 @@ void main() {
   bool capsule = uRegime >= 3;
   // Open vector water has an analytic cross-section. Only raster water and shore ice
   // need to search the image for a bank. A tile border never sets a running river's depth.
-  if (a > .002 && (!capsule || own.g < .95*a)) {
+  if (a > .002 && (!capsule || (uRegime!=4 && own.g < .95*a))) {
     float hits[12], best = 2. * reach;
     nearest = vec2(1, 0);
     for (int i = 0; i < 12; i++) {
@@ -101,6 +101,7 @@ void main() {
   if (uRegime >= 1) {
     // Decoded back to dry and ice (regimeRgb stores running and open water so MAX keeps them on overlaps).
     vec3 regime = clamp(own.rgb / max(own.a, 1e-3), 0., 1.); regime.rg = 1. - regime.rg;
+    if(uRegime==4)regime.g=0.; // The ground computes satellite ice from its seasonal snow.
     // Flow direction in the world (y down): along the bank, perpendicular to the nearest bank.
     vec2 bankDir = vec2(nearest.x, -nearest.y), along = vec2(-bankDir.y, bankDir.x);
     // Centre of the channel: 0 at the bank, 1 a few pixels in (hairline streams stay near 0.3).
@@ -145,6 +146,7 @@ void main() {
     if (frozen > 0.) color = mix(color, waterIceColor(world, 1. - smoothstep(.6 * uDpr, 2.2 * uDpr, depth), 0., along), frozen);
     // Land side: a dry bed has pale bars, not a dark wet bank; ice keeps a faint one.
     vec3 neighbour = 1. - clamp(near.rgb / max(near.a, 1e-3), 0., 1.);
+    if(uRegime==4)neighbour.g=0.;
     bankColor = mix(bankColor, uWaterBed, smoothstep(.3, .8, neighbour.r));
     bankA *= 1. - (uRegime == 2 ? smoothstep(.3, .8, neighbour.r) : .6 * smoothstep(.3, .8, max(neighbour.r, neighbour.g)));
   } else color = freshWaterTone(waterSurfaceShade(color, world, uPx, shelf, rim, wide));

@@ -3,7 +3,7 @@ import type { TerrainData } from '../../../rust/bridge/terrain';
 import type { ForestClearing, ForestField, ForestFieldInput, ForestSettings, ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
 import type { LandCultures } from '../ui/landDetail';
 import { retainShoreRing, retainReliefField, setReliefHorizonBaker, type ForestBeachLayer, type ShoreRingGrid, type ReliefField, type ReliefHeights } from '../../../rust/bridge/terrainForestBeach';
-import { lakeDistances, retainLakeDistances, retainPlanningWaterDistances, type WaterSurface } from '../render/terrainWater';
+import { hasLakeSurface, lakeDistances, retainLakeDistances, retainPlanningWaterDistances, type WaterSurface } from '../render/terrainWater';
 import type { ForestCorridor } from '../render/forestRoom';
 import { DISPLAY_PRODUCT_VERSION, measureDisplayProduct, productRevision } from '../render/displayProduct';
 import { retainFloatPyramid } from '../render/floatPyramid';
@@ -133,8 +133,8 @@ function inputs(terrain: PreparedLayer, width: number): TerrainPrepInput {
     field = native?.field;
   const layer = { x: native?.x ?? 0, y: native?.y ?? 0, width, n: field?.n ?? native?.resolution ?? terrain.height.w, data: field?.data ?? native?.height ?? terrain.height.data };
   const lakes: LakeInput[] = [];
-  if (native?.water) lakes.push({ field: native.water.lakeField.values, n: native.water.hydro.n, width, referenceWidth: width });
-  if (native?.hydrology) lakes.push({ field: native.hydrology.waterField, n: native.hydrology.resolution, width, referenceWidth: width });
+  if (native?.water && hasLakeSurface(native.water.lakeField.values)) lakes.push({ field: native.water.lakeField.values, n: native.water.hydro.n, width, referenceWidth: width });
+  if (native?.hydrology && hasLakeSurface(native.hydrology.waterField)) lakes.push({ field: native.hydrology.waterField, n: native.hydrology.resolution, width, referenceWidth: width });
   return { layer, lakes, sea: native?.waterSurface, planning: { water: terrain.water, n: terrain.height.w, width } };
 }
 const sameInput = (a: TerrainPrepInput, b: TerrainPrepInput): boolean =>

@@ -170,9 +170,16 @@ export class GlRedraw {
     return (this.emptyAux ??= emptyUintTexture(this.gl));
   }
 
+  /** The satellite uses the unused diagnostic texture unit to read sea-side sediment. */
+  private bindEstuaries(texture: WebGLTexture): void {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    this.params.int('uHasOverlay', 2);
+  }
   /** Auxiliary pass of the look into the request's aux target, over the base layer, skipped when its inputs did not
    * change; the map program then reads it on unit 15 (uHasAux 0 while the pass is still linking). */
-  private renderAux(req: GlDrawRequest, v: TerrainVariant, state: LookParamsState, separateWater: boolean, wait: boolean): void {
+  private renderAux(req: GlDrawRequest, v: TerrainVariant, state: LookParamsState, separateWater: boolean, wait: boolean, estuaries?: WebGLTexture): void {
     const gl = this.gl,
       inputs = this.inputs,
       base = inputs.base!,
@@ -185,12 +192,13 @@ export class GlRedraw {
       const key = targets.auxKey.scratch();
       key.length = 0;
       key.push(quality, frame.width, frame.height, frame.origin, frame.px, look.seed, look.climate, look.lighting, look.v2Season, look.v2Calendar, look.layers, look.refinement3d, look.mesh3d, look.style, look.waterLook);
-      key.push(inputs.forestVersion, inputs.riverCount, inputs.retainedWater.key, inputs.lakeN, separateWater, base.layer.width, base.layer.n, req.enhanced.at(-1)?.fadeStart, inputs.coastDistance ? 1 : 0);
+      key.push(inputs.forestVersion, inputs.riverCount, inputs.retainedWater.key, inputs.lakeN, separateWater, !!estuaries, base.layer.width, base.layer.n, req.enhanced.at(-1)?.fadeStart, inputs.coastDistance ? 1 : 0);
       if (targets.auxKey.changed()) {
         targets.aux = uintTarget(gl, frame.width, frame.height, targets.aux);
         this.programs.current = aux;
         gl.useProgram(aux);
         writeLookParams(this.params, state);
+        if (estuaries) this.bindEstuaries(estuaries);
         const owners = look.treeOwners;
         if (owners && owners !== 'stands') {
           this.ownerTexture ??= gl.createTexture()!;
@@ -341,6 +349,7 @@ export class GlRedraw {
     p.int('uUseWaterLayer', 0);
     gl.activeTexture(gl.TEXTURE10);
     gl.bindTexture(gl.TEXTURE_2D, inputs.empty);
+    let estuaries: WebGLTexture | undefined;
     if (separateWater) {
       const target = (targets.water = rgbaTarget(gl, frame.width, frame.height, targets.water));
       gl.activeTexture(gl.TEXTURE10);
@@ -351,7 +360,8 @@ export class GlRedraw {
       gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
       writeWaterLayerParams(p);
       this.drawLayer(base, true, frame, now);
-      renderRivers(water, rivers, target.framebuffer);
+      const raw = renderRivers(water, rivers, target.framebuffer);
+      if (inputs.riverEstuaries) estuaries = raw;
       renderRetainedWater(water, inputs.retainedWater, target.framebuffer);
       gl.useProgram(this.programs.current);
       gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
@@ -360,7 +370,8 @@ export class GlRedraw {
       gl.bindTexture(gl.TEXTURE_2D, target.texture);
       p.int('uUseWaterLayer', 1);
     }
-    this.renderAux(req, v, state, separateWater, wait);
+    this.renderAux(req, v, state, separateWater, wait, estuaries);
+    if (estuaries) this.bindEstuaries(estuaries);
     this.drawLayer(base, true, frame, now);
     for (const detail of req.details) animating = this.drawLayer(detail, false, frame, now) || animating;
     // The live view's details: a detail fully faded in hides (and releases) the older ones.

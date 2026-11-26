@@ -7,7 +7,7 @@
 import { riverInstances, RIVER_INSTANCE_FLOATS } from '../riverProfiles';
 import { shoreRingPixels, shoreRingTexture } from '../../../../../rust/bridge/terrainForestBeach';
 import type { ForestField, ForestOccupation, LandDetail } from '../../../../../rust/bridge/terrainForest';
-import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../../../render/terrainWater';
+import { lakeTextureData, seaDistanceSurface, type WaterSurface } from '../../../render/terrainWater';
 import { mapGpuLight, mapTextureCap } from '../../glContextRecovery';
 import { RetainedWaterSource } from '../retainedWater';
 import { heightAt, pushLayer, SurfaceSamplerCache } from '../layers';
@@ -36,6 +36,7 @@ export class GlInputs {
   readonly riverVao: WebGLVertexArrayObject;
   riverCount = 0;
   riverRegime = false;
+  riverEstuaries = false;
   /** Parsed once; kept across a context restore (CPU only). */
   retainedWater = new RetainedWaterSource();
   /** Bumped by setForest: the auxiliary pass depends on the forest field and the applied occupation. */
@@ -150,13 +151,8 @@ export class GlInputs {
       this.lakeInput = water?.lake;
       this.lakeWidth = width;
       if (water?.lake) {
-        const distances = lakeDistances(water.lake, water.n, width),
-          values = new Float32Array(water.n * water.n * 2);
-        for (let i = 0; i < water.lake.length; i++) {
-          values[i * 2] = water.lake[i];
-          values[i * 2 + 1] = distances[i];
-        }
-        this.lake = glTexture(gl, water.n, water.n, gl.RG32F, gl.RG, gl.FLOAT, values, gl.NEAREST);
+        const values = lakeTextureData(water.lake, water.n, width);
+        if (values) this.lake = glTexture(gl, water.n, water.n, gl.RG32F, gl.RG, gl.FLOAT, values, gl.NEAREST);
         this.lakeN = water.n;
       }
     }
@@ -166,6 +162,7 @@ export class GlInputs {
     gl.bufferData(gl.ARRAY_BUFFER, rivers.byteLength ? rivers : new Float32Array(RIVER_INSTANCE_FLOATS), gl.STATIC_DRAW);
     this.riverCount = rivers.length / RIVER_INSTANCE_FLOATS;
     this.riverRegime = !!water?.regime;
+    this.riverEstuaries = !!water?.estuaries;
     return 'content';
   }
   setOverlay(overlay: OverlayLayer | undefined): InputChange {

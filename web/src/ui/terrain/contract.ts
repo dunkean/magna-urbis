@@ -93,6 +93,8 @@ export interface WaterLayer {
   rivers?: Float32Array;
   /** The river colour carries the seasonal regime for the painted compositor (waterRegime.ts regimeRgb). */
   regime?: boolean;
+  /** Satellite material includes colour-only estuary instances after its physical channels. */
+  estuaries?: boolean;
 }
 
 /** Seasonal regime of retained water (City Bench): zone and season, and `city` for the city-zoom river colour. */

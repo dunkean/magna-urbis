@@ -7,7 +7,7 @@
 import { riverInstances, RIVER_INSTANCE_FLOATS } from '../riverProfiles';
 import { shoreRingPixels } from '../../../../../rust/bridge/terrainForestBeach';
 import type { ForestField, ForestOccupation, LandDetail } from '../../../../../rust/bridge/terrainForest';
-import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../../../render/terrainWater';
+import { lakeTextureData, seaDistanceSurface, type WaterSurface } from '../../../render/terrainWater';
 import { mapGpuLight, mapTextureCap } from '../../glContextRecovery';
 import { RetainedWaterSource } from '../retainedWater';
 import { heightAt, pushLayer, SurfaceSamplerCache } from '../layers';
@@ -63,6 +63,7 @@ export class GpuInputs {
   riverBuffer?: GPUBuffer;
   riverCount = 0;
   riverRegime = false;
+  riverEstuaries = false;
   readonly retainedWater = new RetainedWaterSource();
   /** Bumped by setForest: the auxiliary pass depends on the forest field and the applied occupation. */
   forestVersion = 0;
@@ -158,13 +159,8 @@ export class GpuInputs {
       this.lakeInput = water?.lake;
       this.lakeWidth = width;
       if (water?.lake) {
-        const distances = lakeDistances(water.lake, water.n, width),
-          values = new Float32Array(water.n * water.n * 2);
-        for (let i = 0; i < water.lake.length; i++) {
-          values[i * 2] = water.lake[i];
-          values[i * 2 + 1] = distances[i];
-        }
-        this.lake = gpuImage(this.device, water.n, water.n, 'rg32float', values, 8);
+        const values = lakeTextureData(water.lake, water.n, width);
+        if (values) this.lake = gpuImage(this.device, water.n, water.n, 'rg32float', values, 8);
         this.lakeN = water.n;
       }
     }
@@ -172,6 +168,7 @@ export class GpuInputs {
     const rivers = riverInstances(water?.rivers ?? new Float32Array(), !!water?.regime);
     this.riverCount = rivers.length / RIVER_INSTANCE_FLOATS;
     this.riverRegime = !!water?.regime;
+    this.riverEstuaries = !!water?.estuaries;
     if (rivers.byteLength) {
       if (!this.riverBuffer || this.riverBuffer.size < rivers.byteLength) {
         this.riverBuffer?.destroy();

@@ -309,16 +309,22 @@ export class GpuRedraw {
     const rivers = { buffer: inputs.riverBuffer, count: inputs.riverCount, regime: inputs.riverRegime };
     const separateWater = quality === 0 && separateWaterLayer(look, v.forest);
     p.int('uUseWaterLayer', 0);
+    let estuaries: GPUTextureView | undefined;
     if (separateWater) {
       const waterTarget = (targets.water = gpuTarget(device, width, height, MAP_FORMAT, targets.water));
       writeWaterLayerParams(p);
       const waterPass = beginPass(encoder, waterTarget, true, 'water layer');
       this.drawLayer(waterPass, base, true, chosen.pipeline, frame, now);
       waterPass.end();
-      renderRivers(water, rivers, waterTarget);
+      const raw = renderRivers(water, rivers, waterTarget);
+      if (inputs.riverEstuaries) estuaries = raw;
       renderRetainedWater(water, inputs.retainedWater, waterTarget);
       writeMapParamsAfterWaterLayer(p, look, !!inputs.overlay);
       this.mapTextures.uWaterLayer = waterTarget.view;
+      if (estuaries) {
+        this.mapTextures.uOverlay = estuaries;
+        p.int('uHasOverlay', 2);
+      }
       p.int('uUseWaterLayer', 1);
     }
     // Auxiliary pass (as GlRedraw.renderAux): rendered only when its inputs changed.
@@ -329,7 +335,7 @@ export class GpuRedraw {
         const key = targets.auxKey.scratch();
         key.length = 0;
         key.push(quality, width, height, frame.origin, frame.px, look.seed, look.climate, look.lighting, look.v2Season, look.v2Calendar, look.layers, look.refinement3d, look.mesh3d, look.style, look.waterLook);
-        key.push(inputs.forestVersion, inputs.riverCount, inputs.retainedWater.key, inputs.lakeN, separateWater, base.layer.width, base.layer.n, req.enhanced.at(-1)?.fadeStart, inputs.coastDistance ? 1 : 0);
+        key.push(inputs.forestVersion, inputs.riverCount, inputs.retainedWater.key, inputs.lakeN, separateWater, !!estuaries, base.layer.width, base.layer.n, req.enhanced.at(-1)?.fadeStart, inputs.coastDistance ? 1 : 0);
         if (targets.auxKey.changed()) {
           targets.aux = gpuTarget(device, width, height, 'rgba32uint', targets.aux);
           this.savedParams.set(p.bytes);
@@ -344,6 +350,10 @@ export class GpuRedraw {
             this.auxTextures.uAux = this.ownerTexture!.view;
           }
           this.auxTextures.uWaterLayer = this.mapTextures.uWaterLayer;
+          if (estuaries) {
+            this.auxTextures.uOverlay = estuaries;
+            p.int('uHasOverlay', 2);
+          }
           p.int('uUseWaterLayer', separateWater ? 1 : 0);
           const auxPass = beginPass(encoder, targets.aux, true, 'auxiliary');
           this.drawLayer(auxPass, base, true, aux, frame, now);

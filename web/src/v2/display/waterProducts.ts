@@ -93,7 +93,7 @@ export class WaterProducts implements Water {
           painted.set(rivers);
           painted.set(mouthMix, rivers.length);
         }
-        this.parts.ground.gpu!.setWater(painted ? { lake: water.showLakes ? t.water.lakeField.values : undefined, n: t.water.hydro.n, rivers: painted, regime: material } : undefined);
+        this.parts.ground.gpu!.setWater(painted ? { lake: water.showLakes ? t.water.lakeField.values : undefined, n: t.water.hydro.n, rivers: painted, regime: material, estuaries: !!mouthMix?.length } : undefined);
         // Natural water only: ink styles draw their water as vectors in the overlay, which the town keeps.
         this.cityWater = rivers && !ink && !isFantasyStyle(style) ? rivers : undefined;
         this.parts.ground.gpu!.setOverlay(vectorOverlayPixels(t.water, water.overlay, t.conditioning?.delta ? { values: t.conditioning.delta, n: t.conditioning.n } : undefined));

@@ -309,6 +309,23 @@ float lakeDistance(vec2 world) {
   return mix(mix(texelFetch(uLake,p,0).g,texelFetch(uLake,ivec2(q.x,p.y),0).g,f.x),mix(texelFetch(uLake,ivec2(p.x,q.y),0).g,texelFetch(uLake,q,0).g,f.x),f.y);
 }
 
+// Distance from the detailed lake outline near the edge, from the distance field
+// further in. Gentle littoral shelves expose more bottom than steep banks.
+float lakeBedTransmission(float shore,float inside,float fieldDistance,float slope,vec2 world) {
+  float distance=mix(max(0.,inside*uPx),max(0.,fieldDistance),smoothstep(.16,.75,shore));
+  float deposit=v2Pattern(vec3(world,0.),92.,uPx,uMaterialSeed+909u);
+  float shelf=mix(9.,42.,smoothstep(-1.,1.,deposit))/(1.+7.*slope);
+  return exp2(-distance/shelf)*(1.-smoothstep(.010*uMapW,.016*uMapW,distance));
+}
+vec3 satelliteBed(vec3 water,float shallow,float cover,vec2 world){
+  float sediment=smoothstep(-.075,.23,water.r-water.b);
+  vec3 gravel=mix(vec3(.47,.49,.33),vec3(.63,.46,.28),sediment);
+  float grains=v2Pattern(vec3(world,0.),2.8,uPx,uMaterialSeed+908u);
+  gravel+=vec3(.075,.067,.050)*clamp(grains,-1.2,1.2);
+  float bottom=shallow*mix(sqrt(shallow),.88,sediment)*(.60-.18*sediment);
+  return mix(water,gravel,bottom*cover);
+}
+
 float paperShore(vec2 world) {
   if (uCoastalSea != 1) return 0.;
   vec2 g = clamp((world - uCoastOrigin) / uCoastWidth * float(uCoastN) - .5, vec2(0.), vec2(float(uCoastN - 1)));
@@ -490,7 +507,7 @@ void main() {
     // and the swell lie under the sea ice, so a frozen sea is ice to the coastline and across its river mouths.
     float wSeaIce=0.;
     // Open share of a lake fragment (0 along its shore, 1 well inside), for the lake's surface tone (v2LakeSurface).
-    float wLake=0.;
+    float wLake=0.,lakeBed=0.;
     if (uUseWaterLayer==1) {
       vec4 water=texelFetch(uWaterLayer,ivec2(gl_FragCoord.xy),0);
       if(uNight==1 && uMode<2 && uRenderV2==0 && uNaturalWater==1)water.rgb=moonlight(water.rgb);
@@ -548,7 +565,10 @@ void main() {
           float inside=uHasLake>0?m/max(fwidth(m),1e-4):-1e3;
           // Inside a lake the water is a lake (kind 2), not a river's stream: its depth grows with the distance into the
           // lake, sooner below steep banks (terrainRenderV2 v2LakeDepth); only a wide lake's open water drifts in tone.
-          if(m>0.){float d=lakeDistance(world);wKind=2.;wDepth=v2LakeDepth(d,grad);wLake=smoothstep(150.,600.,d);}
+          if(m>0.){
+            float d=lakeDistance(world);wKind=2.;wDepth=v2LakeDepth(d,grad);wLake=smoothstep(150.,600.,d);
+            if(uRenderV2==1)lakeBed=lakeBedTransmission(m,inside,d,grad,world);
+          }
           // Cave water is one colour: no shallow lakes beside deep rivers.
           if(underdark)wDepth=8.;
           // Dry season of a dry climate: the lake draws down, leaving a pale exposed shore inside its rim.
@@ -593,9 +613,15 @@ void main() {
           // The river ribbon and its optical plume blend into the sea by coverage and depth.
           // A dry bed (painted sandy) ends at the coastline: no bed shows under the sea.
           float running=water.a*(1.-smoothstep(.05,.15,(water.r-water.b)/max(water.a,1e-3)));
-          float mixingDepth=3.;
-          if(running>.002)mixingDepth+=1.4*v2Pattern(vec3(world,0.),95.,uPx,uMaterialSeed+906u);
-          wEst=running*(1.-smoothstep(0.,max(1.,mixingDepth),-s.x));
+          if(uHasOverlay==2){
+            // The exact shoreline selects the sea side. Surface sediment can
+            // drift above a deep seabed without affecting the upstream water.
+            wEst=texelFetch(uOverlay,ivec2(gl_FragCoord.xy),0).g;
+          }else{
+            float mixingDepth=3.;
+            if(running>.002)mixingDepth+=1.4*v2Pattern(vec3(world,0.),95.,uPx,uMaterialSeed+906u);
+            wEst=running*(1.-smoothstep(0.,max(1.,mixingDepth),-s.x));
+          }
           wFresh=wEst;
           wRiver=running;
         }
@@ -619,6 +645,7 @@ void main() {
       float a=clamp(m/w+.5,0.,1.);
       if(uRenderV2>0){
         v2w=true;wBase=color;wCover=waterUnderCrown(a,crownCover);wKind=2.;wDepth=underdark?8.:v2LakeDepth(distance,grad)*a;wLake=smoothstep(150.,600.,distance);wFresh=1.;
+        if(uRenderV2==1)lakeBed=lakeBedTransmission(m,m/w,distance,grad,world);
         if(!underdark){wIce=vec4(v2WinterFresh,0.,1.,1.-smoothstep(0.,24.*uDpr,m/w));wIceEdge=1.-smoothstep(.5,3.5*uDpr,m/w);}
       }else color=mix(color,lakeColor,a);
       coverage=a+coverage*(1.-a);
@@ -679,6 +706,8 @@ void main() {
         vec3 toned=uRenderV2==1?satelliteFreshWater(color,world,uPx):freshWaterTone(color);
         color=mix(color,toned,wFresh*wCover*(1.-wSeaIce));
       }
+      if(wKind>1.5&&wKind<2.5&&uRenderV2==1&&uNaturalWater==1&&lakeBed>.002)
+        color=satelliteBed(color,lakeBed,wCover,world);
       if(wKind>2.5&&uRenderV2==1&&wCover>0.){
         // Broad sky reflections reveal the free surface even in rust-coloured water.
         vec2 wind=vec2(.89*world.x+.46*world.y,-.46*world.x+.89*world.y);
@@ -688,12 +717,7 @@ void main() {
           // Less bottom light returns through turbid red/brown water. Where the
           // inside of a bend shoals, the local mineral colour shows through.
           float shallow=clamp((riverLight+.105)/.26,0.,1.);
-          float sediment=smoothstep(-.075,.23,color.r-color.b);
-          vec3 gravel=mix(vec3(.47,.49,.33),vec3(.63,.46,.28),sediment);
-          float grains=v2Pattern(vec3(world,0.),2.8,uPx,uMaterialSeed+908u);
-          gravel+=vec3(.075,.067,.050)*clamp(grains,-1.2,1.2);
-          float bottom=shallow*mix(sqrt(shallow),.88,sediment)*(.60-.18*sediment);
-          color=mix(color*(1.-.12*wCover*(1.-shallow)),gravel,bottom*wCover);
+          color=satelliteBed(color*(1.-.12*wCover*(1.-shallow)),shallow,wCover,world);
           color+=vec3(.74,.91,1.)*(.15*riverFoam*wCover);
         }
       }
@@ -813,16 +837,29 @@ void main() {
     float m = lakeShore(uOrigin + vP * uPx, uHasLake == 1);
     alpha *= 1. - clamp(m / max(fwidth(m), 1e-4) + .5, 0., 1.);
   }
-  // Dissolved sediment leaves the mouth along its last bearing. The plume
-  // widens while its concentration falls, with a soft lateral mixing zone.
+  // Marine concentration has its own channel in the satellite's raw material
+  // target. Its footprint never changes the land, lake, or physical river mask.
   if(vColor.b<0.){
-    if(uFlatWater.a>=0. || dot(pa,ba)<0.) discard;
-    vec2 world=uOrigin+vP*uPx;
-    float eddy=riverNoise(world/73.);
-    float lateral=d/max(.5,mix(vWidths.x,vWidths.y,h));
-    alpha*=vColor.r*(1.-smoothstep(.0,1.,h))*
-           (1.-smoothstep(.12+.2*eddy,.88+.12*eddy,lateral));
-    outColor=vec4(vec3(1.,1.,.12)*alpha,alpha);
+    if(uFlatWater.a>=-1.5) discard;
+    vec2 dir=ba/max(length(ba),.001);
+    float reach=max(length(ba)*uPx,1.);
+    float width=max(1.,vWidths.z);
+    float along=dot(pa,dir)*uPx, across=dot(pa,vec2(-dir.y,dir.x))*uPx;
+    float travel=max(0.,along-vColor.g*clamp(across,-.5*width,.5*width));
+    float t=travel/reach;
+    if(along < -1.5*width || t>=1.) discard;
+    vec2 origin=(uOrigin+a*uPx)/197.;
+    float drift=2.*riverNoise(origin)-1.;
+    float current=riverNoise(origin+vec2(t*2.7,4.1))-.5;
+    float sweep=travel*(.36*drift+.52*current);
+    float spread=.5*width+travel*(.24+.14*riverNoise(origin+vec2(3.2,t*3.)));
+    float lateral=(across-sweep)/spread;
+    float eddy=riverNoise(origin+vec2(t*4.,lateral*1.4));
+    lateral+=min(1.,travel/width)*(.52*(eddy-.5)+.23*(riverNoise(origin+vec2(t*8.,lateral*2.3)+eddy)-.5));
+    float softness=clamp(max(uPx/width,.025)+travel/width*.55,.025,1.);
+    float sides=1.-smoothstep(1.-softness,1.+.60*softness,abs(lateral));
+    float concentration=vColor.r*sides*exp2(-2.6*t)*(1.-smoothstep(.62,1.,t));
+    outColor=vec4(0.,concentration,0.,0.);
     return;
   }
   if (alpha <= 0.0) discard;
@@ -878,6 +915,7 @@ void main() {
       core=.30*damp*(.58+.42*pool);
     }
     color.b=core+.70*glint;
+    if(uFlatWater.a < -1.5)color.g=0.; // Reserved for the sea-side concentration above.
   }
   if (uHasOverlay == 1) { vec4 overlay = texture(uOverlay, (uOrigin + vP * uPx) / uMapW); color = mix(color, overlay.rgb, overlay.a); }
   outColor = vec4(color * alpha, alpha);

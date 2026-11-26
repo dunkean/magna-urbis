@@ -77,7 +77,7 @@ export function paintWater(c: GlWaterPass, unit: number, regime: boolean | numbe
 
 /** River capsules, premultiplied and MAX-blended so overlapping capsules cover like one stroke, then composited over
  * `destination`. Diagnostic colours (overlay) keep the plain composite. */
-export function renderRivers(c: GlWaterPass, rivers: { vao: WebGLVertexArrayObject; count: number; regime: boolean }, destination: WebGLFramebuffer | null): void {
+export function renderRivers(c: GlWaterPass, rivers: { vao: WebGLVertexArrayObject; count: number; regime: boolean }, destination: WebGLFramebuffer | null): WebGLTexture | undefined {
   if (!rivers.count || !waterDrawn(c.look)) return;
   const { gl, frame, look } = c;
   const target = (c.targets.river = rgbaTarget(gl, frame.width, frame.height, c.targets.river));
@@ -120,7 +120,7 @@ export function renderRivers(c: GlWaterPass, rivers: { vao: WebGLVertexArrayObje
   gl.bindTexture(gl.TEXTURE_2D, target.texture);
   if (paint) {
     paintWater(c, 0, regime);
-    return;
+    return regime === 4 ? target.texture : undefined;
   }
   c.programs.drawComposite(0);
 }

@@ -97,7 +97,7 @@ export function composite(c: GpuWaterPass, source: GPUTextureView, destination: 
 
 /** River capsules, MAX-blended so overlapping capsules cover like one stroke, then composited over `destination`.
  * Diagnostic colours (overlay) keep the plain composite. */
-export function renderRivers(c: GpuWaterPass, rivers: { buffer?: GPUBuffer; count: number; regime: boolean }, destination: Target): void {
+export function renderRivers(c: GpuWaterPass, rivers: { buffer?: GPUBuffer; count: number; regime: boolean }, destination: Target): GPUTextureView | undefined {
   if (!rivers.count || !rivers.buffer || !waterDrawn(c.look)) return;
   const { device, gpu, frame, look } = c;
   const pipeline = gpu.pipeline('river', () => gpu.simpleDescriptor('river', 'max'), c.wait);
@@ -133,6 +133,7 @@ export function renderRivers(c: GpuWaterPass, rivers: { buffer?: GPUBuffer; coun
   encoderPass.draw(4, rivers.count);
   encoderPass.end();
   composite(c, target.view, destination, c.painted && !c.overlay, regime);
+  return regime === 4 && c.painted && !c.overlay ? target.view : undefined;
 }
 
 /** The retained water's viewport raster (repainted on Canvas 2D when the view changed), composited over `destination`. */

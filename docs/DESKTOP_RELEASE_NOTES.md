@@ -1,7 +1,8 @@
 ## Alpha 0.3.11
 
-- Satellite rivers grade from jade, glacial blue and tannin brown to iron-red silt across different climates and reaches. At flowing mouths, a plume widens and fades into the coastal shallows. Frozen rivers share the Arctic sea’s ice texture, with smaller floes and meltwater seams at river scale.
-- In satellite view, submerged gravel and silt show through on the inside of river bends. Deeper runs follow the opposite bank, with clearer water revealing more of the bed.
+- Satellite rivers grade from jade, glacial blue and tannin brown to iron-red silt across different climates and reaches. At flowing mouths, fresh water starts mixing at the shoreline and drifts across a wider, irregular patch of sea. Frozen rivers share the Arctic sea’s ice texture, with smaller floes and meltwater seams at river scale.
+- In satellite view, submerged gravel and silt show through on the inside of river bends. Deeper runs follow the opposite bank, with clearer water revealing more of the bed. Lake margins now reveal gravel and silt through shallow water, especially along gently sloping shores.
+- Satellite maps without lakes skip the lake textures and shoreline sampling. Inland and open-sea terrain load without computing a coastline distance field.
 - Savanna washes and desert wadis narrow and widen gently around a darker thread of damp sediment. Residual pools linger in wider, flatter savanna reaches as the water recedes. Bank margins and seasonally exposed lake shores vary in width.
 - Winter trees show grey-brown branches at map scale and in 3D. Nearby modelled trees replace their painted crowns, and savanna crowns have individually oriented grain.
 
