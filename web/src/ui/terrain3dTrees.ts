@@ -86,6 +86,10 @@ export interface TreeInputs {
   water(x: number, y: number): number;
   height(x: number, y: number): number | undefined;
 }
+/** Global forest appearance; a local edit or a camera turn can reuse the other stands. */
+export function treeBiomeKey(inputs: Pick<TreeInputs, 'zone' | 'climateZone' | 'climate'>): string {
+  return [inputs.zone, inputs.climateZone, inputs.climate.temperature, inputs.climate.precipitation].join('|');
+}
 export interface TreeView {
   x: number;
   y: number;
@@ -878,6 +882,8 @@ ${TREE_PROFILE_GLSL}void main(){
   if(ring<3)treeNormal=vec3(dir.x,0.,dir.y);
   else if(spire)treeNormal=normalize(vec3(dir*(h-bottom),r).xzy);
   else {float mid=bottom+(parasol?.72:.4)*(h-bottom),hd=max(.55*(h-bottom),.1);treeNormal=normalize(vec3(local.x/(r*r),(y-mid)/(hd*hd),local.z/(r*r)));}
+  // The collar and first bough ring close the fir at the same height. Light their underside as one plane.
+  if(spire&&band==2)treeNormal=vec3(0.,-1.,0.);
   world=vec3(treeBase.x-cameraOrigin.x+local.x,treeBase.z*exaggeration-cameraOrigin.y+local.y,treeBase.y-cameraOrigin.z+local.z);
   tint=ring<3?vec3(.24,.19,.14):treeColor.rgb;
   treeLevel=ring<3?0.:clamp((y-bottom)/max(h-bottom,.1),0.,1.);
@@ -909,6 +915,10 @@ ${FOREST_PERLIN_GLSL}
 ${FOREST_CLUMP_GLSL}
 void main(){
   vec3 n=normalize(treeNormal),l=normalize(treeLight);
+  // Broadleaf crowns keep the light-catching faces of their mesh, with soft light toward the edges.
+  vec3 face=cross(dFdx(world),dFdy(world));
+  if(dot(face,n)<0.)face=-face;
+  if(crownInfo.y<.5&&crownInfo.x<.5&&dot(face,face)>1.e-14)n=normalize(mix(n,normalize(face),.75));
   // Pixel footprint (m), taken before any branch, as the 3D ground does for the painted crowns.
   float fp=max(.001,max(length(dFdx(world)),length(dFdy(world))));
   vec3 albedo=tint;float snow=crownInfo.z,r=crownChart.w,foliage=1.-crownInfo.y;

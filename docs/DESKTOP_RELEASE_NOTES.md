@@ -1,5 +1,7 @@
 ## Alpha 0.3.11
 
+- Broadleaf crowns catch the light on irregular facets, and firs have a flat skirt of lower branches. Changing the display biome refreshes the visible forest first and clears old trees from other views.
+
 - In satellite views, woodland canopies cover regional roads branch by branch. Town streets show compacted earth, wheel ruts, worn pedestrian strips and stony margins.
 - Satellite roads and footpaths have broken, soil-coloured verges and a continuous worn centre. Earth darkens on low banks and takes on a stonier colour on steep slopes. Town lanes blend into adjoining streets at junctions.
 - Overhead forests keep their rounded painted crowns. Tilting reveals whole foreground stands, including dense tropical woods, while preserving the forest floor and trees along riverbanks.

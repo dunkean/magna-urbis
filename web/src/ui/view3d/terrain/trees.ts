@@ -5,7 +5,7 @@
  */
 import { renderV2ZoneUniform } from '../../../../../rust/bridge/terrainRenderV2Zones';
 import { DEFAULT_TERRAIN_LIGHTING, terrainLights } from '../../../render/terrainLighting';
-import { buildNearTrees, buildNearTreesSteps, clampTreeDistance, TREE_BLOCK, TREE_DISTANCE_DEFAULT, TREE_STRIDE, treeLimits, type TreeInputs } from '../../terrain3dTrees';
+import { buildNearTrees, buildNearTreesSteps, clampTreeDistance, TREE_BLOCK, TREE_DISTANCE_DEFAULT, TREE_STRIDE, treeBiomeKey, treeLimits, type TreeInputs } from '../../terrain3dTrees';
 import type { TerrainViewContext } from './context';
 import type { FrameGeometry, TerrainResources } from './contract';
 import type { TerrainCameraRig } from './camera';
@@ -35,6 +35,8 @@ export class NearTrees {
   private area?: { x: number; y: number; r: number };
   private waterRevision = 0;
   private streams = 0;
+  private biome = '';
+  private biomeRevision = 0;
 
   constructor(
     private readonly context: TerrainViewContext,
@@ -109,6 +111,12 @@ export class NearTrees {
       this.complete = false;
       return;
     }
+    const biome = treeBiomeKey(inputs);
+    if (biome !== this.biome) {
+      this.biome = biome;
+      this.biomeRevision++;
+      this.reset();
+    }
     const x = c.x + frame.eye[0],
       y = c.y + frame.eye[2],
       fl = Math.hypot(frame.forward[0], frame.forward[2]) || 1;
@@ -128,7 +136,7 @@ export class NearTrees {
             inputs.season,
             inputs.crownSnow,
             inputs.seed,
-            inputs.climateZone,
+            biome,
             JSON.stringify(inputs.calendar ?? {}),
           ].join('|');
     if (key === this.key && (!context.fullQualityCapture || this.readyKey === key)) return;
@@ -169,8 +177,8 @@ export class NearTrees {
       install(buildNearTrees(inputs, view));
       return;
     }
-    const epoch = context.epoch,
-      current = (): boolean => !context.captureMode && !context.disposed && epoch === context.epoch && this.key !== 'high' && this.key !== '';
+    const epoch = context.epoch, biomeRevision = this.biomeRevision,
+      current = (): boolean => !context.captureMode && !context.disposed && epoch === context.epoch && this.biomeRevision === biomeRevision && this.key === key;
     // Nearest blocks first: while no finished stream is shown, a partial stream replaces a smaller one, so trees grow
     // outward from the eye. A finished stream stays drawn whole until its replacement is finished (no blocks dropped).
     const partial = (values: Float32Array): void => {
@@ -186,6 +194,7 @@ export class NearTrees {
     void context.preparation
       .run(buildNearTreesSteps(inputs, view, partial), current, 1e15)
       .then(values => {
+        if (!current()) return;
         install(values);
         context.request();
       })
@@ -194,6 +203,7 @@ export class NearTrees {
       })
       .finally(() => {
         this.jobs--;
+        if (biomeRevision !== this.biomeRevision && !context.disposed) context.request();
       });
   }
 

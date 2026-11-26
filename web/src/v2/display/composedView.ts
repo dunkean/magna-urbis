@@ -48,6 +48,7 @@ import type { Terrain3dCollisions } from '../../render/world/terrain3dCollisions
 import type { Building3dVisual } from '../../render/urbanBuildingGeometry';
 import { TerrainHeights } from '../../render/world/heights';
 import { cavernField, cavernSectionHeights, cavernTexelAt, underdarkCavernOf } from '../../render/underdarkCavern';
+import { displayTerrainSettings } from '../displayBiome';
 import { createWorldTreesLayer, type WorldTreesLayer } from '../../render/world/treesLayer';
 import { createWorldBankPlantsLayer } from '../../render/world/bankPlantsLayer';
 import { createWorldCaveLayer } from '../../render/world/caveLayer';
@@ -167,6 +168,7 @@ export class ComposedView {
   /** The volume id of the selected building (highlightBuilding), kept for a layer made later. */
   private highlighted?: string;
   private trees?: WorldTreesLayer;
+  private displayedClimate?: string;
   private volumeBuildings = false;
   private exactPlan = false;
 
@@ -368,7 +370,9 @@ export class ComposedView {
     if (before.resolved?.ground.style !== r.ground.style || before.native !== this.map.native) live.clearStandIns();
     // Another map style: the old look leaves the screen as soon as the coarsest tiles of the new one are baked (the
     // first thing baked), and nothing of it is ever drawn with the new one.
-    if (before.resolved && before.resolved.styleId !== r.styleId) live.lookChanged();
+    const climate = this.map.settings && this.map.world && displayTerrainSettings(this.map.settings, this.map.world.mapSize).climateZone;
+    if (before.resolved && (before.resolved.styleId !== r.styleId || (this.displayedClimate !== undefined && this.displayedClimate !== climate))) live.lookChanged();
+    this.displayedClimate = climate;
     // The terrain pass takes the renderer away while it runs (gpuActive), and the ground layer's work stops without
     // one: its tiles are marked stale (they keep showing until re-baked) and the work loop starts again.
     if (ran.includes('terrainData')) live.invalidateLayer('ground');

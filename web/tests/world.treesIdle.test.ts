@@ -111,6 +111,38 @@ it('keeps the submitted trees and their detail as neighbours stream in, then dra
       if (layer.pendingPresentation()) throw new Error('Warm idle forest still marked pending');
       clock += 32;
     }
+
+    // Visit a second stand, repaint it, then turn back before another streaming slice.
+    const firstStand = new Set(ranges.keys());
+    view.cx = 300;
+    view.cy = 300;
+    view.yaw = Math.PI;
+    frameCamera(camera, view, 1600, 900, 1600, 900, 1, heights);
+    const draw = () => {
+      ranges.clear();
+      layer.draw(frame);
+    };
+    for (let i = 0; i < 180; i++) {
+      draw();
+      layer.work!(1, frame);
+    }
+    draw();
+    const secondStand = new Set(ranges.keys());
+    expect(secondStand.size).toBeGreaterThan(0);
+    inputs.zone++;
+    draw();
+    expect(new Set(ranges.keys())).toEqual(secondStand);
+    for (let i = 0; i < 180; i++) {
+      layer.work!(1, frame);
+      draw();
+    }
+    expect(ranges.size).toBeGreaterThan(0);
+    expect([...ranges.keys()].some(id => secondStand.has(id))).toBe(false);
+    view.cx = view.cy = 1200;
+    view.yaw = 0;
+    frameCamera(camera, view, 1600, 900, 1600, 900, 1, heights);
+    draw();
+    expect([...ranges.keys()].some(id => firstStand.has(id))).toBe(false);
   } finally {
     layer.dispose();
     now.mockRestore();

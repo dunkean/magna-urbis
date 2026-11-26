@@ -3,7 +3,7 @@
  * Hidden views retain their cache. New map terrain retires all blocks before the next draw. */
 import type { LiveFrame, LiveLayerStats } from '../live/contract';
 import { TreeDiagnostics, layerDiagnosticsEnabled } from '../live/layerDiagnostics';
-import { TREE_STRIDE, treeLimits, type TreeInputs, type TreeLimits } from '../../ui/terrain3dTrees';
+import { TREE_STRIDE, treeBiomeKey, treeLimits, type TreeInputs, type TreeLimits } from '../../ui/terrain3dTrees';
 import type { TerrainHeights } from './heights';
 import type { GroundShape } from './groundShape';
 import type { Building3dScene } from '../urbanBuildingGeometry';
@@ -72,6 +72,7 @@ interface Slot {
   town: number;
   samples: TreeSamples;
   admitted: number;
+  drawn?: number;
   heights: Float32Array;
   ids?: Uint32Array;
   barePrefix?: Uint32Array;
@@ -107,6 +108,9 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
   /** The frame time, eye and target the selection was prepared for (prepare); NaN time: prepare again. */
   const preparedFor = new Float64Array(7).fill(NaN);
   const slots = new Map<number, Slot>();
+  // On a biome change only the currently drawn stands can bridge the rebuild.
+  const replacingBiome = new Set<number>();
+  let biome = '', lastDraw = -1;
   const wantKey = new Float64Array(TREE_MAX_BLOCKS),
     wantPriority = new Float64Array(TREE_MAX_BLOCKS);
   // Counts are nested prefixes of one stable order: close trees, all solid trees, then all visible trees.
@@ -147,6 +151,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
   const dropAll = (): void => {
     for (const slot of slots.values()) drop(slot);
     slots.clear();
+    replacingBiome.clear();
     building = undefined;
     wanted = visibleCount = 0;
     visible.length = 0;
@@ -169,6 +174,20 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     const key = next ? treeInputsKey(next) : '';
     const reliefChanged = nextHeights !== heights || nextShape !== shape;
     if (next === source && key === sourceKey && !reliefChanged && nextScene === scene) return;
+    if (next) {
+      const nextBiome = treeBiomeKey(next);
+      if (biome && nextBiome !== biome) {
+        for (const [block, slot] of slots) {
+          if (slot.drawn === lastDraw) replacingBiome.add(block);
+          else {
+            drop(slot);
+            slots.delete(block);
+            replacingBiome.delete(block);
+          }
+        }
+      }
+      biome = nextBiome;
+    }
     building = undefined;
     preparedFor[0] = NaN;
     revision++;
@@ -261,6 +280,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     } else slot.bytes = 0;
     if (previous) drop(previous);
     slots.set(key, slot);
+    replacingBiome.delete(key);
     preparedFor[0] = NaN;
   };
 
@@ -433,6 +453,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
           continue;
         }
         slot.admitted = all;
+        slot.drawn = tick;
         const solid = visibleSolid[i],
           close = visibleClose[i];
         const extra = cost(solid, 1) - cost(solid, 2) + cost(close, 0) - cost(close, 1);
@@ -455,6 +476,16 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
         if (slot.ids) selected.select(visibleKey[i], slot.ids, all);
       }
     } else wanted = 0;
+    for (const key of replacingBiome) {
+      const slot = slots.get(key);
+      if (slot && slot.checked !== revision && slot.drawn === tick) continue;
+      if (slot && slot.checked !== revision) {
+        drop(slot);
+        slots.delete(key);
+      }
+      replacingBiome.delete(key);
+    }
+    lastDraw = tick;
     selected.end();
     preparedFor[0] = frame.now;
     for (let i = 0; i < 3; i++) {
