@@ -7,6 +7,7 @@
 - House and parcel inspectors reopen faster after an edit.
 - Editing a quarter updates buildings in other quarters when the town reassigns a district role.
 - Fences and hedges redraw faster after house edits that leave parcel boundaries unchanged.
+- Editing a town keeps reusable map drawings outside the changed area in overhead and tilted views.
 - City share codes carry drawn outlines and splits, custom names, pin text, and road and wall edits. Maps with nested edits preserve the contour precision needed to find the same lots and buildings when reopened.
 - Local building, parcel and block edits on saved landscapes reuse the ground already drawn in the top and tilted views.
 - Changing the Parchment map date reuses the summer relief, grass and reed marks, and overlay tiles whose colours stay the same.

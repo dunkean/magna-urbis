@@ -5,7 +5,7 @@ import { CartographyContext } from '../src/render/cartography/context';
 import { markDatedDrawing } from '../src/render/gpu/recorder';
 import { createMapRecording } from '../src/render/cartography/mapRecording';
 import { drawTexture } from '../src/render/cartography/symbols';
-import { createOverlayLayer } from '../src/render/live/overlayLayer';
+import { createOverlayLayer, type OverlayBand } from '../src/render/live/overlayLayer';
 import { PALETTES } from '../src/render/styles';
 import { GpuResources, RECORDED_TOLERANCE } from '../src/render/gpu/resources';
 import { SPRITE_STRIDE } from '../src/render/gpu/contract';
@@ -16,7 +16,7 @@ import type { BrushImages } from '../src/render/brushes';
 import { CartographyProducts } from '../src/v2/display/cartographyProducts';
 import { resolveAppearance } from '../src/render/appearanceRecipe';
 import { presetComposition } from '../src/render/composition';
-import type { Scene } from '../src/render/scene';
+import { buildScene, type Scene } from '../src/render/scene';
 import type { RoadLook } from '../src/render/composition';
 
 vi.mock('../src/render/live/overlayLayer', () => ({ createOverlayLayer: vi.fn(() => ({ dispose() {} })) }));
@@ -67,6 +67,96 @@ it('keeps the V2 overlay renderer and scene through a change of road colours', a
     products.dispose();
   } finally {
     vi.unstubAllGlobals();
+  }
+});
+it('reuses road recordings outside an edit and redraws intersecting bands with the new geometry', () => {
+  const world = regionWorld();
+  const farRoad = {
+    ...world.roads![0],
+    path: [
+      { x: 310, y: 360 },
+      { x: 485, y: 360 },
+    ],
+  };
+  world.roads = [...world.roads!, farRoad];
+  const first = { minX: 0, minY: 0, maxX: 160, maxY: 100 },
+    second = { minX: 284, minY: 300, maxX: 508, maxY: 408 };
+  const make = (source: typeof world) => {
+    const draw = vi.fn();
+    const renderer = createCanvasRenderer(createMapRecording(512, 512), source, 'parchment', {
+      palette: () => PALETTES.parchment,
+      transparentBackground: true,
+      terrain: () => null,
+      mask: { water: false },
+      createCanvas: () => null,
+      invalidate() {},
+      semantic: { draw, look: () => 'roads', key: () => 'roads', arrivals: () => 0, provisional: () => 0 },
+    });
+    renderer.createLiveLayer({} as WebGL2RenderingContext);
+    const host = vi.mocked(createOverlayLayer).mock.calls.at(-1)![1];
+    const plan = (rect: typeof first) => ({ key: 'map', rect, bands: [rect], scale: 1, dpr: 1 });
+    const record = (rect: typeof first) => host.record(plan(rect), rect, false)!;
+    const drape = (rect: typeof first) => {
+      const steps = host.recordSteps!(plan(rect), rect, false, true);
+      let step = steps.next();
+      while (!step.done) step = steps.next();
+      return step.value!;
+    };
+    return { renderer, record, drape, draw };
+  };
+  const strokes = (band: OverlayBand) => {
+    const box = boxOf(band);
+    return clipList(cullList(band.list, box), box)
+      .ops.filter(op => op.type === 'stroke')
+      .map(op => [op.width, op.transform, op.paths.map(path => path.geometry(1).points)]);
+  };
+  const base = make(world);
+  base.record(first);
+  const old = strokes(base.record(second));
+  const pendingDrape = base.drape(second);
+  const changed = {
+    ...world,
+    roads: [
+      world.roads[0],
+      {
+        ...farRoad,
+        path: [
+          { x: 310, y: 358 },
+          { x: 482, y: 391 },
+        ],
+      },
+    ],
+  };
+  const nextScene = buildScene(changed, undefined, { mask: { water: false } });
+  const reference = make(changed);
+  try {
+    expect(base.renderer.update(changed, { ...nextScene, dirty: [second] })).toBe(true);
+    // Baking can finish after an edit invalidates a recording that has not entered the cache yet.
+    expect(pendingDrape.retainDrape).toBeTypeOf('function');
+    const box = boxOf(pendingDrape);
+    pendingDrape.retainDrape!(boundedList(clipList(cullList(pendingDrape.list, box), box)));
+    const nextDrape = base.drape(second);
+    expect(nextDrape.replayed).toBeFalsy();
+    expect(strokes(nextDrape)).toEqual(strokes(reference.drape(second)));
+    const before = base.draw.mock.calls.length;
+    const clean = base.record(first);
+    expect(clean.replayed).toBe(true);
+    expect(base.draw).toHaveBeenCalledTimes(before);
+    expect(strokes(clean)).toEqual(strokes(reference.record(first)));
+    const dirty = base.record(second);
+    expect(dirty.replayed).toBeFalsy();
+    expect(base.draw).toHaveBeenCalledTimes(before + 1);
+    expect(strokes(dirty)).not.toEqual(old);
+    expect(strokes(dirty)).toEqual(strokes(reference.record(second)));
+    // The paint of a road centred just outside the band can still enter its frame.
+    expect(base.renderer.update(changed, { ...nextScene, dirty: [{ ...first, minY: 102, maxY: 104 }] })).toBe(true);
+    expect(base.record(first).replayed).toBeFalsy();
+    expect(base.record(second).replayed).toBe(true);
+    expect(base.renderer.update(changed, nextScene)).toBe(true);
+    expect(base.record(second).replayed).toBeFalsy();
+  } finally {
+    base.renderer.dispose();
+    reference.renderer.dispose();
   }
 });
 it('rebinds a live band to new road ink in place and records a different road style just once', () => {

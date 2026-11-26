@@ -13,6 +13,7 @@ import { whiteWaterRevision } from '../whiteWater';
 import { View, Rect4 } from '../view';
 import type { LiveLayer } from '../live/contract';
 import { createOverlayLayer, type OverlayBand, type OverlayPlan } from '../live/overlayLayer';
+import { meetsChange } from '../live/overlayTypes';
 import { liveVectorEngine, noteGpuFallback } from '../vectorEngine';
 import { noteLiveUnit } from '../live/liveStats';
 import { CanvasLike } from './contract';
@@ -20,7 +21,7 @@ import type { CartographyContext } from './context';
 import { RasterTileCache } from '../rasterTiles';
 import type { DisplayList } from '../gpu/contract';
 import { drapePathBytes } from '../gpu/listTools';
-import { LAND_ORDER, type Scene } from '../scene';
+import { LAND_ORDER } from '../scene';
 import { RoadRecording } from './roadRecording';
 import { LandRecording, landRecordingLook } from './landRecording';
 import { BandLook } from './bandRecording';
@@ -45,21 +46,19 @@ export function createLiveHost(c: CartographyContext) {
   const landBands: LandRecording[] = [];
   const roadBands: RoadRecording[] = [];
   // Region, sheet and clipped drape rows share the budget. Each row retains the extent it actually painted.
-  type HeldBand = SeasonRecording & { frame: Pick<OverlayBand, 'rect' | 'cx' | 'cy' | 'w' | 'h'> };
+  type HeldBand = SeasonRecording & { frame: Pick<OverlayBand, 'rect' | 'cx' | 'cy' | 'w' | 'h'>; scale: number; margin: number };
   const bands = new RasterTileCache<HeldBand[]>(32 * 1024 * 1024);
-  const sceneIds = new WeakMap<Scene, number>();
-  let nextSceneId = 0;
+  let bandScene = c.scene;
+  let bandEpoch = 0;
   function bandKey(plan: OverlayPlan, band: Rect4, light: boolean, ink: boolean, drape: boolean): string {
-    let id = sceneIds.get(c.scene);
-    if (id === undefined) sceneIds.set(c.scene, (id = ++nextSceneId));
+    contentRevision();
     const road: RoadStyle = deps.roadStyle?.() ?? { look: deps.roadLook ?? 'ink', emphasis: 1, night: false, colors: deps.colors };
     return JSON.stringify([
-      id,
       plan.scale,
       plan.dpr,
       drape ? [plan.rect, band.minX, band.maxX, band.minY, mapSeasonKey()] : band,
       light,
-      contentRevision(),
+      bandCanopy,
       ink,
       deps.semantic?.key(),
       deps.semantic?.arrivals(),
@@ -94,12 +93,16 @@ export function createLiveHost(c: CartographyContext) {
   const liveLayers = new Set<LiveLayer>();
   const content = new RegionalRevision();
   let seenCanopy = roadCanopyRevision();
+  let bandCanopy = seenCanopy;
   const contentRevision = (): number => {
     const revision = roadCanopyRevision();
     if (seenCanopy !== revision) {
       const boxes = roadCanopyRegions(c, seenCanopy);
       seenCanopy = revision;
-      if (!boxes || boxes.length) content.bump(boxes);
+      if (!boxes || boxes.length) {
+        content.bump(boxes);
+        bandCanopy = revision;
+      }
     }
     return content.value();
   };
@@ -146,6 +149,7 @@ export function createLiveHost(c: CartographyContext) {
     const index = !drape && deps.palette ? plan.bands.indexOf(band) : -1;
     const sourcePalette = c.pal,
       sourceLook = c.lookId,
+      epoch = bandEpoch,
       key = deps.palette && (drape || index >= 0) ? bandKey(plan, band, light, ink, drape) : undefined;
     const variants = key ? bands.get(key) : undefined;
     for (const held of variants ?? []) {
@@ -188,14 +192,14 @@ export function createLiveHost(c: CartographyContext) {
       const partial = (deps.semantic?.provisional() ?? 0) !== provisional;
       const frame = { rect: band, cx, cy, w, h };
       const cache = (prepared: DisplayList) => {
-        if (!key || !look || partial || list.bakedSeason || sourcePalette !== c.pal || sourceLook !== c.lookId || c.disposed) return;
+        if (!key || !look || partial || list.bakedSeason || sourcePalette !== c.pal || sourceLook !== c.lookId || c.disposed || epoch !== bandEpoch) return;
         // A drape bake finishes on a later idle slice. A scene edit or semantic arrival can supersede its source.
         if (drape && bandKey(plan, band, light, ink, true) !== key) return;
         const recording = seasonRecording(c, prepared, look);
         if (!recording || (drape && !recording.drapeCompatible)) return;
         const bytes = recording.bytes + (drape ? drapePathBytes(prepared) : 0);
         if (bytes > bands.maxBytes) return recording;
-        const held = [{ ...recording, bytes, frame }];
+        const held = [{ ...recording, bytes, frame, scale: plan.scale, margin: c.paintMargin(plan.scale) }];
         const previous = variants?.[0];
         if (previous && bytes + previous.bytes <= bands.maxBytes) held.push(previous);
         bands.put(key, { value: held, bytes: bytes + (held[1]?.bytes ?? 0), bounds: band, release() {} });
@@ -261,11 +265,22 @@ export function createLiveHost(c: CartographyContext) {
   /** A scene update: the regions of every live layer become stale (they keep showing until replaced). */
   const invalidateLayers = (boxes?: readonly Rect4[], sameContent = false): void => {
     landBands.length = roadBands.length = 0;
-    if (!sameContent) bands.clear();
+    const sceneChanged = bandScene !== c.scene;
+    bandScene = c.scene;
+    bandEpoch++;
     if (boxes) {
+      // A clipped drape row can extend past the height originally requested. Test each retained
+      // variant's actual frame, with room for the old and new scene's widest marks.
+      bands.retain(held =>
+        held.every(b => {
+          const margin = Math.max(b.margin, c.paintMargin(b.scale));
+          return b.drapeCompatible && !boxes.some(box => meetsChange(b.frame.rect, box, margin));
+        }),
+      );
       if (boxes.length) content.bump(boxes);
       return;
     }
+    if (!sameContent || sceneChanged) bands.clear();
     for (const layer of liveLayers) layer.invalidate?.();
   };
   return { createLiveLayer, invalidateLayers, retainedBytes: () => bands.bytes };
