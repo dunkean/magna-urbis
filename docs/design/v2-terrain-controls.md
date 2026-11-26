@@ -18,7 +18,7 @@ Source selection exposes procedural generation, browser neural generation, the P
 
 ## Parameter access matrix
 
-All scalar paths below are editable as labelled form inputs, not only through recipe JSON. Hidden sections retain their values. The exact metadata and bounds are in [`terrainControlSchema.ts`](../web/src/v2/terrainControlSchema.ts).
+All scalar paths below are editable as labelled form inputs, not only through recipe JSON. Hidden sections retain their values. The exact metadata and bounds are in [`terrainControlSchema.ts`](../../web/src/v2/terrainControlSchema.ts).
 
 | Terrainbench family | V2 access | Recipe path |
 | --- | --- | --- |
@@ -60,9 +60,9 @@ Rendering modes, hillshade/lighting, camera controls, 3D refinement, pins, seaso
 
 ## Verification
 
-[`v2TerrainControls.test.ts`](../web/tests/v2TerrainControls.test.ts) verifies that every core hydrology, neural and fractal key has a form field, all 17 erosion overrides exist, numeric UI bounds pass recipe validation, coast bits remain independent, optional overrides can be removed, percentages round-trip and every label/option/help has French copy.
+[`v2TerrainControls.test.ts`](../../web/tests/v2TerrainControls.test.ts) verifies that every core hydrology, neural and fractal key has a form field, all 17 erosion overrides exist, numeric UI bounds pass recipe validation, coast bits remain independent, optional overrides can be removed, percentages round-trip and every label/option/help has French copy.
 
-[`v2_terrain_controls_check.mjs`](../web/scripts/v2_terrain_controls_check.mjs) exercises the real browser form: editable width, coast combinations, archipelago presets, neural configuration, live language changes, painting before generation, 16-bit PNG import/export and mobile layout. It writes screenshots and a report under `web/out/v2-terrain-controls`.
+[`v2_terrain_controls_check.mjs`](../../web/scripts/v2_terrain_controls_check.mjs) exercises the real browser form: editable width, coast combinations, archipelago presets, neural configuration, live language changes, painting before generation, 16-bit PNG import/export and mobile layout. It writes screenshots and a report under `web/out/v2-terrain-controls`.
 
 ## Français : accès et conventions
 

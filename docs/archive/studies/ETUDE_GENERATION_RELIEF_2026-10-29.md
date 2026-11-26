@@ -54,7 +54,7 @@ Le sélecteur **Raffinement**, dans les vues Render3D et perspective du banc ter
 
 Le serveur importe les trois implémentations du dépôt voisin. L'identité de source distingue méthode et intensité. Un ancien service qui ignore la nouvelle méthode est refusé explicitement. Le rendu utilise le même chemin de tuiles que le raffinement Neural Earth existant.
 
-**Périmètre livré :** comparaison des hauteurs dans le banc terrain historique, avec son Render3D. Les quatre canaux de matériaux produits en amont ne sont pas transmis dans ce branchement. L'atelier V2 autonome n'a pas reçu un nouveau moteur de raffinement. La branche avec décodeur neuronal conservé reste disponible mais n'a pas été exercée dans ces mesures sans poids. La [note de méthode embarquée](methods/neural-earth-amplification.md) décrit le contrat exact.
+**Périmètre livré :** comparaison des hauteurs dans le banc terrain historique, avec son Render3D. Les quatre canaux de matériaux produits en amont ne sont pas transmis dans ce branchement. L'atelier V2 autonome n'a pas reçu un nouveau moteur de raffinement. La branche avec décodeur neuronal conservé reste disponible mais n'a pas été exercée dans ces mesures sans poids. La [note de méthode embarquée](../../methods/neural-earth-amplification.md) décrit le contrat exact.
 
 Le build et les appels au service réel passent. Le contrôle interactif dans un navigateur headless n'a pas abouti : les chargements des serveurs locaux ont expiré. La planche de comparaison a été inspectée séparément ; la validation visuelle complète de l'interface reste à faire.
 

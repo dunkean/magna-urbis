@@ -15,8 +15,17 @@
   <a href="https://github.com/dunkean/magna-urbis/releases">Desktop downloads</a> ·
   <a href="https://github.com/dunkean/magna-urbis/releases/download/desktop-v0.3.10/Magna.Urbis.V2_0.3.10_aarch64.dmg">macOS (Apple Silicon)</a> ·
   <a href="https://magna-urbis.org/gallery/v2/">Gallery</a> ·
+  <a href="https://discord.gg/3yFq8t8Q2W">Discord</a> ·
   <a href="https://github.com/dunkean/magna-urbis/discussions">Discussions</a> ·
   <a href="README_FR.md">Français</a>
+</p>
+
+<p align="center">
+  <a href="https://discord.gg/3yFq8t8Q2W"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://github.com/dunkean/magna-urbis/stargazers"><img src="https://img.shields.io/github/stars/dunkean/magna-urbis?style=flat&logo=github" alt="GitHub stars"></a>
+  <a href="https://github.com/dunkean/magna-urbis/releases"><img src="https://img.shields.io/github/v/release/dunkean/magna-urbis?include_prereleases&label=desktop" alt="Latest desktop release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0"></a>
+  <a href="https://ko-fi.com/dunkean"><img src="https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
 </p>
 
 <p align="center">
@@ -192,7 +201,14 @@ docs/                  documentation, method notes and the illustrated atlas
 
 ## Contributing and feedback
 
-Ideas, questions and generated maps are welcome in [Discussions](https://github.com/dunkean/magna-urbis/discussions). For bugs, open an [issue](https://github.com/dunkean/magna-urbis/issues) with the version, the share code or recipe, and a screenshot if you can. Read the [contribution guide](CONTRIBUTING.md) before a pull request.
+Join the **[Discord](https://discord.gg/3yFq8t8Q2W)** to share maps, ask for help and follow development. Ideas and questions are also welcome in [Discussions](https://github.com/dunkean/magna-urbis/discussions). For bugs, open an [issue](https://github.com/dunkean/magna-urbis/issues) with the version, the share code or recipe, and a screenshot if you can.
+
+**You don't need to be a developer to help:**
+
+- 🌐 **Translations:** the interface ships in 12 languages and several are machine-bootstrapped. Native speakers can fix them in plain JSON ([guide](web/src/locales/README.md)), no code needed.
+- 🏛️ **Cultures:** propose a settlement culture (street patterns, building styles, naming, references) in the Discord `#cultures` forum.
+- 🗺️ **Maps and bug reports:** share what you make in `#showcase`; reproducible reports with a share code are gold.
+- 🛠️ **Code:** Rust/WASM engine, WebGPU rendering, TypeScript UI. Look for [`good first issue`](https://github.com/dunkean/magna-urbis/labels/good%20first%20issue) and [`help wanted`](https://github.com/dunkean/magna-urbis/labels/help%20wanted), and read the [contribution guide](CONTRIBUTING.md) before a pull request.
 
 Magna Urbis is mostly written by AI coding agents (Claude and Codex) under one human architect and reviewer. The [Ko-fi devlogs](docs/devlog/kofi-devlogs.md) tell how it is built, what broke and what worked.
 

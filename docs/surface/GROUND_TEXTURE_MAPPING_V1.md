@@ -4,15 +4,15 @@ Palette and classification proposal for Test-Render, October 25, 2026.
 
 The package selects **90 visual types** associated with **142 candidate textures** from Poly Haven and ambientCG. It includes earths, sands and fragments, **22 rock types**, forest soils and litter, grasslands, steppes, savannas, mosses, snow, and surface ice. Trees, their crowns, and buildings remain separate. Ground-level cover textures are part of this map, as requested for this scope.
 
-The four **N1–N4 blocks of section 4.1** of the [comprehensive study](GROUND_MATERIAL_MAPPING.md) are assumed available. Its section 4.2 physical and historical extensions are not required. Types are appearance choices: forest ground, veined rock, or transformed snow can be represented without simulating their formation.
+The four **N1–N4 blocks of section 4.1** of the [comprehensive study](../GROUND_MATERIAL_MAPPING.md) are assumed available. Its section 4.2 physical and historical extensions are not required. Types are appearance choices: forest ground, veined rock, or transformed snow can be represented without simulating their formation.
 
 **One asset is selected per type for the entire map** from compatible candidates. Terrain conditions then select types and transitions; they do not draw another texture at every location. Every `F04` occurrence, for example, uses the same needle-litter material. Another seed can select a different F04 candidate on another map.
 
-The [associated catalog](GROUND_TEXTURE_PALETTE_V1.json) contains types, conditions, pools, and asset references. It describes the proposed selection; it does not modify the generator or renderer.
+The [associated catalog](../GROUND_TEXTURE_PALETTE_V1.json) contains types, conditions, pools, and asset references. It describes the proposed selection; it does not modify the generator or renderer.
 
 ## 1. Sources and scope reduction
 
-The selection starts from libraries in [RENDER_REVIEW.md](RENDER_REVIEW.md), §§6–9. Poly Haven and ambientCG cover this catalog; MatSynth remains a reserve, not a dependency. The 15-source library already declared in [surface/materials/catalogue.json](../surface/materials/catalogue.json) can be partially reused but does not limit the number of types.
+The selection starts from libraries in [RENDER_REVIEW.md](../RENDER_REVIEW.md), §§6–9. Poly Haven and ambientCG cover this catalog; MatSynth remains a reserve, not a dependency. The 15-source library already declared in [surface/materials/catalogue.json](../../surface/materials/catalogue.json) can be partially reused but does not limit the number of types.
 
 Assets are supplied under CC0 according to [Poly Haven's terms](https://polyhaven.com/license) and [ambientCG's terms](https://docs.ambientcg.com/license/). The catalog retains each provider and asset link. This license must be distinguished from API access terms.
 
@@ -337,6 +337,6 @@ Full classification weights remain the reference. Reducing to two or three types
 
 ## 8. Source-preview provenance
 
-The original study compared provider albedos and previews in four local contact sheets: forest soils, low cover, rocks, and snow/ice. Those validation captures are not distributed with the repository. Consult each candidate's provider and asset URL in the [palette inventory](GROUND_TEXTURE_PALETTE_V1.json); do not treat an unavailable contact sheet as evidence of current renderer qualification.
+The original study compared provider albedos and previews in four local contact sheets: forest soils, low cover, rocks, and snow/ice. Those validation captures are not distributed with the repository. Consult each candidate's provider and asset URL in the [palette inventory](../GROUND_TEXTURE_PALETTE_V1.json); do not treat an unavailable contact sheet as evidence of current renderer qualification.
 
 Provider-lit previews illustrate candidate diversity, not the map's rendering or a mean colour to copy. The preview comparison did not qualify every full pack in the engine.

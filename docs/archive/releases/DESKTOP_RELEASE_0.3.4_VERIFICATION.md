@@ -14,7 +14,7 @@ Subsequent source commits update qualification scripts and this record; they do 
 - Nine real native farmsteads completed as two background groups of eight and one, with one installed world per group. Cancellation, stale results and isolation of a failed batch are covered by scheduler tests.
 - The 10,000-inhabitant automatic allocation retains its population while limiting historical and dispersed profiles to five farmsteads and ten hamlets. Explicit counts and the capacity needed by cultures without large settlements remain respected.
 
-The user-facing hierarchy and propagation contract is documented in [Urban editing](URBAN_EDITING_FR.md).
+The user-facing hierarchy and propagation contract is documented in [Urban editing](../../URBAN_EDITING_FR.md).
 
 ## Published website
 
