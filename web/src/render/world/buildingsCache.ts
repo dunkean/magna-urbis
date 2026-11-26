@@ -2,12 +2,17 @@
 import { BUILDING_STRIDE, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
 import { BLOCK_CELLS, blockPart, type BuildingBlock } from './buildingsBlocks';
 import { expandBuildingPart, indexBuildingPart, type BuildingPart } from './buildingsIndex';
+import { SHAPE_BLOCK } from './groundShape';
+import type { TerrainHeights } from './heights';
 import { countWork } from '../workCount';
 /** Buildings meshed between clock checks. */
 const BUILD_CHUNK = 8;
 /** GPU bytes retained by building levels; levels used by the last draw cannot be evicted. */
 const BUDGET_BYTES = 96 * 1024 * 1024;
 const CELLS = BLOCK_CELLS * BLOCK_CELLS;
+/** GroundShape shares unchanged tiles by identity. A missing tile is natural ground; false marks a job
+ * which sampled two revisions of one tile in different work slices. */
+type GroundTiles = Map<number, Float32Array | undefined> | false;
 export interface BuildingLevel {
   vao: WebGLVertexArrayObject;
   buffer: WebGLBuffer;
@@ -20,6 +25,9 @@ export interface BuildingLevel {
   bytes: number;
   /** Draw tick it was last shown in. */
   used: number;
+  groundTiles?: GroundTiles;
+  low: number;
+  high: number;
 }
 export interface BuildingSlot {
   block: BuildingBlock;
@@ -43,6 +51,9 @@ interface BuildingJob {
   unique: number;
   cell: number;
   cellFirst: Int32Array;
+  groundTiles?: GroundTiles;
+  low: number;
+  high: number;
   uploaded: number;
   vertexOffset: number;
   indexOffset: number;
@@ -62,7 +73,30 @@ export class BuildingBlockCache {
     private readonly gl: WebGL2RenderingContext,
     private readonly budgetBytes: () => number | undefined,
     private readonly depth: () => number = () => 1,
+    private readonly terrain?: TerrainHeights,
   ) {}
+  /** A seated face read the mutable shaped terrain at an emitted vertex, possibly outside its owner's block. */
+  readonly sampledGround = (x: number, y: number): void => {
+    const job = this.pending,
+      terrain = this.terrain;
+    if (!job || !terrain || job.groundTiles === false) return;
+    const bx = Math.floor(x / SHAPE_BLOCK),
+      by = Math.floor(y / SHAPE_BLOCK),
+      side = Math.ceil(terrain.width / SHAPE_BLOCK);
+    if (bx < 0 || by < 0 || bx >= side || by >= side) return;
+    const key = by * side + bx,
+      shape = terrain.shape,
+      tile = shape?.ground[shape.index[key]];
+    const tiles = job.groundTiles || (job.groundTiles = new Map<number, Float32Array | undefined>());
+    if (!tiles.has(key)) tiles.set(key, tile);
+    else if (tiles.get(key) !== tile) job.groundTiles = false;
+  };
+  private sameGround(level: BuildingLevel): boolean {
+    if (level.groundTiles === false) return false;
+    const shape = this.terrain?.shape;
+    if (level.groundTiles) for (const [key, tile] of level.groundTiles) if (shape?.ground[shape.index[key]] !== tile) return false;
+    return true;
+  }
   setBlocks(blocks: BuildingBlock[]): void {
     this.overviewCursor = 0;
     this.blocks = blocks;
@@ -71,29 +105,34 @@ export class BuildingBlockCache {
   /** setBlocks for the blocks of a new scene of the same town, relief and geometry, taking the built levels of
    * `previous`'s blocks that hold the same buildings (same objects, same order): only the blocks a local edit changed
    * are built again. `previous` is cleared (what it keeps is not adopted). Returns the blocks kept. */
-  adoptBlocks(blocks: BuildingBlock[], previous: BuildingBlockCache): number {
+  adoptBlocks(blocks: BuildingBlock[], previous: BuildingBlockCache, compatible: (block: BuildingBlock) => boolean): number {
     const held = new Map<string, BuildingSlot>();
     for (const slot of previous.slots) held.set(`${slot.block.origin}${slot.block.yard ? '/yard' : ''}`, slot);
     this.setBlocks(blocks);
-    let kept = 0;
+    let kept = 0,
+      keptLevels = 0;
     for (const slot of this.slots) {
       const was = held.get(`${slot.block.origin}${slot.block.yard ? '/yard' : ''}`),
         a = was?.block.buildings,
         b = slot.block.buildings;
-      if (!was || !a || a.length !== b.length || was.levels.length !== slot.levels.length || a.some((building, i) => building !== b[i])) continue;
+      if (!was || !a || a.length !== b.length || was.levels.length !== slot.levels.length || a.some((building, i) => building !== b[i]) || !compatible(slot.block)) continue;
       for (let i = 0; i < was.levels.length; i++) {
         const level = was.levels[i];
-        if (!level) continue;
+        if (!level || !this.sameGround(level)) continue;
         slot.levels[i] = level;
+        keptLevels++;
         was.levels[i] = undefined;
         previous.bytes -= level.bytes;
         this.bytes += level.bytes;
+        // Grouping estimates the vertical extent. Carry the measured bounds of this exact level.
+        slot.block.low = Math.min(slot.block.low, level.low);
+        slot.block.high = Math.max(slot.block.high, level.high);
       }
-      slot.planGround = was.planGround;
       slot.yardLevel = was.yardLevel;
       kept++;
     }
     previous.clear();
+    countWork('volumes.retainedLevels', keptLevels);
     return kept;
   }
   clear(): void {
@@ -102,6 +141,9 @@ export class BuildingBlockCache {
     this.blocks = [];
     this.spilled = false;
     this.overviewCursor = 0;
+    this.cancelPending();
+  }
+  cancelPending(): void {
     if (this.pending?.buffer) this.gl.deleteBuffer(this.pending.buffer);
     if (this.pending?.indexBuffer) this.gl.deleteBuffer(this.pending.indexBuffer);
     this.pending = undefined;
@@ -112,7 +154,22 @@ export class BuildingBlockCache {
     this.overviewCursor = 0;
     this.pending = undefined;
   }
-  private readonly startJob = (slot: BuildingSlot, level: number): BuildingJob => ({ slot, level, next: 0, parts: [], vertices: 0, unique: 0, cell: 0, cellFirst: new Int32Array(CELLS + 1), uploaded: 0, vertexOffset: 0, indexOffset: 0, indexBytes: 0 });
+  private readonly startJob = (slot: BuildingSlot, level: number): BuildingJob => ({
+    slot,
+    level,
+    low: Infinity,
+    high: -Infinity,
+    next: 0,
+    parts: [],
+    vertices: 0,
+    unique: 0,
+    cell: 0,
+    cellFirst: new Int32Array(CELLS + 1),
+    uploaded: 0,
+    vertexOffset: 0,
+    indexOffset: 0,
+    indexBytes: 0,
+  });
 
   private readonly dropLevel = (slot: BuildingSlot, index: number): void => {
     const gl = this.gl;
@@ -183,8 +240,9 @@ export class BuildingBlockCache {
     gl.bindVertexArray(null);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     const bytes = job.vertexOffset + job.indexOffset;
-    job.slot.levels[job.level] = { vao, buffer: job.buffer, indexBuffer: job.indexBuffer, indexBytes: job.indexBytes, vertices: job.vertices, cellFirst: job.cellFirst, bytes, used: tick };
+    job.slot.levels[job.level] = { vao, buffer: job.buffer, indexBuffer: job.indexBuffer, indexBytes: job.indexBytes, vertices: job.vertices, cellFirst: job.cellFirst, bytes, used: tick, groundTiles: job.groundTiles, low: job.low, high: job.high };
     this.bytes += bytes;
+    countWork('volumes.meshUploadBytes', bytes);
     return true;
   };
 
@@ -272,7 +330,10 @@ export class BuildingBlockCache {
         while (job.cell < CELLS && job.next >= cells[job.cell + 1]) job.cellFirst[++job.cell] = job.vertices;
         const to = Math.min(count, job.next + BUILD_CHUNK, job.cell < CELLS ? cells[job.cell + 1] : count),
           part = blockPart(job.slot.block, job.level, paint, seat!, job.next, to);
+        countWork('volumes.meshBuildingVisits', to - job.next);
         const indexed = indexBuildingPart(part, job.unique);
+        job.low = Math.min(job.low, indexed.low);
+        job.high = Math.max(job.high, indexed.high);
         if (indexed.low < job.slot.block.low) job.slot.block.low = indexed.low;
         if (indexed.high > job.slot.block.high) job.slot.block.high = indexed.high;
         job.parts.push(indexed);

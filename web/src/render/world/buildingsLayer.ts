@@ -32,6 +32,8 @@ export interface WorldBuildingsOptions {
   /** The display scene of the town (what the separate 3D view draws); undefined: no town. Compared by identity: a new
    * object is a new town and starts the blocks again. */
   scene(): Building3dScene | undefined;
+  /** A replacement scene is being composed between publications. */
+  composing?(): boolean;
   /** The building appearance of the page (style, colours, snow, night). */
   appearance(): UrbanBuildingAppearance;
   /** The look of the top view's town, which the roofs and walls of its buildings take (buildingsMesh.ts); undefined:
@@ -96,7 +98,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
   const diagnostics = layerDiagnosticsEnabled() ? new BuildingDiagnostics(stats) : undefined;
   const volume = new ViewVolume();
   let grove: WorldGroveLayer | undefined;
-  const newCache = (): BuildingBlockCache => new BuildingBlockCache(gl, () => options.budgetBytes, getViewDepth);
+  const newCache = (terrain?: TerrainHeights): BuildingBlockCache => new BuildingBlockCache(gl, () => options.budgetBytes, getViewDepth, terrain);
   let cache = newCache();
   /** Every look of a mesh set shares its meshes: a look draws them through its table (buildingsLookTable.ts). The
    * colour slots of the meshes, the look tables by appearance key (most recent last), the table of the look on screen
@@ -248,7 +250,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
   };
   /** The grouping of a new scene into blocks, while it runs; the cache of the scene it replaces when its blocks take
    * the levels of the blocks it keeps (BuildingBlockCache.adoptBlocks). */
-  let grouping: BlockGrouping | undefined, adopting: BuildingBlockCache | undefined;
+  let grouping: BlockGrouping | undefined;
+  let adopting: { cache: BuildingBlockCache; paint: BuildingPaint } | undefined;
   /** The inputs of the page: another look of the same meshes takes its table; another geometry (meshKey) its own mesh
    * set on the same blocks; a new scene or terrain starts the blocks again (grouped in later slices). */
   const sync = (): void => {
@@ -261,7 +264,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       shape = meshKey(nextAppearance, season);
     const isNight = nextAppearance.ambience === 'night';
     night = isNight ? ((nextAppearance.lightsOn ?? isNight) ? 1 : 2) : 0;
-    if (!dirty && nextScene === scene && nextHeights === heights && key === appearanceKey && shape === shapeKey && nextLook === look) return;
+    if (!dirty && nextScene === scene && nextHeights === heights && key === appearanceKey && shape === shapeKey && nextLook === look && (nextScene || !adopting || options.composing?.())) return;
     const sameTown = !dirty && nextScene === scene && nextHeights === heights && !!scene && !!heights,
       wasDetailed = showsCraftedHouses(appearance),
       leavingDetailed = wasDetailed && !showsCraftedHouses(nextAppearance);
@@ -279,13 +282,19 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     }
     // The meshes of the geometry left wait for a switch back, one geometry at a time.
     const left: MeshSet | undefined = sameTown && grouped && !leavingDetailed ? { key: shapeKey, grouped, cache, slots, tables, detailed: wasDetailed } : undefined;
-    // A new scene of the same town on the same relief, in the same geometry (a local edit, another look's extras): its
-    // blocks whose buildings are the same objects keep their levels, with the colour slots and the tables they index.
-    const carry = !sameTown && !dirty && !!scene && !!nextScene && nextHeights === heights && shape === shapeKey && !!grouped && !leavingDetailed;
-    adopting?.clear();
-    adopting = carry ? cache : undefined;
-    if (!left && !carry) {
-      cache.clear();
+    // Keep the old completed levels and their slot addresses across the empty work slices before publication.
+    // The active cache is empty during that interval, including for picking. A permanent removal releases both.
+    const carry = !sameTown && !dirty && !!nextHeights && nextHeights === heights && shape === shapeKey && (nextScene || options.composing?.());
+    if (!carry) {
+      adopting?.cache.clear();
+      adopting = undefined;
+    } else if (!adopting && grouped && paint) {
+      cache.cancelPending();
+      adopting = { cache, paint };
+    }
+    if (!left) {
+      if (cache !== adopting?.cache) cache.clear();
+      // A retained face can get a new town look, material catalogue or town-wide snow altitude.
       dropTables(tables);
     }
     if (!sameTown || (leavingDetailed && dormant?.detailed)) dropDormant();
@@ -295,15 +304,15 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     if (nextHeights !== heights) grove?.releaseTown();
     heights = nextHeights;
     shapeKey = shape;
-    seat = heights && worldSeat(heights, heights.exaggeration);
     const back = dormant?.key === shape ? dormant : undefined;
     if (back) dormant = undefined;
     if (left) {
       dropDormant();
       dormant = left;
     }
-    cache = back?.cache ?? newCache();
-    if (!carry) {
+    cache = back?.cache ?? newCache(heights);
+    seat = heights && worldSeat(heights, heights.exaggeration, cache.sampledGround);
+    if (!adopting) {
       slots = back?.slots ?? new BuildingColorSlots();
       tables = back?.tables ?? new Map();
     }
@@ -525,7 +534,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     get tiltOnly() {
       return !options.topView?.();
     },
-    presented: () => presented && presentedScene === options.scene(),
+    presented: () => presented && presentedScene === options.scene() && (!!presentedScene || !options.composing?.()),
     ready: () => true,
     work(budgetMs, frame) {
       // Each step below is bounded: the grouping and the meshes go a chunk at a time, the link is polled.
@@ -550,7 +559,12 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       if (grouping) {
         if (!grouping.step(deadline)) return slice(started, true);
         if (adopting) {
-          cache.adoptBlocks(grouping.blocks, adopting);
+          const previous = adopting.paint,
+            altitudes = grouping.altitudes;
+          const crafted = showsCraftedHouses(appearance);
+          const materials = scene!.materials ?? [];
+          const samePatterns = !crafted || (materials.length === previous.materials.length && materials.every((m, i) => m.id === previous.materials[i].id && m.pattern === previous.materials[i].pattern));
+          cache.adoptBlocks(grouping.blocks, adopting.cache, block => samePatterns && (!crafted || block.buildings.every(b => previous.snowAltitudes.get(b.id) === altitudes.get(b.id))));
           slots.retainBuildings(scene!.buildings);
         } else cache.setBlocks(grouping.blocks);
         adopting = undefined;
@@ -728,8 +742,11 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       // Every handle is dead: forget them without deleting.
       cache.contextLost();
       grove?.clear(true);
-      adopting?.contextLost();
-      adopting = undefined;
+      if (adopting) {
+        adopting.cache.contextLost();
+        adopting = undefined;
+        slots = new BuildingColorSlots();
+      }
       // The tables keep their slots' paint: the next work slice uploads the drawn one again.
       for (const t of tables.values()) t.lost();
       dropDormant(true);
@@ -743,7 +760,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     },
     stats: () => stats,
     dispose() {
-      adopting?.clear();
+      adopting?.cache.clear();
       adopting = undefined;
       cache.clear();
       grove?.clear();

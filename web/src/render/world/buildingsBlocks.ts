@@ -159,7 +159,7 @@ export class BlockGrouping {
  * their real height; its footing below the ground is exaggerated with the slope it fills, as the 3D view does. A lot
  * boundary follows the terrain under each of its points; a terrain structure (wall, bridge, quay) keeps its height
  * above the terrain drawn there. */
-export function worldSeat(relief: WorldRelief, exaggeration: number): BuildingSeat {
+export function worldSeat(relief: WorldRelief, exaggeration: number, sampledGround?: (x: number, y: number) => void): BuildingSeat {
   const unit = exaggeration > 0 ? 1 / exaggeration : 1;
   return (_building, ground, x, y, z, faceGround, out) => {
     if (faceGround === undefined && Number.isFinite(ground)) {
@@ -167,6 +167,7 @@ export function worldSeat(relief: WorldRelief, exaggeration: number): BuildingSe
       out[1] = ground * exaggeration;
       return;
     }
+    sampledGround?.(x, y);
     const t = relief.groundAt ? relief.groundAt(x, y) : relief.heightAt(x, y);
     out[0] = z - (faceGround ?? t * unit);
     out[1] = t;
@@ -231,18 +232,7 @@ export function blockPart(block: BuildingBlock, level: number, paint: BuildingPa
   const keepOpen = (b: Building3dVisual): boolean => hasOpenVolume(b) && (!minimal || b.id.startsWith('city3d-'));
   const open = buildings.filter(keepOpen),
     boxes = open.length ? buildings.filter(b => !keepOpen(b)) : buildings;
-  const batches = [
-    ...buildingBatches(
-      boxes.map(b => buildingBox(b, minimal)),
-      block.origin,
-      paint,
-      true,
-      undefined,
-      undefined,
-      seat,
-    ),
-    ...(open.length ? buildingBatches(open, block.origin, paint, false, undefined, undefined, seat) : []),
-  ];
+  const batches = [...buildingBatches(boxes, block.origin, paint, true, undefined, undefined, seat, b => buildingBox(b, minimal)), ...(open.length ? buildingBatches(open, block.origin, paint, false, undefined, undefined, seat) : [])];
   return joinParts(batches.map(batch => batch.data));
 }
 function joinParts(parts: readonly Float32Array[]): Float32Array {

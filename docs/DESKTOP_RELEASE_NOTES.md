@@ -10,6 +10,7 @@
 - The live map keeps its cartographic overlay when town buildings first appear.
 - Selecting a map feature keeps its outline aligned as you move or tilt the camera and lets the page rest when the view is still.
 - House and parcel inspectors reopen faster after an edit.
+- Editing a house reuses 3D meshes in unchanged parts of town and preserves each building volume’s wall tint.
 - Editing a quarter updates buildings in other quarters when the town reassigns a district role.
 - Fences and hedges redraw faster after house edits that leave parcel boundaries unchanged.
 - Editing a town keeps reusable map drawings outside the changed area in overhead and tilted views.

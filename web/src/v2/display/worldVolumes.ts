@@ -211,6 +211,7 @@ export class WorldVolumes {
         this.refresh();
         return this.display;
       },
+      composing: () => this.pending(),
       appearance: () => this.appearance,
       look: () => this.townLook(),
       terrain: relief,

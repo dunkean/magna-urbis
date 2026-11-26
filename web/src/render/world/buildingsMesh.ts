@@ -326,6 +326,7 @@ interface BuildingInk {
   catalogue: { materials: HouseMaterial[] };
   /** The colour of each surface and material, read for its first face. */
   colors: Map<string, Vec3>;
+  colorSlots?: BuildingTriangle['materials'];
   /** Its ground snow (mapGroundSnow), which its roof faces hold a share of. */
   snow: number;
   /** The last roof face painted by the town look (the triangles of one face come in a row, with the same normal and slots). */
@@ -379,6 +380,12 @@ function faceLook(ink: BuildingInk, face: FaceOf, raw: string, aperture: 'door' 
       ink.lastSlots = face.materials;
     }
     townRoof = ink.lastRoof;
+  }
+  // Two volumes can have the same encoded wall material and different town tints. A recycled slot can
+  // put their faces in either order when a look is filled.
+  if (ink.colorSlots !== face.materials) {
+    ink.colors.clear();
+    ink.colorSlots = face.materials;
   }
   const townWall = !!massing && raw === face.materials.coating,
     key = face.surface + '|' + raw;
@@ -450,12 +457,14 @@ export class BuildingColorSlots {
   private readonly free: number[] = [];
   private reused?: number[];
   private last = -1;
+  private lastOwner?: Building3dVisual;
   get length(): number {
     return this.list.length;
   }
   /** Called after dropping old meshes. A retained building's meshes still address their original slots. */
   retainBuildings(buildings: readonly Building3dVisual[]): void {
     const keep = new Set(buildings);
+    this.lastOwner = undefined;
     for (const [building, slots] of this.byBuilding) {
       if (keep.has(building)) continue;
       for (const index of slots.values()) {
@@ -470,13 +479,14 @@ export class BuildingColorSlots {
     this.reused = undefined;
     return reused;
   }
-  slot(building: Building3dVisual, face: FaceOf, raw: string, aperture: 'door' | 'window' | undefined, share: number, project: boolean): number {
+  slot(building: Building3dVisual, face: FaceOf, raw: string, aperture: 'door' | 'window' | undefined, share: number, project: boolean, owner = building): number {
     const last = this.list[this.last];
-    if (last && last.normal === face.normal && last.materials === face.materials && last.raw === raw && last.surface === face.surface && last.share === share && last.aperture === aperture && last.project === project && last.building === building) return this.last;
+    if (last && this.lastOwner === owner && last.normal === face.normal && last.materials === face.materials && last.raw === raw && last.surface === face.surface && last.share === share && last.aperture === aperture && last.project === project && last.building === building)
+      return this.last;
     const n = face.normal,
-      key = `${face.surface}|${raw}|${slotIdOf(face.materials)}|${n[0]},${n[1]},${n[2]}|${share}|${aperture ?? ''}|${project ? 1 : 0}`;
-    let slots = this.byBuilding.get(building);
-    if (!slots) this.byBuilding.set(building, (slots = new Map()));
+      key = `${isBuildingProjection(building) ? 1 : 0}|${face.surface}|${raw}|${slotIdOf(face.materials)}|${n[0]},${n[1]},${n[2]}|${share}|${aperture ?? ''}|${project ? 1 : 0}`;
+    let slots = this.byBuilding.get(owner);
+    if (!slots) this.byBuilding.set(owner, (slots = new Map()));
     let index = slots.get(key);
     if (index === undefined) {
       index = this.free.pop();
@@ -485,6 +495,7 @@ export class BuildingColorSlots {
       slots.set(key, index);
       this.list[index] = { building, surface: face.surface, materials: face.materials, normal: face.normal, raw, aperture, share, project };
     }
+    this.lastOwner = owner;
     this.last = index;
     return index;
   }
@@ -511,7 +522,16 @@ export function slotLooks(slots: BuildingColorSlots, from: number, to: number, p
 const seatOut = new Float64Array(2);
 /** The vertex groups of `buildings` around `origin` (map metres), at one level of detail: `overview` (capped bodies),
  * `featureLod` (small structural features dropped), `yardLevel` (lot boundaries as ribbons). */
-export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: readonly [number, number], paint: BuildingPaint, overview: boolean, featureLod?: BuildingFeatureLod, yardLevel?: number, seat: BuildingSeat = viewSeat): BuildingBatchData[] {
+export function buildingBatches(
+  buildings: Iterable<Building3dVisual>,
+  origin: readonly [number, number],
+  paint: BuildingPaint,
+  overview: boolean,
+  featureLod?: BuildingFeatureLod,
+  yardLevel?: number,
+  seat: BuildingSeat = viewSeat,
+  visualOf?: (source: Building3dVisual) => Building3dVisual,
+): BuildingBatchData[] {
   // Vertices go straight into one growing Float32Array per group. `seen` holds the colour objects already checked
   // against the palette (a building's faces share a few of them), so the palette is scanned once per colour, not once
   // per triangle.
@@ -523,7 +543,9 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
   const patterns = showsCraftedHouses(appearance) ? new Map(paint.materials.map(m => [m.id, m.pattern])) : undefined;
   const litWalls: LitWall[] = [],
     litOpenings: LitOpening[] = [];
-  for (const original of buildings) {
+  for (const source of buildings) {
+    // Box and crafted projections keep their own paint inputs, but their slots belong to the scene object.
+    const original = visualOf ? visualOf(source) : source;
     const building = patterns && original.culture?.culture === 'wizard-city' && !isBuildingProjection(original) ? craftedMageCity(original) : original;
     const culture = building.culture?.culture ?? '';
     const h = idHash(building.id);
@@ -573,7 +595,7 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
         color24 = 0;
       if (slots) {
         // The world view: the slot whose paint the look table holds; the snow share rides in it, whatever the season.
-        red = slots.slot(building, face, raw, aperture, share, !!project);
+        red = slots.slot(building, face, raw, aperture, share, !!project, source);
         code = Math.max(0, fixed);
         key = 'slot';
       } else {
