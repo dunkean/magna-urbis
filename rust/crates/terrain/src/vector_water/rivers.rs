@@ -44,6 +44,10 @@ type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<FastHash
 type HashSet<K> = std::collections::HashSet<K, BuildHasherDefault<FastHasher>>;
 #[derive(Clone, Default, Serialize)]
 pub struct Line {
+    /// Physical D8 source, tributary junctions in downstream order, and outlet.
+    /// Only primary stream lines have these anchors; side channels share the parent's id.
+    #[serde(rename = "reachCells", skip_serializing_if = "Vec::is_empty")]
+    pub reach_cells: Vec<usize>,
     pub points: Vec<f64>,
     pub area: Vec<f64>,
     pub level: Vec<f64>,

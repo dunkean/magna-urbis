@@ -4,6 +4,18 @@ struct Stream {
     end: i32,
     parent: i32,
 }
+impl Stream {
+    fn reach_cells(&self, junctions: &HashSet<usize>) -> Vec<usize> {
+        let source = self.cells[0];
+        let outlet = if self.end >= 0 { self.end as usize } else { *self.cells.last().unwrap() };
+        let mut anchors = vec![source];
+        anchors.extend(self.cells.iter().copied().filter(|&cell| cell != source && cell != outlet && junctions.contains(&cell)));
+        if outlet != source {
+            anchors.push(outlet);
+        }
+        anchors
+    }
+}
 fn join_course(
     ctx: &Context,
     traced: &SegmentIndex,
@@ -1153,6 +1165,8 @@ pub(crate) fn vector_rivers(
             stream.parent = stream_of[stream.end as usize]
         }
     }
+    // Take confluences from the receiver network before tracing can smooth or shorten a line.
+    let junctions: HashSet<usize> = streams.iter().filter(|s| s.parent >= 0).map(|s| s.end as usize).collect();
     let ctx = Context {
         h,
         field,
@@ -1837,6 +1851,7 @@ pub(crate) fn vector_rivers(
         widest = widest.max(channel_width(*line_area.last().unwrap(), s.width_scale));
         traced.add(&out, id);
         lines[id] = Some(Line {
+            reach_cells: stream.reach_cells(&junctions),
             points: out,
             area: line_area,
             level: lv,
@@ -1974,6 +1989,15 @@ pub(crate) fn vector_rivers(
 #[cfg(test)]
 mod short_course_tests {
     use super::{Line, drop_short_leaves, prune_short_courses};
+
+    #[test]
+    fn physical_reach_anchors_follow_receiver_order_through_junctions() {
+        let trunk = super::Stream { cells: vec![20, 15, 16, 11, 6], end: -1, parent: -1 };
+        let tributary = super::Stream { cells: vec![3, 7], end: 11, parent: 0 };
+        let junctions = [11, 15, 6].into_iter().collect();
+        assert_eq!(trunk.reach_cells(&junctions), [20, 15, 11, 6]);
+        assert_eq!(tributary.reach_cells(&junctions), [3, 11]);
+    }
 
     /// Invariant: every traced course left is at least the minimum long or carries a longer course; a lake outflow
     /// stays whatever its length. A 600 m stem (0) takes a 50 m stub (1) and a 300 m course (2), which takes a

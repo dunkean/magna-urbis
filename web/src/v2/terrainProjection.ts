@@ -257,6 +257,7 @@ export function projectEngineTerrain(data: TerrainData): V2TerrainLayer {
         path,
         width: widths,
         id: line.id ?? rivers.length,
+        ...(line.reachCells ? { reachCells: line.reachCells } : {}),
         area: [...line.area],
         main: max >= 12,
         cls: riverClass(max),

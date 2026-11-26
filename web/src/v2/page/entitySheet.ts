@@ -70,7 +70,7 @@ export function entityEditors(state: PageState, actions: PageActions): EntityEdi
       return true;
     },
     road: entity => state.roadEditor.start('roads', onTopView(entity).point),
-    river: entity => state.riverEditor.start('rivers', onTopView(entity).point),
+    river: entity => state.riverEditor.start('rivers', onTopView(entity).point, entity.index),
     walls: entity => !!entity.town && actions.editWall(entity.town, entity.index),
   };
 }

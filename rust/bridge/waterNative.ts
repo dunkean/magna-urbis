@@ -111,10 +111,10 @@ function network(reply: Reply, meta: any): RiverNetwork | undefined {
   if (!meta) return undefined;
   const values = reply.planes['rivers.values'] as Float64Array,
     index = reply.planes['rivers.lines'] as Int32Array;
-  const { groups, ...summary } = meta;
+  const { groups, reachCells, ...summary } = meta;
   let lineAt = 0;
   for (const [g, name] of ['rivers', 'lakeLinks', 'oxbows', 'braids', 'distributaries'].entries()) {
-    summary[name] = Array.from({ length: groups[g] }, () => {
+    summary[name] = Array.from({ length: groups[g] }, (_, i) => {
       const at = lineAt++ * 13,
         line: Partial<RiverLine> = {};
       for (const [k, name] of ['points', 'area', 'level', 'kind', 'threads'].entries()) {
@@ -123,6 +123,7 @@ function network(reply: Reply, meta: any): RiverNetwork | undefined {
         // serde_json represented non-finite diagnostic values as null.
         if (length >= 0) (line as any)[name] = Array.from(values.subarray(start, start + length), v => (Number.isFinite(v) ? v : null));
       }
+      if (g === 0 && reachCells?.[i]?.length) line.reachCells = reachCells[i];
       if (index[at + 10] >= 0) line.id = index[at + 10];
       if (index[at + 11] !== -2147483648) line.joins = index[at + 11];
       if (index[at + 12] >= 0) line.outlet = index[at + 12];

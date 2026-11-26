@@ -71,8 +71,8 @@ export interface NetworkEditorHost {
 export interface NetworkEditor {
   /** Revalidate the selection against the current world and refresh the panel (call after any world change). */
   sync(): void;
-  /** Opens a tool; `focus`: the road (roads tool) or river (rivers tool) under that point is selected. False: not started. */
-  start(tool: Exclude<NetworkTool, 'off'>, focus?: Vec2): boolean;
+  /** Focus a network tool at a point, preserving the entity sheet's exact river selection when supplied. */
+  start(tool: Exclude<NetworkTool, 'off'>, focus?: Vec2, riverIndex?: number): boolean;
   stop(): void;
   active(): boolean;
   pending(): boolean;
@@ -839,7 +839,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
   }
 
   // ---- tools
-  function start(tool: Exclude<NetworkTool, 'off'>, focus?: Vec2): boolean {
+  function start(tool: Exclude<NetworkTool, 'off'>, focus?: Vec2, riverIndex?: number): boolean {
     if (host.busy?.() || host.topView?.() === false) return false;
     if (!host.getWorld()) {
       host.toast?.(translate(T.noWorld), true);
@@ -867,9 +867,9 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
       selected = roadAt(w, focus, PICK_PX / scale())?.index ?? selected;
       announce(T.lineSelected);
     } else if (focus && w && tool === 'rivers') {
-      const hit = riverAt(w, focus, PICK_PX / scale());
+      const index = riverIndex ?? riverAt(w, focus, PICK_PX / scale())?.index;
       try {
-        if (hit) plan = { world: w, plan: planRiverDeletion(w, hit.index, { throughLakes }) };
+        if (index !== undefined) plan = { world: w, plan: planRiverDeletion(w, index, { throughLakes }) };
       } catch (error) {
         fail(error);
       }

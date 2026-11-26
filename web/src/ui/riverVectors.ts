@@ -31,6 +31,8 @@ export interface RiverSettings {
 }
 
 export interface RiverLine {
+  /** Physical D8 source, tributary junctions in downstream order, and outlet of a native primary stream. */
+  reachCells?: number[];
   /** Interleaved x, y in metres, upstream to mouth. */
   points: number[];
   /** Upstream area at each vertex, m². */

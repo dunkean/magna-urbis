@@ -681,8 +681,10 @@ export interface RiverDeletionPlan {
   source: 'vector' | 'hydrology' | 'projected' | 'grid';
 }
 const lineKey = (x0: number, y0: number, x1: number, y1: number, n: number): string => `${x0.toFixed(3)},${y0.toFixed(3)}|${x1.toFixed(3)},${y1.toFixed(3)}|${n}`;
-const riverKey = (river: River): string => lineKey(river.path[0].x, river.path[0].y, river.path[river.path.length - 1].x, river.path[river.path.length - 1].y, river.path.length);
+const reachKey = (cells: number[]): string => `reach:${cells.join(',')}`;
+const riverKey = (river: River): string => river.reachCells?.length ? reachKey(river.reachCells) : lineKey(river.path[0].x, river.path[0].y, river.path[river.path.length - 1].x, river.path[river.path.length - 1].y, river.path.length);
 const vectorKey = (line: RiverLine): string => {
+  if (line.reachCells?.length) return reachKey(line.reachCells);
   const p = line.points,
     m = p.length;
   return lineKey(p[0], p[1], p[m - 2], p[m - 1], m / 2);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { projectEngineTerrain, type V2TerrainLayer } from '../src/v2/terrainProjection';
 import type { World, River, Vec2 } from '../src/gen/types';
 import type { RiverLine, RiverNetwork } from '../src/ui/riverVectors';
 import type { RoadOutput, RoadSegment } from '../../rust/bridge/settlements';
@@ -397,6 +398,27 @@ describe('persistent road controls and connected edits', () => {
 });
 
 describe('V2 river deletion', () => {
+  it('identifies native streams by drainage anchors when drawn endpoint keys coincide', () => {
+    const w = fixture(),
+      data = (w.terrain as V2TerrainLayer).v2NativeTerrain!,
+      network = data.water!.rivers!;
+    const tributary = network.rivers[1],
+      other = network.rivers[3];
+    tributary.reachCells = [404, 412, 419];
+    other.reachCells = [1310, 1319];
+    other.points = [...tributary.points];
+    w.terrain = projectEngineTerrain({ ...data, x: 0, y: 0, width: SIZE, resolution: N, height: w.terrain.height.data, caveMask: new Uint8Array(0) });
+    expect(w.terrain.rivers[3].reachCells).toEqual(other.reachCells);
+    expect(w.terrain.rivers[5].reachCells).toBeUndefined();
+
+    const plan = planRiverDeletion(w, 3);
+    expect(plan.streams).toEqual([3]);
+    expect(plan.rivers).toEqual([3]);
+    expect(planRiverDeletion(w, 1).rivers).not.toContain(3);
+    const settings = defaultSettings();
+    const reopened = parseProject(serializeProject(settings, { ...w, mapSize: 1000, options: settings.options })).world!;
+    expect(planRiverDeletion(reopened, 3)).toEqual(plan);
+  });
   it('plans the selected course with every upstream tributary, its braid, oxbow and lake-fed inflow', () => {
     const w = fixture(),
       trib = w.terrain.rivers.findIndex(r => r.id === 1 && r.host === 0);

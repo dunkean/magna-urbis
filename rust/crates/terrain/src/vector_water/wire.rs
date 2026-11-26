@@ -155,7 +155,7 @@ impl Output {
         }
         self.f64("rivers.values", &values);
         self.i32("rivers.lines", &lines);
-        json!({"groups":groups.map(|g|g.len()),"widthScale":n.width_scale,"meanderRuns":n.meander_runs,
+        json!({"groups":groups.map(|g|g.len()),"reachCells":n.rivers.iter().map(|line| &line.reach_cells).collect::<Vec<_>>(),"widthScale":n.width_scale,"meanderRuns":n.meander_runs,
             "lengthKm":n.length_km,"meanderKm":n.meander_km,"braidedKm":n.braided_km,
             "avulsions":n.avulsions,"deltas":n.deltas,"ms":n.ms})
     }
@@ -558,6 +558,7 @@ mod tests {
             id: Some(17),
             joins: Some(-1),
             outlet: Some(4095),
+            reach_cells: vec![7, 32, 4095],
             threads: Some(vec![1.0, 2.0]),
         };
         let network = rivers::Network {
@@ -571,6 +572,7 @@ mod tests {
         let len = u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
         let meta: Value = serde_json::from_slice(&bytes[4..4 + len]).unwrap();
         assert_eq!(meta["rivers"]["groups"], json!([1, 1, 0, 0, 0]));
+        assert_eq!(meta["rivers"]["reachCells"], json!([[7, 32, 4095]]));
         let values = &meta["planes"][0];
         let start = 4 + len + values["offset"].as_u64().unwrap() as usize;
         assert_eq!(start % 8, 0);

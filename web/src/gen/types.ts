@@ -7,6 +7,8 @@ export type { Vec2, Polygon, Polyline, Grid, Options, NamesLayer };
 
 export type RiverClass = 'brook' | 'stream' | 'river' | 'major';
 export interface River {
+  /** Physical D8 source, tributary junctions in downstream order, and outlet of a native primary stream. */
+  reachCells?: number[];
   path: Polyline;
   width: number[];
   name?: string;

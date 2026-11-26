@@ -29,7 +29,7 @@ describe('Entity sheet Edit', () => {
     expect(setView).toHaveBeenCalledOnce();
     expect(view).toMatchObject({ cx: 40, cy: 60, scale: 2, pitch: 0, yaw: 0 });
     expect(run('river')).toBe(true);
-    expect(rivers).toHaveBeenCalledWith('rivers', point);
+    expect(rivers).toHaveBeenCalledWith('rivers', point, 3);
     expect(setView).toHaveBeenCalledOnce();
     expect(run('wall', 'town-1')).toBe(true);
     expect(editWall).toHaveBeenCalledWith('town-1', 3);
