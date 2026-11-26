@@ -5,7 +5,7 @@
  */
 import { CITY_LOD_LIMITS } from '../cityCanvas';
 import { drawFarmLots, drawFarmRoofs } from '../farmRoofs';
-import { yardStyle } from '../yardStyle';
+import { FARM_ENCLOSURES, FARM_PLATFORM_EARTH, isFarmEnclosureKind } from '../farms';
 import { drawRuralDetails } from '../ruralDetails';
 import { drawPanelCanvas } from '../legend';
 import { fungalBedLook, fungalBedMarks } from '../underdark';
@@ -21,20 +21,21 @@ export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
     if (natural) {
       if (drives.length) strokeEarthRoads(drives, 'track', drives[0].width);
     } else strokeLines(drives, pal.trackFill, l => Math.min(lw(l.width * 0.7, 1), px(2.4)), 0.55 * Math.min(1, inkAlpha), [], 'butt');
+    fillPolys('farm-platforms', FARM_PLATFORM_EARTH, 0.48);
     // On a natural ground the lot belongs to the photograph (farmRoofs.ts drawFarmLots): beaten earth that fades
     // at its edge, a muted garden with its bed rows, grass under the orchard, a dark pond in a wet bank; no plan
     // tint, no lot outline; all of it under the snow with the land around. Other grounds keep the plan symbols.
     if (natural) timedRec('farm-lots', () => drawFarmLots(ctx, c.world, { part: 'ground', viewport: pathRect, mpp: px(1), night: roadStyle.night, Path: P }));
     else {
-      fillPolys('farm-gardens', pal.land.garden);
-      strokePolys('farm-gardens', pal.hedge, lw(0.4, 0.3), 0.8);
-      fillPolys('farm-orchards', pal.land.orchard);
-      fillPolys('farm-paddocks', pal.land.pasture);
+      fillPolys('farm-gardens', c.ink('garden'));
+      strokePolys('farm-gardens', c.ink('hedge'), lw(0.4, 0.3), 0.8);
+      fillPolys('farm-orchards', c.ink('orchard'));
+      fillPolys('farm-paddocks', c.ink('pasture'));
     }
     // Fungal beds (render/underdark.ts fungalBedLook): dark compost with small caps; a vector map rings them with its
     // farm ink, a material ground leaves them unlined in the cave floor.
     const bed = fungalBedLook(pal, natural, roadStyle.night);
-    fillPolys('farm-fungal-gardens', bed.bed, natural ? 0.85 : 1);
+    fillPolys('farm-fungal-gardens', natural ? bed.bed : c.ink('garden'), natural ? 0.85 : 1);
     if (bed.edge) strokePolys('farm-fungal-gardens', bed.edge, lw(0.3, 0.3), 0.45);
     if (brushes && lod.textures) {
       brushFill('farm-gardens', 'garden', sc);
@@ -49,44 +50,29 @@ export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
       }
     }
     strokePolys('farm-platforms', pal.farmInk, lw(0.5, 0.4), 0.7, [px(3), px(2)]);
-    // On a natural ground the walls take the yard-wall colour of the towns (no ink) and the buildings are city
-    // buildings; yard, pens and ponds were painted with the lot above.
     if (!natural) {
       fillPolys('farm-yards', pal.farmYard, 0.9);
       fillPolys('farm-pens', pal.farmYard);
       strokePolys('farm-pens', pal.farmInk, lw(0.3, 0.3));
-      fillPolys('farm-ponds', pal.water.stops[0][1]);
-      strokePolys('farm-ponds', pal.waterEdge, lw(0.5, 0.4));
+      fillPolys('farm-ponds', c.ink('waterShore'));
+      strokePolys('farm-ponds', c.ink('waterEdge'), lw(0.5, 0.4));
     }
-    if (natural) {
-      const wall = yardStyle('wall', '', 'terrain');
-      strokeLines(
-        linesOf(l => l.name === 'farm-walls'),
-        wall.color,
-        () => lw(wall.width, wall.minPx),
-        wall.alpha,
-        [],
-        'butt',
-      );
-    } else
-      strokeLines(
-        linesOf(l => l.name === 'farm-walls'),
-        pal.farmInk,
-        () => lw(0.9, 0.7),
-        1,
-        [],
-        'butt',
-      );
+    const roofs = !c.deps.volumeBuildings?.();
+    if (roofs)
+      for (const line of linesOf(l => l.role === 'farm')) {
+        if (!isFarmEnclosureKind(line.kind)) continue;
+        const look = FARM_ENCLOSURES[line.kind];
+        strokeLines([line], natural || line.kind !== 'wall' ? look.color : pal.farmInk, () => lw(look.width, look.minPx), look.alpha, [], 'butt');
+      }
     if (natural) {
       if (lod.band >= 2) timedRec('farm-trees', () => drawFarmLots(ctx, c.world, { part: 'trees', viewport: pathRect, mpp: px(1), night: roadStyle.night, Path: P }));
     } else if (!c.activeLight && lod.band >= 2 && polyL('farm-trees')) {
       if (brushes) brushTrees('farm-trees', true);
       else {
-        fillPolys('farm-trees', pal.treeFill, 0.3 + 0.7 * (pal.season?.leaf ?? 1));
-        strokePolys('farm-trees', pal.treeInk, lw(0.3, 0.3), 0.8);
+        fillPolys('farm-trees', c.ink('farmLeaves'));
+        strokePolys('farm-trees', c.ink('treeInk'), lw(0.3, 0.3), 0.8);
       }
     }
-    const roofs = !c.deps.volumeBuildings?.();
     if (roofs && natural && px(1) <= CITY_LOD_LIMITS[1]) {
       // The roof and wall painter of the towns, at the scales where a town shows its buildings (cast shadow, pan
       // light, grain by cover and culture, weathering, snow); paths of the class this renderer records.

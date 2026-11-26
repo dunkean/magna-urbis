@@ -1,13 +1,14 @@
 /** Standalone Rust geometry kernels for existing regression fixtures and workshop diagnostics. */
 import type { Rng } from '../../web/src/gen/core/rng';
 import type { Noise2D } from '../../web/src/gen/core/noise';
-import type { FarmBuilding, FarmPlot, FarmSize, Polygon, Polyline, Vec2 } from '../../web/src/gen/types';
+import type { FarmBuilding, FarmEnclosure, FarmPlot, FarmSize, Polygon, Polyline, Vec2 } from '../../web/src/gen/types';
 import { synchronousCoreWasm } from './wasmRuntime';
 export type FarmType =
   | 'vierkanthof'
   | 'u-yard'
   | 'l-yard'
   | 'haufenhof'
+  | 'grain-farm'
   | 'longere'
   | 'einhaus'
   | 'masseria'
@@ -115,7 +116,7 @@ export const farmRegime = (culture: string): [FarmType, number][] => farm({ oper
 export const farmType = (context: FarmContext, size: FarmSize, rng: Rng): FarmType => farm({ operation: 'type', context, size, seed: rng.seedKey });
 export const frameOf = (inward: Vec2, downhill: Vec2 | null): Frame => farm({ operation: 'frame', inward, downhill });
 export const layoutFarm = (type: FarmType, size: FarmSize, context: FarmContext, frame: Frame, rng: Rng): LocalFarm => farm({ operation: 'layout', type, size, context, frame, seed: rng.seedKey });
-export const placeFarm = (local: LocalFarm, type: FarmType, origin: Vec2, inward: Vec2): { lot: Polygon; parts: FarmBuilding[]; yard: Polygon; walls: Polyline[]; plots: FarmPlot[]; trees: Vec2[]; gate: Vec2; entry: Vec2; angle: number } =>
+export const placeFarm = (local: LocalFarm, type: FarmType, origin: Vec2, inward: Vec2): { lot: Polygon; parts: FarmBuilding[]; yard: Polygon; enclosure: FarmEnclosure; walls: Polyline[]; plots: FarmPlot[]; trees: Vec2[]; gate: Vec2; entry: Vec2; angle: number } =>
   farm({ operation: 'place', local, type, origin, inward });
 export interface Furlong {
   outer: Polygon;

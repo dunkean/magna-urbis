@@ -1,7 +1,11 @@
 //! Coarse landscape evolution ported from web/src/gen/terrain/erosion.ts.
 //! Priority flood, D-infinity split drainage, implicit stream-power incision,
 //! basin breaching, thermal relaxation, and bounded bicubic sampling.
-use crate::{noise::Noise, smooth};
+use crate::{
+    channels::{valley_lean, valley_turn, valley_wall},
+    noise::Noise,
+    smooth,
+};
 use std::f64::consts::{FRAC_PI_4, SQRT_2};
 mod pipeline;
 #[cfg(test)]
@@ -1021,6 +1025,66 @@ pub(crate) struct MountainCfg<'a> {
     pub erosion: f64,
 }
 
+struct ValleyUplift<'a> {
+    start: f64,
+    samples_per_meter: f64,
+    sections: Vec<[f64; 2]>,
+    floor_width: f64,
+    floor_wavelength: f64,
+    run: f64,
+    noise: &'a Noise,
+}
+
+impl<'a> ValleyUplift<'a> {
+    fn new(cfg: &MountainCfg<'a>, extent: f64, cell: f64) -> Option<Self> {
+        let (floor_width, offset, noise_offset) = cfg.valley.filter(|_| cfg.zoning.is_none())?;
+        let motif = cfg.k * 2400.0;
+        let wiggle_wavelength = 900.0 * cfg.k;
+        // The axis and lean depend only on distance along the valley. Resolve the smallest
+        // meander octave in the table and reuse those samples across the coarse raster.
+        let step = (0.5 * cell).min(wiggle_wavelength / 16.0);
+        // Project the padded raster's corners. Its cell centers lie strictly within this span.
+        let span = 0.5 * extent * (cfg.down.0.abs() + cfg.down.1.abs());
+        let intervals = (2.0 * span / step).ceil() as usize;
+        let meander = |along: f64| {
+            -320.0 * cfg.k * cfg.noise.fbm((along + noise_offset) / (2600.0 * cfg.k), 0.37, 2)
+        };
+        let sections = (0..=intervals)
+            .map(|i| {
+                let along = i as f64 * step - span;
+                let center = meander(along);
+                let axis = offset + center
+                    - 120.0 * cfg.k * cfg.noise.fbm((along + noise_offset) / wiggle_wavelength, 5.1, 2);
+                let turn = valley_turn(along, motif, center, meander);
+                [axis, valley_lean(along, motif, turn, cfg.noise2)]
+            })
+            .collect();
+        Some(Self {
+            start: -span,
+            samples_per_meter: step.recip(),
+            sections,
+            floor_width,
+            floor_wavelength: 1500.0 * cfg.k,
+            run: cfg.width * 0.42,
+            noise: cfg.noise2,
+        })
+    }
+
+    fn factor(&self, along: f64, across: f64) -> f64 {
+        let position = (along - self.start) * self.samples_per_meter;
+        let i = position as usize;
+        let t = position - i as f64;
+        let [axis, lean] = self.sections[i];
+        let [next_axis, next_lean] = self.sections[i + 1];
+        let axis = axis + t * (next_axis - axis);
+        let lean = lean + t * (next_lean - lean);
+        let floor = self.floor_width
+            * (0.8 + 0.4 * self.noise.fbm(along / self.floor_wavelength, 3.3, 2));
+        let wall = valley_wall(across - axis, floor, self.run, lean, 0.0);
+        0.055 + 0.945 * wall.powf(1.25)
+    }
+}
+
 /// Zone-derived parameters at one position of the zoned generator.
 #[derive(Clone, Copy)]
 struct ZoneLocal {
@@ -1205,6 +1269,7 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
     let cell = cfg.width / n as f64;
     let x0 = -cfg.width * 0.22;
     let motif = cfg.k * 2400.0;
+    let valley = ValleyUplift::new(cfg, extent, cc);
     // Painted massifs get a relief sized to what was painted: a dome across their
     // width (highest inside, draining outward) and, when narrow, a smaller local
     // scale (amplitude, ridge and valley spacing, incision). The finest scale keeps
@@ -1344,26 +1409,12 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
             // Stronger initial relief on narrow massifs: spurs and side valleys a few
             // hundred metres apart organise the drainage instead of parallel gullies.
             let spurs = 1.0 + narrow * ((1.0 / zone.kratio.sqrt()).min(2.0) - 1.0);
-            let mut corridor = 1.0;
-            if let Some((width, offset, noise_offset)) = cfg.valley.filter(|_| cfg.zoning.is_none())
-            {
+            let corridor = valley.as_ref().map_or(1.0, |valley| {
                 let along = q * cfg.width;
                 let across =
                     -(px - cfg.width * 0.5) * cfg.down.1 + (py - cfg.width * 0.5) * cfg.down.0;
-                let meander = 320.0
-                    * cfg.k
-                    * cfg
-                        .noise
-                        .fbm((along + noise_offset) / (2600.0 * cfg.k), 0.37, 2)
-                    + 120.0
-                        * cfg.k
-                        * cfg
-                            .noise
-                            .fbm((along + noise_offset) / (900.0 * cfg.k), 5.1, 2);
-                let floor = width * (0.8 + 0.4 * cfg.noise2.fbm(along / (1500.0 * cfg.k), 3.3, 2));
-                let wall = smooth(((across - offset + meander).abs() - floor) / (cfg.width * 0.42));
-                corridor = 0.055 + 0.945 * wall.powf(1.25);
-            }
+                valley.factor(along, across)
+            });
             uplift[y * nc + x] = (u * corridor * (0.25 + 0.75 * smooth(edge))) as f32;
             h[y * nc + x] = (corridor
                 * (2.5 * u
@@ -2127,6 +2178,79 @@ pub(crate) fn surface_parameters(width: f64, motif: f64, erosion: f64, talus: f6
         (tuning(SURFACE_INCISION) * erosion * 0.40 * cell / (0.004_f64.sqrt() * motif)) as f32,
         (tuning(SURFACE_DIFFUSION) * erosion * 0.025).min(0.1) as f32,
     ]
+}
+
+#[cfg(test)]
+mod valley_tests {
+    use super::*;
+    use crate::rng::Rng;
+
+    #[test]
+    fn uplift_valley_keeps_its_width_and_depth_with_bend_aware_banks() {
+        let root = Rng::new("uplift-valley");
+        let noise = Noise::new(root.fork("noise"));
+        let noise2 = Noise::new(root.fork("noise2"));
+        let (floor_width, offset, noise_offset) = (250.0, 480.0, 300.0);
+        let cfg = MountainCfg {
+            zoning: None,
+            generation_noise: None,
+            n: 512,
+            width: 12000.0,
+            amp: 200.0,
+            noise: &noise,
+            noise2: &noise2,
+            down: (0.96, 0.28),
+            k: 1.0,
+            iterations: 18,
+            coarse: 640,
+            mountain_mix: 0.0,
+            talus: 0.55,
+            detail: 0.0,
+            diffusion: 0.0,
+            crest: 0.0,
+            valley: Some((floor_width, offset, noise_offset)),
+            erosion: 1.0,
+        };
+        let extent = 1.44 * cfg.width;
+        let valley = ValleyUplift::new(&cfg, extent, extent / cfg.coarse as f64).unwrap();
+        let run = 0.42 * cfg.width;
+        let half_wall = 0.055 + 0.945 * 0.5_f64.powf(1.25);
+        let meander = |along| -320.0 * noise.fbm((along + noise_offset) / 2600.0, 0.37, 2);
+        let mut checked_bends = [false; 2];
+
+        for i in -32..=32 {
+            let along = i as f64 * 187.5;
+            let center = meander(along);
+            let axis = offset + center
+                - 120.0 * noise.fbm((along + noise_offset) / 900.0, 5.1, 2);
+            assert_eq!(valley.factor(along, axis), 0.055);
+            let [below, above] = [-1.0, 1.0].map(|side| {
+                let (mut lo, mut hi) = (0.0, cfg.width);
+                assert_eq!(valley.factor(along, axis + side * hi), 1.0);
+                for _ in 0..48 {
+                    let mid = 0.5 * (lo + hi);
+                    if valley.factor(along, axis + side * mid) < half_wall {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                0.5 * (lo + hi)
+            });
+            let floor = floor_width * (0.8 + 0.4 * noise2.fbm(along / 1500.0, 3.3, 2));
+            assert!((below + above - (2.0 * floor + run)).abs() < 1e-7);
+
+            let turn = valley_turn(along, 2400.0, center, meander);
+            if turn < -0.6 {
+                assert!(below > 1.1 * above, "negative bend at {along}");
+                checked_bends[0] = true;
+            } else if turn > 0.6 {
+                assert!(above > 1.1 * below, "positive bend at {along}");
+                checked_bends[1] = true;
+            }
+        }
+        assert_eq!(checked_bends, [true, true]);
+    }
 }
 
 #[cfg(test)]

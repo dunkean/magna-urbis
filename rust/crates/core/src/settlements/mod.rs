@@ -350,6 +350,7 @@ impl Terrain {
         architecture_culture: Option<&str>,
         origin: crate::urban::Point,
         version: u32,
+        blocks: Option<&std::collections::BTreeMap<String, std::collections::BTreeSet<usize>>>,
     ) -> Result<Vec<u8>, String> {
         let r = &self.fields.r;
         crate::urban::building_sites::display_buffers(
@@ -361,6 +362,7 @@ impl Terrain {
             architecture_culture,
             origin,
             version,
+            blocks,
         )
     }
     /// Sites `start..end` of `urban_building_sites_with_culture` (same order and

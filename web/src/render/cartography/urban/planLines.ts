@@ -4,6 +4,7 @@
  * streets at a legible minimum width; the landmark sites.
  * Reads: palette, the path cache.
  */
+import { setMapInk, type MapInk } from '../../gpu/recorder';
 import { ruralInk } from '../../styles';
 import { TERRACE_STROKES as TS, terraceDetailAlpha } from '../../terraces';
 import { LineLayer, WALL_LINE_W, CAMP_FENCE_W, FENCE_STYLE } from '../../scene';
@@ -19,7 +20,7 @@ export function paintPlanLines(c: CartographyContext, f: VectorFrame, u: UrbanFr
   // plan lines (same rules per kind as render/urban.ts): enclosure walls, fences, terraces, hedges, footpaths,
   // canal footbridges, bazaar roofs, qanats, stair treads. Unlisted kinds fall back to the wall-like stroke.
   {
-    const treeInk = pal.treeInk ?? '#4a6a3a';
+    const treeInk = c.ink('treeInk');
     const fine = lod.fine;
     const terraceDetail = terraceDetailAlpha(sc);
     strokeLines(
@@ -33,7 +34,7 @@ export function paintPlanLines(c: CartographyContext, f: VectorFrame, u: UrbanFr
     for (const l of linesOf(x => x.role === 'uline')) {
       const k = l.kind,
         w = l.width;
-      const one = (color: string, width: number, alpha = 1, dash: number[] = [], cap: CanvasLineCap = 'round'): void => strokeLines([l], color, () => width, alpha, dash, cap);
+      const one = (color: MapInk, width: number, alpha = 1, dash: number[] = [], cap: CanvasLineCap = 'round'): void => strokeLines([l], color, () => width, alpha, dash, cap);
       if (k === 'moat' || k === 'canal') continue;
       else if (k === 'hedge') one(treeInk, lw(2.2, 0.7), 0.7, [], 'butt');
       else if (k === 'track') {
@@ -50,7 +51,7 @@ export function paintPlanLines(c: CartographyContext, f: VectorFrame, u: UrbanFr
       else if (k === 'bund') {
         if (fine) one(U.plotLine, lw(0.4, 0.3), 0.35, [], 'butt');
       } else if (k === 'turf-wall') {
-        one(mixHex(pal.grass, U.wall, 0.35), lw(2.2, 0.8), 0.42);
+        one(c.ink('turfWall'), lw(2.2, 0.8), 0.42);
         if (fine) one(U.wall, lw(0.16, 0.3), 0.45);
       } else if (k === 'albarrada') one(U.wall, lw(0.85, 0.4), 0.35);
       else if (k === 'ghat-steps') {
@@ -101,7 +102,7 @@ export function paintPlanLines(c: CartographyContext, f: VectorFrame, u: UrbanFr
       if (brushes) brushTrees('u-trees');
       else {
         ctx.globalAlpha = 0.78;
-        ctx.fillStyle = pal.treeFill ?? '#7f9a5a';
+        setMapInk(ctx, 'fillStyle', c.ink('treeFill'));
         for (const p of polyPaths(trees)) ctx.fill(p, 'evenodd');
         ctx.globalAlpha = 1;
         strokePolys('u-trees', treeInk, lw(0.35, 0.4));

@@ -92,7 +92,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     c.litCache = undefined;
     c.forestRoom = undefined;
     // The region a live layer shows keeps showing until its replacement is recorded (no blank frame after a town build).
-    live.invalidateLayers();
+    live.invalidateLayers(local ? nextScene.dirty : undefined);
     return true;
   }
 

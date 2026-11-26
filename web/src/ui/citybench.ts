@@ -1,4 +1,4 @@
-import { contourRaster, contourRasterUrl } from '../render/contourRaster';
+import { contourRaster, contourRasterUrl, contourTint, createContourTintFilter, setContourTintFilter, type ContourRaster } from '../render/contourRaster';
 import { fortificationClearings } from '../render/forestClearance';
 import { underdarkSceneLook } from '../render/underdarkLighting';
 import { cityGroundSettings, cityGroundLook, cityForestInput, cityForestSettings } from '../render/cityEnvironment';
@@ -106,6 +106,7 @@ nightWater.id = 'cityNightWater';
 nightWater.setAttribute('pointer-events', 'none');
 map.append(nightWater);
 let shownContours: CityContourPaths | undefined, contourTerrain: TerrainData | undefined;
+let shownContourPlate: ContourRaster | undefined;
 let contourScale = NaN,
   contourStyle = '';
 el<HTMLInputElement>('showContours').checked = query.get('contours') !== '0';
@@ -420,6 +421,7 @@ function drawContours(): void {
     contours.innerHTML = `<defs><mask id="cityContourLand" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${width}" style="mask-type:alpha"><image width="${width}" height="${width}" href="${mask}"/></mask></defs><g class="layer-contours" mask="url(#cityContourLand)" fill="none" stroke-linejoin="round" stroke-linecap="round"><path vector-effect="non-scaling-stroke"/><path vector-effect="non-scaling-stroke"/></g>`;
     contourTerrain = terrain;
     shownContours = undefined;
+    shownContourPlate = undefined;
   }
   const mode = contourDrawOf(r.composition.recipe);
   const paths = cityContourPaths(terrain, new URLSearchParams(decor.meta.query).get('relief') ?? 'flat', view.scale, r.composition.recipe.ground.variant === 'topographic', contoursReady, mode.detail, mode.sparse);
@@ -428,15 +430,24 @@ function drawContours(): void {
     if (cityContourPathsPending(terrain, new URLSearchParams(decor.meta.query).get('relief') ?? 'flat', view.scale, r.composition.recipe.ground.variant === 'topographic', mode.detail, mode.sparse)) return;
     if (!paths.step) return;
     const pal = terrainStyle(r.ground.style, getBenchRenderColors()).palette;
-    const plate = contourRaster(paths, terrain.width, { color: pal.contour, opacity: pal.contourOpacity * mode.opacity, thinWeight: pal.contourThinW ?? 1, indexWeight: pal.contourIndexW / 1.6, topographic: r.composition.recipe.ground.variant === 'topographic' });
+    const plate = contourRaster(terrain, paths, pal, r.composition.recipe.ground.variant === 'topographic');
+    let tint = contours.querySelector('filter');
+    if (!tint) {
+      tint = createContourTintFilter('cityContourTint');
+      contours.querySelector('defs')!.append(tint);
+    }
     let image = layer.querySelector('image');
+    const retint = !image || contourStyle !== backgroundStyle;
     if (!image) {
-      layer.innerHTML = `<image width="${terrain.width}" height="${terrain.width}"/>`;
+      layer.innerHTML = `<image width="${terrain.width}" height="${terrain.width}" filter="url(#cityContourTint)"/>`;
       image = layer.querySelector('image')!;
       shownContours = undefined;
     }
-    const url = contourRasterUrl(plate);
-    if (image.getAttribute('href') !== url) image.setAttribute('href', url);
+    if (shownContourPlate !== plate) {
+      image.setAttribute('href', contourRasterUrl(plate));
+      shownContourPlate = plate;
+    }
+    if (retint) setContourTintFilter(tint, contourTint(pal, mode.opacity));
     contours.dataset.step = String(paths.step);
     contourScale = view.scale;
     contourStyle = backgroundStyle;
@@ -445,6 +456,7 @@ function drawContours(): void {
   if (layer.querySelector('image')) {
     layer.innerHTML = '<path vector-effect="non-scaling-stroke"/><path vector-effect="non-scaling-stroke"/>';
     shownContours = undefined;
+    shownContourPlate = undefined;
   }
   const [thin, index] = Array.from(layer.querySelectorAll('path'));
   if (shownContours !== paths) {
@@ -671,9 +683,9 @@ const settlements = createTerrainSettlements({
   active: true,
   parcelDefault: false,
   labels,
-  setGroundRoads: paint => {
+  setGroundRoads: (paint, regions) => {
     const active = !!groundRenderer && !!terrain && !terrain.field?.cave?.length && !terrain.caveMask?.length && resolveBenchAppearance().ground.traits.family === 'material';
-    groundRenderer?.setGroundRoads(active ? paint : undefined);
+    groundRenderer?.setGroundRoads(active ? paint : undefined, regions);
     return active;
   },
   getForestSource: () => {

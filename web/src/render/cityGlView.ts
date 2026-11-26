@@ -3,6 +3,8 @@
  * over a GL frame, so both pages draw the same pixels. The V2 has no DOM GL layer of its own: it
  * draws cityGl on an offscreen canvas and composites it into its Canvas 2D frame (CityGlComposite),
  * with every city of the map merged into one GL scene (one context, one upload). */
+import { mergePlanGeometrySteps } from './city/gl/mergePlan';
+import { groupBuildings, type BuildingSet } from './city/gl/buildingSet';
 import { SpatialBins, type Box, type CityBuildings, type CityLayers, type CityLod, type CityPalette, type CityRoofs, type CityScene, type CityView } from './cityCanvas';
 import { cityGlOverlayLayers, createCityGlRenderer, type CityGlDrawOptions, type CityGlFrame, type CityGlRenderer } from './cityGl';
 import type { RenderColors } from './customColors';
@@ -56,7 +58,6 @@ export const cityCanvasLayers = (layers: CityLayers, glFrame: CityGlFrame | unde
 
 // ---------------------------------------------------------------- merged scene (V2: several cities, one GL scene)
 const boxes = (scenes: readonly SpatialBins[]): Box[] => scenes.flatMap(bins => [...bins.boxes]);
-const union = (a: Box, b: Box): Box => ({ minX: Math.min(a.minX, b.minX), minY: Math.min(a.minY, b.minY), maxX: Math.max(a.maxX, b.maxX), maxY: Math.max(a.maxY, b.maxY) });
 /** Concatenated per-face values, `shift[i]` added to part i (missing parts give zeros). */
 function concat(parts: readonly (ArrayLike<number> | undefined)[], lengths: readonly number[], shift: readonly number[] = []): number[] {
   const out: number[] = [];
@@ -71,53 +72,7 @@ function concat(parts: readonly (ArrayLike<number> | undefined)[], lengths: read
 export const mergeCityPlans = (parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): { plan: CityScene; buildings: CityBuildings } => runSteps(mergeCityPlansSteps(parts));
 /** `mergeCityPlans` in resumable steps (live compositor: merged a few milliseconds at a time). */
 export function* mergeCityPlansSteps(parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): Generator<void, { plan: CityScene; buildings: CityBuildings }> {
-  const layouts: CityScene['layouts'][number][] = [];
-  const plan: CityScene = {
-    layouts,
-    blocks: [],
-    parcels: [],
-    streets: [],
-    walls: [],
-    districts: [],
-    landmarks: [],
-    footprint: [],
-    quays: [],
-    lotEnclosures: [],
-    enclosureProfiles: [],
-    lotYards: [],
-    extent: { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
-    ground: parts.find(p => p.plan.ground)?.plan.ground,
-    parcelById: new Map(),
-    bins: { blocks: new SpatialBins([]), parcels: new SpatialBins([]), streets: new SpatialBins([]), landmarks: new SpatialBins([]) },
-  };
-  for (const { plan: p } of parts) {
-    const L = plan.layouts.length,
-      P = plan.parcels.length;
-    layouts.push(...p.layouts);
-    plan.blocks.push(...p.blocks.map(b => ({ ...b, layout: b.layout + L })));
-    yield;
-    plan.parcels.push(...p.parcels.map(x => ({ ...x, layout: x.layout + L })));
-    yield;
-    plan.streets.push(...p.streets.map(s => ({ ...s, layout: s.layout + L })));
-    plan.districts.push(...p.districts.map(d => ({ ...d, layout: d.layout + L })));
-    plan.walls.push(...p.walls);
-    plan.landmarks.push(...p.landmarks.map(l => ({ ...l, parcel: l.parcel === undefined ? undefined : l.parcel + P })));
-    plan.footprint.push(...p.footprint);
-    plan.quays!.push(...(p.quays ?? []));
-    plan.lotEnclosures!.push(...(p.lotEnclosures ?? []));
-    plan.enclosureProfiles!.push(...p.layouts.map((_, i) => p.enclosureProfiles?.[i]));
-    plan.lotYards!.push(...(p.lotYards ?? []).map(y => ({ ...y, parcel: y.parcel + P })));
-    if (p.layouts.length || p.footprint.length) plan.extent = union(plan.extent, p.extent);
-    for (const [id, i] of p.parcelById) if (!plan.parcelById.has(id)) plan.parcelById.set(id, i + P);
-    yield;
-  }
-  plan.bins = {
-    blocks: new SpatialBins(boxes(parts.map(p => p.plan.bins.blocks)), 128),
-    parcels: new SpatialBins(boxes(parts.map(p => p.plan.bins.parcels)), 64),
-    streets: new SpatialBins(boxes(parts.map(p => p.plan.bins.streets)), 128),
-    landmarks: new SpatialBins(boxes(parts.map(p => p.plan.bins.landmarks)), 128),
-  };
-  yield;
+  const { plan } = yield* mergePlanGeometrySteps(parts.map(p => p.plan));
   return { plan, buildings: yield* mergeCityBuildingsSteps(parts) };
 }
 /** Items merged between two pauses of mergeCityBuildingsSteps. */
@@ -125,6 +80,9 @@ const MERGE_STEP = 2048;
 /** The buildings part of mergeCityPlans: items with their parcel indices shifted by the parcels of the earlier plans.
  * Also used alone to swap one city's buildings (very large towns: detail of the visible area, v2/nativeCityMap.ts). */
 export const mergeCityBuildings = (parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): CityBuildings => runSteps(mergeCityBuildingsSteps(parts));
+export function liveBuildingSet(parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): BuildingSet {
+  return groupBuildings(parts);
+}
 /** `mergeCityBuildings` in resumable steps. */
 export function* mergeCityBuildingsSteps(parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): Generator<void, CityBuildings> {
   const items: CityBuildings['items'] = [],

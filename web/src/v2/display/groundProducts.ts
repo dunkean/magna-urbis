@@ -12,7 +12,7 @@ import type { World } from '../../gen/types';
 import { setRoadCanopy } from '../../render/roadStyle';
 import { v2DisplayForestAsync, v2ForestOccupationParts, withBuildingOccupationAsync } from '../displayForest';
 import { localEditRegions } from '../localEditRegion';
-import type { ForestOccupation } from '../../../../rust/bridge/terrainForest';
+import type { ForestField, ForestOccupation } from '../../../../rust/bridge/terrainForest';
 import { activityScene } from '../activitySites';
 import { terrainStyle } from '../../render/terrainStyle';
 import { moonlightSvg } from '../../render/materialLook';
@@ -39,6 +39,10 @@ import { treeMix } from '../../render/treeSpecies';
 import { applyRenderColors } from '../../render/customColors';
 import { biomePalette } from '../../render/biomes';
 import type { TreeSymbolLook } from '../../render/treeSymbols';
+import type { Rect4 } from '../../render/view';
+import { patchBackgroundCapture } from '../../ui/terrain/backgroundCapture';
+import { renderWaterRings } from '../../render/renderWaterShader';
+import { growRect } from '../../render/cartography/geometry';
 
 /** `image`: the 2D base, with the crowns of a hidden relief. */
 type BaseRaster = { image?: HTMLCanvasElement; fantasy?: FantasyRaster };
@@ -56,6 +60,7 @@ export class GroundProducts implements Ground {
   fantasy?: FantasyRaster;
   /** The whole-map capture of the ground as a bitmap; dropped with the ground it shows. */
   private backgroundImage?: HTMLCanvasElement;
+  private backgroundRegions?: Rect4[];
   /** The compilation of the look's programs, and its failure: reported by exactReady() and settled(). */
   programWork?: Promise<void>;
   programError?: unknown;
@@ -132,8 +137,10 @@ export class GroundProducts implements Ground {
     if (this.gpuActive) await this.gpu!.variantReady();
     this.map.request?.mark('programs-ready');
   }
-  dropBackground(): void {
-    this.backgroundImage = undefined;
+  dropBackground(regions?: readonly Rect4[]): void {
+    if (regions && (!regions.length || !this.backgroundImage)) return;
+    if (regions) (this.backgroundRegions ??= []).push(...regions);
+    else this.backgroundImage = this.backgroundRegions = undefined;
     this.onCaptureDropped();
   }
   /** A new set(): the program state of the previous one is forgotten. */
@@ -356,6 +363,19 @@ export class GroundProducts implements Ground {
     return this.forestUpdate.running;
   }
   private forestShown = false;
+  private applyForest(gpu: TerrainRenderer, field?: ForestField, occupation?: ForestOccupation): boolean {
+    const before = gpu.contentRevision();
+    gpu.setForest(field, occupation);
+    setRoadCanopy(field, occupation);
+    if (before === gpu.contentRevision()) return false;
+    const regions = gpu.contentChanges(before);
+    // The occupation is sampled beyond the fragment by root/shadow searches, and the painted paper look reads its
+    // forest share at mip 5. The capture halo below deals separately with screen-space water and road strokes.
+    const cell = occupation ? occupation.width / occupation.n : 0,
+      reach = Math.max(256, this.map.resolved!.ground.traits.paperMap ? 64 * cell : 4 * cell);
+    this.dropBackground(regions?.map(r => growRect(r, reach)));
+    return !regions;
+  }
   async forestPass(): Promise<void> {
     // The pass runs again: its key moved, an update still in flight is for an older key.
     this.forestUpdate.cancel();
@@ -368,7 +388,6 @@ export class GroundProducts implements Ground {
       if (!this.map.disposed && this.map.world === world && this.map.request === request) setRoadCanopy(field, occupation);
       return;
     }
-    this.dropBackground();
     // The Rust forest field and the occupation worker are independent: run them at once.
     const job = Promise.all([v2DisplayForestAsync(this.map.world!, this.map.settings!, this.map.resolved!), this.groundOccupation()]);
     // Progressive display: a map on screen that already shows woods shows the new town at once, the woods follow when ready.
@@ -380,10 +399,7 @@ export class GroundProducts implements Ground {
         job,
         ([field, occupation]) => {
           if (this.map.disposed || this.gpu !== gpu || !this.gpuActive) return;
-          gpu.setForest(field, occupation);
-          setRoadCanopy(field, occupation);
-          this.dropBackground();
-          void this.preparePrograms();
+          if (this.applyForest(gpu, field, occupation)) void this.preparePrograms();
           this.map.invalidate();
         },
         error => {
@@ -396,25 +412,27 @@ export class GroundProducts implements Ground {
     }
     const [field, occupation] = await job;
     if (this.gpuActive) {
-      this.gpu!.setForest(field, occupation);
-      setRoadCanopy(field, occupation);
+      this.applyForest(this.gpu!, field, occupation);
       this.forestShown = true;
       this.map.invalidate();
     }
   }
-  /** The GPU capture copied to a 2D canvas right after the readback (a WebGPU canvas is blank once its frame is gone). */
-  private miniGroundCopy?: { source: HTMLCanvasElement; copy: HTMLCanvasElement };
+  /** The capture already lives in a 2D canvas, independently of the renderer's drawing buffer. */
   miniGround(): HTMLCanvasElement | undefined {
-    const source = this.groundBackground();
-    if (!source) return undefined;
-    if (this.miniGroundCopy?.source !== source) {
-      const copy = document.createElement('canvas');
-      copy.width = source.width;
-      copy.height = source.height;
-      copy.getContext('2d')!.drawImage(source, 0, 0);
-      this.miniGroundCopy = { source, copy };
+    if (!this.gpuActive || this.programWork || this.programError) return undefined;
+    if (this.forestJob) return this.backgroundImage;
+    const gpu = this.gpu!;
+    if (this.backgroundImage && this.backgroundRegions) {
+      const image = this.backgroundImage,
+        native = this.map.native!,
+        r = this.map.resolved!;
+      const water = terrainStyle(r.composition.networks.water.look === 'natural' ? 'render3d' : r.composition.networks.water.look === 'ink' ? r.palette.mapStyle : r.ground.style, r.palette.colors).water;
+      const rings = renderWaterRings(native.width / image.width, (native.waterSurface?.referenceWidth ?? native.width) * water.bandFraction);
+      const halo = Math.ceil(Math.max(32, rings[rings.length - 1])) + 2;
+      if (!patchBackgroundCapture(image, native.width, this.backgroundRegions, halo, (region, size) => gpu.captureMapPatch(region, size))) this.backgroundImage = undefined;
+      this.backgroundRegions = undefined;
     }
-    return this.miniGroundCopy.copy;
+    return (this.backgroundImage ??= gpu.captureMap(1024));
   }
   /** The terrain renderer as the ground layer bakes from it, or the CPU raster of a look without relief (topographic,
    * minimal: paper, sea and crowns), so that such a map is composed, and tilts, like the others; undefined while
@@ -458,12 +476,6 @@ export class GroundProducts implements Ground {
       },
     };
   })();
-  /** Terrain-pass bitmap; invalidated with the ground, shared without PNG encoding and image decoding. */
-  private groundBackground(): HTMLCanvasElement | undefined {
-    if (this.programWork || this.forestJob || this.programError) return undefined;
-    if (this.gpuActive) return (this.backgroundImage ??= this.gpu!.captureMap(1024));
-    return undefined;
-  }
   dispose(): void {
     this.gpu?.dispose();
     if (this.ownsMaterialContext) this.materialContext?.gl.getExtension('WEBGL_lose_context')?.loseContext();

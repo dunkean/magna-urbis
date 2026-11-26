@@ -99,6 +99,19 @@ const MIN_STEP = 0.05,
   GATE_MAX = 4.4;
 const lookOf = (e: YardBoundary): string => `${e.material}/${e.fenceStyle ?? ''}/${e.culture ?? ''}/${e.height ?? ''}`;
 
+const paths = new WeakMap<YardBoundary, Point[] | null>();
+function yardPath(e: YardBoundary): Point[] | null {
+  const held = paths.get(e);
+  if (held !== undefined) return held;
+  const path: Point[] = [];
+  for (const p of e.path) {
+    const q = path[path.length - 1];
+    if (Number.isFinite(p.x) && Number.isFinite(p.y) && (!q || Math.hypot(p.x - q.x, p.y - q.y) >= MIN_STEP)) path.push(p);
+  }
+  const result = path.length >= 2 && path.every((p, i) => !i || Math.hypot(p.x - path[i - 1].x, p.y - path[i - 1].y) <= 2000) ? path : null;
+  paths.set(e, result);
+  return result;
+}
 /** The boundaries as drawn: pieces of the same look meeting end to end become one polyline, so a corner is a true joint, and at
  * a junction the straightest pair goes through while the others butt into it. Ends left free and facing each other across a
  * short gap are the jambs of a gate. Bad input (non-finite or km-long sides) is left out. */
@@ -107,12 +120,8 @@ export function yardRuns(enclosures: readonly YardBoundary[]): { runs: YardRun[]
   if (cached) return cached;
   const pieces: { path: Point[]; source: YardBoundary }[] = [];
   for (const e of enclosures) {
-    const path: Point[] = [];
-    for (const p of e.path) {
-      const q = path[path.length - 1];
-      if (Number.isFinite(p.x) && Number.isFinite(p.y) && (!q || Math.hypot(p.x - q.x, p.y - q.y) >= MIN_STEP)) path.push(p);
-    }
-    if (path.length >= 2 && path.every((p, i) => !i || Math.hypot(p.x - path[i - 1].x, p.y - path[i - 1].y) <= 2000)) pieces.push({ path, source: e });
+    const path = yardPath(e);
+    if (path) pieces.push({ path, source: e });
   }
   // end 2i: the head of piece i; end 2i + 1: its tail. `outward` is the direction of the piece as it reaches that end.
   const pointOf = (end: number): Point => {
@@ -227,4 +236,112 @@ export function yardRuns(enclosures: readonly YardBoundary[]): { runs: YardRun[]
   const result = { runs, gates };
   RUNS.set(enclosures, result);
   return result;
+}
+
+interface BoundaryNode {
+  boundary: YardBoundary;
+  ends: Point[];
+  look: string;
+  order: number;
+  component?: BoundaryGroup;
+}
+interface BoundaryGroup {
+  nodes: BoundaryNode[];
+  geometry: ReturnType<typeof yardRuns>;
+}
+/** Connected components of same-look endpoints within gate reach. Every possible through joint and gate
+ * pairing is internal to one such component. Invalidation follows old and new links across tile boundaries. */
+export class RetainedYardRuns {
+  private source?: readonly YardBoundary[];
+  private nodes = new Map<string, BoundaryNode[]>();
+  private bins = new Map<string, Set<BoundaryNode>>();
+  private groups = new Set<BoundaryGroup>();
+  private result: ReturnType<typeof yardRuns> = { runs: [], gates: [] };
+  private keys = new WeakMap<YardBoundary, string>();
+  private key(e: YardBoundary): string {
+    let key = this.keys.get(e);
+    if (key === undefined) this.keys.set(e, (key = JSON.stringify([lookOf(e), e.path.map(p => [p.x, p.y])])));
+    return key;
+  }
+  private bin(p: Point, look: string, dx = 0, dy = 0) {
+    return look + '|' + (Math.floor(p.x / GATE_MAX) + dx) + ',' + (Math.floor(p.y / GATE_MAX) + dy);
+  }
+  private neighbours(n: BoundaryNode): Set<BoundaryNode> {
+    const found = new Set<BoundaryNode>();
+    for (const p of n.ends)
+      for (let dx = -1; dx <= 1; dx++)
+        for (let dy = -1; dy <= 1; dy++)
+          for (const other of this.bins.get(this.bin(p, n.look, dx, dy)) ?? []) {
+            if (other !== n && other.ends.some(q => Math.hypot(p.x - q.x, p.y - q.y) <= GATE_MAX)) found.add(other);
+          }
+    return found;
+  }
+  update(list: readonly YardBoundary[]): ReturnType<typeof yardRuns> {
+    if (list === this.source) return this.result;
+    const next = new Map<string, BoundaryNode[]>(),
+      pending = new Set<BoundaryNode>(),
+      invalid = new Set<BoundaryGroup>(),
+      last = new Map<BoundaryGroup, number>();
+    const order = new Map<YardBoundary, number>();
+    for (const [i, e] of list.entries()) {
+      const key = this.key(e);
+      let bucket = next.get(key);
+      if (!bucket) next.set(key, (bucket = []));
+      let n = this.nodes.get(key)?.[bucket.length];
+      if (!n) {
+        const path = yardPath(e);
+        if (!path) continue;
+        // Separate identical occurrences, preserving the tie order the exact town passes to yardRuns.
+        n = { boundary: { ...e }, ends: [path[0], path[path.length - 1]], look: lookOf(e), order: i };
+        pending.add(n);
+        for (const p of n.ends) {
+          const k = this.bin(p, n.look);
+          let group = this.bins.get(k);
+          if (!group) this.bins.set(k, (group = new Set()));
+          group.add(n);
+        }
+        for (const near of this.neighbours(n)) if (near.component) invalid.add(near.component);
+      } else if (n.component) {
+        if (n.order < (last.get(n.component) ?? -1)) invalid.add(n.component);
+        last.set(n.component, n.order);
+      }
+      n.order = i;
+      bucket.push(n);
+      order.set(n.boundary, i);
+    }
+    for (const [k, old] of this.nodes)
+      for (let i = next.get(k)?.length ?? 0; i < old.length; i++) {
+        const n = old[i];
+        if (n.component) invalid.add(n.component);
+        for (const p of n.ends) {
+          const key = this.bin(p, n.look),
+            bin = this.bins.get(key);
+          bin?.delete(n);
+          if (!bin?.size) this.bins.delete(key);
+        }
+      }
+    for (const group of invalid) {
+      this.groups.delete(group);
+      for (const n of group.nodes)
+        if (order.has(n.boundary)) {
+          n.component = undefined;
+          pending.add(n);
+        }
+    }
+    while (pending.size) {
+      const first = pending.values().next().value!,
+        nodes = [first];
+      pending.delete(first);
+      for (let n = 0; n < nodes.length; n++) for (const near of this.neighbours(nodes[n])) if (pending.delete(near)) nodes.push(near);
+      nodes.sort((a, b) => a.order - b.order);
+      const group = { nodes, geometry: yardRuns(nodes.map(n => n.boundary)) };
+      for (const n of nodes) n.component = group;
+      this.groups.add(group);
+    }
+    this.source = list;
+    this.nodes = next;
+    const runs = [...this.groups].flatMap(g => g.geometry.runs).sort((a, b) => Number(a.closed) - Number(b.closed) || order.get(a.source)! - order.get(b.source)!);
+    const gates = [...this.groups].flatMap(g => g.geometry.gates).sort((a, b) => order.get(a.source)! - order.get(b.source)!);
+    return (this.result = { runs, gates });
+  }
 }

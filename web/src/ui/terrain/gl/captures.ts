@@ -5,13 +5,14 @@
  * Owns the capture target.
  */
 import { captureLook, captureViewState, displayPixelRatio, settled, settledDetails } from '../redraw';
-import { deleteTarget, rgbaTarget, type GlTarget } from './resources';
+import { deleteTarget, GlViewTargets, rgbaTarget, type GlTarget } from './resources';
 import type { GlInputs } from './inputs';
 import type { GlRedraw } from './redraw';
 import type { HeightLayer, TerrainLook } from '../contract';
 
 export class GlCaptures {
   private target?: GlTarget;
+  private patchTargets?: GlViewTargets;
   constructor(
     private readonly gl: WebGL2RenderingContext,
     private readonly canvas: HTMLCanvasElement,
@@ -19,7 +20,7 @@ export class GlCaptures {
     private readonly inputs: GlInputs,
   ) {}
   /** A world-space LOD tile with the same material and detail as the map; `restore` redraws the display after. */
-  region(look: TerrainLook, region: { x: number; y: number; width: number }, size: number, includeDetails: boolean, restore: (() => void) | undefined, height?: HeightLayer, groundOverlay = false, alphaOnly?: Uint8Array): HTMLCanvasElement {
+  region(look: TerrainLook, region: { x: number; y: number; width: number }, size: number, includeDetails: boolean, restore: (() => void) | undefined, height?: HeightLayer, groundOverlay = false, alphaOnly?: Uint8Array, isolated = false): HTMLCanvasElement {
     const gl = this.gl,
       inputs = this.inputs;
     const capturedHeight = height ? inputs.upload(height, false) : undefined;
@@ -36,11 +37,11 @@ export class GlCaptures {
         enhanced: capturedHeight ? [settled(capturedHeight)] : [],
         pixelRatio: 1,
         stylePixelRatio: includeDetails ? displayPixelRatio() : 1,
-        targets: this.redraw.liveTargets,
+        targets: isolated ? (this.patchTargets ??= new GlViewTargets()) : this.redraw.liveTargets,
         capturing: false,
         tile: false,
       };
-      if (groundOverlay) {
+      if (groundOverlay || isolated) {
         this.target = rgbaTarget(gl, size, size, this.target);
         this.redraw.draw({ ...request, framebuffer: this.target.framebuffer });
         const rgba = new Uint8Array(size * size * 4);
@@ -58,8 +59,8 @@ export class GlCaptures {
               const a = (y * size + x) * 4,
                 b = ((size - 1 - y) * size + x) * 4,
                 alpha = rgba[b + 3];
-              for (let c = 0; c < 3; c++) image.data[a + c] = alpha ? Math.min(255, Math.round((rgba[b + c] * 255) / alpha)) : 0;
-              image.data[a + 3] = alpha;
+              for (let c = 0; c < 3; c++) image.data[a + c] = groundOverlay ? (alpha ? Math.min(255, Math.round((rgba[b + c] * 255) / alpha)) : 0) : rgba[b + c];
+              image.data[a + 3] = groundOverlay ? alpha : 255;
             }
           context.putImageData(image, 0, 0);
         }
@@ -76,5 +77,6 @@ export class GlCaptures {
   }
   dispose(): void {
     deleteTarget(this.gl, this.target);
+    this.patchTargets?.dispose(this.gl);
   }
 }

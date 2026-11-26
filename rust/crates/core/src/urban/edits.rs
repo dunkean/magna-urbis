@@ -97,6 +97,15 @@ fn valid_shape(s: &Shape) -> bool {
 /// Malformed quarter edits are refused (the UI withdraws them); impossible
 /// but well-formed ones only warn.
 pub(super) fn validate_quarters(cfg: &LayoutConfig) -> Result<(), String> {
+    for (key, wall) in &cfg.overrides.walls {
+        if key.is_empty() || key.len() > 128
+            || wall.style.as_deref().is_some_and(|s| !super::fortification::STYLES.contains(&s))
+            || wall.moat.as_deref().is_some_and(|m| !matches!(m, "none" | "dry" | "wet"))
+            || wall.gates.is_some_and(|n| n > 64)
+        {
+            return Err("Invalid enclosure override.".into());
+        }
+    }
     for o in cfg.overrides.quarters.values() {
         if o.shape.as_ref().is_some_and(|s| !valid_shape(s)) {
             return Err("Retouche de quartier invalide (forme)".into());

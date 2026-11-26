@@ -12,6 +12,27 @@ const LEAN_RUN: f64 = 0.55;
 const BEND_SPAN: f64 = 0.4;
 const BEND_GAIN: f64 = 3.0;
 
+/// Positive where the inside of the bend lies towards growing `across`.
+pub(crate) fn valley_turn(along: f64, motif: f64, center: f64, axis: impl Fn(f64) -> f64) -> f64 {
+    let h = motif * BEND_SPAN;
+    let curvature = (axis(along + h) + axis(along - h) - 2.0 * center) / (h * h);
+    (BEND_GAIN * curvature * motif).tanh()
+}
+
+/// A bend holds the axis against its outside. On straighter reaches, seeded wander takes over.
+pub(crate) fn valley_lean(along: f64, motif: f64, turn: f64, noise: &Noise) -> f64 {
+    let wander = (0.9 * noise.fbm(along / (motif * 5.0), 23.9, 2)).clamp(-0.6, 0.6);
+    turn + (1.0 - turn.abs()) * wander
+}
+
+/// Widen the floor and lengthen the slope on the inside by what the outside loses.
+pub(crate) fn valley_wall(offset: f64, floor: f64, run: f64, lean: f64, footprint: f64) -> f64 {
+    let toward = if offset < 0.0 { -1.0 } else { 1.0 };
+    let side = toward * lean;
+    let run = (run * (1.0 + LEAN_RUN * side)).max(footprint);
+    smooth((offset.abs() - floor * (1.0 + LEAN_FLOOR * side)) / run)
+}
+
 pub(crate) struct Channels {
     motif: f64,
     phase: f64,
@@ -98,19 +119,7 @@ impl Channels {
     /// Turn of the trunk at `along`, -1 to 1, positive where the inside of its bend lies towards
     /// growing `across`: the curvature of its large meanders over the valley's own scale.
     fn turn(&self, along: f64, meander: f64, noise: &Noise, noise2: &Noise) -> f64 {
-        let h = self.motif * BEND_SPAN;
-        let ahead = self.meander(along + h, noise, noise2);
-        let behind = self.meander(along - h, noise, noise2);
-        let curvature = (ahead + behind - 2.0 * meander) / (h * h);
-        (BEND_GAIN * curvature * self.motif).tanh()
-    }
-    /// Lean of the trunk valley at `along`, -1 to 1, towards growing `across` where positive. A
-    /// bend holds the axis against its outside; elsewhere the axis wanders between the sides (a
-    /// seeded, low-frequency noise) with the room the bend leaves it.
-    fn lean(&self, along: f64, meander: f64, noise: &Noise, noise2: &Noise) -> f64 {
-        let turn = self.turn(along, meander, noise, noise2);
-        let wander = (0.9 * noise2.fbm(along / (self.motif * 5.0), 23.9, 2)).clamp(-0.6, 0.6);
-        turn + (1.0 - turn.abs()) * wander
+        valley_turn(along, self.motif, meander, |p| self.meander(p, noise, noise2))
     }
     /// The trunk cross-section `offset` metres from its axis (positive towards growing `across`):
     /// zero over the floor, rising over the side to one. The two sides differ: the inside of a
@@ -132,10 +141,8 @@ impl Channels {
         if distance >= floor * (1.0 + LEAN_FLOOR) + (run * (1.0 + LEAN_RUN)).max(footprint) {
             return 1.0;
         }
-        let toward = if offset < 0.0 { -1.0 } else { 1.0 };
-        let side = toward * self.lean(along, meander, noise, noise2);
-        let run = (run * (1.0 + LEAN_RUN * side)).max(footprint);
-        smooth((distance - floor * (1.0 + LEAN_FLOOR * side)) / run)
+        let lean = valley_lean(along, self.motif, self.turn(along, meander, noise, noise2), noise2);
+        valley_wall(offset, floor, run, lean, footprint)
     }
 
     /// A normalized cross-section. Zero is the floor, one the surrounding upland.

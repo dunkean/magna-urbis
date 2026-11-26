@@ -202,6 +202,11 @@ pub(super) fn assign(
         trade_budget = (((housing_plots + kept_homes) as f64 * trade_share).floor() as usize).max(1)
             .saturating_sub(kept_trades);
     }
+    // A retained allocation or vacancy cannot enter the competition for a site.
+    // Keep parcel order for ties; ordinary generation still uses its dense range.
+    let edited = reference.map(|_| (0..parcels.len())
+        .filter(|&pi| !locked[pi] && assignments[pi].is_none())
+        .collect::<Vec<_>>());
     for &di in &order {
         let d = &pr.demands[di];
         if d.sites == 0 || d.unit == "domesticUnits" {
@@ -216,9 +221,9 @@ pub(super) fn assign(
         // Pure per parcel (the service cost tests the circuits for each): in
         // parallel, in parcel order.
         let free_now = &*assignments;
-        let mut candidates: Vec<(usize, f64)> = crate::urban::par::range(parcels.len(), |pi| {
+        let mut candidates: Vec<(usize, f64)> = crate::urban::par::range(edited.as_ref().map_or(parcels.len(), Vec::len), |i| {
+            let pi = edited.as_ref().map_or(i, |lots| lots[i]);
             (free_now[pi].is_none()
-                && !retained(pi)
                 && (matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
                     || d.function == "common" && parcels[pi].use_kind == "garden")
                 && !reserved_for.contains_key(&parcels[pi].block)

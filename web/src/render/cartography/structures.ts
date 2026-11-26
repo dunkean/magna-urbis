@@ -4,6 +4,7 @@
  * clip that drawVector opened before the land use.
  * Reads: world, scene, palette, the cave rock image.
  */
+import { setMapInk } from '../gpu/recorder';
 import { cavernWallFill, CAVERN_RIM } from '../caverns';
 import { drawCaveTunnels } from '../caveTunnels';
 import { bridgeShapes, isKinded, type BridgeShapes } from '../townbridges';
@@ -43,7 +44,7 @@ export function paintStructures(c: CartographyContext, f: VectorFrame): void {
       if (rooms) {
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = pal.landOpacity;
-        ctx.fillStyle = pal.land.garden;
+        setMapInk(ctx, 'fillStyle', c.ink('garden'));
         ctx.fill(rooms, 'nonzero');
         ctx.globalAlpha = 1;
         const pattern = getPattern(ctx, 'cavern-fungi', 8, 8, 0, (cx, k) => drawPanelCanvas(cx, { w: 0, h: 0, prims: underdarkMark('garden', 4 * k, 4 * k, 1.7 * k, pal, k) }, 0, 0, family));

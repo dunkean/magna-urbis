@@ -50,10 +50,15 @@ pub(super) fn relax_slopes(town: &Town<'_>) -> Result<Relaxed, String> {
         && site.population > 0;
     let mountain_village = (15..1000).contains(&site.population) && slopes::eligible(site, config, town.surface, kind);
     // The look-ahead reads the quarter grammar: a fixed single structure keeps its own plot (`plan::lay_quarters`).
-    let ahead = if relaxable && (!kind.small() || (town.fixed && !town.single_structure()) || mountain_village) {
+    let start = if relaxable && (!kind.small() || (town.fixed && !town.single_structure()) || mountain_village) {
         footprint::slope_relax_ahead(&town.key_seed, site, config, town.surface, town.roads)
     } else {
-        0.0
+        footprint::SlopeStart::Level(0.0)
+    };
+    // Keep the original setting for the household and slope-ward ladders.
+    let ahead = match start {
+        footprint::SlopeStart::Level(level) => level,
+        footprint::SlopeStart::CheckFirstRung => 0.0,
     };
     #[cfg(not(target_arch = "wasm32"))]
     if ahead > 0.0 && std::env::var("URBAN_PROFILE").is_ok() {
@@ -62,6 +67,35 @@ pub(super) fn relax_slopes(town: &Town<'_>) -> Result<Relaxed, String> {
     let mut first = config.clone();
     if ahead > 0.0 {
         first.programme.slope_relax = ahead;
+    }
+    let half = profiles::SLOPE_RELAX_STEPS[0];
+    let mut trial = None;
+    if matches!(start, footprint::SlopeStart::CheckFirstRung) {
+        let mut candidate = config.clone();
+        candidate.programme.slope_relax = half;
+        let result = formal(town, &candidate);
+        // Verify the forecast against the actual street-cut block and reserve
+        // areas. With no missing households the candidate wins even a tie on
+        // capacity when only its relaxed gate reaches the land goal.
+        let verified = result.as_ref().is_ok_and(|(layout, _)| {
+            if !footprint::capacity::of(layout).is_some_and(|p| p.shortfall == 0.0) { return false; }
+            let [strict, relaxed] = housable_shares(layout, [0.0, half]);
+            #[cfg(not(target_arch = "wasm32"))]
+            if std::env::var("URBAN_PROFILE").is_ok() {
+                eprintln!("  slope_relax.blocks: strict {strict:.3}, half {relaxed:.3}");
+            }
+            strict < profiles::SLOPE_RELAX_GOAL && relaxed >= profiles::SLOPE_RELAX_GOAL
+        });
+        if verified {
+            let (mut layout, baseline) = result?;
+            #[cfg(not(target_arch = "wasm32"))]
+            if std::env::var("URBAN_PROFILE").is_ok() {
+                eprintln!("  slope_relax.ahead: {half} (verified on blocks)");
+            }
+            layout.warnings.push(warnings::house_slope_relaxed(half * 100.0));
+            return Ok(Relaxed { layout, baseline, chosen: candidate, first, ahead });
+        }
+        trial = Some(result);
     }
     let mut chosen = first.clone();
     let (mut layout, mut baseline) = formal(town, &first)?;
@@ -79,7 +113,8 @@ pub(super) fn relax_slopes(town: &Town<'_>) -> Result<Relaxed, String> {
             }
             let mut relaxed = config.clone();
             relaxed.programme.slope_relax = relax;
-            let Ok((next, next_baseline)) = formal(town, &relaxed) else { continue };
+            let result = trial.take().unwrap_or_else(|| formal(town, &relaxed));
+            let Ok((next, next_baseline)) = result else { continue };
             let (next_share, next_missing) = (housable_share(&next), shortfall(&next));
             if next_missing < missing || (next_missing == missing && next_share > share) {
                 (layout, baseline, share, missing, chosen) = (next, next_baseline, next_share, next_missing, relaxed);
@@ -201,30 +236,36 @@ fn housed_households(seed: &str, layout: &Layout) -> f64 {
 /// fields) that its houses may use: dry blocks within the house slope gate of
 /// the layout's programme, relaxation included. 1 for a layout without land.
 pub(in crate::urban) fn housable_share(layout: &Layout) -> f64 {
-    let Some(pr) = &layout.programme else { return 0.0 };
+    housable_shares(layout, [layout.programme.as_ref().map_or(0.0, |pr| pr.context.slope_relax)])[0]
+}
+
+fn housable_shares<const N: usize>(layout: &Layout, levels: [f64; N]) -> [f64; N] {
+    let Some(pr) = &layout.programme else { return [0.0; N] };
     // An isolated site is one structure on one reserved block: housable once
     // that block is reserved (its own isolated admission, not the town's).
     if roles::is_isolated(&pr.context.intent) {
-        return if pr.reservations.is_empty() { 0.0 } else { 1.0 };
+        return [if pr.reservations.is_empty() { 0.0 } else { 1.0 }; N];
     }
     let max_slope = culture::mapping_for(&layout.culture, &pr.context.period)
-        .map_or(f64::INFINITY, |m| profiles::house_slope(&layout.culture, m.admissibility.max_slope, pr.context.slope_relax));
+        .map_or([f64::INFINITY; N], |m| levels.map(|r| profiles::house_slope(&layout.culture, m.admissibility.max_slope, r)));
     let mut environment = vec![None; layout.blocks.len()];
     for e in &pr.environment {
         if let Some(slot) = environment.get_mut(e.block) {
             *slot = Some(e);
         }
     }
-    let (mut total, mut housable) = (0.0, 0.0);
+    let (mut total, mut housable) = (0.0, [0.0; N]);
     for (b, e) in layout.blocks.iter().zip(&environment) {
         if !matches!(b.kind.as_str(), "block" | "reserve") {
             continue;
         }
         let area = geometry::area(&b.shape);
         total += area;
-        if e.is_some_and(|e| !e.wet && e.slope <= max_slope) {
-            housable += area;
+        if let Some(e) = e.filter(|e| !e.wet) {
+            for (sum, limit) in housable.iter_mut().zip(max_slope) {
+                if e.slope <= limit { *sum += area; }
+            }
         }
     }
-    if total <= 0.0 { 1.0 } else { housable / total }
+    housable.map(|a| if total <= 0.0 { 1.0 } else { a / total })
 }

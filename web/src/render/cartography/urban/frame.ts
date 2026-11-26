@@ -3,6 +3,7 @@
  * block level of detail): the street classes, the open / stilt ground flags, the patterns of paved, planted and
  * grave grounds and of landmarks, and the building budgets. Reads: world, palette, patterns.
  */
+import { type MapInk } from '../../gpu/recorder';
 import { isUnderdarkBiome } from '../../../gen/biomes';
 import { LineLayer, type PolyLayer } from '../../scene';
 import { drawPanelCanvas } from '../../legend';
@@ -36,7 +37,7 @@ export interface UrbanFrame {
   /** Close enough for patterns. */
   readonly near: boolean;
   /** A fill, then its pattern when near. */
-  readonly paved: (name: string, base: string, pat: CanvasPattern | null, patAlpha?: number) => void;
+  readonly paved: (name: string, base: MapInk, pat: CanvasPattern | null, patAlpha?: number) => void;
   readonly pave: CanvasPattern | null;
   readonly gardenPat: CanvasPattern | null;
   readonly gravePat: CanvasPattern | null;
@@ -62,7 +63,7 @@ export function urbanFrame(c: CartographyContext, f: VectorFrame): UrbanFrame {
   const open = !!c.world.urban?.renderHints?.openGround && !stilts;
   const earth = mixHex(pal.trackFill, U.street, 0.52);
   const near = lod.band >= 2;
-  const paved = (name: string, base: string, pat: CanvasPattern | null, patAlpha = 1): void => {
+  const paved = (name: string, base: MapInk, pat: CanvasPattern | null, patAlpha = 1): void => {
     fillPolys(name, base);
     if (near && pat) {
       const l = polyL(name);

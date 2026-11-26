@@ -9,7 +9,7 @@
  */
 import { CanvasCanopy } from '../canopy';
 import { CanvasBrushes } from '../brushCanvas';
-import { supportsPaintedBiome } from '../brushes';
+import { brushColorMatrix, supportsPaintedBiome } from '../brushes';
 import { cavernDisplayWorld } from '../cavernDisplay';
 import { cavernRockPixels } from '../caverns';
 import { isUnderdarkBiome } from '../../gen/biomes';
@@ -17,6 +17,7 @@ import { orientPos } from '../../gen/geo/poly';
 import { furrowLines } from '../furrows';
 import { renderView } from '../../gen/settlements/merge';
 import { biomePalette } from '../biomes';
+import { SeasonColorTable, seasonSource, type SeasonInk } from '../seasonPalette';
 import { applyRenderColors } from '../customColors';
 import { renderTerrainPixels } from '../raster';
 import { worldWaterPixels } from '../terrainWater';
@@ -74,6 +75,8 @@ function defaultCreateCanvas(w: number, h: number): CanvasLike | null {
 export class CartographyContext {
   basePalette: Palette;
   pal: Palette;
+  private inks: SeasonColorTable;
+  readonly ink = (name: SeasonInk) => this.inks.ink(name);
   /** Identity of the palette (the same object, the same id): part of the keys of everything painted. */
   paletteId: number;
   /** Side of the map square (m). */
@@ -132,6 +135,7 @@ export class CartographyContext {
   /** GPU recording: canopy sprite data per index tile and atlas resolution (woods.ts recordTreeSprites). */
   readonly treeSprites = new Map<TextureLayer, Map<string, { image: CanvasImageSource; data: Float32Array; marks: Mark[] } | null>>();
   readonly penMarks = new Map<string, PenMark[]>();
+  penMask?: ParchmentSymbols;
   readonly penSheets = new Map<string, ParchmentSymbols>();
   /** Lone trees stepping out of the woods, per open land layer and index tile. */
   readonly strayMarks = new Map<TextureLayer, Map<number, Mark[]>>();
@@ -164,6 +168,7 @@ export class CartographyContext {
     this.basePalette = deps.palette?.() ?? biomePalette(style, world.options.biome);
     this.paletteId = paletteIdOf(this.basePalette);
     const pal = (this.pal = applyRenderColors(this.basePalette, deps.colors));
+    this.inks = new SeasonColorTable(pal);
     this.scene = deps.scene ?? buildScene(world0, deps.tileSize, { mask: deps.mask });
     this.S = world.mapSize;
     this.u = this.S / 1600;
@@ -178,11 +183,13 @@ export class CartographyContext {
   }
 
   /** The stamps tinted by the palette: the canopy sprites and the painted brushes. */
-  private tintStamps(): void {
+  private tintStamps(keepBrushes = false): void {
     const { deps, world, pal } = this;
     this.canopy?.dispose();
-    this.brushes?.dispose();
+
     this.canopy = deps.vegetation === 'canopy' && !isUnderdarkBiome(world.options.biome) ? new CanvasCanopy(world.seed, pal, this.makeCanvas) : undefined;
+    if (keepBrushes && this.brushes) return;
+    this.brushes?.dispose();
     this.brushes = undefined;
     if (deps.brushes && supportsPaintedBiome(world.options.biome)) {
       try {
@@ -197,15 +204,21 @@ export class CartographyContext {
   readonly syncPalette = (): number => {
     const next = this.deps.palette?.();
     if (next && next !== this.basePalette) {
+      const sameSource = seasonSource(next) === seasonSource(this.basePalette);
       this.basePalette = next;
       this.paletteId = paletteIdOf(next);
       this.pal = applyRenderColors(next, this.deps.colors);
-      this.tintStamps();
+      // Old live suffixes can still draw above their old baked prefixes while the replacement is prepared.
+      // Keep those slots pinned to this date. Retained land recordings own their mutable table.
+      this.inks = new SeasonColorTable(this.pal);
+      // Only monochrome styles have a brush colour matrix; their palettes never season.
+      this.tintStamps(sameSource && !brushColorMatrix(this.pal));
       this.treeSprites.clear();
       this.layerTiles.clear();
       this.penSheets.clear();
       this.patterns.clear();
-      this.terrainImg = this.waterImg = this.cavernRockImg = this.densityImg = undefined;
+      this.terrainImg = this.waterImg = undefined;
+      if (!sameSource) this.cavernRockImg = this.densityImg = undefined;
       this.dropPanels();
     }
     return this.paletteId;

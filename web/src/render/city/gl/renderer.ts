@@ -11,23 +11,26 @@
  * loss and dispose, and nothing outside reads them except a frame, which receives them as `GpuTown`.
  */
 import type { Point } from '../../../../../rust/bridge/urban';
-import type { CityBuildings, CityLod, CityScene } from '../model/contract';
+import { firstBuilding, sameBuildingTier, buildingById, type BuildingSet } from './buildingSet';
+import type { CityLod, CityScene } from '../model/contract';
 import { selectCityLod } from '../levels';
-import { buildStreetStrokes, buildTowers, cityOrigin, fillMesh, packBuildingsSteps, packPlanSteps, runSteps, STROKE_STRIDE, type CityGlBox4, type CityGlFillMesh, type CityGlFillSource, type CityGlStrokes } from '../../cityGlBuild';
-import { buildingColors, buildingColorsSteps, DEFAULT_LAYERS, planColors, planColorsSteps, planMaterialTable, roofMaterialTable, streetColors, streetColorsSteps, streetMaterialTable, type CityGlDraws, type CityGlStyleState } from './styleTables';
+import { buildStreetStrokes, buildTowers, cityOrigin, fillMesh, packBuildingsSteps, packPlanSteps, runSteps, STROKE_STRIDE, type CityGlFillMesh, type CityGlFillSource, type CityGlStrokes } from '../../cityGlBuild';
+import { buildingColorsSteps, DEFAULT_LAYERS, planColorsSteps, planMaterialTable, roofMaterialTable, streetColorsSteps, streetMaterialTable, type CityGlDraws, type CityGlStyleState } from './styleTables';
 import { SELECTION } from '../look';
-import { buildYardStrokes, yardColors } from '../../cityGlYards';
+import { YardStrokeBuilder, yardColors } from '../../cityGlYards';
 import type { YardBoundary } from '../../cityLotEnclosures';
 import { isBlended } from '../../groundBlend';
 import { roofSeasonKey } from '../../seasonPalette';
 import { toneKey } from '../../groundTone';
 import { loadMaterialImages, uploadMaterialArrays } from '../../buildingMaterials';
-import { cityStrokedWalls, cityWallColors, cityWallStrokes, createCityGlWalls, type CityGlWalls } from '../../cityWalls'; // walls hook (cityWalls.ts)
+import { cityWallDetails, cityWallColors, cityWallStrokes, createCityGlWalls, type CityGlWalls } from '../../cityWalls'; // walls hook (cityWalls.ts)
 import { CityGlDrawOptions, CityGlFrame, CityGlBuildStats, CityGlRenderer, CityGlSharedRenderer, CityGlCreateOptions } from './contract';
 import { FILL_VS, FILL_FS, PAVED_VS, PAVED_FS, STROKE_VS, STROKE_FS, TFILL_VS, TFILL_FS, DISC_VS, DISC_FS, WATER_VS, WATER_FS, strokeVariant } from './shaders';
 import { Program, PendingProgram, startProgram, programLinked, finishProgram, compile } from './programs';
-import { FillPack, FillPages, StrokePack, crossingStart, type FillPage } from './packs';
-import { concatPolygons, sameBuildingPage, samePlanPage, splitBuildingsSteps, splitPlanSteps, splitTriangulation, type CityGlBuildingPage, type CityGlPlanPage } from './pages';
+import { tableRows, replaceBufferParts, FillPack, FillPages, StrokePack, crossingStart, type CellColors, type CellPaint, type FillPage } from './packs';
+import { changedStreets, sameWalls, sameYards } from './sceneChanges';
+import { CellPageMesh, type MeshCell } from './cellMesh';
+import { planDrawOrder, buildingDrawOrder, CITY_EDIT_CELL, planEditCells, cellsInRects, drawPageKey, sameBuildingPage, samePlanPage, splitBuildingsSteps, splitPlanSteps, type CityGlBuildingPage, type CityGlPlanPage } from './pages';
 import { drawTownFrame } from './frame';
 import { Triangulator } from './triangulator';
 import { cityGlPick } from './hostTools';
@@ -79,14 +82,17 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
     builtMatKey = '';
   // The fills as spatial pages (pages.ts): an edit packs, triangulates, colours and uploads only the pages it changed.
   let plan: FillPages<CityGlPlanPage> | undefined, built: FillPages<CityGlBuildingPage> | undefined, streets: StrokePack | undefined, walls: StrokePack | undefined, selection: StrokePack | undefined;
-  let towers: { vbo: WebGLBuffer; vao: WebGLVertexArrayObject; count: number } | undefined;
+  let towers: { vbo: WebGLBuffer; vao: WebGLVertexArrayObject; count: number; bytes: number; parts: readonly ArrayBuffer[] } | undefined;
   let scene: CityScene | undefined,
-    buildings: CityBuildings | undefined,
+    buildings: BuildingSet | undefined,
+    snowAltitude: number | undefined,
     origin: Point = { x: 0, y: 0 };
   let streetSurface = true;
-  let planMesh: PageBuild<CityGlPlanPage>[] | undefined, builtMesh: PageBuild<CityGlBuildingPage>[] | undefined, streetData: CityGlStrokes | undefined, wallData: CityGlStrokes | undefined, towerData: Float32Array | undefined;
+  let sceneRevision: number | undefined, buildingRevision: number | undefined;
+  let planMesh: PageBuild<CityGlPlanPage>[] | undefined, builtMesh: PageBuild<CityGlBuildingPage>[] | undefined, streetData: CityGlStrokes | undefined, wallData: CityGlStrokes | undefined, towerData: ArrayBuffer[] | undefined;
   let styleKey = '',
     streetKey = '',
+    wallKey = '',
     builtKey = '',
     draws: CityGlDraws | undefined,
     towerColors: [string, string] = ['#5a5248', '#2f2a24'];
@@ -217,46 +223,132 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
   /** The pages of a build on the GPU: the kept ones as they are (made again only when a later upload let them go), the
    * others from their new mesh; the pages of `previous` not kept are released. */
   function pagesOn<T>(builds: readonly PageBuild<T>[], previous: FillPages<T> | undefined): FillPages<T> {
-    const alive = new Set(previous?.pages.map(p => p.pack));
-    const pages = builds.map((b): FillPage<T> => (b.kept && alive.has(b.kept.pack) ? b.kept : { key: b.key, part: b.part, pack: new FillPack(gl, b.mesh ?? b.kept!.pack.mesh), box: meshBox(b.mesh ?? b.kept!.pack.mesh) }));
-    const kept = new Set(pages.map(p => p.pack));
-    for (const p of previous?.pages ?? []) if (!kept.has(p.pack)) p.pack.dispose();
+    const old = new Map(previous?.pages.map(p => [p.key, p]));
+    const groups = new Map<number, MeshCell<T>[]>();
+    for (const b of builds) {
+      const key = drawPageKey(b.key);
+      let cells = groups.get(key);
+      if (!cells) groups.set(key, (cells = []));
+      cells.push({ key: b.key, part: b.part, order: b.order, mesh: b.mesh! });
+    }
+    const pages: FillPage<T>[] = [];
+    for (const [key, cells] of groups) {
+      const held = old.get(key);
+      old.delete(key);
+      if (held) {
+        const dirty = cells.filter(c => held.geometry.cells.get(c.key)?.mesh !== c.mesh);
+        if (!dirty.length && held.geometry.cells.size === cells.length && cells.every(c => held.geometry.cells.get(c.key)!.order === c.order)) {
+          pages.push(held);
+          continue;
+        }
+        const groupsOfCells = new Set(cells.map(c => c.key));
+        const removed = [...held.geometry.cells.keys()].filter(key => !groupsOfCells.has(key));
+        if (held.geometry.patch(cells, held.pack.uploadRange, held.pack.moveIndices)) {
+          for (const key of removed) held.pack.removeCell(key);
+          for (const c of dirty) held.pack.invalidateCell(c.key);
+          held.box = held.geometry.box;
+          pages.push(held);
+          continue;
+        }
+        held.pack.dispose();
+      }
+      const geometry = new CellPageMesh(cells);
+      pages.push({ key, geometry, box: geometry.box, pack: new FillPack(gl, geometry.mesh) });
+    }
+    for (const p of old.values()) p.pack.dispose();
     return new FillPages(pages);
   }
-  function uploadPlan(): number {
-    const t = performance.now();
-    const previous = plan;
-    streets?.dispose();
-    walls?.dispose();
-    // Lot enclosures are relative to the scene origin: the owner sets them again for a new scene.
-    if (yards) {
-      yards.runs.dispose();
-      yards.jambs.dispose();
-      yards = undefined;
+  function* prepareColors<T>(pages: FillPages<T>, key: string, make: (c: MeshCell<T>) => Generator<void, CellColors>, current: () => boolean): Generator<void, void> {
+    for (const page of pages.pages) {
+      if (page.pack.has(key)) continue;
+      const patches: CellPaint[] = [];
+      for (const cell of page.geometry.cells.values()) {
+        if (!page.pack.needsCell(key, cell.key)) continue;
+        const colors = yield* make(cell);
+        if (!current()) return;
+        patches.push({ cell: cell.key, first: page.geometry.slots.get(cell.key)!.feature.start, colors });
+      }
+      page.pack.colors(key, patches);
+      const active = pages === plan ? styleKey : builtKey;
+      if (active && active !== key) page.pack.table(active);
     }
-    if (towers) {
-      gl.deleteBuffer(towers.vbo);
-      gl.deleteVertexArray(towers.vao);
-      towers = undefined;
-    }
+    pages.forget(key);
+  }
+  function* preparePlan(pl: FillPages<CityGlPlanPage>, key: string, style: CityGlStyleState) {
+    yield* prepareColors(
+      pl,
+      key,
+      function* (c) {
+        const pc = yield* planColorsSteps(c.part.plan, c.mesh, style);
+        return { ...pc, extra: { hatch: pc.hatch } };
+      },
+      () => plan === pl,
+    );
+  }
+  function* prepareBuildings(bb: FillPages<CityGlBuildingPage>, key: string, style: CityGlStyleState) {
+    yield* prepareColors(
+      bb,
+      key,
+      function* (c) {
+        const bc = yield* buildingColorsSteps(c.part.buildings, style);
+        return { ...bc, extra: bc.roofGrain };
+      },
+      () => built === bb,
+    );
+  }
+  let uploadedWallDetails: ReturnType<typeof cityWallDetails> | undefined;
+  let uploadedWalls: CityGlStrokes | undefined, uploadedStreets: CityGlStrokes | undefined;
+  let yardBuilder: YardStrokeBuilder | undefined, yardOrigin: Point | undefined;
+  let yardSources: readonly (readonly YardBoundary[] | undefined)[] | undefined;
+  const streetPaintDirty = new Set<number>(),
+    streetMaterialDirty = new Set<number>();
+  function uploadPlan(changes?: { base: CityGlStrokes; indices: readonly number[] }): number {
+    const t = performance.now(),
+      previous = plan;
     plan = planMesh ? pagesOn(planMesh, previous) : (previous?.dispose(), undefined);
-    wallGl.upload(scene, origin); // walls hook
-    streets = streetData && new StrokePack(gl, streetData);
-    walls = wallData && new StrokePack(gl, wallData);
-    streetCrossings = crossingStart(streetData);
-    if (towerData) {
-      const vbo = gl.createBuffer()!,
-        vao = gl.createVertexArray()!;
-      gl.bindVertexArray(vao);
-      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-      gl.bufferData(gl.ARRAY_BUFFER, towerData, gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(0);
-      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-      gl.vertexAttribDivisor(0, 1);
-      gl.bindVertexArray(null);
-      towers = { vbo, vao, count: towerData.length / 2 };
+    if (changes && streets && changes.base === uploadedStreets && streetData?.parts) {
+      if (streetData !== uploadedStreets) streets.replaceParts(streetData, changes.indices);
+      for (const i of changes.indices) streetPaintDirty.add(i);
+      for (const i of changes.indices) streetMaterialDirty.add(i);
+      if (tableRows(changes.base.streets?.length ?? 0) !== tableRows(scene?.streets.length ?? 0)) {
+        streetKey = streetMatKey = '';
+      }
+    } else if (streetData !== uploadedStreets || !streets) {
+      streets?.dispose();
+      streets = streetData && new StrokePack(gl, streetData);
+      streetKey = streetMatKey = '';
+      streetPaintDirty.clear();
+      streetMaterialDirty.clear();
     }
-    styleKey = streetKey = selectionKey = planMatKey = streetMatKey = '';
+    streetCrossings = crossingStart(streetData);
+    uploadedStreets = streetData;
+    if (wallData !== uploadedWalls || !walls) {
+      if (walls?.strokes.parts && wallData?.parts) walls.replaceParts(wallData);
+      else {
+        walls?.dispose();
+        walls = wallData && new StrokePack(gl, wallData);
+      }
+      const details = scene && cityWallDetails(scene);
+      if (!uploadedWallDetails || !details || details.length !== uploadedWallDetails.length || details.some((d, i) => d !== uploadedWallDetails![i])) wallGl.upload(scene, origin);
+      uploadedWallDetails = details;
+      wallKey = '';
+      if (towerData) {
+        towers ??= { vao: gl.createVertexArray()!, vbo: gl.createBuffer()!, count: 0, bytes: 0, parts: [] };
+        const data = replaceBufferParts(gl, towers.vbo, towers.bytes, towers.parts, towerData);
+        towers.vbo = data.vbo;
+        towers.bytes = data.bytes;
+        towers.count = towerData.reduce((n, p) => n + p.byteLength / 8, 0);
+        towers.parts = towerData;
+        gl.bindVertexArray(towers.vao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, towers.vbo);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribDivisor(0, 1);
+        gl.bindVertexArray(null);
+      }
+    }
+    uploadedWalls = wallData;
+    styleKey = selectionKey = planMatKey = '';
     return performance.now() - t;
   }
   function uploadBuildings(): number {
@@ -279,6 +371,10 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
     lost = true;
     plan = built = streets = walls = selection = undefined;
     towers = undefined;
+    uploadedWallDetails = undefined;
+    yards = undefined;
+    yardSources = undefined;
+    uploadedStreets = uploadedWalls = undefined;
     water = undefined;
     albedoTex = undefined;
     albedoLoading = false;
@@ -303,13 +399,17 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
     const fresh = builds.filter(b => b.source);
     if (!fresh.length) return { triangulateMs: 0, assembleMs: 0, workers: 0 };
     let t = performance.now();
-    const polygons = fresh.map(b => b.source!.polygons);
-    const { result, workers: used } = await triangulator.run({ ...fresh[0].source!, polygons: concatPolygons(polygons) }, workers, kind);
+    const regions = fresh.map(b => ({ key: b.key, polygons: b.source!.polygons }));
+    const { results, workers: used } = await triangulator.run(
+      regions,
+      workers,
+      kind,
+      builds.map(b => b.key),
+    );
     const triangulateMs = performance.now() - t;
     t = performance.now();
-    const parts = splitTriangulation(result, polygons);
     fresh.forEach((b, i) => {
-      b.mesh = fillMesh(b.source!, parts[i]);
+      b.mesh = fillMesh(b.source!, results[i]);
       b.source = undefined;
     });
     return { triangulateMs, assembleMs: performance.now() - t, workers: used };
@@ -343,9 +443,32 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
     const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, o.buildingStyle, refusedKey(o.refusedParcels), painted, style.blended, toneKey(), palette === 'parchment' ? roofSeasonKey() : '']) + liveKey;
     const softStreets = !!style.blended && !(o.textured && palette !== 'parchment' && palette !== 'ink'),
       sKey = `${palette}|${softStreets}|${colorKey}|${toneKey()}|${liveKey}`;
-        // Each page keeps the tables of its own buildings: no building generation in the key.
+    // Each page keeps the tables of its own buildings: no building generation in the key.
     const bKey = `${o.view}|${palette}|${style.diagnostic}|${o.buildingStyle}|${o.roof ?? ''}|${painted}|${colorKey}|${roofSeasonKey()}|${liveKey}`;
     return { palette, layers, footprint, renderBackground, painted, style, key, softStreets, sKey, bKey };
+  }
+  function* prepareStreets(s: CityScene, st: ReturnType<typeof stateOf>, o: CityGlDrawOptions) {
+    if (streetKey !== st.sKey || streetPaintDirty.size) {
+      const changed = streetKey === st.sKey ? [...streetPaintDirty].filter(i => i < s.streets.length).sort((a, b) => a - b) : undefined;
+      const sc = yield* streetColorsSteps(s, st.palette, st.softStreets, o.colors, o.live, changed);
+      if (s !== scene) return;
+      if (changed) {
+        for (let j = 0; j < changed.length;) {
+          let end = j + 1;
+          while (end < changed.length && changed[end] === changed[end - 1] + 1) end++;
+          streets?.patchColors(changed[j], sc.outer.subarray(j * 4, end * 4), sc.inner.subarray(j * 4, end * 4));
+          j = end;
+        }
+      } else streets?.colors(sc.outer, sc.inner);
+      streetKey = st.sKey;
+      streetPaintDirty.clear();
+    }
+    if (wallKey !== st.palette) {
+      const wc = cityWallColors(s, st.palette);
+      walls?.colors(wc.outer, wc.inner);
+      towerColors = wc.tower;
+      wallKey = st.palette;
+    }
   }
   /** What a draw state needs on the GPU besides the meshes: street strokes of the road-surface switch, colour and
    * material tables, the drawn water. Each is rebuilt only when its state key changes (plan tables are kept per key),
@@ -354,7 +477,8 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
   function styleFrame(o: CityGlDrawOptions, lod: CityLod) {
     const s = scene!,
       pl = plan!;
-    const { palette, layers, footprint, renderBackground, painted, style, key, softStreets, sKey, bKey } = stateOf(o, lod);
+    const state = stateOf(o, lod);
+    const { palette, layers, footprint, renderBackground, painted, style, key, softStreets, sKey, bKey } = state;
     // Road surface layer toggled: rebuild the street strokes (round caps, one width when off).
     const surface = layers.roadSurface !== false;
     if (surface !== streetSurface) {
@@ -363,6 +487,8 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         streetData = buildStreetStrokes(scene, origin, surface, planPath);
         streets?.dispose();
         streets = new StrokePack(gl, streetData);
+        uploadedStreets = streetData;
+        streetMatKey = '';
         streetCrossings = crossingStart(streetData);
         streetKey = '';
       }
@@ -370,31 +496,13 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
     // Colour tables: rebuilt only when the state changes (plan tables of recent states are kept).
     if (key !== styleKey) {
       // Only the pages that lack the tables of this state compute them.
-      if (!pl.has(key)) {
-        for (const page of pl.pages)
-          if (!page.pack.has(key)) {
-            const pc = planColors(page.part.plan, page.pack.mesh, style);
-            page.pack.colors(pc.fill, pc.line, key, pc.draws, { hatch: pc.hatch });
-          }
-        pl.forget(key);
-      }
+      if (!pl.has(key)) runSteps(preparePlan(pl, key, style));
       draws = pl.table(key)!.draws;
       styleKey = key;
     }
-    if (sKey !== streetKey) {
-      const sc = streetColors(s, palette, softStreets, o.colors, o.live),
-        wc = cityWallColors(s, palette); // walls hook
-      streets?.colors(sc.outer, sc.inner);
-      walls?.colors(wc.outer, wc.inner);
-      towerColors = wc.tower;
-      streetKey = sKey;
-    }
+    if (sKey !== streetKey || streetPaintDirty.size || wallKey !== palette) runSteps(prepareStreets(s, state, o));
     if (built && bKey !== builtKey) {
-      for (const page of built.pages)
-        if (!page.pack.has(bKey)) {
-          const bc = buildingColors(page.part.buildings, style);
-          page.pack.colors(bc.fill, bc.line, bKey, undefined, { ...bc.roofGrain });
-        }
+      if (!built.has(bKey)) runSteps(prepareBuildings(built, bKey, style));
       built.table(bKey);
       builtKey = bKey;
     }
@@ -425,15 +533,17 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
     if (textured) {
       const pk = `${styleKey}|${o.textured}`;
       if (planMatKey !== pk) {
-        for (const page of pl.pages) page.pack.materials(planMaterialTable(page.part.plan, page.pack.mesh));
+        for (const page of pl.pages) page.pack.materials(pk, page.geometry, (p, m) => planMaterialTable(p.plan, m));
         planMatKey = pk;
       }
-      if (streets && streetMatKey !== 'on') {
-        streets.materials(streetMaterialTable(s));
+      if (streets && (streetMatKey !== 'on' || streetMaterialDirty.size)) {
+        if (streetMatKey !== 'on') streets.materials(streetMaterialTable(s));
+        else for (const i of streetMaterialDirty) if (i < s.streets.length) streets.patchMaterials(i, streetMaterialTable(s, [i]));
+        streetMaterialDirty.clear();
         streetMatKey = 'on';
       }
       if (built && builtMatKey !== bKey) {
-        for (const page of built.pages) page.pack.materials(roofMaterialTable(page.part.buildings, style));
+        for (const page of built.pages) page.pack.materials(bKey, page.geometry, p => roofMaterialTable(p.buildings, style));
         builtMatKey = bKey;
       }
     }
@@ -505,7 +615,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         st = stateOf(o, lod);
       if ((st.layers.roadSurface !== false) !== streetSurface) return 'street surface';
       if (st.key !== styleKey && !plan!.has(st.key)) return 'plan tables';
-      if (st.sKey !== streetKey) return 'street tables';
+      if (st.sKey !== streetKey || streetPaintDirty.size || wallKey !== st.palette) return 'street tables';
       if (built && st.bKey !== builtKey && !built.has(st.bKey)) return 'building tables';
       if (o.water !== water?.source) return 'water';
       if (yards && yards.palette !== st.palette) return 'enclosure colours';
@@ -542,46 +652,49 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       // The heavy tables (a pass over every block and parcel, every building and pan, every street) in slices, kept
       // per key; then the rest of the state at once, which finds them kept.
       if (!pl.has(st.key)) {
-        for (const page of pl.pages) {
-          if (page.pack.has(st.key)) continue;
-          const pc = yield* planColorsSteps(page.part.plan, page.pack.mesh, st.style);
-          if (plan !== pl) return;
-          page.pack.colors(pc.fill, pc.line, st.key, pc.draws, { hatch: pc.hatch });
-          if (styleKey) page.pack.table(styleKey); // `colors` made the new tables current: the draw state stays the drawn one
-        }
-        pl.forget(st.key);
+        yield* preparePlan(pl, st.key, st.style);
+        if (plan !== pl) return;
+        if (styleKey) pl.table(styleKey);
       }
-      if (st.sKey !== streetKey) {
-        const sc = yield* streetColorsSteps(s, st.palette, st.softStreets, o.colors, o.live);
-        if (scene !== s) return;
-        const wc = cityWallColors(s, st.palette); // walls hook
-        streets?.colors(sc.outer, sc.inner);
-        walls?.colors(wc.outer, wc.inner);
-        towerColors = wc.tower;
-        streetKey = st.sKey;
-      }
+      yield* prepareStreets(s, st, o);
+      if (scene !== s) return;
       const bb = built;
-      if (bb && !bb.has(st.bKey))
-        for (const page of bb.pages) {
-          if (page.pack.has(st.bKey)) continue;
-          const bc = yield* buildingColorsSteps(page.part.buildings, st.style);
-          if (built !== bb) return;
-          page.pack.colors(bc.fill, bc.line, st.bKey, undefined, { ...bc.roofGrain });
-          if (builtKey) page.pack.table(builtKey);
-        }
+      if (bb && !bb.has(st.bKey)) {
+        yield* prepareBuildings(bb, st.bKey, st.style);
+        if (built !== bb) return;
+        if (builtKey) bb.table(builtKey);
+      }
       styleFrame(o, lod);
       gl.bindVertexArray(null);
     },
     setYards(lists) {
-      if (yards) {
+      if (!scene || lost || gl.isContextLost()) return false;
+      if (!yardOrigin || yardOrigin.x !== origin.x || yardOrigin.y !== origin.y) {
+        yardBuilder = new YardStrokeBuilder(origin);
+        yardOrigin = origin;
+        yardSources = undefined;
+      }
+      if (yardSources && sameYards(yardSources, lists)) {
+        yardSources = lists;
+        return false;
+      }
+      yardSources = lists;
+      const lookCount = yardBuilder!.looks.length,
+        y = yardBuilder!.build(lists);
+      if (y && yards) {
+        yards.runs.replaceParts(y.runs);
+        yards.jambs.replaceParts(y.jambs);
+        yards.looks = y.looks;
+        if (y.looks.length !== lookCount) yards.palette = '';
+      } else if (y) {
+        yards = { runs: new StrokePack(gl, y.runs), jambs: new StrokePack(gl, y.jambs), looks: y.looks, palette: '' };
+      } else if (yards) {
         yards.runs.dispose();
         yards.jambs.dispose();
         yards = undefined;
-      }
-      if (!scene || lost || gl.isContextLost()) return;
-      const y = buildYardStrokes(lists, origin);
-      if (y) yards = { runs: new StrokePack(gl, y.runs), jambs: new StrokePack(gl, y.jambs), looks: y.looks, palette: '' };
+      } else return false;
       gl.bindVertexArray(null);
+      return true;
     },
     get packing() {
       return packJobs.length > 0;
@@ -613,33 +726,68 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         workers = options.workers ?? defaultWorkers();
       const t = performance.now();
       let o = cityOrigin(next);
-      const out: { plan?: PageBuild<CityGlPlanPage>[]; streets?: CityGlStrokes; walls?: CityGlStrokes; towers?: Float32Array; built?: PageBuild<CityGlBuildingPage>[] } = {};
+      const out: { plan?: PageBuild<CityGlPlanPage>[]; streets?: CityGlStrokes; walls?: CityGlStrokes; towers?: ArrayBuffer[]; built?: PageBuild<CityGlBuildingPage>[] } = {};
+      let streetUpdate: { base: CityGlStrokes; indices: readonly number[] } | undefined;
+      let packedSurface = streetSurface;
       const pack = function* (): Generator<void, void> {
         // The pages whose elements are those of a drawn page keep its GPU data; the others are packed again.
-        const planPages = yield* splitPlanSteps(next);
-        if (!planPages.size) planPages.set(-1, { key: -1, plan: next, blocks: [], parcels: [], footprint: [], quays: [], waterways: [] });
-        const buildingPages = nextBuildings && (yield* splitBuildingsSteps(nextBuildings));
-        out.plan = matchPages(planPages, plan, samePlanPage);
-        out.built = buildingPages && matchPages(buildingPages, built, sameBuildingPage);
-        // Kept pages are relative to the drawn origin: the new pages take it too.
-        if (out.plan.some(b => b.kept) || out.built?.some(b => b.kept)) o = origin;
-        rebase(out.plan, o);
-        if (out.built) rebase(out.built, o);
-        for (const b of out.plan) if (!b.kept) b.source = yield* packPlanSteps(b.part.plan, o);
+        const edit = options.edit;
+        const dirty = edit && edit.previous === sceneRevision && plan && !lost && !gl.isContextLost() ? cellsInRects(edit.rects) : undefined;
+        const planDirty = dirty && scene ? planEditCells(scene, next, dirty) : undefined;
+        const localBuildings = dirty && (dirty.size || buildings === nextBuildings) && buildingRevision === sceneRevision && built && nextBuildings && sameBuildingTier(buildings, nextBuildings);
+        if (planDirty && dirty) for (const key of planDirty) dirty.add(key);
+        if (next === scene && planMesh) out.plan = planMesh;
+        else {
+          out.plan = yield* cellBuilds(
+            plan,
+            planDirty,
+            (pages, cells) => splitPlanSteps(next, CITY_EDIT_CELL, pages, cells),
+            samePlanPage,
+            () => planDrawOrder(next),
+          );
+          if (!out.plan.length) {
+            const part = { key: -1, order: [], plan: next, blocks: [], parcels: [], footprint: [], quays: [], waterways: [] };
+            out.plan = [{ key: -1, order: [], part, mesh: plan?.pages.find(p => p.key === -1)?.geometry.cells.get(-1)?.mesh }];
+          }
+        }
+        if (nextBuildings)
+          out.built = yield* cellBuilds(
+            built,
+            localBuildings ? dirty : undefined,
+            (pages, cells) => splitBuildingsSteps(nextBuildings, CITY_EDIT_CELL, pages, cells),
+            sameBuildingPage,
+            () => buildingDrawOrder(nextBuildings),
+          );
+        if (plan || built) o = origin;
+        for (const b of out.plan) if (!b.mesh) b.source = yield* packPlanSteps(b.part.plan, o);
         yield;
-        out.streets = buildStreetStrokes(next, o, streetSurface, planPath);
+        const keepOrigin = o.x === origin.x && o.y === origin.y;
+        const changed = keepOrigin && scene ? changedStreets(scene, next) : undefined;
+        packedSurface = streetSurface;
+        if (changed && streetData && scene) {
+          streetUpdate = { base: streetData, indices: changed };
+          out.streets = changed.length || scene.streets.length !== next.streets.length ? buildStreetStrokes(next, o, packedSurface, planPath, streetData, new Set(changed)) : streetData;
+        } else out.streets = buildStreetStrokes(next, o, packedSurface, planPath);
         yield;
-        out.walls = cityWallStrokes(next, o);
-        out.towers = buildTowers(cityStrokedWalls(next), o);
+        if (keepOrigin && scene && sameWalls(scene, next)) {
+          out.walls = wallData;
+          out.towers = towerData;
+        } else {
+          out.walls = cityWallStrokes(next, o, keepOrigin && scene && wallData ? { scene, strokes: wallData } : undefined);
+          const details = cityWallDetails(next),
+            oldDetails = scene && cityWallDetails(scene);
+          out.towers = next.walls.map((w, i) => (keepOrigin && scene?.walls[i] === w && !!details[i] === !!oldDetails?.[i] && towerData?.[i] ? towerData[i] : details[i] ? new ArrayBuffer(0) : (buildTowers({ ...next, walls: [w] }, o).buffer as ArrayBuffer)));
+        }
         yield; // walls hook
         if (out.built) {
           countWork('town.planHouseMesh');
-          for (const b of out.built) if (!b.kept) b.source = yield* packBuildingsSteps(b.part.buildings, o);
+          for (const b of out.built) if (!b.mesh) b.source = yield* packBuildingsSteps(b.part.buildings, o);
         }
       };
       // Shared context: packed in slices by `step()`; a newer scene drops every packing in progress.
       if (deferUpload) {
         abortPacking(true);
+        commitPlan = commitBuildings = undefined;
         if (!(await packed('scene', pack()))) return abortedStats(start);
       } else runSteps(pack());
       const packMs = performance.now() - t;
@@ -652,34 +800,28 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       const [p, b] = await Promise.all([buildFills(pb, workers, 'plan'), bb && buildFills(bb, workers, 'buildings')]);
       if (gen !== generation) return { packMs, triangulateMs: p.triangulateMs, assembleMs: p.assembleMs, uploadMs: 0, workers: p.workers, totalMs: performance.now() - start };
       const commit = (): number => {
+        sceneRevision = options.revision;
         scene = next;
         origin = o;
         planMesh = pb;
-        streetData = sd;
+        streetData = packedSurface === streetSurface ? sd : buildStreetStrokes(next, o, streetSurface, planPath);
         wallData = wd;
         towerData = td;
+        return lost || gl.isContextLost() ? 0 : uploadPlan(streetUpdate);
+      };
+      const commitBuilt = (): number => {
         buildings = nextBuildings;
         builtMesh = bb;
-        return lost || gl.isContextLost() ? 0 : uploadPlan() + uploadBuildings();
+        snowAltitude = firstBuilding(buildings)?.snowAltitude;
+        buildingRevision = options.revision;
+        return lost || gl.isContextLost() ? 0 : uploadBuildings();
       };
       buildingGeneration++;
-      // Deferred: the scene (with its building set, not drawable until both are up) at one `upload()`, the building
-      // buffers at the next; an earlier building set is dropped.
       let uploadMs = 0;
       if (deferUpload) {
-        commitPlan = () => {
-          scene = next;
-          origin = o;
-          planMesh = pb;
-          streetData = sd;
-          wallData = wd;
-          towerData = td;
-          buildings = nextBuildings;
-          builtMesh = bb;
-          return lost || gl.isContextLost() ? 0 : uploadPlan();
-        };
-        commitBuildings = () => (lost || gl.isContextLost() ? 0 : uploadBuildings());
-      } else uploadMs = commit();
+        commitPlan = commit;
+        commitBuildings = commitBuilt;
+      } else uploadMs = commit() + commitBuilt();
       buildStats = { packMs, triangulateMs: p.triangulateMs + (b?.triangulateMs ?? 0), assembleMs: p.assembleMs + (b?.assembleMs ?? 0), uploadMs, workers: p.workers, totalMs: performance.now() - start };
       invalidate();
       return buildStats;
@@ -695,12 +837,20 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       const pack = function* (): Generator<void, void> {
         if (!next) return;
         // Only the pages of the set that differ from the drawn ones (a tier swap of one large town, an edit).
-        out.built = matchPages(yield* splitBuildingsSteps(next), built, sameBuildingPage);
-        rebase(out.built, o);
-        for (const b of out.built) if (!b.kept) b.source = yield* packBuildingsSteps(b.part.buildings, o);
+        const edit = options.edit,
+          dirty = built && edit && buildingRevision === edit.previous && sameBuildingTier(buildings, next) && !lost && !gl.isContextLost() ? cellsInRects(edit.rects) : undefined;
+        out.built = yield* cellBuilds(
+          built,
+          dirty,
+          (pages, cells) => splitBuildingsSteps(next, CITY_EDIT_CELL, pages, cells),
+          sameBuildingPage,
+          () => buildingDrawOrder(next),
+        );
+        for (const b of out.built) if (!b.mesh) b.source = yield* packBuildingsSteps(b.part.buildings, o);
       };
       if (deferUpload) {
         abortPacking(false);
+        commitBuildings = undefined;
         if (!(await packed('buildings', pack()))) return abortedStats(start);
       } else runSteps(pack());
       const packMs = performance.now() - t;
@@ -709,7 +859,9 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         b = source && (await buildFills(source, workers, 'buildings'));
       if (gen !== buildingGeneration) return { packMs, triangulateMs: b?.triangulateMs ?? 0, assembleMs: b?.assembleMs ?? 0, uploadMs: 0, workers: b?.workers ?? 0, totalMs: performance.now() - start };
       const commit = (): number => {
+        buildingRevision = options.revision;
         buildings = next;
+        snowAltitude = firstBuilding(buildings)?.snowAltitude;
         builtMesh = source;
         return lost || gl.isContextLost() ? 0 : uploadBuildings();
       };
@@ -734,7 +886,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
           selection = selectionStrokes(o);
           selectionKey = selKey;
         }
-        drawTownFrame({ gl, fillP, strokeP, casingP, surfaceP, discP, pavedP, tfillP, texturedP, waterP, plan, built, streets, walls, selection, yards, towers, water, wallGl, origin, buildings, streetCrossings, streetSurface, albedoTex, towerColors }, o, lod, style, frame);
+        drawTownFrame({ gl, fillP, strokeP, casingP, surfaceP, discP, pavedP, tfillP, texturedP, waterP, plan, built, streets, walls, selection, yards, towers, water, wallGl, origin, snowAltitude, streetCrossings, streetSurface, albedoTex, towerColors }, o, lod, style, frame);
       }
       frame.cpuMs = performance.now() - start;
       lastFrame = frame;
@@ -750,11 +902,12 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       const fs = (pages?: FillPages<unknown>) => {
         if (!pages) return undefined;
         const out = { vertices: 0, triangles: 0, edges: 0, features: 0 };
-        for (const { pack } of pages.pages) {
-          out.vertices += pack.mesh.positions.length / 2;
-          out.triangles += pack.mesh.triangles.length / 3;
-          out.edges += pack.mesh.lines.length / 2;
-          out.features += pack.mesh.featureCount;
+        for (const { geometry } of pages.pages) {
+          const c = geometry.counts;
+          out.vertices += c.vertices;
+          out.triangles += c.triangles;
+          out.features += c.features;
+          out.edges += c.edges;
         }
         return out;
       };
@@ -765,8 +918,8 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         pages: (plan?.pages.length ?? 0) + (built?.pages.length ?? 0),
         streets: streetData?.count ?? 0,
         walls: wallData?.count ?? 0,
-        towers: (towerData?.length ?? 0) / 2,
-        gpuBytes: (plan?.bytes ?? 0) + (built?.bytes ?? 0) + (streets?.bytes ?? 0) + (walls?.bytes ?? 0) + (towerData?.byteLength ?? 0) + (wallGl?.bytes ?? 0) + (water?.source.byteLength ?? 0),
+        towers: towers?.count ?? 0,
+        gpuBytes: (plan?.bytes ?? 0) + (built?.bytes ?? 0) + (streets?.bytes ?? 0) + (walls?.bytes ?? 0) + (towers?.bytes ?? 0) + (wallGl?.bytes ?? 0) + (water?.source.byteLength ?? 0),
         build: buildStats,
         buildingsBuild: buildingStats,
         frame: lastFrame,
@@ -819,9 +972,9 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
 
   function selectionStrokes(o: CityGlDrawOptions): StrokePack | undefined {
     if (!scene) return undefined;
-    const b = o.selectedId === undefined ? undefined : buildings?.byId.get(o.selectedId);
+    const b = o.selectedId === undefined ? undefined : buildingById(buildings, o.selectedId);
     const parcel = o.selectedParcel ?? (o.selectedId === undefined ? undefined : scene.parcelById.get(o.selectedId));
-    const shapes = b !== undefined ? (o.buildingStyle === 'silhouette' ? (buildings!.items[b].footprint ?? buildings!.items[b].building.footprint) : buildings!.items[b].surface) : parcel !== undefined && scene.parcels[parcel] ? [scene.parcels[parcel].shape] : [];
+    const shapes = b !== undefined ? (o.buildingStyle === 'silhouette' ? (b.footprint ?? b.building.footprint) : b.surface) : parcel !== undefined && scene.parcels[parcel] ? [scene.parcels[parcel].shape] : [];
     const rings = shapes.flatMap(s => [s.outer, ...(s.holes ?? [])]).filter(r => r.length >= 2);
     if (!rings.length) return undefined;
     const n = rings.reduce((s, r) => s + r.length, 0),
@@ -852,33 +1005,66 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
 interface PageBuild<T> {
   key: number;
   part: T;
-  kept?: FillPage<T>;
+  order: readonly number[];
   source?: CityGlFillSource;
   mesh?: CityGlFillMesh;
 }
-/** The pages of a split, each kept from `previous` when it holds the same elements. */
-function matchPages<T extends { key: number }>(pages: ReadonlyMap<number, T>, previous: FillPages<T> | undefined, same: (a: T, b: T) => boolean): PageBuild<T>[] {
-  const old = new Map(previous?.pages.map(p => [p.key, p]));
-  return [...pages.values()].map(part => {
-    const k = old.get(part.key);
-    return k && same(k.part, part) ? { key: part.key, part: k.part, kept: k } : { key: part.key, part };
-  });
-}
-/** Kept pages packed around another origin are packed again. */
-function rebase<T>(builds: PageBuild<T>[], o: Point): void {
-  for (const b of builds) if (b.kept && (b.kept.pack.mesh.origin.x !== o.x || b.kept.pack.mesh.origin.y !== o.y)) b.kept = undefined;
-}
-/** World box of a mesh's chunks. */
-function meshBox(mesh: CityGlFillMesh): CityGlBox4 {
-  const b: CityGlBox4 = [Infinity, Infinity, -Infinity, -Infinity];
-  for (const l of Object.values(mesh.layers))
-    for (const c of l.chunks) {
-      if (c.box[0] < b[0]) b[0] = c.box[0];
-      if (c.box[1] < b[1]) b[1] = c.box[1];
-      if (c.box[2] > b[2]) b[2] = c.box[2];
-      if (c.box[3] > b[3]) b[3] = c.box[3];
+function* cellBuilds<T extends { key: number; order: number[] }>(
+  previous: FillPages<T> | undefined,
+  dirty: Set<number> | undefined,
+  split: (pages?: ReadonlySet<number>, only?: ReadonlySet<number>) => Generator<void, Map<number, T>>,
+  same: (a: T, b: T) => boolean,
+  drawOrder: () => Map<number, number>,
+): Generator<void, PageBuild<T>[]> {
+  const parts = yield* split(undefined, dirty);
+  let order: Map<number, number> | undefined;
+  if (dirty && previous) {
+    // Changed ordinals can interleave a roof or shadow with a clean neighbour. Refresh the source order
+    // in those draw pages only. Their clean geometry and colour tables stay on the GPU.
+    const shifted = new Set<number>();
+    for (const k of dirty) {
+      const page = drawPageKey(k),
+        old = previous.byKey.get(page)?.geometry.cells.get(k),
+        next = parts.get(k);
+      if (old?.order.length !== next?.order.length || (old && next && !old.order.every((v, i) => v === next.order[i]))) shifted.add(page);
     }
-  return b;
+    if (shifted.size) {
+      for (const [k, p] of yield* split(shifted)) parts.set(k, p);
+      if (previous.pages.length > 1 || [...shifted].some(k => !previous.byKey.has(k))) order = drawOrder();
+    }
+  }
+  const builds = matchPages(parts, previous, same, dirty);
+  if (previous && !dirty) {
+    order = new Map();
+    for (const k of parts.keys()) {
+      const page = drawPageKey(k);
+      if (!order.has(page)) order.set(page, order.size);
+    }
+  }
+  if (order) {
+    const rank = order;
+    builds.sort((a, b) => rank.get(drawPageKey(a.key))! - rank.get(drawPageKey(b.key))!);
+  }
+  return builds;
+}
+function matchPages<T extends { key: number; order: number[] }>(cells: ReadonlyMap<number, T>, previous: FillPages<T> | undefined, same: (a: T, b: T) => boolean, dirty?: ReadonlySet<number>): PageBuild<T>[] {
+  const result: PageBuild<T>[] = [],
+    visited = new Set<number>();
+  for (const page of previous?.pages ?? [])
+    for (const old of page.geometry.cells.values()) {
+      const part = cells.get(old.key);
+      if (part) {
+        visited.add(old.key);
+        const equalOrder = old.order.length === part.order.length && old.order.every((n, i) => part.order[i] === n);
+        if ((dirty && !dirty.has(old.key)) || same(old.part, part)) {
+          result.push({ ...old, order: equalOrder ? old.order : part.order });
+          continue;
+        }
+        result.push({ key: part.key, part, order: equalOrder ? old.order : part.order });
+      } else if (dirty && old.key !== -1 && !dirty.has(old.key)) result.push(old);
+    }
+  for (const [key, part] of cells) if (!visited.has(key)) result.push({ key, part, order: part.order });
+  return result;
 }
 const refusedIds = new WeakMap<ReadonlySet<string>, number>();
 let refusedNext = 1;

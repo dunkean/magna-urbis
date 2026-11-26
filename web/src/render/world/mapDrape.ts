@@ -40,7 +40,7 @@
  */
 import { resetLiveState, type LiveFrame } from '../live/contract';
 import { createIsolatedGroup } from '../live/isolatedGroup';
-import { MAX_SCALE } from '../view';
+import { MAX_SCALE, type Rect4 } from '../view';
 import type { DrapeCanvas, DrapeSource, DrapeTile, DrapeTiles } from './contract';
 import { TilePyramid } from './tilePyramid';
 
@@ -156,7 +156,7 @@ export class MapDrape {
   private readonly group: ReturnType<typeof createIsolatedGroup>;
   /** Map side the tiles were baked for; they are dropped when it changes. */
   private gridSize = 0;
-  /** The sources of the last slice and their revisions: another list or revision makes every tile stale. */
+  /** The sources of the last slice and their revisions. */
   private readonly seen: DrapeSource[] = [];
   private readonly seenRevision: number[] = [];
   /** Their `arrivals` in the last slice: another count makes the tiles painted provisionally stale, and only those. */
@@ -398,23 +398,45 @@ export class MapDrape {
     const seen = this.seen,
       seenRevision = this.seenRevision,
       seenArrivals = this.seenArrivals;
-    let same = seen.length === sources.length,
-      arrived = false;
+    let whole = seen.length !== sources.length,
+      arrived = false,
+      changes: Rect4[] | undefined;
     for (let i = 0; i < sources.length; i++) {
       const revision = sources[i].revision(),
         arrivals = sources[i].arrivals?.() ?? 0;
-      if (seen[i] !== sources[i] || seenRevision[i] !== revision) same = false;
-      else if (seenArrivals[i] !== arrivals) arrived = true;
+      if (seen[i] !== sources[i]) whole = true;
+      else {
+        if (!whole && seenRevision[i] !== revision) {
+          const boxes = sources[i].contentChanges?.(seenRevision[i]);
+          if (!boxes) whole = true;
+          else if (boxes.length) (changes ??= []).push(...boxes);
+        }
+        if (seenArrivals[i] !== arrivals) arrived = true;
+      }
       seen[i] = sources[i];
       seenRevision[i] = revision;
       seenArrivals[i] = arrivals;
     }
     seen.length = seenRevision.length = seenArrivals.length = sources.length;
-    if (!same) pyramid.stale();
-    else if (arrived) pyramid.staleProvisional();
+    let bakingChanged = whole;
+    if (whole) pyramid.stale();
+    else {
+      if (changes) {
+        const boxes = changes;
+        const affected = (tier: number, x: number, y: number): boolean => {
+          const side = size / 2 ** tier,
+            pad = (32 * DRAPE_LINE_SCALE * frame.dpr * side) / TILE;
+          return boxes.some(box => x * side - pad <= box.maxX && box.minX <= (x + 1) * side + pad && y * side - pad <= box.maxY && box.minY <= (y + 1) * side + pad);
+        };
+        pyramid.staleWhere(affected);
+        const baking = this.baking;
+        bakingChanged = !!baking && affected(baking.tier, baking.ix, baking.iy);
+      }
+      if (arrived) pyramid.staleProvisional();
+    }
     // A bake under way was started for other sources, or for another pixel ratio or quality, or painted without a
     // product that has just arrived: it starts again.
-    if (this.baking && (!same || (arrived && this.baking.provisional) || this.canvas.dpr !== frame.dpr || this.canvas.light !== (frame.quality === 'light'))) this.abandon();
+    if (this.baking && (bakingChanged || (arrived && this.baking.provisional) || this.canvas.dpr !== frame.dpr || this.canvas.light !== (frame.quality === 'light'))) this.abandon();
     const finest = this.finestTier(frame.dpr);
     stats.capacity = s.layers - 1;
     stats.bytes = s.layers * TILE_BYTES;

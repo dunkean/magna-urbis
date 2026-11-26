@@ -206,7 +206,14 @@ export function styleSheetEmpty(sheet?: StyleSheet): boolean {
 }
 /** User edits of single quarters (keyed by quarter index, Rust `UrbanOverrides`)
  * and single lots (keyed by parcel id, Rust `ParcelOverrides`). */
+export interface WallOverride {
+  present?: boolean;
+  style?: Exclude<FortificationStyle, 'auto'>;
+  moat?: 'none' | 'dry' | 'wet';
+  gates?: number;
+}
 export interface UrbanEdits {
+  walls?: Record<string, WallOverride>;
   quarters?: Record<string, QuarterOverride>;
   blocks?: Record<string, BlockOverride>;
   parcels?: Record<string, ParcelOverride>;

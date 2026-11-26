@@ -27,6 +27,14 @@ const MAX_SHARE = 0.25;
 
 type Building = NonNullable<NonNullable<RustTownSnapshot['scene']>['buildings']>[number];
 const memo = new WeakMap<World, { previous: World; rects: readonly EditRect[] | undefined }>();
+const received = new WeakMap<object, { previous: object; rects: readonly EditRect[] | undefined }>();
+
+/** Derived display worlds share these records with the reconstructed worker result. */
+export function rememberLocalEditRegions(previous: World, next: World, rects: readonly EditRect[] | undefined): void {
+  const before = nativeCityRecords(previous),
+    after = nativeCityRecords(next);
+  if (before && after && before !== after) received.set(after, { previous: before, rects });
+}
 
 /** The boxes where `next` differs from `previous` when `next` is a local town edit of it (same terrain, land use,
  * roads and region): [] when no element changed; undefined when it is no local edit or the region covers too much of
@@ -41,46 +49,87 @@ export function localEditRegions(previous: World | undefined, next: World | unde
 }
 
 function regions(previous: World, next: World): readonly EditRect[] | undefined {
-  if (previous.terrain !== next.terrain || previous.landuse !== next.landuse || previous.roads !== next.roads || previous.mapSize !== next.mapSize || previous.debug?.v2RustRegion !== next.debug?.v2RustRegion) return undefined;
-  const before = nativeCityRecords(previous) ?? {},
-    after = nativeCityRecords(next) ?? {},
-    boxes: EditRect[] = [];
-  for (const town of new Set([...Object.keys(before), ...Object.keys(after)])) {
-    const a = before[town],
-      b = after[town];
+  if (!sameRegion(previous, next)) return undefined;
+  const before = nativeCityRecords(previous),
+    after = nativeCityRecords(next);
+  if (!before && !after) return previous.urban === next.urban && previous.settlements === next.settlements ? [] : undefined;
+  const wire = after && received.get(after);
+  if (wire && wire.previous === before) return wire.rects;
+  const boxes: EditRect[] = [];
+  for (const town of new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])) {
+    const a = before?.[town],
+      b = after?.[town];
     if (a !== b) townChanges(a, b, boxes);
   }
+  return boundedRegions(boxes, next.mapSize);
+}
+
+const sameRegion = (previous: World, next: World): boolean =>
+  previous.terrain === next.terrain &&
+  previous.landuse === next.landuse &&
+  previous.roads === next.roads &&
+  previous.mapSize === next.mapSize &&
+  previous.debug?.v2RustRegion === next.debug?.v2RustRegion &&
+  previous.stats['v2.cityOutput'] === next.stats['v2.cityOutput'] &&
+  previous.stats['v2.cityOutputKeys'] === next.stats['v2.cityOutputKeys'];
+
+/** The engine knows which town it edited. Compute the bounds there, before crossing the worker boundary. */
+export function editedTownRegions(previous: World, next: World, key: string): readonly EditRect[] | undefined {
+  if (!sameRegion(previous, next)) return undefined;
+  const before = nativeCityRecords(previous)?.[key],
+    after = nativeCityRecords(next)?.[key];
+  if (!before || !after) return undefined;
+  if (before === after) return [];
+  const boxes: EditRect[] = [];
+  townChanges(before, after, boxes);
+  return boundedRegions(boxes, next.mapSize);
+}
+
+function boundedRegions(boxes: EditRect[], mapSize: number): readonly EditRect[] | undefined {
   const merged = mergeRects(boxes.map(box => grow(box, EDIT_MARGIN)));
   let area = 0;
   for (const r of merged) area += (r.x1 - r.x0) * (r.y1 - r.y0);
-  return area > MAX_SHARE * next.mapSize * next.mapSize ? undefined : merged;
+  return area > MAX_SHARE * mapSize * mapSize ? undefined : merged;
 }
 
 /** The boxes of the elements of a town that differ between two snapshots (either may be absent). */
 function townChanges(a: RustTownSnapshot | undefined, b: RustTownSnapshot | undefined, out: EditRect[]): void {
   // Buildings by object: the edit gives back the objects of those it kept.
-  const kept = new Set<Building>(a?.scene?.buildings ?? []),
-    made = new Set<Building>(b?.scene?.buildings ?? []);
-  for (const building of kept) if (!made.has(building)) pushBox(buildingBox(building), out);
-  for (const building of made) if (!kept.has(building)) pushBox(buildingBox(building), out);
-  // The other elements come back as new objects: compared by content.
-  const elements = (town: RustTownSnapshot | undefined): unknown[] => [
-    ...(town?.layouts ?? []).flatMap(layout => [...layout.streets, ...layout.blocks.map(block => block.shape), ...(layout.enclosures ?? [])]),
-    ...(town?.partitions ?? []).flatMap(partition => partition.parcels.map(parcel => [parcel.use, parcel.shape])),
-  ];
+  if (a?.scene?.buildings !== b?.scene?.buildings) {
+    const kept = new Set<Building>(a?.scene?.buildings ?? []),
+      made = new Set<Building>(b?.scene?.buildings ?? []);
+    for (const building of kept) if (!made.has(building)) pushBox(buildingBox(building), out);
+    for (const building of made) if (!kept.has(building)) pushBox(buildingBox(building), out);
+  }
+  if (a?.layouts !== b?.layouts) {
+    const layouts = (town: RustTownSnapshot | undefined): unknown[] => (town?.layouts ?? []).flatMap(layout => [...layout.streets, ...layout.blocks.map(block => block.shape), ...(layout.enclosures ?? [])]);
+    changedGeometry(layouts(a), layouts(b), value => value, out);
+  }
+  if (a?.partitions !== b?.partitions) {
+    type Parcel = NonNullable<RustTownSnapshot['partitions']>[number]['parcels'][number];
+    const parcels = (town: RustTownSnapshot | undefined): Parcel[] => (town?.partitions ?? []).flatMap(partition => partition.parcels);
+    changedGeometry(parcels(a), parcels(b), parcel => [parcel.use, parcel.shape], out);
+  }
+}
+
+function changedGeometry<T>(before: T[], after: T[], geometry: (value: T) => unknown, out: EditRect[]): void {
+  // Retained objects need no content hash. The counts also handle repeated shapes and re-ordered elements.
+  const identities = new Map<T, number>();
+  for (const item of after) identities.set(item, (identities.get(item) ?? 0) + 1);
   const counts = new Map<string, { value: unknown; count: number }>();
-  for (const value of elements(a)) {
-    const key = JSON.stringify(value),
+  const add = (item: T, delta: number): void => {
+    const value = geometry(item),
+      key = JSON.stringify(value),
       entry = counts.get(key);
-    if (entry) entry.count++;
-    else counts.set(key, { value, count: 1 });
+    if (entry) entry.count += delta;
+    else counts.set(key, { value, count: delta });
+  };
+  for (const item of before) {
+    const n = identities.get(item);
+    if (n) identities.set(item, n - 1);
+    else add(item, 1);
   }
-  for (const value of elements(b)) {
-    const key = JSON.stringify(value),
-      entry = counts.get(key);
-    if (entry) entry.count--;
-    else counts.set(key, { value, count: -1 });
-  }
+  for (const [item, n] of identities) if (n) add(item, -n);
   for (const { value, count } of counts.values()) if (count) pushBox(pointsBox(value), out);
 }
 
@@ -125,7 +174,7 @@ export const meetsRects = (box: EditRect, rects: readonly EditRect[]): boolean =
 /** Overlapping boxes joined until none overlap. */
 export function mergeRects(boxes: readonly EditRect[]): EditRect[] {
   const out = boxes.map(b => ({ ...b }));
-  for (let merged = true; merged; ) {
+  for (let merged = true; merged;) {
     merged = false;
     for (let i = 0; i < out.length && !merged; i++)
       for (let j = i + 1; j < out.length; j++)

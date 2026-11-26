@@ -1,11 +1,13 @@
 import type { World, Polyline } from '../gen/types';
-import { addRoad, samePath } from './networkEdits';
+import { addRoad, roadSource, samePath } from './networkEdits';
+import { withRoadSources } from './roadOverrides';
 import type { RoadOutput } from '../../../rust/bridge/settlements';
 
 const cached = new WeakMap<World, World>();
 /** Rural lanes and farm accesses are real editable tracks, with the same junction graph as regional roads.
  * This immutable view is committed together with the first edit, never while merely opening the tool. */
 export function editableRuralRoads(source: World): World {
+  source = withRoadSources(source);
   const found = cached.get(source);
   if (found) return found;
   const landuse = source.landuse;
@@ -19,7 +21,7 @@ export function editableRuralRoads(source: World): World {
   const integrate = (path: Polyline, width: number) => {
     const existing = world.roads?.findIndex(r => samePath(r.path, path) || samePath(r.path, [...path].reverse())) ?? -1;
     if (existing >= 0) return existing;
-    const result = addRoad(world, path, { cls: 'track', width, snap: Math.max(1, Math.min(6, source.terrain.height.cell * 0.05)) });
+    const result = addRoad(world, path, { editorSource: roadSource(path, 'rural'), cls: 'track', width, snap: Math.max(1, Math.min(6, source.terrain.height.cell * 0.05)) });
     world = result.world;
     return result.road!;
   };

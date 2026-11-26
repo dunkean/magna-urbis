@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { applySeason, mapLandSeason, mapSnowCover, roofSeasonKey, seasonPaint, setMapClimateZone, setMapSeason } from '../src/render/seasonPalette';
+import { SeasonColorTable, applySeason, mapLandSeason, mapSnowCover, roofSeasonKey, seasonPaint, setMapClimateZone, setMapSeason } from '../src/render/seasonPalette';
 import { CLIMATE_ZONE_VALUES } from '../../rust/bridge/terrainClimate';
+import { ParchmentSymbols } from '../src/render/parchmentSymbols';
+import { RecordingCanvas } from '../src/render/gpu/recorder';
+import { parseColor } from '../src/render/gpu/colors';
+import { mixHex } from '../src/render/cartography/geometry';
 import { canopyGlyph } from '../src/render/canopy';
 import { createCanvasRenderer, type CanvasLike } from '../src/render/canvas';
 import { treeMix } from '../src/render/treeSpecies';
@@ -86,4 +90,62 @@ describe('the season of the drawn maps', () => {
     expect(renderer.scene).toBe(scene);
     renderer.dispose();
   });
+});
+
+it('keeps CPU and replay leaf opacity and derived inks tied to the resolved palette', () => {
+  const table = new SeasonColorTable(parchment);
+  const slot = table.ink('farmLeaves');
+  for (const date of [0.5, 0.75, 0]) {
+    const pal = at(date, 'nordic');
+    table.update(pal);
+    expect(table.ink('farmLeaves')).toBe(slot);
+    const alpha = 0.3 + 0.7 * pal.season!.leaf;
+    expect(slot.rgba[3]).toBeCloseTo(alpha, 6);
+    expect(parseColor(slot.css)![3]).toBeCloseTo(alpha, 6);
+    expect(table.ink('sheetGrass').css).toBe(mixHex(pal.inkSoft, pal.grass, 0.3));
+    expect(table.ink('sheetWash').css).toBe(mixHex(pal.treeFill, pal.inkSoft, 0.3));
+    expect(table.ink('symbolLeaves').rgba[3]).toBeCloseTo(0.25 + 0.75 * pal.season!.leaf, 6);
+  }
+});
+
+it('reconstructs the coloured Canvas pen sheet from one mask for autumn and snowy winter', () => {
+  const makeCanvas = (width: number, height: number) => {
+    const pixels = new Uint8ClampedArray(width * height * 4);
+    const ctx = { createImageData: () => ({ data: pixels }), putImageData: () => {} };
+    return { width, height, pixels, getContext: () => ctx } as unknown as CanvasLike;
+  };
+  const mask = new ParchmentSymbols(null, 0.6, makeCanvas);
+  const recorded = new RecordingCanvas(40, 40);
+  const ctx = recorded.getContext('2d')!;
+  const table = new SeasonColorTable(parchment);
+  let atlas: CanvasImageSource | undefined;
+  for (const date of [0.75, 0]) {
+    table.update(at(date, 'nordic'));
+    const ink = table.ink('sheetGrass'),
+      wash = table.ink('sheetWash');
+    mask.draw(ctx, 0, 20, 20, 8, [ink, wash]);
+    new ParchmentSymbols([ink.css, wash.css], 0.6, makeCanvas).draw(ctx, 0, 20, 20, 8);
+    const [masked, cpu] = recorded.finish().ops;
+    if (masked?.type !== 'sprites' || cpu?.type !== 'sprites') throw new Error('Missing pen sheet');
+    expect(masked.tint).toEqual([ink, wash]);
+    if (atlas) expect(masked.source).toBe(atlas);
+    atlas = masked.source;
+    const data = (image: CanvasImageSource) => (image as unknown as { pixels: Uint8ClampedArray }).pixels;
+    const weights = data(masked.source),
+      reference = data(cpu.source);
+    let maxError = 0,
+      maxAlphaError = 0,
+      covered = 0;
+    for (let i = 0; i < reference.length; i += 4) {
+      const a = reference[i + 3];
+      if (a) covered++;
+      const r = weights[i],
+        g = weights[i + 1];
+      maxAlphaError = Math.max(maxAlphaError, Math.abs(a - r - g));
+      for (let channel = 0; channel < 3; channel++) maxError = Math.max(maxError, Math.abs((reference[i + channel] * a) / 255 - (ink.rgba[channel] * r + wash.rgba[channel] * g)));
+    }
+    expect(covered).toBeGreaterThan(0);
+    expect(maxAlphaError).toBe(0);
+    expect(maxError).toBeLessThan(1);
+  }
 });

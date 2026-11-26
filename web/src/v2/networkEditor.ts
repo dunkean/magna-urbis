@@ -29,6 +29,8 @@ import {
   withRoadExitReports,
 } from './roadEditing';
 import { effectiveRegionalExits, REGIONAL_EXIT_CLASSES } from './regionalExits';
+import { recordRoadOverrides, type RoadOverrides } from './roadOverrides';
+import { regionKey } from './regionKeys';
 import type { ExitCounts } from '../../../rust/bridge/settlements';
 import RoadRouteWorker from './roadRoute.worker?worker';
 import { wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
@@ -216,7 +218,7 @@ const svgEl = (tag: string, attrs: Record<string, string | number>): SVGElement 
 const pathData = (path: readonly Vec2[]): string => path.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join('');
 
 type Drag = { kind: 'vertex' | 'road' | 'segment'; pointer: number; road: number; index: number; base: Polyline; controls: Polyline; inserted?: boolean; origin: Vec2; moved: boolean; start: Vec2; lineTap: boolean };
-type HistoryState = { world: World; exits: Partial<ExitCounts> | undefined; roadsDisabled: boolean; selected: number; vertex: number; segment: number };
+type HistoryState = { world: World; exits: Partial<ExitCounts> | undefined; roadsDisabled: boolean; hadRegion: boolean; hadRoads: boolean; roadOverrides?: RoadOverrides; selected: number; vertex: number; segment: number };
 type HistoryEdit = { before: HistoryState; after: HistoryState; validated?: boolean; session?: { before: HistoryState; start: number } };
 
 export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
@@ -410,7 +412,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     } else if (s.region?.roads) delete s.region.roads.exits;
     else if (s.region?.roads === null) s.region.roads = {};
   }
-  function updateExitCounts(before: World, next: World): void {
+  function updateExitCounts(before: World, next: World): string | undefined {
     const s = host.getSettings?.();
     if (!s) return;
     const counts = effectiveRegionalExits(s),
@@ -425,10 +427,24 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     }
     if (changed) {
       if (REGIONAL_EXIT_CLASSES.reduce((n, cls) => n + (exits[cls] ?? counts[cls]), 0) > 16) throw new Error('At most 16 regional road exits can be requested.');
+      const matched = host.tools?.includes('roads') && typeof before.stats['v2.planKey'] === 'string' && before.stats['v2.planKey'] === regionKey(s);
       restoreExitSettings(exits);
+      if (matched) return regionKey(s);
     }
   }
-  const historyState = (w: World): HistoryState => ({ world: w, exits: exitSettings(), roadsDisabled: host.getSettings?.().region?.roads === null, selected, vertex: activeVertex, segment: activeSegment });
+  const historyState = (world: World): HistoryState => {
+    const settings = host.getSettings?.();
+    return { world, exits: exitSettings(), roadsDisabled: settings?.region?.roads === null, hadRegion: !!settings?.region, hadRoads: settings?.region?.roads !== undefined, roadOverrides: settings?.roadOverrides, selected, vertex: activeVertex, segment: activeSegment };
+  };
+  function restoreRoadRecipe(entry: HistoryState): void {
+    restoreExitSettings(entry.exits, entry.roadsDisabled);
+    const settings = host.getSettings?.();
+    if (!settings || !host.tools?.includes('roads')) return;
+    if (!entry.hadRoads && settings.region?.roads && !Object.keys(settings.region.roads).length) delete settings.region.roads;
+    if (!entry.hadRegion && settings.region && !Object.keys(settings.region).length) delete settings.region;
+    if (entry.roadOverrides) settings.roadOverrides = entry.roadOverrides;
+    else delete settings.roadOverrides;
+  }
   const pending = (): boolean => !!sessionBefore && world() !== sessionBefore.world;
   function clearSession(): void {
     sessionBefore = undefined;
@@ -447,9 +463,16 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     status = T.working;
     render();
     try {
-      updateExitCounts(source, next);
+      const settings = host.tools?.includes('roads') ? host.getSettings?.() : undefined;
+      const updatedPlan = updateExitCounts(source, next);
       const edited = next;
-      if (host.tools?.includes('roads')) next = identifyRoads(syncUrbanRoadEdits(editableRuralRoads(next), source));
+      if (host.tools?.includes('roads')) {
+        next = identifyRoads(syncUrbanRoadEdits(editableRuralRoads(next), source));
+        if (settings) {
+          settings.roadOverrides = recordRoadOverrides(settings.roadOverrides, source, next, before.roadsDisabled);
+          if (updatedPlan) next.stats = { ...next.stats, 'v2.planKey': updatedPlan };
+        }
+      }
       await host.setWorld(next);
       knownWorld = next;
       after?.(next);
@@ -474,7 +497,8 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
       cutPreview = false;
       drawOverlay();
     } catch (error) {
-      restoreExitSettings(before.exits, before.roadsDisabled);
+      if (host.tools?.includes('roads')) restoreRoadRecipe(before);
+      else restoreExitSettings(before.exits, before.roadsDisabled);
       fail(error);
     } finally {
       working = false;
@@ -503,7 +527,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     cancelPreview();
     render();
     try {
-      restoreExitSettings(target.exits, target.roadsDisabled);
+      restoreRoadRecipe(target);
       await host.setWorld(target.world);
       knownWorld = target.world;
       selected = target.selected;
@@ -525,7 +549,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
         }
       }
     } catch (error) {
-      restoreExitSettings(expected.exits, expected.roadsDisabled);
+      restoreRoadRecipe(expected);
       fail(error);
     } finally {
       working = false;
@@ -597,7 +621,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     status = T.working;
     render();
     try {
-      restoreExitSettings(baseline.exits, baseline.roadsDisabled);
+      restoreRoadRecipe(baseline);
       await host.setWorld(baseline.world);
       knownWorld = baseline.world;
       undoStack.splice(sessionHistoryStart);
@@ -607,7 +631,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
       stop();
       return true;
     } catch (error) {
-      restoreExitSettings(previous.exits, previous.roadsDisabled);
+      restoreRoadRecipe(previous);
       fail(error);
       return false;
     } finally {
@@ -900,7 +924,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     try {
       const geometry = await requestRoute(w, points, drawClass, drawVariant);
       if (world() !== w || current !== 'draw') return;
-      const result = addRoad(w, geometry.path, { snap: SNAP_PX / scale(), cls: drawClass, controls: geometry.controls, routingVariant: drawVariant });
+      const result = addRoad(w, geometry.path, { editorSource: 'draw:' + crypto.randomUUID(), snap: SNAP_PX / scale(), cls: drawClass, controls: geometry.controls, routingVariant: drawVariant });
       const ends = ([0, 1] as const).filter(end => {
         const p = end ? points.at(-1)! : points[0];
         return p.x === 0 || p.y === 0 || p.x === w.mapSize || p.y === w.mapSize;
@@ -1591,7 +1615,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
       b.setAttribute('aria-pressed', String(current === b.dataset.networkTool));
       b.disabled = busy || working || !w;
     }
-    setText(hint, current === 'roads' ? (addingPoint ? addHint : roadsHint) : current === 'draw' ? autoHint : current === 'rivers' ? T.riversHint : T.idle);
+    setText(hint, current === 'roads' ? (addingPoint ? addHint : roadsHint) : current === 'draw' ? autoHint : current === 'rivers' ? T.riversHint : roadSession ? T.roads : T.idle);
     detail.replaceChildren();
     banner.hidden = current === 'off' || !(status || current === 'roads' || current === 'draw' || (current === 'rivers' && !plan));
     banner.textContent = status ? translate(status) : cutPreview ? translate(T.cutPreview) : current === 'roads' ? translate(addingPoint ? addHint : roadsHint) : current === 'draw' ? translate(autoHint) : translate(T.riversHint);

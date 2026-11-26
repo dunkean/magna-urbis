@@ -5,7 +5,7 @@ import { bboxOf } from '../gen/geo/poly';
 import { NATURAL_LAND_KINDS } from './countryside';
 import { isKinded } from './townbridges';
 import type { World, LandArea, LandKind, Farmstead, PolyH } from '../gen/types';
-import { farmRidges } from './farms';
+import { FARM_ENCLOSURES, FARM_PLATFORM_EARTH, farmEnclosureKind, farmRidges } from './farms';
 import { fieldBoundaryStyle, fieldHedges, fieldHedgeStyle } from './hedges';
 import { furrowDegrees, furrowStripe, holdingTone } from './furrows';
 import type { Vec2 } from '../gen/core/geom';
@@ -319,11 +319,15 @@ function farmSvg(f: Farmstead, pal: Palette, brushes?: SvgBrushes, fungal = f.cu
   o += (bed ? fill('garden', bed.bed, bed.edge ? ` stroke="${bed.edge}" stroke-width="0.3" stroke-opacity="0.45"` : '') : fill('garden', pal.land.garden, ` stroke="${pal.hedge}" stroke-width="0.4"`)) + fill('orchard', pal.land.orchard) + fill('paddock', pal.land.pasture);
   if (brushes) o += (fungal ? '' : fill('garden', `url(#${brushes.pattern('garden')})`)) + fill('orchard', `url(#${brushes.pattern('orchard')})`);
   if (fungal) o += fill('garden', 'url(#p-fungal-farm)');
-  o += fill('platform', 'none', ` stroke="${pal.farmInk}" stroke-width="0.5" stroke-opacity="0.7"`);
+  o += fill('platform', FARM_PLATFORM_EARTH, ` fill-opacity="0.48" stroke="${pal.farmInk}" stroke-width="0.5" stroke-opacity="0.7" stroke-dasharray="3 2"`);
   o += `<path d="${pathD(f.yard, true)}" fill="${pal.farmYard}" fill-opacity="0.9"/>`;
   o += fill('pen', pal.farmYard, ` stroke="${pal.farmInk}" stroke-width="0.3"`) + fill('threshing-floor', pal.farmYard, ` stroke="${pal.farmInk}" stroke-width="0.4"`);
   o += fill('pond', pal.water.stops[0][1], ` stroke="${pal.waterEdge}" stroke-width="0.5"`);
-  if (f.walls?.length) o += `<path d="${f.walls.map(w => pathD(w, false)).join('')}" fill="none" stroke="${pal.farmInk}" stroke-width="0.9" stroke-linecap="butt"/>`;
+  const kind = farmEnclosureKind(f);
+  if (kind !== 'none' && f.walls?.length) {
+    const look = FARM_ENCLOSURES[kind];
+    o += `<path d="${f.walls.map(w => pathD(w, false)).join('')}" fill="none" stroke="${kind === 'wall' ? pal.farmInk : look.color}" stroke-width="${look.width}" stroke-opacity="${look.alpha}" stroke-linecap="butt"/>`;
+  }
   if (f.trees?.length) o += `<g fill="${pal.treeFill}" stroke="${pal.treeInk}" stroke-width="0.3">${f.trees.map(t => (brushes ? brushes.tree(t.x, t.y, 2.2, true) : `<circle cx="${f1(t.x)}" cy="${f1(t.y)}" r="2.2"/>`)).join('')}</g>`;
   o += `<g fill="${pal.farmRoof}" stroke="${pal.farmInk}" stroke-width="0.5">${f.buildings.map(b => `<path d="${pathD(b, true)}"/>`).join('')}</g>`;
   const rg = farmRidges(f);

@@ -6,7 +6,7 @@ import { countWork } from '../workCount';
 
 export interface ContourInkSource {
   terrain: object;
-  /** A single sprite referencing the cached transparent contour raster, never vector strokes. */
+  /** One coverage sprite. Its tint can change while the sprite and texture stay ready. */
   list: DisplayList;
 }
 export interface OverlayInk {
@@ -25,8 +25,8 @@ export function createContourInk(gl: WebGL2RenderingContext, source: () => Conto
     shownList: DisplayList | undefined,
     current: ContourInkSource | undefined,
     pending = false;
-  let prepared = new Set<DisplayList>();
-  let upload: { list: DisplayList; steps: Generator<void> } | undefined;
+  let prepared = false;
+  let upload: Generator<void> | undefined;
   const post: [number, number, number, number, number, number] = [1, 0, 0, 1, 0, 0];
   const scissor: [number, number, number, number] = [0, 0, 0, 0];
   const parts: LivePart[] = [];
@@ -44,26 +44,27 @@ export function createContourInk(gl: WebGL2RenderingContext, source: () => Conto
         raster!.dispose();
         raster = createLiveRasterizer(gl);
         if (!raster) throw new Error('Contour rasterizer unavailable');
-        prepared = new Set();
+        prepared = false;
         upload = undefined;
+        parts.length = 0;
       }
       terrain = next.terrain;
       shownList = next.list;
       current = next;
       const warm = raster!.warm();
-      if (!prepared.has(next.list)) {
-        if (upload?.list !== next.list) upload = { list: next.list, steps: raster!.prepareSteps(next.list) };
+      if (!prepared) {
+        upload ??= raster!.prepareSteps(next.list);
         const deadline = performance.now() + budgetMs;
         do {
-          if (upload.steps.next().done) {
-            prepared.add(next.list);
+          if (upload.next().done) {
+            prepared = true;
             upload = undefined;
             countWork('contour.upload');
             break;
           }
         } while (performance.now() < deadline);
       }
-      pending = !warm || !prepared.has(next.list);
+      pending = !warm || !prepared;
       stats.bytes = raster!.bytes();
       return pending;
     },
@@ -95,15 +96,16 @@ export function createContourInk(gl: WebGL2RenderingContext, source: () => Conto
     stats: () => stats,
     contextLost() {
       raster!.dropContext();
-      prepared.clear();
+      prepared = false;
       upload = undefined;
       pending = true;
       stats.bytes = 0;
     },
     dispose() {
       raster!.dispose();
-      current = undefined;
-      prepared.clear();
+      current = shownList = terrain = undefined;
+      parts.length = 0;
+      prepared = false;
       upload = undefined;
     },
   };

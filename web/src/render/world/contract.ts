@@ -164,6 +164,8 @@ export interface DrapeSource {
   /** Changes when a product that a tile was painted without arrives: only the tiles painted `provisional` are baked
    * again. Absent: the source never paints a tile provisionally. */
   arrivals?(): number;
+  /** The affected world boxes since a source revision. Absent or undefined means any tile may have changed. */
+  contentChanges?(since: number): readonly Rect4[] | undefined;
   /** False while the source cannot paint this tile yet (programs linking, data not on the GPU): the tile is baked
    * later, and until then the drape bakes nothing. A source with nothing to show is ready and paints nothing. Cheap. */
   ready(canvas: DrapeCanvas): boolean;

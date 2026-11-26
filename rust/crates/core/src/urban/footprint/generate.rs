@@ -273,18 +273,19 @@ pub(in crate::urban) fn generate(
                 taken = (steep_grade, steep);
             }
         }
-        land = best.4;
+        land = best.4.take();
+        let reading = land.as_ref().map(|(survey, _)| *survey);
         let laddered = got(&best);
         #[cfg(not(target_arch = "wasm32"))]
         if std::env::var("URBAN_PROFILE").is_ok() {
-            eprintln!("  terrain.land: {land:?}");
+            eprintln!("  terrain.land: {reading:?}");
         }
         // Terrain correction, on a site whose strict house gate refuses the
         // land the growth took (all ordinary ground skips it): the capacity
         // forecast counts only the share of that land the town's gate admits,
         // and the growth is drawn again by housable land, flat land first,
         // until it holds the forecast households.
-        if let Some(measured) = land.filter(terrain::Survey::refused)
+        if let Some(measured) = reading.filter(terrain::Survey::refused)
             && plan.is_some()
         {
             for e in &mut plan_epochs {

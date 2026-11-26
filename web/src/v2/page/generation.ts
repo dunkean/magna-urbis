@@ -91,7 +91,7 @@ export function createGenerationActions(state: PageState, actions: PageActions) 
         if (!state.world?.stats['v2.previewStage']) state.previewBase = { world: state.world, pristine: state.pristine };
       } else state.previewBase = undefined;
       state.labelBaseline = undefined;
-      applyLabelEdits(result, state.settings.naming?.labels);
+      if (!localEdit) applyLabelEdits(result, state.settings.naming?.labels);
       state.pristine = result;
       const edited = applyBuildingEdits(result, state.mods);
       state.world = edited.world;

@@ -4,12 +4,14 @@
  * them at upload and disposes them.
  */
 import { META, STROKE_STRIDE, type CityGlFillMesh, type CityGlStrokes } from '../../cityGlBuild';
+import type { CellPageMesh, MeshReindex, MeshUpload } from './cellMesh';
 import { type CityGlDraws } from './styleTables';
 // walls hook (cityWalls.ts)
 
 const TEX_W = 4096;
+export const tableRows = (features: number) => Math.max(1, Math.ceil(features / TEX_W));
 function uploadTable(gl: WebGL2RenderingContext, texture: WebGLTexture, rgba: Uint8Array): void {
-  const rows = Math.max(1, Math.ceil(rgba.length / 4 / TEX_W)),
+  const rows = tableRows(rgba.length / 4),
     data = rgba.length === rows * TEX_W * 4 ? rgba : new Uint8Array(rows * TEX_W * 4);
   if (data !== rgba) data.set(rgba);
   gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -20,6 +22,27 @@ function uploadTable(gl: WebGL2RenderingContext, texture: WebGLTexture, rgba: Ui
 
 type FillExtra = 'hatch' | 'grain' | 'rim' | 'lay';
 const FILL_EXTRAS: readonly FillExtra[] = ['hatch', 'grain', 'rim', 'lay'];
+export interface CellColors {
+  fill: Uint8Array;
+  line: Uint8Array;
+  draws?: CityGlDraws;
+  extra?: Partial<Record<FillExtra, Uint8Array>>;
+}
+export interface CellPaint {
+  cell: number;
+  first: number;
+  colors: CellColors;
+}
+function patchTable(gl: WebGL2RenderingContext, t: WebGLTexture, first: number, rgba: Uint8Array) {
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  for (let offset = 0; offset < rgba.length;) {
+    const x = first % TEX_W,
+      width = Math.min(TEX_W - x, (rgba.length - offset) / 4);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, x, Math.floor(first / TEX_W), width, 1, gl.RGBA, gl.UNSIGNED_BYTE, rgba.subarray(offset, offset + width * 4));
+    first += width;
+    offset += width * 4;
+  }
+}
 /** Colour tables kept per fill mesh: the four levels of detail of a look and a previous look or two. */
 const TABLES_KEPT = 6;
 /** A fill mesh on the GPU: shared vertices, one VAO for triangles, one for lines, two colour tables per kept state
@@ -39,7 +62,9 @@ export class FillPack {
   grain: WebGLTexture | null = null;
   rim: WebGLTexture | null = null;
   lay: WebGLTexture | null = null;
-  private tables = new Map<string, { fill: WebGLTexture; edge: WebGLTexture; extra: Partial<Record<FillExtra, WebGLTexture>>; draws?: CityGlDraws }>();
+  private tables = new Map<string, { fill: WebGLTexture; edge: WebGLTexture; extra: Partial<Record<FillExtra, WebGLTexture>>; draws?: CityGlDraws; dirty: Set<number>; cellDraws: Map<number, CityGlDraws> }>();
+  private matKey?: string;
+  private matDirty = new Set<number>();
   constructor(
     private gl: WebGL2RenderingContext,
     readonly mesh: CityGlFillMesh,
@@ -73,8 +98,68 @@ export class FillPack {
   get bytes(): number {
     return this.geometryBytes + Math.max(1, this.tables.size) * Math.ceil(this.mesh.featureCount / TEX_W) * TEX_W * 8;
   }
-  /** Uploads the tables of state `key` (and its extra tables) and makes them current. */
-  colors(fill: Uint8Array, edge: Uint8Array, key: string, draws?: CityGlDraws, extra: Partial<Record<FillExtra, Uint8Array>> = {}): void {
+  /** COPY_WRITE_BUFFER does not disturb the element binding of any VAO in the shared context. */
+  readonly uploadRange: MeshUpload = (stream, offset, data) => {
+    const gl = this.gl,
+      i = stream === 'positions' ? 0 : stream === 'vertexFeatures' ? 1 : stream === 'triangles' ? 2 : 3;
+    gl.bindBuffer(gl.COPY_WRITE_BUFFER, this.vbo[i]);
+    gl.bufferSubData(gl.COPY_WRITE_BUFFER, offset, data);
+  };
+  readonly moveIndices: MeshReindex = (stream, indices, moves) => {
+    const gl = this.gl,
+      i = stream === 'triangles' ? 2 : 3,
+      vao = stream === 'triangles' ? this.tri : this.line;
+    const previous = this.vbo[i],
+      next = gl.createBuffer()!;
+    // Establish the element-buffer type before a GPU copy from another element buffer.
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, next);
+    gl.bindVertexArray(null);
+    gl.bindBuffer(gl.COPY_READ_BUFFER, previous);
+    gl.bindBuffer(gl.COPY_WRITE_BUFFER, next);
+    gl.bufferData(gl.COPY_WRITE_BUFFER, indices.byteLength, gl.DYNAMIC_DRAW);
+    for (const { from, start, count } of moves) {
+      if (from === undefined) gl.bufferSubData(gl.COPY_WRITE_BUFFER, start * 4, indices.subarray(start, start + count));
+      else gl.copyBufferSubData(gl.COPY_READ_BUFFER, gl.COPY_WRITE_BUFFER, from * 4, start * 4, count * 4);
+    }
+    gl.deleteBuffer(previous);
+    this.vbo[i] = next;
+    this.geometryBytes = this.mesh.positions.byteLength + this.mesh.vertexFeatures.byteLength + this.mesh.triangles.byteLength + this.mesh.lines.byteLength;
+  };
+  removeCell(cell: number): void {
+    for (const t of this.tables.values()) {
+      t.cellDraws.delete(cell);
+      t.dirty.delete(cell);
+      t.draws = this.drawFlags(t.cellDraws);
+    }
+    this.matDirty.delete(cell);
+  }
+  private drawFlags(flags: Map<number, CityGlDraws>): CityGlDraws | undefined {
+    let result: CityGlDraws | undefined;
+    for (const d of flags.values()) {
+      if (!result) result = { ...d };
+      else for (const k of Object.keys(d) as (keyof CityGlDraws)[]) if (d[k]) result[k] = true;
+    }
+    return result;
+  }
+  invalidateCell(cell: number): void {
+    for (const t of this.tables.values()) t.dirty.add(cell);
+    this.matDirty.add(cell);
+  }
+  needsCell(key: string, cell: number): boolean {
+    const t = this.tables.get(key);
+    return !t || t.dirty.has(cell);
+  }
+  private texture(): WebGLTexture {
+    const gl = this.gl,
+      t = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, TEX_W, tableRows(this.mesh.featureCount), 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    return t;
+  }
+  colors(key: string, patches: readonly CellPaint[]): void {
     const gl = this.gl;
     let t = this.tables.get(key);
     if (!t) {
@@ -83,22 +168,23 @@ export class FillPack {
         this.tables.delete(oldest);
         gl.deleteTexture(old.fill);
         gl.deleteTexture(old.edge);
-        for (const x of Object.values(old.extra)) if (x) gl.deleteTexture(x);
+        for (const x of Object.values(old.extra)) gl.deleteTexture(x);
       }
-      t = { fill: gl.createTexture()!, edge: gl.createTexture()!, extra: {} };
+      t = { fill: this.texture(), edge: this.texture(), extra: {}, dirty: new Set(), cellDraws: new Map() };
       this.tables.set(key, t);
     }
-    t.draws = draws;
-    uploadTable(gl, t.fill, fill);
-    uploadTable(gl, t.edge, edge);
-    for (const name of FILL_EXTRAS) {
-      const data = extra[name];
-      if (data) uploadTable(gl, (t.extra[name] ??= gl.createTexture()!), data);
-      else if (t.extra[name]) {
-        gl.deleteTexture(t.extra[name]!);
-        delete t.extra[name];
+    for (const { cell, first, colors } of patches) {
+      patchTable(gl, t.fill, first, colors.fill);
+      patchTable(gl, t.edge, first, colors.line);
+      for (const name of FILL_EXTRAS) {
+        const data = colors.extra?.[name];
+        if (data) patchTable(gl, (t.extra[name] ??= this.texture()), first, data);
+        else if (t.extra[name]) patchTable(gl, t.extra[name]!, first, new Uint8Array(colors.fill.length));
       }
+      if (colors.draws) t.cellDraws.set(cell, colors.draws);
+      t.dirty.delete(cell);
     }
+    t.draws = this.drawFlags(t.cellDraws);
     this.current(t);
   }
   private current(t: { fill: WebGLTexture; edge: WebGLTexture; extra: Partial<Record<FillExtra, WebGLTexture>> }): void {
@@ -117,10 +203,14 @@ export class FillPack {
   }
   /** The tables of state `key` are kept (nothing made current). */
   has(key: string): boolean {
-    return this.tables.has(key);
+    return this.tables.get(key)?.dirty.size === 0;
   }
-  materials(table: Uint8Array): void {
-    uploadTable(this.gl, (this.mats ??= this.gl.createTexture()!), table);
+  materials<T>(key: string, page: CellPageMesh<T>, make: (part: T, mesh: CityGlFillMesh) => Uint8Array): void {
+    if (this.matKey === key && !this.matDirty.size) return;
+    const t = (this.mats ??= this.texture());
+    for (const c of page.cells.values()) if (this.matKey !== key || this.matDirty.has(c.key)) patchTable(this.gl, t, page.slots.get(c.key)!.feature.start, make(c.part, c.mesh));
+    this.matKey = key;
+    this.matDirty.clear();
   }
   dispose(): void {
     const gl = this.gl;
@@ -137,6 +227,57 @@ export class FillPack {
     this.fill = this.edge = this.hatch = this.grain = this.rim = this.lay = null;
   }
 }
+/** Preserve painter order by copying relocated records on the GPU. Only newly packed records cross the bus. */
+export function replaceBufferParts(gl: WebGL2RenderingContext, vbo: WebGLBuffer, bytes: number, previousParts: readonly ArrayBuffer[], next: readonly ArrayBuffer[]): { vbo: WebGLBuffer; bytes: number } {
+  const old = new Map<ArrayBuffer, number>();
+  let offset = 0;
+  for (const part of previousParts) {
+    old.set(part, offset);
+    offset += part.byteLength;
+  }
+  let size = 0,
+    moves = false;
+  for (const part of next) {
+    const from = old.get(part);
+    if (from !== undefined && from !== size) moves = true;
+    size += part.byteLength;
+  }
+  const previous = vbo,
+    replace = moves || size > bytes;
+  if (replace) {
+    vbo = gl.createBuffer()!;
+    gl.bindBuffer(gl.COPY_READ_BUFFER, previous);
+    gl.bindBuffer(gl.COPY_WRITE_BUFFER, vbo);
+    gl.bufferData(gl.COPY_WRITE_BUFFER, size, gl.DYNAMIC_DRAW);
+    bytes = size;
+  } else gl.bindBuffer(gl.COPY_WRITE_BUFFER, vbo);
+  offset = 0;
+  let copyFrom = 0,
+    copyTo = 0,
+    copyBytes = 0;
+  const flush = () => {
+    if (copyBytes) gl.copyBufferSubData(gl.COPY_READ_BUFFER, gl.COPY_WRITE_BUFFER, copyFrom, copyTo, copyBytes);
+    copyBytes = 0;
+  };
+  for (const part of next) {
+    const from = old.get(part);
+    if (from === undefined) {
+      flush();
+      if (part.byteLength) gl.bufferSubData(gl.COPY_WRITE_BUFFER, offset, new Uint8Array(part));
+    } else if (replace) {
+      if (!copyBytes || copyFrom + copyBytes !== from || copyTo + copyBytes !== offset) {
+        flush();
+        copyFrom = from;
+        copyTo = offset;
+      }
+      copyBytes += part.byteLength;
+    }
+    offset += part.byteLength;
+  }
+  flush();
+  if (replace) gl.deleteBuffer(previous);
+  return { vbo, bytes };
+}
 /** Segment instances on the GPU (36-byte stride), with outer/inner colour tables. */
 export class StrokePack {
   vbo: WebGLBuffer;
@@ -147,7 +288,7 @@ export class StrokePack {
   bytes: number;
   constructor(
     private gl: WebGL2RenderingContext,
-    readonly strokes: CityGlStrokes,
+    public strokes: CityGlStrokes,
     dynamic = false,
   ) {
     this.vbo = gl.createBuffer()!;
@@ -158,6 +299,27 @@ export class StrokePack {
     this.outer = gl.createTexture()!;
     this.inner = gl.createTexture()!;
     this.bytes = strokes.data.byteLength;
+  }
+  /** Reuse contiguous unchanged runs on the GPU, including when a changed gate moves a later run.
+   * A relocation uses a second buffer because overlapping copies within one WebGL buffer are invalid. */
+  replaceParts(next: CityGlStrokes, streetIndices?: readonly number[]): void {
+    if (streetIndices && next.streetSlots && next.streetSlots === this.strokes.streetSlots) {
+      const gl = this.gl;
+      gl.bindBuffer(gl.COPY_WRITE_BUFFER, this.vbo);
+      for (const i of streetIndices) {
+        const data = next.streets![i].data;
+        if (data !== this.strokes.streets![i].data && data.byteLength) gl.bufferSubData(gl.COPY_WRITE_BUFFER, next.streetSlots[i].offset, new Uint8Array(data));
+      }
+      this.strokes = next;
+      return;
+    }
+    const updated = replaceBufferParts(this.gl, this.vbo, this.bytes, this.strokes.parts!, next.parts!);
+    if (updated.vbo !== this.vbo) {
+      this.vbo = updated.vbo;
+      this.bind(0);
+    }
+    this.bytes = updated.bytes;
+    this.strokes = next;
   }
   /** Attribute pointers from instance `first` (WebGL2 has no base instance). */
   bind(first: number): void {
@@ -180,6 +342,13 @@ export class StrokePack {
     uploadTable(this.gl, this.outer, outer);
     uploadTable(this.gl, this.inner, inner);
   }
+  patchColors(first: number, outer: Uint8Array, inner: Uint8Array): void {
+    patchTable(this.gl, this.outer, first, outer);
+    patchTable(this.gl, this.inner, first, inner);
+  }
+  patchMaterials(first: number, data: Uint8Array): void {
+    if (this.mats) patchTable(this.gl, this.mats, first, data);
+  }
   materials(table: Uint8Array): void {
     uploadTable(this.gl, (this.mats ??= this.gl.createTexture()!), table);
   }
@@ -195,6 +364,7 @@ export class StrokePack {
 /** First street stroke that is a crossing (bridge, ford, pier, boardwalk): crossings are sorted last. */
 export function crossingStart(strokes: CityGlStrokes | undefined): number {
   if (!strokes) return 0;
+  if (strokes.crossingStart !== undefined) return strokes.crossingStart;
   const u = new Uint32Array(strokes.data);
   for (let i = 0; i < strokes.count; i++) if (u[i * STROKE_STRIDE + 8] & META.crossing) return i;
   return strokes.count;
@@ -203,7 +373,7 @@ export function crossingStart(strokes: CityGlStrokes | undefined): number {
 export interface FillPage<T> {
   key: number;
   /** The page's part of the scene (a plan page or a building page) its tables are computed from. */
-  part: T;
+  geometry: CellPageMesh<T>;
   pack: FillPack;
   box: [number, number, number, number];
 }
@@ -211,10 +381,12 @@ export interface FillPage<T> {
  * view one after the other in each pass; an edit replaces only the pages it changed. */
 export class FillPages<T> {
   /** Triangles and outline edges of each layer over every page (what a frame checks before a pass). */
+  readonly byKey: Map<number, FillPage<T>>;
   readonly counts: Record<string, { triangles: number; lines: number }> = {};
   readonly featureCount: number;
   private draws = new Map<string, CityGlDraws | undefined>();
   constructor(readonly pages: FillPage<T>[]) {
+    this.byKey = new Map(pages.map(p => [p.key, p]));
     let features = 0;
     for (const p of pages) {
       features += p.pack.mesh.featureCount;

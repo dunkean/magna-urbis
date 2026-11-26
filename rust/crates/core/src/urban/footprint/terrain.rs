@@ -68,6 +68,9 @@ impl Gate {
     pub fn at(&self, relax: f64) -> f64 {
         profiles::relaxed(self.strict, relax)
     }
+    pub fn block_side(&self) -> f64 {
+        self.reach / RING_SCALE
+    }
     /// Growth cost factor of a cell of block-scale slope `s`: flat land first,
     /// then the land the relaxed gate admits, then land no house uses.
     pub fn premium(&self, s: f64) -> f64 {
@@ -124,27 +127,25 @@ impl Survey {
 /// when its block-scale slope is within the limit.
 pub(super) fn survey(surface: Surface<'_>, cells: &[Point], half: f64, gate: Gate) -> Option<Survey> {
     let d = half * 0.5;
-    let points: Vec<Point> = cells
+    let points = cells
         .iter()
-        .flat_map(|c| [(0.0, 0.0), (d, 0.0), (-d, 0.0), (0.0, d), (0.0, -d)].map(|(dx, dy)| Point { x: c.x + dx, y: c.y + dy }))
-        .collect();
-    tally(surface, &points, gate)
+        .flat_map(|c| [(0.0, 0.0), (d, 0.0), (-d, 0.0), (0.0, d), (0.0, -d)].map(|(dx, dy)| Point { x: c.x + dx, y: c.y + dy }));
+    tally(surface, points, gate)
 }
 /// Shares of dry sample points (equal land each) within the gate's limits.
-pub(super) fn tally(surface: Surface<'_>, points: &[Point], gate: Gate) -> Option<Survey> {
-    if points.is_empty() {
-        return None;
-    }
+pub(super) fn tally(surface: Surface<'_>, points: impl Iterator<Item = Point>, gate: Gate) -> Option<Survey> {
     let limits = [gate.at(LEVELS[0]), gate.at(LEVELS[1]), gate.at(LEVELS[2]), gate.at(LEVELS[3]), gate.limit];
     let mut counts = [0usize; 5];
-    let samples = points.len();
-    for &p in points {
+    let mut samples = 0;
+    for p in points {
+        samples += 1;
         let s = block_slope(surface, p, gate.reach);
         for (count, &limit) in counts.iter_mut().zip(&limits) {
             *count += usize::from(s <= limit);
         }
     }
-    let share = |k: usize| counts[k] as f64 / samples.max(1) as f64;
+    if samples == 0 { return None; }
+    let share = |k: usize| counts[k] as f64 / samples as f64;
     Some(Survey {
         gate,
         levels: [share(0), share(1), share(2), share(3)],

@@ -115,7 +115,7 @@ export interface City3dContext {
   structureInputs: unknown[];
   structureBuildings: Building3dVisual[];
   canopyInputs: unknown[];
-  canopyBuildings: Building3dVisual[];
+  canopy?: import('../../render/cityGrove').City3dCanopy;
   ornamentInputs: unknown[];
   ornamentBuildings: Building3dVisual[];
   yardInputs: unknown[];

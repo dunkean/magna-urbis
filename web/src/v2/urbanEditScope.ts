@@ -250,15 +250,21 @@ export function withSiteSeeds(partitions: Partition[], seeds: Record<string, str
   return changed ? out : partitions;
 }
 
-/** Partitions restricted to the lots of the given blocks, with their allocations and party-wall adjacency: the building
- * sites of these blocks, generated alone, read the same lot, tissue and neighbours as in the whole town. */
+/** Only these allocations emit building sites. Keep the adjoining cadastral parcels so that a party boundary
+ * crossing the selection is measured from exactly the same two shapes as in the whole-town request. */
 export function blockPartitions(partitions: readonly Partition[], blocks: TownBlocks): Partition[] {
   return partitions.map(partition => {
-    const own = blocks.get(partition.key),
-      parcels = own ? partition.parcels.filter(parcel => own.has(parcel.block)) : [],
-      ids = new Set(parcels.map(parcel => parcel.id));
-    const programme = partition.programme && { ...partition.programme, allocations: partition.programme.allocations.filter(a => ids.has(a.parcelId)), adjacency: partition.programme.adjacency.filter(a => ids.has(a.a) && ids.has(a.b)) };
-    return { ...partition, parcels, programme, diagnostics: undefined };
+    const programme = partition.programme;
+    const own = blocks.get(partition.key);
+    if (!programme) return { ...partition, parcels: partition.parcels.filter(parcel => own?.has(parcel.block)), diagnostics: undefined };
+    const selected = new Set(partition.parcels.flatMap(parcel => parcel.id && own?.has(parcel.block) ? [parcel.id] : []));
+    const adjacency = programme.adjacency.filter(edge => selected.has(edge.a) || selected.has(edge.b));
+    const parcels = new Set(selected);
+    for (const edge of adjacency) {
+      parcels.add(edge.a);
+      parcels.add(edge.b);
+    }
+    return { ...partition, parcels: partition.parcels.filter(parcel => parcel.id && parcels.has(parcel.id)), programme: { ...programme, allocations: programme.allocations.filter(a => selected.has(a.parcelId)), adjacency }, diagnostics: undefined };
   });
 }
 /** Blocks of the given sites (their lots' owners). */

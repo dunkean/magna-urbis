@@ -222,6 +222,7 @@ export interface PageActions {
   showInspector(key: string, focus?: boolean): void;
   rerollTown(key: string): void;
   showBuilding(hit: NonNullable<ReturnType<typeof buildingAt>>): void;
+  editWall(town: string, index: number): boolean;
   inspectSubdivision(kind: 'quarter' | 'block' | 'parcel', p: { x: number; y: number }, settlementKey?: string, selectedId?: string): boolean;
   // entity sheet
   /** `metresPerPixel`: what a CSS pixel spans where the click landed (the pick distance in a tilted view). */

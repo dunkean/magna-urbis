@@ -1,26 +1,60 @@
-/**
- * Spatial pages of the GPU town's fills: the plan polygons (footprint, blocks, parcels, quays, canals) and the building
- * polygons (bodies, roof pans, cast shadows) of a merged scene split by the page of each element's centre. Each page is
- * a scene of its own (local feature numbering, its own colour tables and buffers, renderer.ts), so a local edit packs,
- * triangulates, colours and uploads again only the pages whose elements changed (`samePlanPage`, `sameBuildingPage`);
- * the other pages keep their GPU data.
- *
- * Pure data (no DOM, no WebGL). A page's scene shares the merged scene's arrays it does not split (layouts' indices,
- * enclosure profiles, streets...): fills read only the split ones.
- */
+/** Spatial owners of live plan and building fills. The 256 m cells retain independent packings and source
+ * ordinals. CellPageMesh combines their slots in 2048 m draw pages with the original 512 m culling chunks. */
 import type { Shape } from '../../../../../rust/bridge/urban';
-import type { CityBuildings, CityRoofs, CityScene } from '../model/contract';
-import type { CityGlPolygons, CityGlTriangulation } from '../../cityGlBuild';
+import { sameData } from './sceneChanges';
+import { buildingTowns, hasRoofs, type BuildingSet, type BuildingTown } from './buildingSet';
+import type { Box, CityBuildings, CityRoofs, CityScene } from '../model/contract';
+import { SpatialBins } from '../model/geometry';
+import type { CityFillPlan, CityGlPolygons, CityGlTriangulation } from '../../cityGlBuild';
 
 /** Page side (metres): 4 × 4 chunk cells of CITY_GL_CELL. */
 export const CITY_GL_PAGE = 2048;
+export const CITY_EDIT_CELL = 256;
+export interface CellRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+export function gridKey(x: number, y: number): number {
+  return (y + 32768) * 65536 + x + 32768;
+}
+function gridXY(key: number): [number, number] {
+  return [(key % 65536) - 32768, Math.floor(key / 65536) - 32768];
+}
+export function cellBox(key: number, size = CITY_EDIT_CELL): Box {
+  const [x, y] = gridXY(key);
+  return { minX: x * size, minY: y * size, maxX: (x + 1) * size, maxY: (y + 1) * size };
+}
+export function drawPageKey(cell: number): number {
+  if (cell === -1) return -1;
+  const [x, y] = gridXY(cell);
+  return gridKey(Math.floor(x / 8), Math.floor(y / 8));
+}
+export function cellsInRects(rects: readonly CellRect[]): Set<number> {
+  const result = new Set<number>();
+  for (const r of rects) for (let y = Math.floor(r.y0 / CITY_EDIT_CELL); y <= Math.floor(r.y1 / CITY_EDIT_CELL); y++) for (let x = Math.floor(r.x0 / CITY_EDIT_CELL); x <= Math.floor(r.x1 / CITY_EDIT_CELL); x++) result.add(gridKey(x, y));
+  return result;
+}
+/** Query the existing spatial bins of the affected draw pages. Source ordinals of their clean cells
+ * preserve painter order when an insertion shifts the ordinals in an adjacent cell. */
+export function cellCandidates(bins: CityBuildings['bins'], length: number, pages?: ReadonlySet<number>, size = CITY_GL_PAGE): Iterable<number> {
+  if (!pages) return Array(length).keys();
+  const result = new Set<number>();
+  for (const key of pages) {
+    const box = cellBox(key, size);
+    for (const i of bins.query(box)) result.add(i);
+  }
+  return [...result].sort((a, b) => a - b);
+}
 /** Elements split between two pauses. */
 const SPLIT_STEP = 2048;
 
 type Waterway = NonNullable<NonNullable<CityScene['layouts'][number]['structure']>['waterways']>[number];
 export interface CityGlPlanPage {
   key: number;
-  plan: CityScene;
+  order: number[];
+  plan: CityFillPlan;
   /** The merged elements of the page, in merged order (what `samePlanPage` compares). */
   blocks: CityScene['blocks'];
   parcels: CityScene['parcels'];
@@ -30,11 +64,16 @@ export interface CityGlPlanPage {
 }
 export interface CityGlBuildingPage {
   key: number;
+  order: number[];
   buildings: CityBuildings;
 }
 
-/** Page of a list of shapes: the cell of its outer rings' box centre (-1: no point). */
-function pageOf(shapes: readonly (Shape | undefined)[], page: number): number {
+const owners = new WeakMap<object, number>();
+/** Owner of the outer rings' bounding-box centre. Immutable geometry shares its 256 m key across edits. */
+export function pageOf(shapes: readonly (Shape | undefined)[], page: number): number {
+  const source = shapes.length === 1 ? shapes[0] : shapes;
+  const cached = source && owners.get(source);
+  if (cached !== undefined && (page === CITY_EDIT_CELL || page === CITY_GL_PAGE)) return page === CITY_EDIT_CELL ? cached : drawPageKey(cached);
   let x0 = Infinity,
     y0 = Infinity,
     x1 = -Infinity,
@@ -47,112 +86,241 @@ function pageOf(shapes: readonly (Shape | undefined)[], page: number): number {
       if (p.y > y1) y1 = p.y;
     }
   if (!Number.isFinite(x0)) return -1;
+  const owner = gridKey(Math.floor((x0 + x1) / (2 * CITY_EDIT_CELL)), Math.floor((y0 + y1) / (2 * CITY_EDIT_CELL)));
+  if (source) owners.set(source, owner);
   return (Math.floor((y0 + y1) / 2 / page) + 32768) * 65536 + Math.floor((x0 + x1) / 2 / page) + 32768;
 }
 
+/** Macro page draw order is the first occurrence in the original layer sequence. An insertion can change
+ * that order across page boundaries. Only its owner key is needed for this pass. */
+export function planDrawOrder(plan: CityScene): Map<number, number> {
+  const order = new Map<number, number>(),
+    take = (shapes: readonly Shape[]) => {
+      const k = pageOf(shapes, CITY_GL_PAGE);
+      if (k !== -1 && !order.has(k)) order.set(k, order.size);
+    };
+  for (const shape of plan.footprint) take([shape]);
+  for (const b of plan.blocks) take(b.ground ?? [b.shape]);
+  for (const p of plan.parcels) take(p.ground ?? [p.shape]);
+  for (const q of plan.quays ?? []) take([q.shape]);
+  for (const l of plan.layouts) for (const w of l.structure?.waterways ?? []) take([w.shape]);
+  return order;
+}
+export function buildingDrawOrder(set: BuildingSet): Map<number, number> {
+  const order = new Map<number, number>();
+  for (const town of buildingTowns(set))
+    for (const b of town.set.items) {
+      const k = pageOf(b.surface?.length ? b.surface : (b.footprint ?? b.building.footprint), CITY_GL_PAGE);
+      if (!order.has(k)) order.set(k, order.size);
+    }
+  return order;
+}
+/** Geometry rectangles omit some colour-only edits (allocations, lot-line visibility) and canal accessories.
+ * Mark the owner cells of those records as well. The retained merge shares untouched columns and records. */
+export function planEditCells(a: CityScene, b: CityScene, buildingCells?: Set<number>): Set<number> {
+  const cells = new Set<number>(),
+    mark = (shapes: readonly Shape[]) => {
+      const key = pageOf(shapes, CITY_EDIT_CELL);
+      if (key !== -1) cells.add(key);
+    };
+  function compare<T>(old: readonly T[], next: readonly T[], shapes: (v: T) => readonly Shape[], lot?: (v: T) => Shape) {
+    if (old === next) return;
+    const changed = (v: T) => {
+      mark(shapes(v));
+      if (!lot || !buildingCells) return;
+      // Allocation can affect building paint anywhere in a wide lot, beyond its fill owner.
+      let x0 = Infinity,
+        y0 = Infinity,
+        x1 = -Infinity,
+        y1 = -Infinity;
+      for (const p of lot(v).outer) {
+        x0 = Math.min(x0, p.x);
+        x1 = Math.max(x1, p.x);
+        y0 = Math.min(y0, p.y);
+        y1 = Math.max(y1, p.y);
+      }
+      if (x0 <= x1) for (const k of cellsInRects([{ x0, y0, x1, y1 }])) buildingCells.add(k);
+    };
+    const before = new Map(old.map((v, i) => [v, i])),
+      after = new Set(next);
+    let last = -1,
+      crossed: Int32Array | undefined;
+    for (const v of next) {
+      const i = before.get(v);
+      if (i === undefined) changed(v);
+      else if (i < last) {
+        // Reordered retained items may overlap; every crossed owner cell must refresh its order.
+        crossed ??= new Int32Array(old.length + 1);
+        crossed[i]++;
+        crossed[last + 1]--;
+      } else last = i;
+    }
+    let overlaps = 0;
+    for (const [i, v] of old.entries()) {
+      overlaps += crossed?.[i] ?? 0;
+      if (overlaps || !after.has(v)) changed(v);
+    }
+  }
+  const areas = (v: CityScene['blocks'][number] | CityScene['parcels'][number]) => v.ground ?? [v.shape];
+  compare(a.blocks, b.blocks, areas);
+  compare(a.parcels, b.parcels, areas, p => p.shape);
+  compare(a.footprint, b.footprint, s => [s]);
+  compare(a.quays ?? [], b.quays ?? [], q => [q.shape]);
+  if (a.layouts !== b.layouts)
+    compare(
+      a.layouts.flatMap(l => l.structure?.waterways ?? []),
+      b.layouts.flatMap(l => l.structure?.waterways ?? []),
+      w => [w.shape],
+    );
+  const profile = (p: CityScene, i: number) => !!p.enclosureProfiles?.[i]?.hideLotLines;
+  for (let i = 0; i < Math.max(a.layouts.length, b.layouts.length); i++)
+    if (profile(a, i) !== profile(b, i)) {
+      for (const v of b.blocks) if (v.layout === i) mark(areas(v));
+      for (const v of b.parcels) if (v.layout === i) mark(areas(v));
+    }
+  return cells;
+}
 /** The plan split by page (elements without geometry go nowhere: the packer skips them). */
-export function* splitPlanSteps(plan: CityScene, page = CITY_GL_PAGE): Generator<void, Map<number, CityGlPlanPage>> {
+export function* splitPlanSteps(plan: CityScene, page = CITY_GL_PAGE, drawPages?: ReadonlySet<number>, onlyCells?: ReadonlySet<number>): Generator<void, Map<number, CityGlPlanPage>> {
   const pages = new Map<number, CityGlPlanPage>();
   const at = (key: number): CityGlPlanPage | undefined => {
-    if (key < 0) return undefined;
+    if (key < 0 || (onlyCells && !onlyCells.has(key)) || (drawPages && !drawPages.has(drawPageKey(key)))) return undefined;
     let p = pages.get(key);
-    if (!p) pages.set(key, (p = { key, plan: undefined!, blocks: [], parcels: [], footprint: [], quays: [], waterways: [] }));
+    if (!p) pages.set(key, (p = { key, order: [], plan: undefined!, blocks: [], parcels: [], footprint: [], quays: [], waterways: [] }));
     return p;
   };
   let n = 0;
   const tick = (): boolean => ++n % SPLIT_STEP === 0;
-  for (const s of plan.footprint) {
-    at(pageOf([s], page))?.footprint.push(s);
+  for (const [i, s] of plan.footprint.entries()) {
+    const cell = at(pageOf([s], page));
+    if (cell) {
+      cell.footprint.push(s);
+      cell.order.push(i);
+    }
     if (tick()) yield;
   }
-  for (const b of plan.blocks) {
-    at(pageOf(b.ground ?? [b.shape], page))?.blocks.push(b);
+  for (const i of cellCandidates(plan.bins?.blocks, plan.blocks.length, onlyCells ?? drawPages, onlyCells ? page : CITY_GL_PAGE)) {
+    const b = plan.blocks[i],
+      cell = at(pageOf(b.ground ?? [b.shape], page));
+    if (cell) {
+      cell.blocks.push(b);
+      cell.order.push(i);
+    }
     if (tick()) yield;
   }
-  for (const p of plan.parcels) {
-    at(pageOf(p.ground ?? [p.shape], page))?.parcels.push(p);
+  for (const i of cellCandidates(plan.bins?.parcels, plan.parcels.length, onlyCells ?? drawPages, onlyCells ? page : CITY_GL_PAGE)) {
+    const p = plan.parcels[i],
+      cell = at(pageOf(p.ground ?? [p.shape], page));
+    if (cell) {
+      cell.parcels.push(p);
+      cell.order.push(i);
+    }
     if (tick()) yield;
   }
-  for (const q of plan.quays ?? []) at(pageOf([q.shape], page))?.quays.push(q);
-  // A canal goes with its bridges and lock gates (packPlanSteps reads them from the layouts).
-  const canalPage = new Map<Waterway, number>();
+  for (const [i, q] of (plan.quays ?? []).entries()) {
+    const cell = at(pageOf([q.shape], page));
+    if (cell) {
+      cell.quays.push(q);
+      cell.order.push(i);
+    }
+  }
+  const canalPage = new Map<Waterway, number>(),
+    bridgeOrder = new Map<Waterway, number>();
+  let bridges = 0;
   for (const layout of plan.layouts)
     for (const w of layout.structure?.waterways ?? []) {
-      const key = pageOf([w.shape], page);
+      const key = pageOf([w.shape], page),
+        cell = at(key);
+      cell?.order.push(canalPage.size);
       canalPage.set(w, key);
-      at(key)?.waterways.push(w);
+      bridgeOrder.set(w, bridges);
+      bridges += w.crossings.length + (w.locks?.length ?? 0);
+      cell?.waterways.push(w);
     }
+  for (const cell of pages.values()) for (const w of cell.waterways) for (let i = 0; i < w.crossings.length + (w.locks?.length ?? 0); i++) cell.order.push(bridgeOrder.get(w)! + i);
   yield;
   for (const p of pages.values()) {
-    const layouts = canalPage.size ? plan.layouts.map(layout => (layout.structure?.waterways?.length ? { ...layout, structure: { ...layout.structure, waterways: layout.structure.waterways.filter(w => canalPage.get(w) === p.key) } } : layout)) : plan.layouts;
-    p.plan = { ...plan, layouts, footprint: p.footprint, blocks: p.blocks, parcels: p.parcels, quays: p.quays };
+    p.plan = { extent: plan.extent, enclosureProfiles: plan.enclosureProfiles, waterways: p.waterways, footprint: p.footprint, blocks: p.blocks, parcels: p.parcels, quays: p.quays };
   }
   return pages;
 }
 
+const emptyBins = new SpatialBins([]);
 /** The buildings split by page: items by their surface (or footprint), roof pans and cast shadows with their item. */
-export function* splitBuildingsSteps(buildings: CityBuildings | undefined, page = CITY_GL_PAGE): Generator<void, Map<number, CityGlBuildingPage>> {
+export function* splitBuildingsSteps(buildings: BuildingSet | undefined, page = CITY_GL_PAGE, drawPages?: ReadonlySet<number>, onlyCells?: ReadonlySet<number>): Generator<void, Map<number, CityGlBuildingPage>> {
   const pages = new Map<number, CityGlBuildingPage>();
-  const items = buildings?.items ?? [];
-  if (!buildings || !items.length) return pages;
-  const itemPage = new Float64Array(items.length),
-    local = new Uint32Array(items.length),
-    lists = new Map<number, number[]>();
-  for (let i = 0; i < items.length; i++) {
-    const b = items[i],
-      key = pageOf(b.surface?.length ? b.surface : (b.footprint ?? b.building.footprint), page);
-    itemPage[i] = key;
-    let list = lists.get(key);
-    if (!list) lists.set(key, (list = []));
-    local[i] = list.length;
-    list.push(i);
-    if ((i + 1) % SPLIT_STEP === 0) yield;
-  }
-  const roofs = buildings.roofs,
-    faces = new Map<number, number[]>();
-  if (roofs)
-    for (let k = 0; k < roofs.shapes.length; k++) {
-      const key = itemPage[roofs.owner[k]];
-      let list = faces.get(key);
-      if (!list) faces.set(key, (list = []));
-      list.push(k);
+  if (!buildings) return pages;
+  const lists = new Map<number, { town: BuildingTown; index: number }[]>(),
+    roofs = hasRoofs(buildings);
+  for (const town of buildingTowns(buildings)) {
+    const { set } = town;
+    for (const i of cellCandidates(set.bins, set.items.length, onlyCells ?? drawPages, onlyCells ? page : CITY_GL_PAGE)) {
+      const b = set.items[i],
+        key = pageOf(b.surface?.length ? b.surface : (b.footprint ?? b.building.footprint), page);
+      if ((drawPages && !drawPages.has(drawPageKey(key))) || (onlyCells && !onlyCells.has(key))) continue;
+      let list = lists.get(key);
+      if (!list) lists.set(key, (list = []));
+      list.push({ town, index: i });
+      if ((i + 1) % SPLIT_STEP === 0) yield;
     }
-  yield;
+  }
   for (const [key, list] of lists) {
-    const sub: CityBuildings = { items: list.map(i => items[i]), byId: new Map(), bins: buildings.bins };
-    if (roofs) sub.roofs = sliceRoofs(roofs, faces.get(key) ?? [], list, local);
-    pages.set(key, { key, buildings: sub });
+    const items: CityBuildings['items'] = [],
+      order: number[] = [],
+      faces: number[] = [],
+      owners: number[] = [],
+      source: CityRoofs[] = [],
+      shadows: CityRoofs['shadows'] = [],
+      faceOrder: number[] = [];
+    for (const { town, index } of list) {
+      const b = town.set.items[index],
+        local = items.length;
+      items.push(town.parcelOffset && b.parcel !== undefined ? { ...b, parcel: b.parcel + town.parcelOffset } : b);
+      order.push(town.itemOffset + index);
+      const r = town.set.roofs;
+      if (roofs) shadows.push(r?.shadows[index] ?? []);
+      if (!r) continue;
+      // Both the model and the worker merge emit pans contiguously in ascending owner order.
+      let lo = 0,
+        hi = r.owner.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (r.owner[mid] < index) lo = mid + 1;
+        else hi = mid;
+      }
+      for (let k = lo; k < r.owner.length && r.owner[k] === index; k++) {
+        faces.push(k);
+        source.push(r);
+        owners.push(local);
+        faceOrder.push(town.faceOffset + k);
+      }
+    }
+    const sub: CityBuildings = { items, byId: new Map(), bins: emptyBins };
+    if (roofs) {
+      const floats = (name: 'light' | 'tone' | 'dir' | 'snow') => Float32Array.from(faces, (k, j) => source[j][name]?.[k] ?? 0);
+      const bytes = (name: 'flat' | 'patch' | 'rim' | 'grain') => Uint8Array.from(faces, (k, j) => source[j][name]?.[k] ?? 0);
+      sub.roofs = {
+        shapes: faces.map((k, j) => source[j].shapes[k]),
+        owner: Uint32Array.from(owners),
+        shadows,
+        light: floats('light'),
+        tone: floats('tone'),
+        dir: floats('dir'),
+        snow: floats('snow'),
+        flat: bytes('flat'),
+        patch: bytes('patch'),
+        rim: bytes('rim'),
+        grain: bytes('grain'),
+        cover: faces.map((k, j) => source[j].cover[k]),
+        wall: faces.map((k, j) => source[j].wall?.[k] ?? ''),
+        tint: faces.map((k, j) => source[j].tint?.[k]),
+      };
+    }
+    pages.set(key, { key, buildings: sub, order: roofs ? order.concat(faceOrder, order) : order });
     yield;
   }
   return pages;
 }
-function sliceRoofs(r: CityRoofs, faces: readonly number[], items: readonly number[], local: Uint32Array): CityRoofs {
-  const pick = <T extends Float32Array | Uint8Array>(a: T | undefined, make: new (n: number) => T): T | undefined => {
-    if (!a) return undefined;
-    const out = new make(faces.length);
-    for (let j = 0; j < faces.length; j++) out[j] = a[faces[j]];
-    return out;
-  };
-  const owner = new Uint32Array(faces.length);
-  for (let j = 0; j < faces.length; j++) owner[j] = local[r.owner[faces[j]]];
-  return {
-    shapes: faces.map(k => r.shapes[k]),
-    owner,
-    light: pick(r.light, Float32Array)!,
-    tone: pick(r.tone, Float32Array)!,
-    dir: pick(r.dir, Float32Array)!,
-    flat: pick(r.flat, Uint8Array),
-    snow: pick(r.snow, Float32Array),
-    patch: pick(r.patch, Uint8Array),
-    rim: pick(r.rim, Uint8Array),
-    grain: pick(r.grain, Uint8Array),
-    cover: faces.map(k => r.cover[k]),
-    wall: r.wall && faces.map(k => r.wall![k]),
-    tint: r.tint && faces.map(k => r.tint![k]),
-    shadows: items.map(i => r.shadows[i] ?? []),
-  };
-}
-
 /** Same own keys, same values (the merged copies of an unchanged element). */
 function shallowSame(a: object, b: object): boolean {
   if (a === b) return true;
@@ -160,19 +328,26 @@ function shallowSame(a: object, b: object): boolean {
     va = a as Record<string, unknown>,
     vb = b as Record<string, unknown>;
   if (ka.length !== Object.keys(b).length) return false;
-  for (const k of ka) if (va[k] !== vb[k]) return false;
+  for (const k of ka) if (va[k] !== vb[k] && k !== 'path' && !k.endsWith('Path') && !sameData(va[k], vb[k])) return false;
   return true;
 }
 const sameList = <T extends object>(a: readonly T[], b: readonly T[]): boolean => a.length === b.length && a.every((x, i) => shallowSame(x, b[i]));
 const sameValues = (a: ArrayLike<unknown> | undefined, b: ArrayLike<unknown> | undefined): boolean => {
   if (!a || !b) return a === b;
   if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i] && !sameData(a[i], b[i])) return false;
   return true;
 };
 
 /** A page draws the same fills as before: the same elements in the same order. */
-export const samePlanPage = (a: CityGlPlanPage, b: CityGlPlanPage): boolean => sameList(a.footprint, b.footprint) && sameList(a.blocks, b.blocks) && sameList(a.parcels, b.parcels) && sameValues(a.quays, b.quays) && sameValues(a.waterways, b.waterways);
+export const samePlanPage = (a: CityGlPlanPage, b: CityGlPlanPage): boolean =>
+  sameList(a.footprint, b.footprint) &&
+  sameList(a.blocks, b.blocks) &&
+  sameList(a.parcels, b.parcels) &&
+  sameValues(a.quays, b.quays) &&
+  sameValues(a.waterways, b.waterways) &&
+  a.blocks.every(v => !!a.plan.enclosureProfiles?.[v.layout]?.hideLotLines === !!b.plan.enclosureProfiles?.[v.layout]?.hideLotLines) &&
+  a.parcels.every(v => !!a.plan.enclosureProfiles?.[v.layout]?.hideLotLines === !!b.plan.enclosureProfiles?.[v.layout]?.hideLotLines);
 export function sameBuildingPage(a: CityGlBuildingPage, b: CityGlBuildingPage): boolean {
   const x = a.buildings,
     y = b.buildings;

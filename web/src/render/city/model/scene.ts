@@ -59,6 +59,8 @@ function wallPieces(points: Point[], gates: Point[]): { pieces: Point[][]; gateT
   return { pieces, gateTowers };
 }
 
+const retainedJoins = new WeakMap<Layout['streets'], ReturnType<typeof joinStreets>>();
+const retainedWalls = new WeakMap<NonNullable<Layout['enclosures']>[number], CityWall>();
 /** The shapes `buildCityScene` clips against the water for these layouts and partitions (blocks, lots, allocated
  * ground), the very objects it will ask for: a clip ahead (CityGround.clipAhead) then answers them from its cache.
  * A shape missing here is simply clipped by the scene itself. */
@@ -124,14 +126,19 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
     });
     for (const [district, shapes] of districtShapes) district.anchor = centroid(shapes);
     footprintSources.push(...(layout.structure?.allocated?.length ? layout.structure.allocated : layout.quarters.map(q => q.shape)));
-    const joined = joinStreets(layout.streets);
+    let joined = retainedJoins.get(layout.streets);
+    if (!joined) retainedJoins.set(layout.streets, (joined = joinStreets(layout.streets)));
     layout.streets.forEach((street, si) => {
       const width = street.widths.length ? street.widths.reduce((s, w) => s + w, 0) / street.widths.length : 4;
       streets.push({ layout: li, index: si, street, width: isBoardwalk(street.role) ? boardwalkWidth(width) : Number.isFinite(width) && width > 0 ? width : 4, rank: street.rank, role: street.role, joined: joined[si] });
     });
     for (const enclosure of layout.enclosures ?? []) {
-      const { pieces, gateTowers } = wallPieces(enclosure.path, enclosure.gates);
-      walls.push({ kind: enclosure.kind, pieces, gates: enclosure.gates, gateTowers, towers: (enclosure as typeof enclosure & EnclosureContract).towers ?? [] });
+      let wall = retainedWalls.get(enclosure);
+      if (!wall) {
+        const { pieces, gateTowers } = wallPieces(enclosure.path, enclosure.gates);
+        retainedWalls.set(enclosure, (wall = { kind: enclosure.kind, pieces, gates: enclosure.gates, gateTowers, towers: (enclosure as typeof enclosure & EnclosureContract).towers ?? [] }));
+      }
+      walls.push(wall);
     }
     const partition = partitions.find(p => p.key === layout.key);
     if (!partition) return;

@@ -4,8 +4,9 @@
  * outside the LRU; pending regions use the same release operation. Geometry remains in the rasterizer's own arena.
  */
 import type { LiveRasterizer } from '../gpu/contract';
+import type { Rect4 } from '../view';
 import type { OverlayDiagnostics } from './overlayDiagnostics';
-import { covers, type Band, type OverlayHost, type Region } from './overlayTypes';
+import { covers, meetsChange, type Band, type OverlayHost, type Region } from './overlayTypes';
 import { createRegionCache } from './regionCache';
 
 /** Off-screen prefix/snapshot textures (mipmaps included) have a byte budget; the count bounds JS display lists.
@@ -27,7 +28,7 @@ export function createOverlayRegions(raster: LiveRasterizer, host: OverlayHost, 
   };
   const release = (region: Region | undefined): void => {
     if (!region) return;
-    for (const b of region.parts) releaseBand(b);
+    for (const b of region.parts) if (!region.reuse?.bands.has(b)) releaseBand(b);
     releaseBand(region.building);
     region.parts.length = 0;
     region.live.length = 0;
@@ -38,14 +39,35 @@ export function createOverlayRegions(raster: LiveRasterizer, host: OverlayHost, 
   /** `a` makes `b` useless: the same key over at least its rectangle, and no worse (a draft never replaces a full region). */
   const supersedes = (a: Region, b: Region): boolean => a.key === b.key && covers(a.rect, b.rect) && (b.draft || !a.draft);
   /** The products made per view that `r` drew without have not arrived since it began (or it lacked none). */
-  const current = (r: Region): boolean => !r.provisional || r.arrivals === host.arrivals();
+  const arrivalsCurrent = (r: Region): boolean => !r.provisional || r.arrivals === host.arrivals();
+  const unchanged: readonly Rect4[] = [];
+  const checked = new WeakMap<Region, { revision: number | undefined; boxes: readonly Rect4[] | undefined }>();
+  const changes = (r: Region): readonly Rect4[] | undefined => {
+    const revision = host.contentRevision?.();
+    if (r.content === revision) return unchanged;
+    const cached = checked.get(r);
+    if (cached && cached.revision === revision) return cached.boxes;
+    const boxes = r.content === undefined ? undefined : host.contentChanges?.(r.content);
+    if (!boxes || boxes.some(box => meetsChange(r.rect, box, 32 / r.scale))) {
+      checked.set(r, { revision, boxes });
+      return boxes;
+    }
+    r.content = revision;
+    return unchanged;
+  };
+  const current = (r: Region): boolean => arrivalsCurrent(r) && changes(r)?.length === 0;
   /** Shows `next` (complete) in place of the region shown, which goes to the cache unless stale or held by `next`. */
   const show = (next: Region): void => {
     const old = shown;
     shown = next;
     cache.drop(r => supersedes(next, r));
     if (old && old !== next) {
-      if (old.stale || supersedes(next, old)) release(old);
+      if (next.reuse?.source === old) {
+        // The replacement now owns the borrowed bands. Release only the parts it replaced.
+        old.reuse = next.reuse;
+        next.reuse = undefined;
+        release(old);
+      } else if (old.stale || supersedes(next, old)) release(old);
       else cache.put(old);
     }
     host.invalidate();
@@ -61,6 +83,8 @@ export function createOverlayRegions(raster: LiveRasterizer, host: OverlayHost, 
       return cache.bytes;
     },
     current,
+    changes,
+    arrivalsCurrent,
     show,
     release,
     find: (fits: (region: Region) => boolean): Region | undefined => cache.find(fits),

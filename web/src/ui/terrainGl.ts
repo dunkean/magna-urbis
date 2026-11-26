@@ -48,10 +48,10 @@ export class TerrainGl {
   private parts!: GlParts;
   private readonly loss: GlContextLoss;
   private roads?: import('../render/groundRoads').GroundRoadPaint;
-  setGroundRoads(paint: typeof this.roads): void {
+  setGroundRoads(paint: typeof this.roads, regions?: readonly Rect4[]): void {
     if (paint === this.roads) return;
     this.roads = paint;
-    this.changed('content');
+    this.changed('content', regions);
   }
   private look?: TerrainLook;
   private view?: ViewState;
@@ -97,7 +97,13 @@ export class TerrainGl {
       this.request();
     });
     const inputs = new GlInputs(gl);
-    const redraw = new GlRedraw(gl, this.canvas, programs, inputs, { canvasDrawn: () => this.fallbackGround.invalidate(this.canvas), alive: () => !this.disposed && !this.gl.isContextLost(), animate: () => this.request(), roads: () => this.roads, shoreRingBaked: () => this.changed('content') });
+    const redraw = new GlRedraw(gl, this.canvas, programs, inputs, {
+      canvasDrawn: () => this.fallbackGround.invalidate(this.canvas),
+      alive: () => !this.disposed && !this.gl.isContextLost(),
+      animate: () => this.request(),
+      roads: () => this.roads,
+      shoreRingBaked: () => this.changed('content'),
+    });
     return { programs, inputs, redraw, tiles: new GlWorldTiles(gl, this.canvas, redraw, inputs), captures: new GlCaptures(gl, this.canvas, redraw, inputs) };
   }
   /** On a restored context every GL object is gone: build the parts again and replay the retained CPU inputs. The
@@ -223,6 +229,10 @@ export class TerrainGl {
     if (!this.look) throw new Error('Le terrain est indisponible.');
     return this.captureRegion({ x: 0, y: 0, width: this.look.mapWidth }, size, false, true, undefined, groundOverlay);
   }
+  /** A window of the whole-map picture, without altering the live canvas or its targets. */
+  captureMapPatch(region: { x: number; y: number; width: number }, size: number): HTMLCanvasElement {
+    return this.capture(this.look, region, size, false, false, undefined, false, undefined, true);
+  }
   redrawForCapture(): void {
     if (!this.parts.inputs.base || !this.look || this.gl.isContextLost()) throw new Error('Le terrain est indisponible.');
     this.capturing = true;
@@ -244,9 +254,19 @@ export class TerrainGl {
     this.capture(look && styleTraits(look.style).waterAlwaysDrawn ? { ...look, layers: { ...look.layers, water: true } } : look, region, n, false, false, undefined, true, alpha);
     return alpha;
   }
-  private capture(look: TerrainLook | undefined, region: { x: number; y: number; width: number }, size: number, includeDetails: boolean, restoreDisplay: boolean, height: HeightLayer | undefined, groundOverlay: boolean, alphaOnly?: Uint8Array): HTMLCanvasElement {
+  private capture(
+    look: TerrainLook | undefined,
+    region: { x: number; y: number; width: number },
+    size: number,
+    includeDetails: boolean,
+    restoreDisplay: boolean,
+    height: HeightLayer | undefined,
+    groundOverlay: boolean,
+    alphaOnly?: Uint8Array,
+    isolated = false,
+  ): HTMLCanvasElement {
     if (!this.parts.inputs.base || !look || this.gl.isContextLost()) throw new Error('Le terrain est indisponible.');
-    return this.parts.captures.region(look, region, size, includeDetails, restoreDisplay ? () => this.draw() : undefined, height, groundOverlay, alphaOnly);
+    return this.parts.captures.region(look, region, size, includeDetails, restoreDisplay ? () => this.draw() : undefined, height, groundOverlay, alphaOnly, isolated);
   }
 
   createSurfaceSampler(): SurfaceSample | undefined {

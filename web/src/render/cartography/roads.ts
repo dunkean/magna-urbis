@@ -8,11 +8,61 @@ import { groundRoadLook } from '../composition';
 import { ruralInk } from '../styles';
 import { regionalRoadSurface } from '../roadSurfaces';
 import { BLEND_ROAD_ALPHA, BLEND_ROAD_PX } from '../groundBlend';
-import { CANOPY_LEVELS, canopyRuns, emphasisAlpha, lookRoadWidth, regionalRank, roadCanopyOpacity, roadCanopyRevision, strokeNaturalRoad, trackInk, type RoadStyle } from '../roadStyle';
+import { CANOPY_LEVELS, ROAD_CANOPY_REACH, canopyRuns, emphasisAlpha, hasRoadCanopy, lookRoadWidth, regionalRank, roadCanopyChanges, roadCanopyLineChanged, roadCanopyOpacity, roadCanopyRevision, strokeNaturalRoad, trackInk, type RoadStyle } from '../roadStyle';
 import type { LineLayer } from '../scene';
-import { runPath } from './geometry';
+import type { Rect4 } from '../view';
+import { growRect, runPath } from './geometry';
 import type { CartographyContext } from './context';
 import type { FrameBase, RoadPainters, VectorFrame } from './frame';
+
+export const canopyBoxesMeet = (a: Rect4, b: Rect4): boolean => a.minX <= b.maxX && b.minX <= a.maxX && a.minY <= b.maxY && b.minY <= a.maxY;
+
+/** The path must cross the changed canopy, even when its bounding box is much larger. */
+export function canopyLineMeets(line: readonly { x: number; y: number }[], box: Rect4): boolean {
+  for (let i = 1; i < line.length; i++) {
+    const a = line[i - 1],
+      b = line[i],
+      dx = b.x - a.x;
+    if (Math.max(a.x, b.x) < box.minX || Math.min(a.x, b.x) > box.maxX) continue;
+    const t0 = dx ? Math.max(0, Math.min((box.minX - a.x) / dx, (box.maxX - a.x) / dx)) : 0,
+      t1 = dx ? Math.min(1, Math.max((box.minX - a.x) / dx, (box.maxX - a.x) / dx)) : 1;
+    const y0 = a.y + (b.y - a.y) * t0,
+      y1 = a.y + (b.y - a.y) * t1;
+    if (Math.max(y0, y1) >= box.minY && Math.min(y0, y1) <= box.maxY) return true;
+  }
+  return false;
+}
+
+/** Only canopy-sensitive ways can change an overlay tile. Ground-painted roads use the ground's own revision. */
+export function roadCanopyRegions(c: CartographyContext, since: number): readonly Rect4[] | undefined {
+  const natural = groundRoadLook(c.deps.roadStyle?.().look ?? c.deps.roadLook ?? 'ink');
+  if (natural && c.deps.regionalRoadsOnGround?.()) return [];
+  const layers = c.scene.lines.filter(l => (l.role === 'road' && (l.kind === 'track' || (natural && l.pavement !== 'asphalt'))) || (natural && (l.role === 'drive' || l.name === 'field-ways')));
+  if (!layers.length) return [];
+  return roadCanopyChanges(since)?.flatMap(box => {
+    let width = 0;
+    for (const layer of layers) if (layer.index.query(box).some(i => canopyLineMeets(layer.lines[i], box) && roadCanopyLineChanged(layer.lines[i], since))) width = Math.max(width, layer.width);
+    return width ? [growRect(box, ROAD_CANOPY_REACH + width)] : [];
+  });
+}
+
+/** Regional stamps for split path groups. The ordinary path cache still owns the geometry. */
+const canopyStamps = new WeakMap<CartographyContext, Map<string, { checked: number; stamp: number }>>();
+function canopyPathStamp(c: CartographyContext, key: string, revision: number, bounds: () => Rect4): number {
+  let entries = canopyStamps.get(c);
+  if (!entries) canopyStamps.set(c, (entries = new Map()));
+  let entry = entries.get(key);
+  if (!entry) {
+    if (entries.size >= 8000) entries.delete(entries.keys().next().value!);
+    entries.set(key, (entry = { checked: revision, stamp: revision }));
+  } else if (entry.checked !== revision) {
+    const changes = roadCanopyChanges(entry.checked);
+    const box = changes?.length ? bounds() : undefined;
+    if (!changes || (box && changes.some(r => canopyBoxesMeet(r, box)))) entry.stamp = revision;
+    entry.checked = revision;
+  }
+  return entry.stamp;
+}
 
 export function paintRegionalRoads(c: CartographyContext, f: VectorFrame): void {
   const { ctx, land, roads, tracks, drawRegionalRoads } = f;
@@ -49,14 +99,15 @@ export function roadPainters(c: CartographyContext, f: FrameBase): RoadPainters 
   const canopyMerged = (ls: LineLayer[]): (Path2D | undefined)[] => {
     const revision = roadCanopyRevision(),
       out: (Path2D | undefined)[] = [];
-    if (!revision) {
+    if (!hasRoadCanopy()) {
       out[0] = merged(ls);
       return out;
     }
     const runsOf = new Map<string, ReturnType<typeof canopyRuns>[]>();
-    const add = (l: LineLayer, key: string, ids: ArrayLike<number>): void => {
+    const add = (l: LineLayer, key: string, ids: ArrayLike<number>, bounds: () => Rect4): void => {
+      const stamp = canopyPathStamp(c, key, revision, bounds);
       for (let k = 0; k < CANOPY_LEVELS; k++) {
-        const p = cached(`${key}|c${revision}|${k}`, () => {
+        const p = cached(`${key}|c${stamp}|${k}`, () => {
           let runs = runsOf.get(key);
           if (!runs) runsOf.set(key, (runs = Array.from(ids, i => canopyRuns(l.lines[i]))));
           return runPath(P, runs, k, minEdge);
@@ -65,8 +116,13 @@ export function roadPainters(c: CartographyContext, f: FrameBase): RoadPainters 
       }
     };
     for (const l of ls) {
-      for (const t of l.index.tilesInRect(rect)) add(l, `${l.name}|${band}|t${t}|${l.tileKeys?.[t] ?? ''}`, l.index.itemsOf(t));
-      for (const i of l.index.bigInRect(rect)) add(l, `${l.name}|${band}|b${i}|${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ''}`, [i]);
+      for (const t of l.index.tilesInRect(rect)) add(l, `${l.name}|${band}|t${t}|${l.tileKeys?.[t] ?? ''}`, l.index.itemsOf(t), () => growRect(l.index.tileRect(t), l.index.tileSize / 2));
+      for (const i of l.index.bigInRect(rect))
+        add(l, `${l.name}|${band}|b${i}|${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ''}`, [i], () => {
+          const b = l.index.boxes,
+            j = i * 4;
+          return { minX: b[j], minY: b[j + 1], maxX: b[j + 2], maxY: b[j + 3] };
+        });
     }
     return out;
   };

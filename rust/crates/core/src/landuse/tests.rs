@@ -275,10 +275,23 @@ fn ts_rural_and_farm_fixture() {
             _ => assert_eq!(actual, expected),
         }
     }
+    // Fields the farm gained after the TS reference was frozen are not in the fixture.
+    fn without_later_fields(v: &mut Value) {
+        match v {
+            Value::Object(m) => {
+                m.remove("enclosure");
+                m.remove("heightM");
+                m.values_mut().for_each(without_later_fields);
+            }
+            Value::Array(a) => a.iter_mut().for_each(without_later_fields),
+            _ => {}
+        }
+    }
     for farm in arr(&f["farms"]) {
-        let actual: Value =
+        let mut actual: Value =
             serde_json::from_str(&farm_geometry(&serde_json::to_string(farm).unwrap()).unwrap())
                 .unwrap();
+        without_later_fields(&mut actual);
         near(&actual, &farm["expected"]);
     }
 }

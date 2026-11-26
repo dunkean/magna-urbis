@@ -5,6 +5,9 @@ import { defaultSettings } from '../src/v2/settings';
 import { resolveSettingsAppearance } from '../src/v2/appearance';
 import { presetComposition } from '../src/render/composition';
 import type { World } from '../src/gen/types';
+import { TerrainForest } from '../src/ui/view3d/terrain/forest';
+import type { TerrainResources } from '../src/ui/view3d/terrain/contract';
+import type { TerrainViewContext } from '../src/ui/view3d/terrain/context';
 
 vi.mock('../../rust/bridge/terrainForest', async importOriginal => ({ ...(await importOriginal<typeof import('../../rust/bridge/terrainForest')>()), buildForestField: vi.fn(async () => ({ x: 0, y: 0, width: 100, n: 2, rgba: new Uint8Array(16), key: 'display-forest' })) }));
 // World.options is required: appearance now reads the retained world's biome (underdark looks).
@@ -13,6 +16,25 @@ const settings = () => ({ ...defaultSettings(), appearance: { style: 'parchment'
 beforeEach(() => vi.mocked(buildForestField).mockClear());
 
 describe('forests of imported retained terrain', () => {
+  it('patches the existing perspective occupation texture and skips identical pixels', () => {
+    const texture = {},
+      resources = { uploadOccupation: vi.fn(() => texture), patchOccupation: vi.fn(), deleteTexture: vi.fn() },
+      context = { options: {}, request: vi.fn() };
+    const renderer = new TerrainForest(context as unknown as TerrainViewContext, resources as unknown as TerrainResources, () => undefined, vi.fn());
+    const previous = { x: 0, y: 0, width: 100, n: 2, rgba: new Uint8Array(16), key: 'initial' },
+      rects = [{ x: 1, y: 0, width: 1, height: 1 }],
+      rgba = previous.rgba.slice();
+    rgba[4] = 255;
+    const edited = { ...previous, rgba, key: 'edit', dirty: { base: previous.key, rects } };
+    renderer.set(undefined, previous, undefined);
+    renderer.set(undefined, edited, undefined);
+    renderer.set(undefined, { ...edited }, undefined);
+    expect(resources.uploadOccupation).toHaveBeenCalledTimes(1);
+    expect(resources.patchOccupation).toHaveBeenCalledTimes(1);
+    expect(resources.patchOccupation).toHaveBeenCalledWith(texture, previous, edited, rects);
+    expect(resources.deleteTexture).not.toHaveBeenCalled();
+    expect(renderer.occupation?.texture).toBe(texture);
+  });
   it('rebuilds a missing display forest once and shares the cached result without modifying heights', async () => {
     const w = world(),
       s = settings(),

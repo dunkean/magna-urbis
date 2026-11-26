@@ -72,8 +72,8 @@ export interface Ground {
   readonly forestJob?: Promise<void>;
   /** Resolves when the ground can be drawn exactly (forest applied, programs compiled); rejects with the program error. */
   exactReady(): Promise<void>;
-  /** The whole-map capture shows a ground that changed. */
-  dropBackground(): void;
+  /** The whole-map capture shows a ground that changed, optionally only in these world boxes. */
+  dropBackground(regions?: readonly WorldBox[]): void;
   /** The 2D copy of the whole-map capture of the GPU ground (miniature, ground stand-in). */
   miniGround(): HTMLCanvasElement | undefined;
   /** The terrain renderer as the live ground layer bakes from it; undefined while it cannot draw the map. */

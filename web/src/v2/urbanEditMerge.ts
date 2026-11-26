@@ -40,14 +40,7 @@ const prints = (entries: Record<string, unknown> | undefined): Record<string, st
 const changed = (before: Record<string, string>, after: Record<string, string>): string[] => [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(id => before[id] !== after[id]);
 
 export function townEditState(rest: string, edits: { quarters?: Record<string, unknown>; blocks?: Record<string, unknown>; parcels?: Record<string, { shape?: unknown; parts?: unknown; deleted?: unknown }>; buildings?: Record<string, unknown> }): TownEditState {
-  return {
-    rest,
-    quarters: prints(edits.quarters),
-    blocks: prints(edits.blocks),
-    parcels: prints(edits.parcels),
-    reshaped: Object.entries(edits.parcels ?? {}).flatMap(([id, edit]) => (edit.shape || edit.parts || edit.deleted ? [id] : [])),
-    buildings: prints(edits.buildings),
-  };
+  return { rest, quarters: prints(edits.quarters), blocks: prints(edits.blocks), parcels: prints(edits.parcels), reshaped: Object.entries(edits.parcels ?? {}).flatMap(([id, edit]) => (edit.shape || edit.parts || edit.deleted ? [id] : [])), buildings: prints(edits.buildings) };
 }
 
 /** Elements a local edit targets, from the edits of two runs; undefined when anything else changed (the whole result
@@ -64,7 +57,13 @@ export function editTarget(before: TownEditState | undefined, after: TownEditSta
     target.parcels.add(id);
     if (before.reshaped.includes(id) || after.reshaped.includes(id)) target.reshaped.add(id);
   }
-  for (const id of changed(before.buildings, after.buildings)) target.parcels.add(siteParcel(sites.find(list => list?.some(site => site.id === id)), id));
+  for (const id of changed(before.buildings, after.buildings))
+    target.parcels.add(
+      siteParcel(
+        sites.find(list => list?.some(site => site.id === id)),
+        id,
+      ),
+    );
   return blockCount(target.blocks) || target.parcels.size ? target : undefined;
 }
 
@@ -154,7 +153,13 @@ function mergeProgramme(old: UrbanProgramme | undefined, now: UrbanProgramme | u
   if (!old || !now || old === now) return now;
   // A programme without allocations (an engine reply that only carries demands) has nothing to merge.
   if (!old.allocations || !now.allocations) return now;
-  const allocations = spliceByGroup(old.allocations, now.allocations, a => a.parcelId, id => lots.has(id), exact);
+  const allocations = spliceByGroup(
+    old.allocations,
+    now.allocations,
+    a => a.parcelId,
+    id => lots.has(id),
+    exact,
+  );
   const own = (block: number): boolean => !!blocks?.has(block);
   const adjacency = [...old.adjacency.filter(a => !lots.has(a.a) && !lots.has(a.b)), ...now.adjacency.filter(a => lots.has(a.a) || lots.has(a.b))];
   // The engine reads the environment by block index.
@@ -181,7 +186,13 @@ function mergePartitions(previous: Partition[] | undefined, fresh: Partition[] |
   return fresh.map(now => {
     const old = previous.find(partition => partition.key === now.key);
     if (!old || old === now) return now;
-    const parcels = spliceByGroup(old.parcels, now.parcels, parcel => parcel.id ?? '', id => lots.has(id), exact);
+    const parcels = spliceByGroup(
+      old.parcels,
+      now.parcels,
+      parcel => parcel.id ?? '',
+      id => lots.has(id),
+      exact,
+    );
     return { ...now, parcels, programme: mergeProgramme(old.programme, now.programme, lots, blocks.get(now.key)) };
   });
 }
@@ -208,9 +219,7 @@ function targetLots(previous: RustTownSnapshot, fresh: RustTownSnapshot, target:
   const lots = new Set(target.parcels),
     source = (id: string): string => id.replace(/\/part-\d+$/, '');
   const lists = [previous.partitions, fresh.partitions, previous.cadastralPartitions, fresh.cadastralPartitions, previous.programmePartitions, fresh.programmePartitions];
-  for (const list of lists)
-    for (const partition of list ?? [])
-      for (const parcel of partition.parcels) if (parcel.id && (target.blocks.get(partition.key)?.has(parcel.block) || target.parcels.has(source(parcel.id)))) lots.add(parcel.id);
+  for (const list of lists) for (const partition of list ?? []) for (const parcel of partition.parcels) if (parcel.id && (target.blocks.get(partition.key)?.has(parcel.block) || target.parcels.has(source(parcel.id)))) lots.add(parcel.id);
   if (target.reshaped.size) {
     type Lot = { block: string; shape: unknown };
     const index = (list: Partition[] | undefined): Map<string, Lot> => new Map((list ?? []).flatMap(partition => partition.parcels.flatMap(parcel => (parcel.id ? [[parcel.id, { block: `${partition.key}:${parcel.block}`, shape: parcel.shape }] as const] : []))));
@@ -226,25 +235,32 @@ function targetLots(previous: RustTownSnapshot, fresh: RustTownSnapshot, target:
   return lots;
 }
 
-/** `fresh` (a local edit's run from `previous`) with `previous`'s objects outside `target`; or `fresh` itself and the
- * reason when the plan changed outside the target (the whole result then stands). */
-export function mergeEditTarget(previous: RustTownSnapshot, fresh: RustTownSnapshot, target: EditTarget): { snapshot: RustTownSnapshot; lots?: Set<string>; reason?: string } {
+/** Resolve block identity before scoping any later work. Reuse this decision when installing the delta. */
+export function retainedEditLayouts(previous: RustTownSnapshot, fresh: RustTownSnapshot, target: EditTarget): Layout[] | string {
   const structural = (s: RustTownSnapshot): boolean => s.layouts.some(layout => layout.config?.blockEdits) || [s.partitions, s.cadastralPartitions, s.programmePartitions].some(list => list?.some(partition => partition.prepared));
-  if (structural(previous) || structural(fresh)) return { snapshot: fresh, reason: 'structural block edits re-index the blocks' };
-  const layouts = mergeLayouts(previous.layouts, fresh.layouts, target.blocks);
+  if (structural(previous) || structural(fresh)) return 'structural block edits re-index the blocks';
+  return mergeLayouts(previous.layouts, fresh.layouts, target.blocks);
+}
+
+/** Keep the previous objects outside the target, or the full result when the plan changed outside it. */
+export function mergeEditTarget(previous: RustTownSnapshot, fresh: RustTownSnapshot, target: EditTarget, layouts = retainedEditLayouts(previous, fresh, target)): { snapshot: RustTownSnapshot; lots?: Set<string>; reason?: string } {
   if (typeof layouts === 'string') return { snapshot: fresh, reason: layouts };
   const lots = targetLots(previous, fresh, target);
-  const sites = previous.sites && fresh.sites ? spliceByGroup(previous.sites, fresh.sites, site => site.parcel_id, id => lots.has(id), exact) : fresh.sites;
-  const ordered = sites?.map((site, offset) => (site.offset === offset ? site : { ...site, offset }));
-  const keptSites = ordered && previous.sites && ordered.length === previous.sites.length && ordered.every((site, i) => site === previous.sites![i]) ? previous.sites : ordered;
+  const sites =
+    previous.sites && fresh.sites
+      ? spliceByGroup(
+          previous.sites,
+          fresh.sites,
+          site => site.parcel_id,
+          id => lots.has(id),
+          exact,
+        )
+      : fresh.sites;
   const baseline =
     previous.houseBaseline && fresh.houseBaseline
       ? {
           key: fresh.houseBaseline.key,
-          originals: {
-            ...Object.fromEntries(Object.entries(previous.houseBaseline.originals).filter(([, original]) => !lots.has(original.parcelId))),
-            ...Object.fromEntries(Object.entries(fresh.houseBaseline.originals).filter(([, original]) => lots.has(original.parcelId))),
-          },
+          originals: { ...Object.fromEntries(Object.entries(previous.houseBaseline.originals).filter(([, original]) => !lots.has(original.parcelId))), ...Object.fromEntries(Object.entries(fresh.houseBaseline.originals).filter(([, original]) => lots.has(original.parcelId))) },
         }
       : fresh.houseBaseline;
   const snapshot: RustTownSnapshot = {
@@ -255,10 +271,18 @@ export function mergeEditTarget(previous: RustTownSnapshot, fresh: RustTownSnaps
     partitions: mergePartitions(previous.partitions, fresh.partitions, lots, target.blocks),
     cadastralPartitions: mergePartitions(previous.cadastralPartitions, fresh.cadastralPartitions, lots, target.blocks),
     programmePartitions: mergePartitions(previous.programmePartitions, fresh.programmePartitions, lots, target.blocks),
-    sites: keptSites,
-    // The engine's site descriptor reads its own run by offset: it holds only for an unmerged list.
-    siteQuery: keptSites === fresh.sites ? fresh.siteQuery : undefined,
-    requests: previous.requests && fresh.requests ? spliceByGroup(previous.requests, fresh.requests, request => request.parcel_id, id => lots.has(id)) : fresh.requests,
+    sites,
+    // Site offsets belong to the engine run that produced them. A merged list keeps its display objects and has no native query.
+    siteQuery: sites === fresh.sites ? fresh.siteQuery : undefined,
+    requests:
+      previous.requests && fresh.requests
+        ? spliceByGroup(
+            previous.requests,
+            fresh.requests,
+            request => request.parcel_id,
+            id => lots.has(id),
+          )
+        : fresh.requests,
     scene: mergeScene(previous.scene, fresh.scene, lots),
     houseBaseline: baseline,
   };

@@ -10,7 +10,10 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolveRustUrbanControls, townRoadStreets, townSiteArchetypes } from '../../src/v2/rustUrban';
 import { regionalStreets } from '../../../rust/bridge/urban';
 import type { RoadOutput } from '../../../rust/bridge/settlements';
-import type { World } from '../../src/gen/types';
+import type { Farmstead, World } from '../../src/gen/types';
+import { fakeWorld } from '../../scripts/fakeworld';
+import { buildScene } from '../../src/render/scene';
+import { city3dFarmSources } from '../../src/render/city3d/display';
 import { citySiteArchetypes, cityFixedSites, cityTownRoads } from '../../src/render/cityGeneration';
 import { urbanSeed } from '../../src/v2/urbanSeeds';
 import { defaultLayoutConfig, defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
@@ -43,6 +46,62 @@ import { CROSSINGS } from '../../src/render/city/look';
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
 const settings = (seed: string): V2Settings => ({ options: { seed }, local: {}, urban: { backend: 'rust' } }) as unknown as V2Settings;
+
+it('shares the farm plan, enclosure gate and platform level across overhead and tilted views', () => {
+  const rect = (x: number, y: number, width: number, depth: number) => [
+    { x, y },
+    { x: x + width, y },
+    { x: x + width, y: y + depth },
+    { x, y: y + depth },
+  ];
+  const platform = rect(20, 20, 30, 30);
+  const [a, b, c, d] = platform;
+  const enclosure = [{ x: 28, y: 20 }, a, d, c, b, { x: 42, y: 20 }];
+  const house = rect(28, 28, 6, 8);
+  const silo = Array.from({ length: 12 }, (_, k) => ({ x: 41 + 2.5 * Math.cos((k * Math.PI) / 6), y: 34 + 2.5 * Math.sin((k * Math.PI) / 6) }));
+  const farm: Farmstead = {
+    pos: { x: 35, y: 35 },
+    angle: 0,
+    drive: [],
+    yard: platform,
+    plots: [{ kind: 'platform', poly: platform, heightM: 1.5 }],
+    enclosure: 'bank',
+    walls: [enclosure],
+    buildings: [house, silo],
+    parts: [
+      { poly: house, use: 'house', arch: 'farmhouse', roof: 'gable' },
+      { poly: silo, use: 'silo', arch: 'grain-farm-silo', roof: 'conical', material: 'steel', storeys: 3 },
+    ],
+  };
+  const world = fakeWorld({ mapSize: 250, clusters: 1, buildings: 0, streets: 0, landAreas: 0 });
+  world.roads = [];
+  world.landuse = { areas: [], reserve: [], farmsteads: [farm] };
+  const plan = buildScene(world);
+  expect(plan.poly.get('farm-buildings')?.polys).toEqual([house, silo]);
+  expect(plan.poly.get('farm-platforms')?.polys).toEqual([platform]);
+  expect(plan.lines.find(line => line.name === 'farm-banks')).toMatchObject({ kind: 'bank', lines: [enclosure] });
+
+  const natural = (x: number) => 10 + x / 10;
+  const sources = city3dFarmSources([farm], [], natural);
+  const tilted = city3dScene({ schema_version: '1', generator_version: 'silhouette', buildings: sources, refusals: [], open_spaces: [] }, { heightAt: natural, ground: { at: natural, cut: true } }).buildings;
+  const earth = tilted.find(part => part.variant_id === 'platform')!;
+  const top = earth.volumes[0].z_m + earth.volumes[0].wall_height_m;
+  expect(earth.footprint[0].outer).toEqual(platform);
+  expect(top).toBeCloseTo(16.5);
+  const tower = tilted.find(part => part.variant_id === 'silo')!;
+  expect(tower.footprint[0].outer).toEqual(silo);
+  expect(tower.volumes[0].wall_height_m).toBeGreaterThan(8);
+  expect([tower, tilted.find(part => part.variant_id === 'house')!].map(part => part.ground_z_m)).toEqual([top, top]);
+  const banks = tilted.filter(part => part.variant_id === 'bank');
+  expect(banks.length).toBeGreaterThan(0);
+  expect(banks.every(part => part.ground_z_m === top && part.volumes[0].wall_height_m < 1)).toBe(true);
+  expect(
+    banks
+      .flatMap(part => part.footprint[0].outer)
+      .filter(p => p.y < 21)
+      .every(p => p.x <= 28 || p.x >= 42),
+  ).toBe(true);
+});
 
 describe('shared live tile filling', () => {
   it('bounds slices and discards the density left by navigation', () => {
@@ -1188,7 +1247,9 @@ describe('V2 and City Bench stay in sync', () => {
     const town = read('../../src/v2/display/townProducts.ts');
     expect(town.slice(town.indexOf('async cityPass()'))).not.toContain('forestPass()');
     expect(read('../../src/ui/view3d/cityGround.ts')).toContain('options.getBackgroundImage?.()');
-    expect(read('../../src/v2/display/groundProducts.ts')).toContain('this.backgroundImage ??= this.gpu!.captureMap(1024)');
+    const ground = read('../../src/v2/display/groundProducts.ts');
+    expect(ground).toContain('patchBackgroundCapture(image,');
+    expect(ground).toContain('this.backgroundImage ??= gpu.captureMap(1024)');
   });
 });
 
@@ -1327,6 +1388,11 @@ describe('retained city environment parity', () => {
       expect(driver).toContain('const seed = process.env.SEED ?? meta.seed;');
       expect(driver).toContain("p.evaluate(hideOverlays, '.map-area')");
     }
+  });
+  it('shares grove seating and the instance templates between V2 and City Bench', () => {
+    expect(read('../../src/v2/display/worldVolumes.ts')).toContain('city3dCanopySteps(cityCanopy(layouts, source?.buildings), heightAt)');
+    expect(read('../../src/ui/view3d/cityBuildings.ts')).toContain('city3dCanopy(cityCanopy(layouts, canopySource), cityContext.heightAt)');
+    expect(read('../../src/render/cityGrove.ts')).toContain('const steps = city3dCanopySteps(canopy, heightAt)');
   });
   it('draws the 3D sea of City Bench at the 2D coast (render/seaCover.ts)', async () => {
     const { paintSeaCover } = await import('../../src/render/seaCover');

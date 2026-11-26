@@ -3,6 +3,8 @@
  * asynchronously, with stand-ins), layouts, samplers, mipmap rendering, depth readback, readiness and loss listeners.
  */
 import * as WGSL from '../../terrain3dWgsl.generated';
+import { GROVE_STRIDE, GROVE_TEMPLATE_STRIDE } from '../../../render/city3d/groveInstances';
+import { BENCH_GROVE_WGSL } from '../grove';
 import { MIP_WGSL, DEPTH_WGSL, T, TERRAIN_TEXTURES, SAMPLES, DEPTH, ROOF_BUFFERS, TREE_BUFFERS, BILLBOARD_BUFFERS, BUILDING_BUFFERS, PATCH_BUFFERS } from './layouts';
 
 type Entry = { pipeline?: GPURenderPipeline; failed?: boolean };
@@ -125,6 +127,24 @@ export class Gpu3d {
         depthStencil: depthStencil(true),
         multisample: { count: samples, alphaToCoverageEnabled: samples > 1 },
       };
+    if (key === 'grove') {
+      const module = (this.modules.groveVs ??= this.device.createShaderModule({ label: 'groveVs', code: BENCH_GROVE_WGSL }));
+      return {
+        label: key,
+        layout: this.pipelineLayouts.building,
+        vertex: {
+          module,
+          entryPoint: 'main',
+          buffers: [
+            { arrayStride: GROVE_TEMPLATE_STRIDE * 4, attributes: [0, 1, 2, 3].map(i => ({ shaderLocation: i, offset: i * 16, format: 'float32x4' })) },
+            { arrayStride: GROVE_STRIDE * 4, stepMode: 'instance', attributes: [0, 1, 2].map(i => ({ shaderLocation: 5 + i, offset: i * 16, format: 'float32x4' })) },
+          ],
+        },
+        fragment: { module: this.modules.buildingColorFs, entryPoint: 'main', targets: target },
+        depthStencil: depthStencil(true),
+        multisample,
+      };
+    }
     if (key.startsWith('buildingColor') || key.startsWith('buildingTex')) {
       const kind = key.startsWith('buildingTex') ? 'tex' : 'color',
         vs = kind === 'tex' ? 'buildingTexVs' : 'buildingColorVs',

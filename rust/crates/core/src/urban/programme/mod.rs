@@ -30,6 +30,7 @@ mod reservations;
 mod services;
 
 pub use admission::has_envelope;
+pub(super) use environment::{block_is_wet, block_slope};
 pub use allocation::{allocate, reallocate};
 pub(super) use allocation::{allocate_from_reference, consolidate, consolidate_cadastre, finish_cadastre};
 pub use built_capacity::{

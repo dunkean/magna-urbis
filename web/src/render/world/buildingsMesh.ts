@@ -445,21 +445,45 @@ const slotIdOf = (slots: object): number => {
 /** The colour slots of a town's meshes, shared by every level and every look of one geometry (buildingsLayer.ts): one
  * per building, surface, material, pan and snow share. Grows as levels are built; never depends on the look. */
 export class BuildingColorSlots {
-  readonly list: ColorSlot[] = [];
-  private readonly byKey = new Map<string, number>();
+  readonly list: (ColorSlot | undefined)[] = [];
+  private readonly byBuilding = new Map<Building3dVisual, Map<string, number>>();
+  private readonly free: number[] = [];
+  private reused?: number[];
   private last = -1;
   get length(): number {
     return this.list.length;
   }
+  /** Called after dropping old meshes. A retained building's meshes still address their original slots. */
+  retainBuildings(buildings: readonly Building3dVisual[]): void {
+    const keep = new Set(buildings);
+    for (const [building, slots] of this.byBuilding) {
+      if (keep.has(building)) continue;
+      for (const index of slots.values()) {
+        this.list[index] = undefined;
+        this.free.push(index);
+      }
+      this.byBuilding.delete(building);
+    }
+  }
+  takeReused(): number[] | undefined {
+    const reused = this.reused;
+    this.reused = undefined;
+    return reused;
+  }
   slot(building: Building3dVisual, face: FaceOf, raw: string, aperture: 'door' | 'window' | undefined, share: number, project: boolean): number {
     const last = this.list[this.last];
-    if (last && last.normal === face.normal && last.materials === face.materials && last.raw === raw && last.surface === face.surface && last.share === share && last.aperture === aperture && last.project === project && last.building.id === building.id) return this.last;
+    if (last && last.normal === face.normal && last.materials === face.materials && last.raw === raw && last.surface === face.surface && last.share === share && last.aperture === aperture && last.project === project && last.building === building) return this.last;
     const n = face.normal,
-      key = `${building.id}|${face.surface}|${raw}|${slotIdOf(face.materials)}|${n[0]},${n[1]},${n[2]}|${share}|${aperture ?? ''}|${project ? 1 : 0}`;
-    let index = this.byKey.get(key);
+      key = `${face.surface}|${raw}|${slotIdOf(face.materials)}|${n[0]},${n[1]},${n[2]}|${share}|${aperture ?? ''}|${project ? 1 : 0}`;
+    let slots = this.byBuilding.get(building);
+    if (!slots) this.byBuilding.set(building, (slots = new Map()));
+    let index = slots.get(key);
     if (index === undefined) {
-      this.byKey.set(key, (index = this.list.length));
-      this.list.push({ building, surface: face.surface, materials: face.materials, normal: face.normal, raw, aperture, share, project });
+      index = this.free.pop();
+      if (index === undefined) index = this.list.length;
+      else (this.reused ??= []).push(index);
+      slots.set(key, index);
+      this.list[index] = { building, surface: face.surface, materials: face.materials, normal: face.normal, raw, aperture, share, project };
     }
     this.last = index;
     return index;
@@ -472,7 +496,8 @@ export function slotLooks(slots: BuildingColorSlots, from: number, to: number, p
   let ink: BuildingInk | undefined;
   for (let s = from; s < to; s++) {
     const slot = slots.list[s];
-    if (ink?.building.id !== slot.building.id) ink = buildingInk(slot.building, paint);
+    if (!slot) continue;
+    if (ink?.building !== slot.building) ink = buildingInk(slot.building, paint);
     const look = faceLook(ink, slot, slot.raw, slot.aperture, paint),
       snow = (ink.snow * slot.share) / 8,
       color = slot.project && snow ? snowRoofTint(look.color, snow, -(slot.normal[0] + slot.normal[1]) * 0.4, look.townRoof && paint.look!.frame.night ? nightSnow : undefined) : look.color;

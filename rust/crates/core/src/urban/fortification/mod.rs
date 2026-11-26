@@ -1,6 +1,24 @@
 //! Fortification styles, curtain traces, defensive works and their fit to the town layout.
 
+/// Refit and estate traces lack a growth-phase ordinal. Key their unedited source ring
+/// independently of its starting vertex and the number of neighbouring circuits.
+pub(super) fn trace_key(purpose: &str, path: &[super::Point]) -> String {
+    let ring = if path.first() == path.last() && !path.is_empty() { &path[..path.len()-1] } else { path };
+    // FNV-1a in ring order, starting at its lexicographically smallest point.
+    let start = ring.iter().enumerate().min_by(|(_, a), (_, b)| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y))).map_or(0, |(i, _)| i);
+    let mut hash = 0xcbf29ce484222325u64;
+    for p in ring[start..].iter().chain(&ring[..start]) {
+        for coord in [p.x, p.y] {
+            for byte in ((coord * 1000.0).round() as i64).to_le_bytes() {
+                hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3);
+            }
+        }
+    }
+    format!("{purpose}-{hash:016x}")
+}
+
 mod build;
+pub(super) mod canal_moat;
 mod cave;
 mod crossings;
 mod dead_gates;

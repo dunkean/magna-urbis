@@ -9,7 +9,12 @@ import { RENDER_ROAD_PX, ROAD_STROKE_LAYERS, renderCrossingStrokes, renderRoadSt
 
 import { groundAt, onToneReady, toneKey, toneStreet } from '../render/groundTone';
 import { BLEND_ROAD_ALPHA, BLEND_ROAD_COLOR, BLEND_ROAD_PX, GROUND_BLEND_LABEL, GROUND_BLEND_TITLE, getGroundBlend, gradeFade, isBlended, onGroundBlend, setGroundBlend, type GroundBlend } from '../render/groundBlend';
-import { CANOPY_LEVELS, canopyRuns, lookRoadWidth, roadCanopyRevision, roadGroundKey, strokeNaturalRoad, type RoadRank, type RoadStyle as GroundRoadStyle } from '../render/roadStyle';
+import { CANOPY_LEVELS, ROAD_CANOPY_REACH, canopyRuns, lookRoadWidth, roadCanopyChanges, roadCanopyLineChanged, roadCanopyRevision, roadGroundKey, strokeNaturalRoad, type RoadRank, type RoadStyle as GroundRoadStyle } from '../render/roadStyle';
+import { canopyBoxesMeet, canopyLineMeets } from '../render/cartography/roads';
+import { growRect } from '../render/cartography/geometry';
+import { TileIndex, boxesOf } from '../render/tileindex';
+import type { Rect4 } from '../render/view';
+import type { GroundRoadPaint } from '../render/groundRoads';
 import { layoutPavementSites, splitByPavement } from '../render/roadPavement';
 import { mapLandSnowKey } from '../render/seasonPalette';
 import { getBenchRenderColors } from './benchRenderColors';
@@ -75,14 +80,8 @@ const byClass =
 const PRESETS: Record<RoadPreset, { label: string; paint(c: RoadClass, s: RoadSurface): RoadPaint }> = {
   surface: { label: 'By surface', paint: (c, s) => ({ fill: SURFACE_COLOR[s][0], casing: SURFACE_COLOR[s][1], width: CLASS_PX[c] }) },
   atlas: { label: 'Road atlas', paint: byClass({ highway: ['#d8342c', '#7a1d18'], main: ['#f2a33a', '#7a4a12'], local: ['#fff8e6', '#6b5a45'], track: ['#8a6a45', null], trail: ['#8a6a45', null] }) },
-  topographic: {
-    label: 'Topographic',
-    paint: byClass({ highway: ['#e8412f', '#262626'], main: ['#f7d54c', '#262626'], local: ['#ffffff', '#303030'], track: ['#303030', null], trail: ['#303030', null] }, { highway: 3.4, main: 2.8, local: 2.0, track: 1.1, trail: 0.9 }),
-  },
-  ink: {
-    label: 'Ink on parchment',
-    paint: byClass({ highway: ['#3f2a1c', null], main: ['#4a3222', null], local: ['#56392a', null], track: ['#5f4334', null], trail: ['#6a4d3c', null] }, { highway: 2.4, main: 1.9, local: 1.4, track: 1.1, trail: 0.9 }),
-  },
+  topographic: { label: 'Topographic', paint: byClass({ highway: ['#e8412f', '#262626'], main: ['#f7d54c', '#262626'], local: ['#ffffff', '#303030'], track: ['#303030', null], trail: ['#303030', null] }, { highway: 3.4, main: 2.8, local: 2.0, track: 1.1, trail: 0.9 }) },
+  ink: { label: 'Ink on parchment', paint: byClass({ highway: ['#3f2a1c', null], main: ['#4a3222', null], local: ['#56392a', null], track: ['#5f4334', null], trail: ['#6a4d3c', null] }, { highway: 2.4, main: 1.9, local: 1.4, track: 1.1, trail: 0.9 }) },
   // Painted for the Render map style: drawn by drawRender (roadPaintRender.ts); this paint is the legend's.
   render: {
     label: 'Render · painted',
@@ -155,7 +154,7 @@ const curveData = (path: Point[]): string => {
 const esc = (text: string): string => text.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 
 /** The "Roads" stage: its own options, status and drawing; placement never runs from here. */
-export function createTerrainRoads(options: { map: SVGSVGElement; before: Element | null; groundStyle?(): GroundRoadStyle | undefined; setGroundRoads?(paint?: import('../render/groundRoads').GroundRoadPaint): boolean; onConfigChange(): void; onDisplayChange(): void }) {
+export function createTerrainRoads(options: { map: SVGSVGElement; before: Element | null; groundStyle?(): GroundRoadStyle | undefined; setGroundRoads?(paint?: GroundRoadPaint, regions?: readonly Rect4[]): boolean; onConfigChange(): void; onDisplayChange(): void }) {
   let v1Style: V1LandscapeStyle | undefined;
   options.map.addEventListener('urban:v1-style', event => {
     const detail = (event as CustomEvent<{ active: boolean; style: V1LandscapeStyle }>).detail;
@@ -184,7 +183,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   let pathCache = new WeakMap<Point[], Map<number, { paths: Point[][]; straight?: string; curved?: string }>>();
   /** Painted preset: each road cut at its crossings, with stable piece identities for pathCache. */
   let splitCache = new WeakMap<RoadSegment, { path: Point[]; crossing?: RoadCrossing['kind'] }[]>();
-  let paintViewport: ((scale: number) => void) | undefined;
+  let paintViewport: ((scale: number, moved: boolean) => void) | undefined;
   let lastCamera = '';
   const saved = new URLSearchParams(location.search).get('roads');
   if (saved)
@@ -393,10 +392,10 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     const groundStyle = options.groundStyle?.();
     const rendered = groundStyle?.look === 'rendered' && !v1Style && scale > 0 && box.width > 0 && box.height > 0;
     const camera = rendered ? [box.x, box.y, box.width, box.height, scale, devicePixelRatio].join('|') : '';
-    const material = rendered ? [roadGroundKey(), roadCanopyRevision(), mapLandSnowKey(), JSON.stringify(groundStyle)].join('|') : '';
+    const material = rendered ? [roadGroundKey(), mapLandSnowKey(), JSON.stringify(groundStyle)].join('|') : '';
     const state = material + `${enabled}|${show}|${isBlended()}|${JSON.stringify(style)}|${v1Style ?? ''}|${v1Style ? scale : ''}`;
     if (layer === drawnLayer && drawn === output && state === drawnState && drawnOwnership === urbanOwnership) {
-      if (lastCamera !== camera) paintViewport?.(scale);
+      paintViewport?.(scale, lastCamera !== camera);
       lastCamera = camera;
       return;
     }
@@ -479,49 +478,107 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       canvas.style.cssText = 'width:100%;height:100%;display:block';
       const ctx = canvas.getContext('2d')!;
       const sites = layoutPavementSites(urbanOwnership);
-      const groups = new Map<string, { path: Path2D; rank: RoadRank; metres: number; pavement: 'earth' | 'asphalt'; canopy: number }>();
+      const pieces: { path: Point[]; rank: RoadRank; metres: number; pavement: 'earth' | 'asphalt'; ink?: { level: number; path: Path2D }[] }[] = [];
       for (const s of order) {
         const rank = s.class === 'main' || s.class === 'highway' ? 'major' : s.class === 'local' ? 'minor' : s.width < 2 ? 'path' : 'track';
         const metres = s.width * style.width;
         // Clip the complete way once, before dividing it by surface and canopy.
         for (const path of outsidePieces(s.path, s.width).paths) {
-          for (const piece of splitByPavement(path, rank === 'major' || rank === 'minor' ? sites : undefined)) {
-            for (const run of canopyRuns(piece.path as Point[])) {
-              const id = [rank, metres, piece.pavement, run.level].join('|');
-              let group = groups.get(id);
-              if (!group) groups.set(id, (group = { path: new Path2D(), rank, metres, pavement: piece.pavement, canopy: run.level / (CANOPY_LEVELS - 1) }));
-              group.path.addPath(new Path2D(style.curves ? curveData(run.pts) : pathData(run.pts)));
-            }
-          }
+          for (const piece of splitByPavement(path, rank === 'major' || rank === 'minor' ? sites : undefined)) pieces.push({ path: piece.path as Point[], rank, metres, pavement: piece.pavement });
         }
       }
-      const onGround = options.setGroundRoads?.((context, _rect, density) => {
-        const ground = context();
-        for (const g of groups.values()) strokeNaturalRoad(ground, g.path, g.rank, lookRoadWidth('rendered', g.rank, g.metres, density), density, { ...groundStyle, pavement: g.pavement }, 0, g.metres);
-        if (style.opacity < 1) {
-          ground.save();
-          ground.resetTransform();
-          ground.globalCompositeOperation = 'destination-in';
-          ground.fillStyle = `rgba(0,0,0,${style.opacity})`;
-          ground.fillRect(0, 0, ground.canvas.width, ground.canvas.height);
-          ground.restore();
+      const groupRoads = () => {
+        const groups = new Map<string, { path: Path2D; rank: RoadRank; metres: number; pavement: 'earth' | 'asphalt'; canopy: number }>();
+        for (const piece of pieces) {
+          const { rank, metres, pavement } = piece;
+          piece.ink ??= canopyRuns(piece.path).map(run => ({ level: run.level, path: new Path2D(style.curves ? curveData(run.pts) : pathData(run.pts)) }));
+          for (const run of piece.ink) {
+            const id = [rank, metres, pavement, run.level].join('|');
+            let group = groups.get(id);
+            if (!group) groups.set(id, (group = { path: new Path2D(), rank, metres, pavement, canopy: run.level / (CANOPY_LEVELS - 1) }));
+            group.path.addPath(run.path);
+          }
         }
-      });
-      paintViewport = scale => {
+        return groups;
+      };
+      let groups = groupRoads(),
+        seenCanopy = roadCanopyRevision(),
+        index: TileIndex | undefined;
+      const installGround = (regions?: readonly Rect4[]): boolean | undefined =>
+        options.setGroundRoads?.((context, _rect, density) => {
+          const ground = context();
+          for (const g of groups.values()) strokeNaturalRoad(ground, g.path, g.rank, lookRoadWidth('rendered', g.rank, g.metres, density), density, { ...groundStyle, pavement: g.pavement }, 0, g.metres);
+          if (style.opacity < 1) {
+            ground.save();
+            ground.resetTransform();
+            ground.globalCompositeOperation = 'destination-in';
+            ground.fillStyle = `rgba(0,0,0,${style.opacity})`;
+            ground.fillRect(0, 0, ground.canvas.width, ground.canvas.height);
+            ground.restore();
+          }
+        }, regions);
+      let onGround = installGround();
+      paintViewport = (scale, moved) => {
+        const revision = roadCanopyRevision();
+        if (!moved && revision === seenCanopy) return;
+        let changed: Rect4[] | undefined;
+        if (revision !== seenCanopy) {
+          const since = seenCanopy,
+            regions = roadCanopyChanges(since);
+          seenCanopy = revision;
+          if (regions) {
+            if (!index) {
+              const boxes = boxesOf(pieces.map(piece => piece.path));
+              let size = 1;
+              for (let i = 0; i < boxes.length; i++) size = Math.max(size, boxes[i]);
+              index = new TileIndex(size, 256, boxes);
+            }
+            changed = [];
+            for (const region of regions) {
+              const ids = index.query(region).filter(i => canopyLineMeets(pieces[i].path, region) && roadCanopyLineChanged(pieces[i].path, since));
+              if (!ids.length) continue;
+              for (const i of ids) pieces[i].ink = undefined;
+              changed.push(growRect(region, ROAD_CANOPY_REACH + Math.max(...ids.map(i => pieces[i].metres))));
+            }
+          } else for (const piece of pieces) piece.ink = undefined;
+          if (!changed || changed.length) {
+            groups = groupRoads();
+            if (onGround) onGround = installGround(changed);
+          } else if (!moved) return;
+        }
         if (onGround) return;
         const box = options.map.viewBox.baseVal,
           density = scale * Math.min(devicePixelRatio, 2);
-        for (const k of ['x', 'y', 'width', 'height'] as const) host.setAttribute(k, String(box[k]));
-        const w = Math.max(1, Math.ceil(box.width * density)),
-          h = Math.max(1, Math.ceil(box.height * density));
-        if (canvas.width !== w) canvas.width = w;
-        if (canvas.height !== h) canvas.height = h;
+        if (moved) {
+          for (const k of ['x', 'y', 'width', 'height'] as const) host.setAttribute(k, String(box[k]));
+          const w = Math.max(1, Math.ceil(box.width * density)),
+            h = Math.max(1, Math.ceil(box.height * density));
+          if (canvas.width !== w) canvas.width = w;
+          if (canvas.height !== h) canvas.height = h;
+        }
+        ctx.save();
         ctx.resetTransform();
-        ctx.clearRect(0, 0, w, h);
+        if (!moved && changed) {
+          const view = { minX: box.x, minY: box.y, maxX: box.x + box.width, maxY: box.y + box.height };
+          const clips = changed.map(r => growRect(r, 8 / scale)).filter(r => canopyBoxesMeet(view, r));
+          if (!clips.length) {
+            ctx.restore();
+            return;
+          }
+          ctx.beginPath();
+          for (const r of clips) {
+            const x = Math.floor((r.minX - box.x) * density),
+              y = Math.floor((r.minY - box.y) * density);
+            ctx.rect(x, y, Math.ceil((r.maxX - box.x) * density) - x, Math.ceil((r.maxY - box.y) * density) - y);
+          }
+          ctx.clip();
+        }
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.setTransform(density, 0, 0, density, -box.x * density, -box.y * density);
         for (const g of groups.values()) strokeNaturalRoad(ctx, g.path, g.rank, lookRoadWidth('rendered', g.rank, g.metres, scale), scale, { ...groundStyle, pavement: g.pavement }, g.canopy, g.metres);
+        ctx.restore();
       };
-      paintViewport(scale);
+      paintViewport(scale, true);
       host.append(canvas);
       painted.append(host);
     }

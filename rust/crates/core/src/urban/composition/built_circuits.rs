@@ -132,12 +132,13 @@ pub(in crate::urban) fn fit_enclosures(layout: &mut super::super::Layout, popula
             .flat_map(|s|g::dry_clip(&surface,&s)).filter(|s|g::area(s)>5000.)
             .filter(|s|land.iter().any(|b|g::contains(s,g::interior_point(b)))).collect();
         if fitted.is_empty() { result.push(e.clone());continue; }
+        let single = fitted.len() == 1;
         for shape in fitted {
             let trace = fortification::hill_trace(&shape,surface.width/surface.n.max(1) as f64);
             let mut path = trace.outer;
             path.push(path[0]);
             if result.iter().any(|e:&Enclosure| e.path==path) {continue;}
-            result.push(Enclosure {gates:gates(&path,&layout.streets),path,kind:e.kind.clone(),..Default::default()});
+            result.push(Enclosure {edit_key: if single { e.edit_key.clone() } else { String::new() },gates:gates(&path,&layout.streets),path,kind:e.kind.clone(),..Default::default()});
         }
     }
     layout.enclosures = result;
@@ -503,9 +504,11 @@ fn fit_to_built(layout: &mut super::super::Layout, population: u32, surface: Sur
         let Some(refit) = fitted else { result.push(e); continue; };
         refitted = true;
         let rings: Vec<Shape> = refit.into_iter().map(|path| Shape { outer: path[..path.len() - 1].to_vec(), holes: vec![] }).collect();
-        for ring in fortification::kept_fronts(rings, &near, &harbour, surface, e.curtain_width_m - fortification::ribbon_half(&e.kind)) {
+        let rings = fortification::kept_fronts(rings, &near, &harbour, surface, e.curtain_width_m - fortification::ribbon_half(&e.kind));
+        let single = rings.len() == 1;
+        for ring in rings {
             let path = closed(&ring.outer);
-            result.push(Enclosure { gates: gates(&path, &layout.streets), path, kind: e.kind.clone(), ..Default::default() });
+            result.push(Enclosure { edit_key: if single { e.edit_key.clone() } else { String::new() }, gates: gates(&path, &layout.streets), path, kind: e.kind.clone(), ..Default::default() });
         }
     }
     layout.enclosures = result;

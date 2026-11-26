@@ -23,16 +23,22 @@ const PLANAR_ROOFS = new Set(['gable', 'hip', 'pyramid', 'shed', 'ring']);
 const OPENINGS_DROP_M = 0.3;
 /** The seats last computed for a building: the ground is shaped to them before its mesh stands on them. */
 const SEATS = new WeakMap<PlacedBuilding, { ground?: SeatGround; waterAt?: City3dHeight; seats: PieceSeat[] }>();
+const fixedFarmSeat = (building: PlacedBuilding): boolean => (building as PlacedBuilding & { programme?: { fixedFarmSeat?: boolean } }).programme?.fixedFarmSeat === true;
 /** Seats of the footprint pieces of a silhouette on the natural ground (massing pieces, else the whole footprint). */
 export function silhouetteSeats(building: PlacedBuilding, ground?: SeatGround, waterAt?: City3dHeight): PieceSeat[] {
   const known = SEATS.get(building);
   if (known && known.ground === ground && known.waterAt === waterAt) return known.seats;
-  const massing = readMassing((building as PlacedBuilding & { programme?: unknown }).programme, building.footprint);
   let seats: PieceSeat[];
-  if (massing) seats = massingSeats(building, massing, ground, waterAt);
-  else {
-    const seat = wholeSeat(building, silhouetteMassing(building, surfaceArea(building.footprint)).floors * CITY3D_LEVEL_M, ground);
-    seats = building.footprint.map(() => seat);
+  if (fixedFarmSeat(building)) {
+    const level = building.ground_z_m;
+    seats = building.footprint.map(() => ({ seat: level, low: level, high: level, shaped: false }));
+  } else {
+    const massing = readMassing((building as PlacedBuilding & { programme?: unknown }).programme, building.footprint);
+    if (massing) seats = massingSeats(building, massing, ground, waterAt);
+    else {
+      const seat = wholeSeat(building, silhouetteMassing(building, surfaceArea(building.footprint)).floors * CITY3D_LEVEL_M, ground);
+      seats = building.footprint.map(() => seat);
+    }
   }
   if (ground) SEATS.set(building, { ground, waterAt, seats });
   return seats;
@@ -43,14 +49,7 @@ export function silhouetteSeats(building: PlacedBuilding, ground?: SeatGround, w
  * terrain sample under the whole footprint so no wall floats above a slope or a cliff. `terraces`: false drops the
  * built terraces of the massing (Advanced › "Built terraces"), each piece then standing on its own footing. `ground`: the
  * natural ground the floors are cut into (terrainSeat.ts); `heightAt` is the ground as drawn around them. */
-export function silhouetteBuilding(
-  building: PlacedBuilding,
-  heightAt?: City3dHeight,
-  waterAt?: City3dHeight,
-  lightTrees = false,
-  terraces = true,
-  ground: SeatGround | undefined = heightAt && { at: heightAt, cut: true },
-): PlacedBuilding {
+export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHeight, waterAt?: City3dHeight, lightTrees = false, terraces = true, ground: SeatGround | undefined = heightAt && { at: heightAt, cut: true }): PlacedBuilding {
   const footprint = building.footprint,
     area = surfaceArea(footprint),
     m = silhouetteMassing(building, area);
@@ -58,9 +57,11 @@ export function silhouetteBuilding(
     programme = (building as PlacedBuilding & { programme?: Programme }).programme;
   const compound = programme && ('activity' in programme || 'farmstead' in programme);
   const role = `${programme?.role ?? ''} ${m.family}${programme?.landmark ? ' monument' : ''}`;
-  const cut = !!shapedTo(ground, heightAt).cutGround;
+  const fixed = fixedFarmSeat(building),
+    terrainShape = fixed ? {} : shapedTo(ground, heightAt),
+    cut = !!terrainShape.cutGround;
   // The ground as drawn around the building may be cut below the natural one: a footing reaches under both.
-  const drawnLow = heightAt && ground && ground.at !== heightAt ? (footprintTerrain(footprint, heightAt)?.low ?? Infinity) : Infinity;
+  const drawnLow = !fixed && heightAt && ground && ground.at !== heightAt ? (footprintTerrain(footprint, heightAt)?.low ?? Infinity) : Infinity;
   const massing = readMassing((building as PlacedBuilding & { programme?: unknown }).programme, footprint, building.id);
   if (massing) {
     // City massing (cityMassing.ts): one volume per preview piece, its own height and roof. Each body is seated on the
@@ -213,7 +214,7 @@ export function silhouetteBuilding(
     const treeCrowns = massing.some(p => p.volumes?.some(v => v.form === 'tree'));
     return {
       ...building,
-      ...shapedTo(ground, heightAt),
+      ...terrainShape,
       ground_z_m: site,
       roof_footprint: treeCrowns ? volumes.flatMap(v => v.footprint) : building.roof_footprint.length ? building.roof_footprint : footprint,
       volumes,
@@ -260,7 +261,7 @@ export function silhouetteBuilding(
   const foundation = { footprint, z_min_m: Math.min(low, drawnLow) - CITY3D_FOOTING_DEPTH_M, z_max_m: floor };
   return {
     ...building,
-    ...shapedTo(ground, heightAt),
+    ...terrainShape,
     ground_z_m: floor,
     roof_footprint: building.roof_footprint.length ? building.roof_footprint : footprint,
     volumes: [baseVolume(`${building.id}:city3d`, footprint, floor, wall, rise, materials, roof.mesh(), m.flat ? 'RF-FLAT' : m.hip ? 'RF-HIP' : 'RF-GABLE', foundation)],

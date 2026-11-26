@@ -26,6 +26,8 @@ fn core_zone() -> String {
 /// structures and are omitted when empty, so old clients read the same JSON.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Enclosure {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub edit_key: String,
     pub path: Vec<Point>,
     pub kind: String,
     pub gates: Vec<Point>,

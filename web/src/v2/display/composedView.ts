@@ -393,7 +393,7 @@ export class ComposedView {
     if (ran.includes('terrainData')) live.invalidateLayer('ground');
     // The semantic hook of the overlay (contours, rural semantics, water cut) and the town hooks (urban semantics,
     // rivers) are the display's own state. The town layer follows its look itself (townLayer.ts lookNow).
-    if (ran.some(name => name === 'cartography' || name === 'overlays' || name === 'semantic' || name === 'water' || name === 'frame')) live.invalidateLayer('overlay');
+    if (ran.some(name => name === 'water' || name === 'frame') || (ran.includes('semantic') && before.resolved?.keys.semantic !== r.keys.semantic) || (ran.includes('overlays') && before.resolved?.keys.overlays !== r.keys.overlays)) live.invalidateLayer('overlay');
     if (ran.some(name => name === 'city' || name === 'semantic' || name === 'water')) live.invalidateLayer('city');
   }
   /** The display quality or the vector engine changed: what the overlay and the names retain is stale. The live town

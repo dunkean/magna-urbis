@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { World } from '../../src/gen/types';
 import { editableRuralRoads } from '../../src/v2/ruralRoadEditing';
-import { roadAt } from '../../src/v2/networkEdits';
+import { roadAt, setRoadClass } from '../../src/v2/networkEdits';
+import { recordRoadOverrides, replayRegionalRoads } from '../../src/v2/roadOverrides';
 import { fixedRoadEndpoint, roadEndpointPeers } from '../../src/v2/roadEditing';
 import { defaultSettings } from '../../src/v2/settings';
 import { regionalPopulation } from '../../src/v2/regionalPopulation';
@@ -70,5 +71,15 @@ describe('small rural paths in the road editor', () => {
     expect(source).toEqual(before);
     expect(editableRuralRoads(source)).toBe(world);
     expect(editableRuralRoads(world)).toBe(world);
+
+    const edited = setRoadClass(world, farm!.index, 'local', 4).world;
+    const recipe = recordRoadOverrides(undefined, world, edited);
+    const rebuilt = replayRegionalRoads(fixture(), recipe);
+    const restored = roadAt(rebuilt, { x: 100, y: 85 }, 2)!.index;
+    expect(rebuilt.roads![restored].width).toBe(4);
+    expect(roadEndpointPeers(rebuilt, restored, 0)).toHaveLength(2);
+    expect(fixedRoadEndpoint(rebuilt, restored, 1)).toBe(true);
+    expect(rebuilt.landuse!.farmsteads[0].drive).toEqual([]);
+    expect(rebuilt.landuse!.ways).toEqual(source.landuse!.ways);
   });
 });

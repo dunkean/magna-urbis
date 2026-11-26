@@ -26,6 +26,7 @@ import type { VolumeTownLook } from '../city/buildingLook';
 import { BuildingDiagnostics, layerDiagnosticsEnabled } from '../live/layerDiagnostics';
 import { buildingTriangleBudget, getViewDepth, VIEW_DEPTH_MAX } from './viewDepth';
 import { countWork } from '../workCount';
+import { WorldGroveLayer } from './groveLayer';
 
 export interface WorldBuildingsOptions {
   /** The display scene of the town (what the separate 3D view draws); undefined: no town. Compared by identity: a new
@@ -94,6 +95,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     presented = false;
   const diagnostics = layerDiagnosticsEnabled() ? new BuildingDiagnostics(stats) : undefined;
   const volume = new ViewVolume();
+  let grove: WorldGroveLayer | undefined;
   const newCache = (): BuildingBlockCache => new BuildingBlockCache(gl, () => options.budgetBytes, getViewDepth);
   let cache = newCache();
   /** Every look of a mesh set shares its meshes: a look draws them through its table (buildingsLookTable.ts). The
@@ -146,7 +148,13 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
    * slices until it is whole, then drawn. True while it fills. */
   const colour = (deadline: number): boolean => {
     if (!table) return false;
-    if (shown && shown !== table && shown.filled < slots.length) {
+    const reused = slots.takeReused();
+    if (reused)
+      for (const index of reused) {
+        for (const t of tables.values()) t.invalidate(index);
+        if (selected && maskSlots === slots) maskReused.add(index);
+      }
+    if (shown && shown !== table && (reused || shown.filled < slots.length)) {
       shown.fill(slots, Infinity);
       shown.upload(gl);
     }
@@ -197,16 +205,24 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     maskSlots: BuildingColorSlots | undefined,
     maskCount = 0,
     maskRows = 0;
+  const maskReused = new Set<number>();
   /** Brings the mask up to the slots of the meshes on screen; true when a building is selected and its mask is there. */
   const syncMask = (): boolean => {
     if (!selected) return false;
     const count = slots.length;
-    if (mask && maskSlots === slots && maskCount === count) return true;
+    if (mask && maskSlots === slots && maskCount === count && !maskReused.size) return true;
     const rows = Math.max(1, 2 ** Math.ceil(Math.log2(Math.ceil(count / LOOK_TABLE_WIDTH)))),
       whole = !mask || maskSlots !== slots || rows !== maskRows,
       from = whole ? 0 : maskCount;
     if (whole) maskData = new Uint8Array(rows * LOOK_TABLE_WIDTH);
-    for (let s = from; s < count; s++) maskData[s] = slots.list[s].building.id === selected ? 255 : 0;
+    for (let s = from; s < count; s++) maskData[s] = slots.list[s]?.building.id === selected ? 255 : 0;
+    const dirtyRows = new Set<number>();
+    if (!whole)
+      for (const index of maskReused) {
+        maskData[index] = slots.list[index]?.building.id === selected ? 255 : 0;
+        dirtyRows.add(Math.floor(index / LOOK_TABLE_WIDTH));
+      }
+    maskReused.clear();
     gl.activeTexture(gl.TEXTURE3);
     if (!mask) {
       mask = gl.createTexture()!;
@@ -220,7 +236,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     else {
       const first = Math.floor(from / LOOK_TABLE_WIDTH),
         last = Math.ceil(count / LOOK_TABLE_WIDTH);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, first, LOOK_TABLE_WIDTH, last - first, gl.RED, gl.UNSIGNED_BYTE, maskData, first * LOOK_TABLE_WIDTH);
+      if (from < count) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, first, LOOK_TABLE_WIDTH, last - first, gl.RED, gl.UNSIGNED_BYTE, maskData, first * LOOK_TABLE_WIDTH);
+      for (const row of dirtyRows) if (from === count || row < first || row >= last) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, row, LOOK_TABLE_WIDTH, 1, gl.RED, gl.UNSIGNED_BYTE, maskData, row * LOOK_TABLE_WIDTH);
     }
     gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0);
@@ -231,8 +248,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
   };
   /** The grouping of a new scene into blocks, while it runs; the cache of the scene it replaces when its blocks take
    * the levels of the blocks it keeps (BuildingBlockCache.adoptBlocks). */
-  let grouping: BlockGrouping | undefined,
-    adopting: BuildingBlockCache | undefined;
+  let grouping: BlockGrouping | undefined, adopting: BuildingBlockCache | undefined;
   /** The inputs of the page: another look of the same meshes takes its table; another geometry (meshKey) its own mesh
    * set on the same blocks; a new scene or terrain starts the blocks again (grouped in later slices). */
   const sync = (): void => {
@@ -276,6 +292,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     dirty = false;
     clearSelection();
     scene = nextScene;
+    if (nextHeights !== heights) grove?.releaseTown();
     heights = nextHeights;
     shapeKey = shape;
     seat = heights && worldSeat(heights, heights.exaggeration);
@@ -509,6 +526,14 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       const started = performance.now(),
         deadline = started + budgetMs;
       sync();
+      let grovePending = false;
+      if (scene?.grove) {
+        grove ??= new WorldGroveLayer(gl);
+        if (!grove.ready(scene.grove)) {
+          grovePending = grove.work(scene.grove, deadline);
+          if (!grovePending) options.invalidate();
+        }
+      }
       // The link runs in the driver's threads while the town is grouped and meshed; polled once per slice.
       const linked = link();
       // The top view's grain tiles, one family per slice, while the town takes its look.
@@ -518,15 +543,17 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       }
       if (grouping) {
         if (!grouping.step(deadline)) return slice(started, true);
-        if (adopting) cache.adoptBlocks(grouping.blocks, adopting);
-        else cache.setBlocks(grouping.blocks);
+        if (adopting) {
+          cache.adoptBlocks(grouping.blocks, adopting);
+          slots.retainBuildings(scene!.buildings);
+        } else cache.setBlocks(grouping.blocks);
         adopting = undefined;
         grouped = grouping;
         grouping = undefined;
         takeLook();
         return slice(started, true);
       }
-      if (!cache.slots.length || !paint) return slice(started, false);
+      if (!cache.slots.length || !paint) return slice(started, grovePending);
       if (!linked) return slice(started, true);
       if (!warmed) {
         warm();
@@ -547,9 +574,9 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         const before = houseSurfaces.ready;
         const caughtUp = houseSurfaces.step();
         if (houseSurfaces.ready > before) options.invalidate();
-        return slice(started, more || filling || !caughtUp);
+        return slice(started, grovePending || more || filling || !caughtUp);
       }
-      return slice(started, more || filling);
+      return slice(started, grovePending || more || filling);
     },
     draw(frame: LiveFrame) {
       const started = performance.now(),
@@ -682,9 +709,10 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           volumeDepthEnd(gl);
         }
       }
+      if (drawn && scene?.grove && !grove?.draw(scene.grove, frame, heights?.exaggeration ?? 1, night, stats, flat ? undefined : options.cave?.())) missingDraw = true;
       presented = drawn && !grouping && !missingDraw && (!scene || !!program);
       presentedScene = scene;
-      stats.bytes = cache.bytes;
+      stats.bytes = cache.bytes + (grove?.bytes ?? 0);
       stats.ms = performance.now() - started;
     },
     invalidate() {
@@ -702,6 +730,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     contextLost() {
       // Every handle is dead: forget them without deleting.
       cache.contextLost();
+      grove?.clear(true);
       adopting?.contextLost();
       adopting = undefined;
       // The tables keep their slots' paint: the next work slice uploads the drawn one again.
@@ -720,6 +749,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       adopting?.clear();
       adopting = undefined;
       cache.clear();
+      grove?.clear();
       dropTables(tables);
       table = shown = undefined;
       dropDormant();

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RecPath2D, isRecordedPath, newPath } from '../src/render/gpu/path';
-import { RecordingCanvas, parseColor } from '../src/render/gpu/recorder';
-import { SPRITE_STRIDE, type FillOp, type PathGeometry, type SpriteOp, type StrokeOp } from '../src/render/gpu/contract';
+import { RecordingCanvas, RecordingContext, parseColor } from '../src/render/gpu/recorder';
+import { ColorSlot, SPRITE_STRIDE, type FillOp, type PathGeometry, type SpriteOp, type StrokeOp } from '../src/render/gpu/contract';
 
 const subpaths = (g: PathGeometry): [number, number][][] => {
   const out: [number, number][][] = [];
@@ -395,4 +395,39 @@ describe('RecordingContext', () => {
     expect(list.ops.map(o => o.type)).toEqual(['fill', 'clear']);
     expect((list.ops[0] as FillOp).composite).toBe('destination-in');
   });
+});
+
+it('keeps transparent slot geometry and batches fills, strokes and stripes by slot identity', () => {
+  const ctx = new RecordingContext(new RecordingCanvas(40, 40));
+  const a = new ColorSlot(),
+    b = new ColorSlot();
+  const path = new RecPath2D();
+  path.rect(1, 1, 10, 10);
+  const stripe = { nx: 1, ny: 0, period: 4, offset: 1, width: 1 };
+  for (const paint of ['fill', 'stroke', 'stripes'] as const) {
+    for (const slot of [a, a, b]) {
+      ctx.fillStyle = ctx.strokeStyle = slot;
+      if (paint === 'stripes') ctx.fillStripes(path, stripe);
+      else ctx[paint](path);
+    }
+    const list = ctx.finish();
+    expect(list.unsupported).toBeUndefined();
+    expect(list.ops.map(op => 'paths' in op && op.paths.length)).toEqual([2, 1]);
+    const [first, second] = list.ops;
+    if (!('paint' in first && 'paint' in second) || first.paint.kind === 'pattern' || second.paint.kind === 'pattern') throw new Error('Missing colour');
+    expect(first.paint.rgba).toBe(a.rgba);
+    expect(second.paint.rgba).toBe(b.rgba);
+  }
+});
+
+it('batches mask stamps by both inks and isolates ordinary image draws', () => {
+  const ctx = new RecordingContext(new RecordingCanvas(20, 20));
+  const source = image(8, 8),
+    ink = new ColorSlot(),
+    wash = new ColorSlot(),
+    other = new ColorSlot();
+  for (const tint of [[ink, wash], [ink, wash], [ink, other], [other, ink], undefined] as const) ctx.drawImage(source, 0, 0, 8, 8, 0, 0, 8, 8, tint);
+  const ops = ctx.finish().ops;
+  expect(ops.map(op => op.type === 'sprites' && op.count)).toEqual([2, 1, 1, 1]);
+  expect(ops.map(op => op.type === 'sprites' && op.tint)).toEqual([[ink, wash], [ink, other], [other, ink], undefined]);
 });

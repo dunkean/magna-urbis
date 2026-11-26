@@ -1,5 +1,5 @@
 /** Rust landuse. Only the raster planes and World properties consumed by this stage cross the bridge. */
-import type { LandUseLayer, PolyH, Polygon, TerrainLayer, UrbanLayer, Vec2, World } from '../../web/src/gen/types';
+import type { FarmEnclosure, LandUseLayer, PolyH, Polygon, TerrainLayer, UrbanLayer, Vec2, World } from '../../web/src/gen/types';
 import type { Rng } from '../../web/src/gen/core/rng';
 import { biomeName } from '../../web/src/gen/biomes';
 import { executionRuntime, type ExecutionRuntime } from '../../web/src/ui/executionProfile';
@@ -373,6 +373,6 @@ export function farmGeometry(
   origin: Vec2,
   inward: Vec2,
   root: Rng,
-): { lot: Polygon; parts: NonNullable<World['landuse']>['farmsteads'][number]['parts'] & {}; yard: Polygon; walls: Polygon[]; plots: NonNullable<World['landuse']>['farmsteads'][number]['plots']; trees: Vec2[]; gate: Vec2; entry: Vec2; angle: number } {
+): { lot: Polygon; parts: NonNullable<World['landuse']>['farmsteads'][number]['parts'] & {}; yard: Polygon; enclosure: FarmEnclosure; walls: Polygon[]; plots: NonNullable<World['landuse']>['farmsteads'][number]['plots']; trees: Vec2[]; gate: Vec2; entry: Vec2; angle: number } {
   return JSON.parse((synchronousCoreWasm() as unknown as Wasm).landuse_farm(JSON.stringify({ type, size, context, origin, inward, seed: root.seedKey })));
 }

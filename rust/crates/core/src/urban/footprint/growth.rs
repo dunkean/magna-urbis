@@ -29,10 +29,16 @@ fn smooth_step(v: f64, lo: f64, hi: f64) -> f64 {
     let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
+/// The growth lattice and the cells it selected, in arrival order.
+pub(super) struct Taken {
+    pub grid: Grid,
+    pub cells: Vec<usize>,
+}
+
 /// Accessible growth: reserve window, epoch land, built crossings, whether
 /// the growth stopped on its housable-land goal (`terrain::Flood`), and the
 /// housable shares of the cells it took under `gate`.
-pub(super) type Growth = (Vec<Shape>, Vec<Vec<Shape>>, Vec<Street>, bool, Option<terrain::Survey>);
+pub(super) type Growth = (Vec<Shape>, Vec<Vec<Shape>>, Vec<Street>, bool, Option<(terrain::Survey, Taken)>);
 /// `flood` (a site the strict house gate refuses, `terrain`): cells are priced
 /// up by their block-scale slope class, so flat land is taken first, and the
 /// growth stops as soon as its housable land reaches the goal; the area
@@ -602,6 +608,7 @@ pub(super) fn accessible(
         .flat_map(|id| urban[id].streets(&grid, &service.crossing))
         .collect();
     // Measured on the cells taken: the land the town's blocks will stand on.
-    let land = gate.and_then(|g| terrain::tally(surface, &order.iter().map(|&i| grid.point(i)).collect::<Vec<_>>(), g));
+    let land = gate.and_then(|g| terrain::tally(surface, order.iter().map(|&i| grid.point(i)), g))
+        .map(|survey| (survey, Taken { grid, cells: order }));
     (reserve, phases, streets, housed, land)
 }

@@ -224,11 +224,45 @@ export const activityKindNames: Record<string, readonly [string, string]> = {
   network_node: ['Roadside site', 'Site de bord de route'],
   remote: ['Remote place', 'Lieu reculé'],
 };
+/** Activity-site resources include deposits, farm land and the road classes at roadside sites. */
+export const activityResourceNames: Record<string, readonly [string, string]> = {
+  stone_ashlar: ['Ashlar stone', 'Pierre de taille'],
+  lime: ['Lime', 'Chaux'],
+  slate: ['Slate', 'Ardoise'],
+  clay: ['Clay', 'Argile'],
+  peat: ['Peat', 'Tourbe'],
+  water_power: ['Water power', 'Énergie hydraulique'],
+  wind_exposure: ['Wind exposure', 'Exposition au vent'],
+  fish_coast: ['Coastal fish', 'Poissons côtiers'],
+  fish_river: ['River fish', 'Poissons de rivière'],
+  timber: ['Timber', 'Bois d’œuvre'],
+  wood: ['Wood', 'Bois'],
+  pasture: activityKindNames.pasture,
+  upland_pasture: activityKindNames.upland_pasture,
+  game: ['Game animals', 'Gibier'],
+  salt_coast: ['Sea salt', 'Sel marin'],
+  bog_iron: ['Bog iron', 'Fer des marais'],
+  local_ironstone: ['Ironstone', 'Roche ferrugineuse'],
+  small_pb_ag: ['Lead and silver ore', 'Minerai de plomb et d’argent'],
+  small_sn: ['Tin ore', 'Minerai d’étain'],
+  small_coal: ['Coal', 'Charbon'],
+  salt_spring: ['Salt spring', 'Source salée'],
+  gypsum_quarry: ['Gypsum', 'Gypse'],
+  placer_au: ['Alluvial gold', 'Or alluvionnaire'],
+  placer_sn: ['Alluvial tin', 'Étain alluvionnaire'],
+  arable: ['Arable land', 'Terres arables'],
+  highway: ['Highway', 'Grande route'],
+  main: ['Main road', 'Route principale'],
+  local: ['Local road', 'Route locale'],
+  track: ['Dirt track', 'Chemin de terre'],
+  trail: ['Footpath', 'Sentier'],
+};
 const spaced = (id: string): string => id.replace(/[-_]+/g, ' ').replace(/^./, c => c.toUpperCase());
 /** English labels of the ids an activity site carries, from the tables above (translated through i18n, which registers them).
- * Every template and kind the engine emits has an entry (tests/v2/activityLabelNames.test.ts); the spaced id only covers an unknown one. */
+ * Every template, kind and nonempty resource the engine emits has an entry (tests/v2/activityLabelNames.test.ts). */
 export const activitySiteLabel = (template: string): string => urbanActivityNames[template]?.[0] ?? spaced(template);
 export const activityKindLabel = (kind: string): string => activityKindNames[kind]?.[0] ?? spaced(kind);
+export const activityResourceLabel = (resource: string): string => activityResourceNames[resource]?.[0] ?? spaced(resource);
 export const urbanCultureLabel = (culture: string): string => urbanCultureNames[culture]?.[0] ?? spaced(culture);
 export const urbanExtraChoiceNames: Record<string, readonly [string, string]> = {
   ring: ['Ring', 'Anneau'],

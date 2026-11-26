@@ -9,15 +9,15 @@ import { isUnderdarkBiome } from '../../gen/biomes';
 import { ParchmentSymbols, SYMBOL_CELLS } from '../parchmentSymbols';
 import { CANOPY_MARGIN } from '../canopy';
 import { brushTextureOn, isBrushKind } from '../brushes';
-import { Palette } from '../styles';
+import type { SpriteTint } from '../gpu/contract';
 import { orientPos } from '../../gen/geo/poly';
 import { TextureLayer, textureMarks, type Mark } from '../scene';
 import { Rect4 } from '../view';
 import { appendUnderdarkMark, fungalBedLook, underdarkTextureSpec } from '../underdark';
-import { RecordingContext } from '../gpu/recorder';
+import { RecordingContext, setMapInk } from '../gpu/recorder';
 import type { CartographyContext } from './context';
 import type { VectorFrame } from './frame';
-import { mixHex, growRect, TAU, frac, clumpNoise, smooth01, addRing } from './geometry';
+import { growRect, TAU, frac, clumpNoise, smooth01, addRing } from './geometry';
 import { forestClip, forestWeight, forestStray, roomOf } from './forest';
 import { LAYER_TILE_REACH, GPU_SPRITE_BUDGET, treeMarksIn, recordTreeSpriteSteps, paintTrees, drawLayerTiles, drawDrapeCanopy } from './woods';
 
@@ -115,8 +115,8 @@ interface TexSpec {
   sp: number;
   shape: 'circle' | 'tuft' | 'reed' | 'dot';
   r: number;
-  fill?: keyof Palette;
-  stroke: keyof Palette;
+  fill?: 'treeFill' | 'grass';
+  stroke: 'treeInk' | 'orchardDot' | 'reed' | 'grass';
   alpha: number;
 }
 const TEX: Record<string, TexSpec> = {
@@ -129,6 +129,7 @@ const TEX: Record<string, TexSpec> = {
   marsh: { sp: 15, shape: 'reed', r: 3.2, stroke: 'reed', alpha: 0.9 },
   commons: { sp: 18, shape: 'dot', r: 0.7, fill: 'grass', stroke: 'grass', alpha: 0.75 },
 };
+const PEN_NAMES = { treeInk: 'penTreeInk', treeFill: 'penTreeFill', reed: 'penReed', grass: 'penGrass', orchardDot: 'penOrchardDot' } as const;
 const TEX_SALT: Record<string, number> = { forest: 11, orchard: 23, meadow: 37, pasture: 41, marsh: 53, commons: 67 };
 export function drawTexture(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, band: number, lw: (w: number, m: number) => number, budgetRect: Rect4 = rect): number {
   const steps = drawTextureSteps(c, ctx, tl, rect, band, lw, budgetRect);
@@ -170,29 +171,30 @@ function* drawTextureSteps(c: CartographyContext, ctx: CanvasRenderingContext2D,
     ctx.restore();
   }
 }
-/** Parchment symbol sheet tinted for one land kind, in the palette of the moment. */
-function penSheet(c: CartographyContext, kind: string): ParchmentSymbols {
-  const { pal, makeCanvas, penSheets } = c;
-  const ink = mixHex(pal.inkSoft, kind === 'marsh' ? pal.reed : pal.grass, 0.3),
-    wash = mixHex(pal.treeFill, pal.inkSoft, 0.3),
-    key = `${ink}|${wash}`;
+/** Native canvas and CPU-composited tiles need coloured pixels. Recorded stamps share one coverage atlas. */
+function penSheet(c: CartographyContext, ink: string, wash: string): ParchmentSymbols {
+  const { makeCanvas, penSheets } = c;
+  const key = `${ink}|${wash}`;
   let sheet = penSheets.get(key);
   if (!sheet) {
-    sheet = new ParchmentSymbols(ink, wash, 0.6, makeCanvas);
+    sheet = new ParchmentSymbols([ink, wash], 0.6, makeCanvas);
     penSheets.set(key, sheet);
   }
   return sheet;
 }
 /** `area`: only the marks inside it (a layer tile and the reach of its sprites); all marks of `tiles` otherwise. */
 function drawPenSymbols(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[], area?: Rect4): void {
-  const sheet = penSheet(c, tl.kind),
+  const ink = c.ink(tl.kind === 'marsh' ? 'sheetReed' : 'sheetGrass'),
+    wash = c.ink('sheetWash');
+  const tint: SpriteTint | undefined = ctx instanceof RecordingContext && /^#[0-9a-f]{6}$/i.test(ink.css) && /^#[0-9a-f]{6}$/i.test(wash.css) ? [ink, wash] : undefined;
+  const sheet = tint ? (c.penMask ??= new ParchmentSymbols(null, 0.6, c.makeCanvas)) : penSheet(c, ink.css, wash.css),
     list = penMarkList(c, tl, tiles, area);
   list.sort((a, b) => a.y - b.y);
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.globalAlpha = 0.8;
-  for (const m of list) sheet.draw(ctx, m.cell, m.x, m.y, m.size);
+  for (const m of list) sheet.draw(ctx, m.cell, m.x, m.y, m.size, tint);
   ctx.restore();
 }
 /** Pen symbol marks of `tiles` (inside `area` when given), unsorted. */
@@ -365,7 +367,7 @@ function drawTextureMarks(c: CartographyContext, ctx: CanvasRenderingContext2D, 
       if (spec.fill) fillP.push(p);
     }
   }
-  const penInk = (c: string): string => (pen ? mixHex(c, pal.inkSoft, 0.32) : c),
+  const penInk = (name: keyof typeof PEN_NAMES) => c.ink(pen ? PEN_NAMES[name] : name),
     penAlpha = pen && spec.shape !== 'circle' ? (spec.shape === 'dot' ? 0.78 : 0.62) : 1;
   // Underdark fungal beds: small caps of the bed look (render/underdark.ts fungalBedLook), filled, no ink ring.
   const bed = underground && (tl.kind === 'garden' || tl.kind === 'field') ? fungalBedLook(pal) : undefined;
@@ -375,13 +377,13 @@ function drawTextureMarks(c: CartographyContext, ctx: CanvasRenderingContext2D, 
     for (const p of strokeP) ctx.fill(p, 'nonzero');
   } else if (spec.fill) {
     // A bare wood or orchard is hollow rings: the fill follows the leaves.
-    const leaves = pal.season && (tl.kind === 'forest' || tl.kind === 'orchard') ? 0.25 + 0.75 * pal.season.leaf : 1;
-    ctx.globalAlpha = spec.alpha * penAlpha * leaves;
-    ctx.fillStyle = penInk(pal[spec.fill] as string);
+    ctx.globalAlpha = spec.alpha * penAlpha;
+    const leaves = tl.kind === 'forest' || tl.kind === 'orchard';
+    setMapInk(ctx, 'fillStyle', leaves ? c.ink(pen ? 'penLeaves' : 'symbolLeaves') : penInk(spec.fill));
     for (const p of fillP) ctx.fill(p, 'nonzero');
   }
   ctx.globalAlpha = spec.alpha * penAlpha;
-  ctx.strokeStyle = penInk(pal[spec.stroke] as string);
+  setMapInk(ctx, 'strokeStyle', penInk(spec.stroke));
   ctx.lineWidth = pen && spec.shape !== 'circle' ? lw(spec.shape === 'dot' ? 0.3 : 0.42, 0.5) : lw(spec.shape === 'circle' ? 0.5 : 0.55, 0.6);
   if (pen) {
     ctx.save();
@@ -412,9 +414,9 @@ function drawTextureMarks(c: CartographyContext, ctx: CanvasRenderingContext2D, 
         if (p) strays.push(p);
       }
     ctx.globalAlpha = tree.alpha;
-    ctx.fillStyle = pal[tree.fill!] as string;
+    setMapInk(ctx, 'fillStyle', c.ink('treeFill'));
     for (const p of strays) ctx.fill(p, 'nonzero'); // empty when the canopy drew them
-    ctx.strokeStyle = pal[tree.stroke] as string;
+    setMapInk(ctx, 'strokeStyle', c.ink('treeInk'));
     ctx.lineWidth = lw(0.5, 0.6);
     for (const p of strays) ctx.stroke(p);
   }

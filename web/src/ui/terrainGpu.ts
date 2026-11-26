@@ -55,11 +55,11 @@ export class TerrainGpu implements TerrainRenderer {
   private readonly pipelines: GpuPipelines;
   private readonly recovery: GpuRecovery;
   private roads?: import('../render/groundRoads').GroundRoadPaint;
-  setGroundRoads(paint: typeof this.roads): void {
-    if (this.fallback) return this.fallback.setGroundRoads(paint);
+  setGroundRoads(paint: typeof this.roads, regions?: readonly Rect4[]): void {
+    if (this.fallback) return this.fallback.setGroundRoads(paint, regions);
     if (paint === this.roads) return;
     this.roads = paint;
-    this.changed('content');
+    this.changed('content', regions);
   }
   private look?: TerrainLook;
   private view?: ViewState;
@@ -70,6 +70,7 @@ export class TerrainGpu implements TerrainRenderer {
   private unlistenQuality?: () => void;
   private readonly fallbackGround = new FallbackGround();
   private readonly revision = new ContentRevision();
+  private fallbackBase = 0;
   /** A pipeline was created: the live view redraws; world tiles re-bake when the look's own pipelines became complete
    * (not for a speculative one). */
   private readonly pipelineCreated = (): void => {
@@ -111,6 +112,7 @@ export class TerrainGpu implements TerrainRenderer {
         gl.setGroundRoads(this.roads);
         this.canvas = canvas;
         this.revision.bump();
+        this.fallbackBase = this.revision.value();
       },
     });
     this.parts = this.attach(gpu);
@@ -238,12 +240,11 @@ export class TerrainGpu implements TerrainRenderer {
   }
   /** Changes whenever renderWorldTile would draw other pixels (inputs, created pipelines, style pixel ratio, fall back). */
   contentRevision(): number {
-    return this.revision.value() + (this.fallback?.contentRevision() ?? 0);
+    return this.fallback ? this.fallbackBase + this.fallback.contentRevision() : this.revision.value();
   }
-  /** The world boxes whose pixels changed after revision `since` (GroundTileRenderer.contentChanges); after a fall back
-   * the two revisions are summed: whole changes. */
+  /** The changed world boxes. A revision from before a backend switch is a whole-map change. */
   contentChanges(since: number): readonly Rect4[] | undefined {
-    return this.fallback ? undefined : this.revision.changesSince(since);
+    return this.fallback ? (since >= this.fallbackBase ? this.fallback.contentChanges(since - this.fallbackBase) : undefined) : this.revision.changesSince(since);
   }
 
   /** Synchronous, as the captures below: await variantReady() first where the caller can wait, otherwise a
@@ -252,6 +253,10 @@ export class TerrainGpu implements TerrainRenderer {
     if (this.fallback) return this.fallback.captureMap(size, groundOverlay);
     if (!this.look) throw this.recovery.unavailable();
     return this.captureRegion({ x: 0, y: 0, width: this.look.mapWidth }, size, false, true, undefined, groundOverlay);
+  }
+  captureMapPatch(region: { x: number; y: number; width: number }, size: number): HTMLCanvasElement {
+    if (this.fallback) return this.fallback.captureMapPatch(region, size);
+    return this.capture(this.look, region, size, false, false, undefined, false, undefined, true);
   }
   /** Draws the final look now (a missing pipeline is created synchronously: the next readback of the canvas
    * waits for it). Async callers await variantReady() first. */
@@ -279,9 +284,19 @@ export class TerrainGpu implements TerrainRenderer {
     this.capture(look && styleTraits(look.style).waterAlwaysDrawn ? { ...look, layers: { ...look.layers, water: true } } : look, region, n, false, false, undefined, true, alpha);
     return alpha;
   }
-  private capture(look: TerrainLook | undefined, region: { x: number; y: number; width: number }, size: number, includeDetails: boolean, restoreDisplay: boolean, height: HeightLayer | undefined, groundOverlay: boolean, alphaOnly?: Uint8Array): HTMLCanvasElement {
+  private capture(
+    look: TerrainLook | undefined,
+    region: { x: number; y: number; width: number },
+    size: number,
+    includeDetails: boolean,
+    restoreDisplay: boolean,
+    height: HeightLayer | undefined,
+    groundOverlay: boolean,
+    alphaOnly?: Uint8Array,
+    isolated = false,
+  ): HTMLCanvasElement {
     if (!this.parts.inputs.base || !look || this.gpu.lost) throw this.recovery.unavailable();
-    return this.parts.captures.region(look, region, size, includeDetails, restoreDisplay ? () => this.draw() : undefined, height, groundOverlay, alphaOnly);
+    return this.parts.captures.region(look, region, size, includeDetails, restoreDisplay ? () => this.draw() : undefined, height, groundOverlay, alphaOnly, isolated);
   }
 
   createSurfaceSampler(): SurfaceSample | undefined {

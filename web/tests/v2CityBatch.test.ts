@@ -6,10 +6,11 @@ import { cityStageValidityKeys, settlementStageValidityKeys } from '../src/v2/st
 import type { World } from '../src/gen/types';
 import { regionSpec } from '../src/v2/regionSettings';
 
-const native = vi.hoisted(() => ({ build: vi.fn(), release: vi.fn() }));
-vi.mock('../src/v2/rustUrban', () => ({ generateRustTown: native.build, retainCityGround: () => undefined, releaseUrbanLanes: native.release }));
+const native = vi.hoisted(() => ({ build: vi.fn(), release: vi.fn(), setQuartersWave: vi.fn() }));
+vi.mock('../src/v2/rustUrban', () => ({ generateRustTown: native.build, retainCityGround: () => undefined, releaseUrbanLanes: native.release, setUrbanQuartersWave: native.setQuartersWave }));
 beforeEach(() => {
   native.build.mockReset();
+  native.setQuartersWave.mockClear();
 });
 
 async function fixture() {
@@ -34,7 +35,7 @@ async function fixture() {
 }
 
 describe('Cities batch scope', () => {
-  it('uses one WASM engine lane rather than duplicating synchronous terrain and pools', async () => {
+  it('uses one lane with the single-thread WASM engine and leaves the quarters wave untouched', async () => {
     const { settings, world } = await fixture(),
       build = native.build.getMockImplementation()!;
     let active = 0,
@@ -50,8 +51,10 @@ describe('Cities batch scope', () => {
       }
     });
     await generateTowns(world, settings, undefined, undefined, 'layout', true);
+    expect(native.build).toHaveBeenCalledTimes(3);
     expect(peak).toBe(1);
     expect(native.build.mock.calls.every(call => call[5] === undefined)).toBe(true);
+    expect(native.setQuartersWave).not.toHaveBeenCalled();
   });
   it('runs an explicit stage for a deduplicated subset and preserves all other cities and regional geometry', async () => {
     const { settings, world } = await fixture();

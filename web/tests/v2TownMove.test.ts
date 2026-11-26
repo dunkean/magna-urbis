@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { moveTown } from '../src/v2/townMove';
-import type { World } from '../src/gen/types';
+import type { Layout } from '../../rust/bridge/urban';
+import type { UrbanStreet, World } from '../src/gen/types';
 const poly = [
   { x: 100, y: 100 },
   { x: 200, y: 100 },
@@ -9,7 +10,18 @@ const poly = [
 ];
 function fixture(): World {
   const grid = { w: 20, h: 20, cell: 50, data: new Float32Array(400).fill(10) };
-  const urban = { footprint: [poly], quarters: [{ poly: { outer: poly, holes: [] } }], buildings: [{ poly, orientation: 1, kind: 'house' }], walls: [{ gateInfo: [{ p: { x: 150, y: 100 }, dir: { x: 1, y: 0 } }] }] };
+  const street: UrbanStreet = {
+    path: [
+      { x: 125, y: 125 },
+      { x: 175, y: 125 },
+    ],
+    width: 4,
+    kind: 'street',
+    rank: 2,
+    role: 'street',
+    phase: 0,
+  };
+  const urban = { footprint: [poly], streets: [street], quarters: [{ poly: { outer: poly, holes: [] } }], buildings: [{ poly, orientation: 1, kind: 'house' }], walls: [{ gateInfo: [{ p: { x: 150, y: 100 }, dir: { x: 1, y: 0 } }] }] };
   return {
     mapSize: 1000,
     terrain: { height: grid, water: new Uint8Array(400), rivers: [] },
@@ -49,6 +61,10 @@ describe('direct town movement', () => {
       { x: 350, y: 350 },
       { x: 500, y: 400 },
     ]);
+    expect(next.roads!.find(road => road.urban?.key === 'main')?.path).toEqual([
+      { x: 325, y: 325 },
+      { x: 375, y: 325 },
+    ]);
     expect(next.names!.entries[1].anchor).toEqual({ x: 325, y: 325 });
     expect(next.names!.entries[2].anchor).toEqual({ x: 125, y: 125 });
     expect(next.terrain).toBe(source.terrain);
@@ -59,7 +75,8 @@ describe('direct town movement', () => {
     const source = fixture(),
       resolved = { format: 'compact-plan-1', localPoint: { x: 1, y: 2 } };
     const b = { id: 'house', transform: { origin: { x: 150, y: 150 } }, footprint: [{ outer: poly, holes: [] }], roof_footprint: [], courtyards: [], circulation: [], entrance: { x: 150, y: 150 }, volumes: [], structural_features: [], resolved };
-    source.debug = { v2RustCities: { main: { layouts: [{ center: { x: 150, y: 150 }, quarters: [] }], partitions: [{ parcels: [{ axis: { x: 1, y: 0 }, shape: { outer: poly, holes: [] } }] }], scene: { buildings: [b], open_spaces: [] } } } };
+    const layout: Layout = { key: 'main', culture: 'european-organic', center: { x: 150, y: 150 }, quarters: [], streets: [], blocks: [], warnings: [] };
+    source.debug = { v2RustCities: { main: { layouts: [layout], partitions: [{ parcels: [{ axis: { x: 1, y: 0 }, shape: { outer: poly, holes: [] } }] }], scene: { buildings: [b], open_spaces: [] } } } };
     const next = moveTown(source, 'main', { x: 350, y: 350 }),
       city = (next.debug!.v2RustCities as any).main;
     expect(city.layouts[0].center).toEqual({ x: 350, y: 350 });

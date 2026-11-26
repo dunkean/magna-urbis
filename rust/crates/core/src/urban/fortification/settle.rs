@@ -71,29 +71,35 @@ pub(in super::super) fn settle(layout: &mut Layout, surface: Surface<'_>) {
             let ring = Shape { outer: e.path[..e.path.len() - 1].to_vec(), holes: vec![] };
             let rings = kept_fronts(vec![ring.clone()], &occupied, &harbour, surface, 0.0);
             if rings.len() == 1 && rings[0] == ring { return vec![e]; }
+            let single = rings.len() == 1;
             rings.into_iter().map(|r| {
                 let path = closed(&r.outer);
                 let gates = e.gates.iter().copied().filter(|&q| path.windows(2).any(|w| g::distance(q, w[0], w[1]).0 < 1.0)).collect();
-                crate::urban::Enclosure { path, gates, kind: e.kind.clone(), purpose: e.purpose.clone(), ..Default::default() }
+                crate::urban::Enclosure { edit_key: if single { e.edit_key.clone() } else { String::new() }, path, gates, kind: e.kind.clone(), purpose: e.purpose.clone(), ..Default::default() }
             }).collect()
         }).collect();
         let pop = layout.structure.as_ref().map_or_else(|| layout.phases.iter().map(|p|p.population).sum(),
             |s|s.metrics.planned_population).max(500.0).round() as u32;
         let predicted = Predicted {widths:[9.0,8.0,5.0,3.5,3.0],arterial:1,dwelling:[5.0;2]};
         for (i,e) in layout.enclosures.iter_mut().enumerate().filter(|(_,e)|e.style.is_empty() && e.path.len()>=4) {
+            if e.edit_key.is_empty() { e.edit_key = super::trace_key("trace", &e.path); }
+            let edit = cfg.overrides.walls.get(&e.edit_key);
+            if edit.is_some_and(|v| v.present == Some(false)) { continue; }
             let circuit = g::normalized(Shape {outer:e.path[..e.path.len()-1].to_vec(),holes:vec![]});
             let (relief,_) = terrain(&[circuit],surface);
             let rng = Rng::new(&layout.key).fork(&format!("final-circuit:{i}"));
             let mut style = resolve(&e.kind,&Inputs {culture:&layout.culture,pop,period:&cfg.programme.period,
                 state:"",archetype:&layout.archetype,forced:&cfg.fortification_style,relief},&rng,&mut layout.warnings);
             style.options(&cfg);
+            if let std::borrow::Cow::Owned(own) = style.for_wall(edit, &cfg, &layout.culture, pop) { style = own; }
+            if let Some(id) = edit.and_then(|v| v.style.as_deref()) { e.kind = super::family(id).into(); }
             // Its land gates are decided like those of a traced circuit, on the streets as they
             // stand: the streets are built on, so a passage stays oblique in its straight curtain. A gate
             // point it came with that is no street crossing (a regional road ending on it) stays.
             let crossed = composition::gates(&e.path,&layout.streets);
             let squared = !matches!(style.id.as_str(),"bastioned"|"wengcheng") && e.path.len()>6;
             let (wall,kept,dropped) = gate_budget::decide(&Shape {outer:e.path[..e.path.len()-1].to_vec(),holes:vec![]},&mut layout.streets,
-                &Circuit {pop,purpose:&e.purpose,kind:&e.kind,curtain_width:style.curtain_width,moat:style.ditch_width[1],
+                &Circuit {pop,gates:edit.and_then(|v| v.gates),purpose:&e.purpose,kind:&e.kind,curtain_width:style.curtain_width,moat:style.ditch_width[1],
                     grade:cfg.max_street_grade,squared,streets_turn:false,key:&layout.key,improvisation:cfg.street_improvisation},surface);
             e.path = closed(&wall.outer);
             e.gates.retain(|&q|crossed.iter().all(|&c|dist(c,q)>=8.0));
@@ -110,6 +116,9 @@ pub(in super::super) fn settle(layout: &mut Layout, surface: Surface<'_>) {
             // The blocks give up each diversion and the strip between it and the moat (4 m + margin):
             // no unbuildable sliver is left against the reserve; the land beyond fronts the new road.
             extra_mural.extend(layout.streets[laid..].iter().flat_map(|s|g::ribbon(&s.path,&vec![s.widths[0]+10.0;s.path.len()])));
+        }
+        if !cfg.overrides.walls.is_empty() {
+            layout.enclosures.retain(|e| !cfg.overrides.walls.get(&e.edit_key).is_some_and(|v| v.present == Some(false)));
         }
     }
     if layout.enclosures.iter().all(|e| e.style.is_empty()) {

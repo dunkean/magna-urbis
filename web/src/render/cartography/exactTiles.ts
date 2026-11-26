@@ -18,6 +18,7 @@
  */
 import { isUnderdarkBiome } from '../../gen/biomes';
 import { roadCanopyRevision } from '../roadStyle';
+import { roadCanopyRegions } from './roads';
 import { whiteWaterRevision } from '../whiteWater';
 import { RasterTileCache } from '../rasterTiles';
 import { StepwisePaint } from '../stepwisePaint';
@@ -45,6 +46,17 @@ export function createExactTiles(c: CartographyContext) {
   /** The last stepwise picture, drawn under the tiles still missing from the next one. */
   let lastPicture: { canvas: CanvasLike; view: View; dpr: number } | undefined;
   const suspendStepwise = (): void => tileFill.suspend();
+  let seenCanopy = roadCanopyRevision();
+  const syncRoadCanopy = (): void => {
+    const revision = roadCanopyRevision();
+    if (seenCanopy === revision) return;
+    const changed = roadCanopyRegions(c, seenCanopy);
+    seenCanopy = revision;
+    if (changed && !changed.length) return;
+    suspendStepwise();
+    rasterCache.invalidate(changed);
+    for (const key of mapPyramid.keys()) if (!rasterCache.has(key)) mapPyramid.delete(key);
+  };
   const dropLastPicture = (): void => {
     if (lastPicture) {
       lastPicture.canvas.width = 0;
@@ -81,6 +93,7 @@ export function createExactTiles(c: CartographyContext) {
   }
   function drawFrame(view: View): FrameStats {
     if (deps.raster === false || c.rasterFailed) return drawVector(c, view);
+    syncRoadCanopy();
     const start = now(),
       dpr = deps.dpr ?? (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
     const ctx = canvas.getContext('2d');
@@ -109,7 +122,7 @@ export function createExactTiles(c: CartographyContext) {
     const budget = rasterBudget(rect, scale);
     c.layerTilesFit = (c.activeLight && scale < 1) || layerTilesFitView(c, rect, k);
     const requests: { key: string; x: number; y: number }[] = [];
-    const semanticKey = `${c.syncPalette()}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
+    const semanticKey = `${c.syncPalette()}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${whiteWaterRevision()}`;
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) requests.push({ key: `${scale}|${dpr}|${tilePx}/${gutter}|${engine}|${c.activeLight}|${budget}|${semanticKey}|${x},${y}`, x, y });
     if (requests.length * (tilePx + 2 * gutter) ** 2 * 4 > rasterCache.maxBytes) return drawVector(c, view);
     const buildTile = (request: (typeof requests)[number]): CanvasImageSource => {
@@ -296,9 +309,10 @@ export function createExactTiles(c: CartographyContext) {
   /** The stepwise tiles of `box` on `target` (coarse first; a finer cached quadrant replaces it without doubling
    * translucent ink). False: none there. Never builds a tile. */
   function drawCachedMap(target: CanvasLike, box: Rect4): boolean {
+    syncRoadCanopy();
     const ctx = target.getContext('2d');
     if (!ctx) return false;
-    const semantic = `${c.syncPalette()}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
+    const semantic = `${c.syncPalette()}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${whiteWaterRevision()}`;
     const light = displayQualityFor(true) === 'light',
       density = target.width / (box.maxX - box.minX);
     const tiles = [...mapPyramid].filter(([, t]) => t.semantic === semantic && t.light === light && t.density <= density * 2 && t.x < box.maxX && t.y < box.maxY && t.x + t.span > box.minX && t.y + t.span > box.minY).sort((a, b) => a[1].density - b[1].density);

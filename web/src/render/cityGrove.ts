@@ -6,10 +6,13 @@ import type { Layout, Point, Shape } from '../../../rust/bridge/urban';
 import type { ArchitectureVolume, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { MaterialSlots } from '../../../rust/bridge/housesContract';
 import { pieceVolumes, readMassing } from './cityMassing';
+import type { Box, CityBuildings } from './city/model/contract';
+import { CITY_EDIT_CELL, cellsInRects, cellCandidates, cellBox, type CellRect } from './city/gl/pages';
 import type { TreeDwelling } from './cityTrees';
 import { roofPlaneLight } from './roofPlaneLight';
 import { leafClumps } from './crownClumpAtlas';
 import { mapCrownSeason, mapGroundSnow, mapSeasonKey } from './seasonPalette';
+import { GROVE_BLOCK, GROVE_TRUNK_COLOR, type GroveBlock, type GroveInstances } from './city3d/groveInstances';
 
 /** Culture data: trunk spacing of the grove between the buildings (m), share of giant trees carrying a platform,
  * longest walkway span (m), share of the grid kept (clearings). A culture absent here grows no town grove. */
@@ -143,25 +146,29 @@ function lobesOf(x: number, y: number, r: number, h: number, seed: number): Cano
 }
 
 /** Tree dwellings of the placed buildings, as canopy trees (their crowns are the dwelling's own lobes). */
-function dwellingsOf(buildings: readonly PlacedBuilding[]): { tree: CanopyTree; culture: string }[] {
+const dwellingCache = new WeakMap<PlacedBuilding, { tree: CanopyTree; culture: string }[]>();
+function dwellingTrees(b: PlacedBuilding): { tree: CanopyTree; culture: string }[] {
   const out: { tree: CanopyTree; culture: string }[] = [];
-  for (const b of buildings) {
+  const hit = dwellingCache.get(b);
+  if (hit) return hit;
+  {
     const massing = readMassing((b as PlacedBuilding & { programme?: unknown }).programme, b.footprint, b.id);
-    if (!massing) continue;
-    b.footprint.forEach((shape, i) => {
-      for (const v of massing[i] ? pieceVolumes(shape, massing[i]) : []) {
-        const t: TreeDwelling | undefined = v.tree;
-        if (!t) continue;
-        const top = t.platforms.reduce<TreeDwelling['platforms'][number] | undefined>((best, p) => (!best || p.height > best.height ? p : best), undefined);
-        const x = t.center.x,
-          y = t.center.y;
-        out.push({
-          culture: b.culture?.culture ?? '',
-          tree: { x, y, r: t.radius, h: t.height, trunk: t.trunkRadius, seed: hashText(b.id) + i, dwelling: true, lobes: t.crowns.map(c => ({ x: c.x, y: c.y, r: (c.rx + c.ry) / 2, z: c.z, tone: c.tone ?? 0.5 })), deck: top ? top.height + 0.22 : undefined, deckR: top?.radius },
-        });
-      }
-    });
+    if (massing)
+      b.footprint.forEach((shape, i) => {
+        for (const v of massing[i] ? pieceVolumes(shape, massing[i]) : []) {
+          const t: TreeDwelling | undefined = v.tree;
+          if (!t) continue;
+          const top = t.platforms.reduce<TreeDwelling['platforms'][number] | undefined>((best, p) => (!best || p.height > best.height ? p : best), undefined);
+          const x = t.center.x,
+            y = t.center.y;
+          out.push({
+            culture: b.culture?.culture ?? '',
+            tree: { x, y, r: t.radius, h: t.height, trunk: t.trunkRadius, seed: hashText(b.id) + i, dwelling: true, lobes: t.crowns.map(c => ({ x: c.x, y: c.y, r: (c.rx + c.ry) / 2, z: c.z, tone: c.tone ?? 0.5 })), deck: top ? top.height + 0.22 : undefined, deckR: top?.radius },
+          });
+        }
+      });
   }
+  dwellingCache.set(b, out);
   return out;
 }
 
@@ -176,9 +183,9 @@ export function cityCanopy(layouts: readonly Layout[] | undefined, buildings: re
   return canopy;
 }
 
-function deriveCanopy(layouts: readonly Layout[], buildings: readonly PlacedBuilding[]): CityCanopy {
+function deriveCanopy(layouts: readonly Layout[], buildings: readonly PlacedBuilding[], cell?: Box): CityCanopy {
   const groves = layouts.filter(l => TOWN_CANOPY[l.culture]);
-  const dwellingList = dwellingsOf(buildings);
+  const dwellingList = buildings.flatMap(dwellingTrees);
   if (!groves.length && !dwellingList.length) return EMPTY;
   // Building cores block trunks and walkways; tree dwellings block grove trunks under their crowns.
   const cores: { ring: Point[]; core: Point[] }[] = [];
@@ -208,11 +215,12 @@ function deriveCanopy(layouts: readonly Layout[], buildings: readonly PlacedBuil
       if (ring.length < 3) continue;
       const xs = ring.map(p => p.x),
         ys = ring.map(p => p.y);
-      for (let i = Math.floor(Math.min(...xs) / s); i <= Math.floor(Math.max(...xs) / s); i++)
-        for (let j = Math.floor(Math.min(...ys) / s); j <= Math.floor(Math.max(...ys) / s); j++) {
+      for (let i = Math.floor(Math.max(Math.min(...xs), cell?.minX ?? -Infinity) / s); i <= Math.floor(Math.min(Math.max(...xs), cell?.maxX ?? Infinity) / s); i++)
+        for (let j = Math.floor(Math.max(Math.min(...ys), cell?.minY ?? -Infinity) / s); j <= Math.floor(Math.min(Math.max(...ys), cell?.maxY ?? Infinity) / s); j++) {
           if (hash2(i, j, salt) > cfg.keep) continue;
           const x = (i + 0.1 + 0.8 * hash2(i, j, salt + 1)) * s,
             y = (j + 0.1 + 0.8 * hash2(i, j, salt + 2)) * s;
+          if (cell && (x < cell.minX || y < cell.minY || x >= cell.maxX || y >= cell.maxY)) continue;
           if (!inside(ring, x, y) || block.shape.holes.some(h => inside(h, x, y))) continue;
           const edge = edgeDistance(ring, x, y);
           if (edge < 1.6) continue;
@@ -244,11 +252,118 @@ function deriveCanopy(layouts: readonly Layout[], buildings: readonly PlacedBuil
     }
   }
   const dwellings = dwellingList.map(d => d.tree);
+  if (cell) return { trees, dwellings: dwellings.filter(t => t.x >= cell.minX && t.x < cell.maxX && t.y >= cell.minY && t.y < cell.maxY), stairs: [], walkways: [], altitude: 0 };
   const { walkways, stairs } = linkPlatforms([...dwellings.filter(d => d.deck), ...trees.filter(t => t.deck)], dwellingList.map(d => TOWN_CANOPY[d.culture]?.span).find(Boolean) ?? groves.map(l => TOWN_CANOPY[l.culture].span)[0] ?? DEFAULT_SPAN, cores, coreBins);
   const altitude = buildings.reduce((s, b) => s + (b.ground_z_m || 0), 0) / buildings.length;
   return { trees, dwellings, walkways, stairs, altitude };
 }
 
+/** Only crowns are instanced by the live GL look. Walkways/stairs are a town-wide spanning forest used by the
+ * exact and volume renderers. A trunk depends on cores within 12 m and on the actual radii of tree dwellings. */
+export class LiveCrownCells {
+  private crops = new Map<number, CityCanopy>();
+  private blockers = new Map<number, Set<PlacedBuilding>>();
+  private influence = new Map<PlacedBuilding, Set<number>>();
+  private blocks = new Map<number, { layout: Layout; block: Layout['blocks'][number] }[]>();
+  private layouts?: readonly Layout[];
+  private buildings?: readonly PlacedBuilding[];
+  private base?: CityBuildings;
+  private result: CityCanopy[] = [];
+  set(layouts: readonly Layout[], buildings: readonly PlacedBuilding[], base: CityBuildings, rects?: readonly CellRect[]): readonly CityCanopy[] {
+    const dirty = new Set<number>(),
+      groves = layouts.filter(l => TOWN_CANOPY[l.culture]);
+    const oldGroves = this.layouts?.filter(l => TOWN_CANOPY[l.culture]) ?? [];
+    const changedLayout = groves.length !== oldGroves.length || groves.some((l, i) => l.key !== oldGroves[i].key || l.culture !== oldGroves[i].culture || l.blocks !== oldGroves[i].blocks);
+    if (changedLayout) {
+      const previous = this.blocks;
+      this.blocks = new Map();
+      for (const layout of groves)
+        for (const block of layout.blocks) {
+          const ring = block.shape.outer;
+          if (!ring.length) continue;
+          const rect = ringRect(ring, 0);
+          for (const key of cellsInRects([rect])) {
+            let list = this.blocks.get(key);
+            if (!list) this.blocks.set(key, (list = []));
+            list.push({ layout, block });
+          }
+        }
+      for (const key of new Set([...previous.keys(), ...this.blocks.keys()])) {
+        const a = previous.get(key) ?? [],
+          b = this.blocks.get(key) ?? [];
+        if (a.length !== b.length || a.some((x, i) => x.block !== b[i].block || x.layout.key !== b[i].layout.key || x.layout.culture !== b[i].layout.culture)) dirty.add(key);
+      }
+    }
+    if (this.buildings !== buildings || !!groves.length !== !!oldGroves.length) {
+      const local = rects && this.base && !!groves.length === !!oldGroves.length ? cellsInRects(rects) : undefined;
+      const candidates = (set: CityBuildings) => new Set([...cellCandidates(set.bins, set.items.length, local, CITY_EDIT_CELL)].map(i => set.items[i].building));
+      const before = local ? candidates(this.base!) : new Set(this.influence.keys());
+      const after = local ? candidates(base) : new Set(buildings);
+      const reset = !!groves.length !== !!oldGroves.length;
+      for (const b of before)
+        if (reset || !after.has(b)) {
+          for (const k of this.influence.get(b) ?? []) {
+            const group = this.blockers.get(k)!;
+            group.delete(b);
+            if (!group.size) this.blockers.delete(k);
+            dirty.add(k);
+          }
+          this.influence.delete(b);
+        }
+      for (const b of after)
+        if (reset || !before.has(b)) {
+          const bounds: CellRect[] = groves.length ? b.footprint.filter(s => s.outer.length).map(s => ringRect(s.outer, 12)) : [];
+          for (const { tree: t } of dwellingTrees(b)) bounds.push({ x0: t.x - t.r, y0: t.y - t.r, x1: t.x + t.r, y1: t.y + t.r });
+          const keys = cellsInRects(bounds);
+          if (keys.size) this.influence.set(b, keys);
+          for (const k of keys) {
+            let group = this.blockers.get(k);
+            if (!group) this.blockers.set(k, (group = new Set()));
+            group.add(b);
+            dirty.add(k);
+          }
+        }
+      if (!!this.buildings?.length !== !!buildings.length) for (const k of this.blocks.keys()) dirty.add(k);
+    }
+    if (!this.layouts || !!this.layouts.length !== !!layouts.length) for (const k of this.blockers.keys()) dirty.add(k);
+    this.layouts = layouts;
+    this.buildings = buildings;
+    this.base = base;
+    for (const key of dirty) {
+      const groups = new Map<Layout, Layout['blocks']>();
+      for (const { layout, block } of this.blocks.get(key) ?? []) {
+        let group = groups.get(layout);
+        if (!group) groups.set(layout, (group = []));
+        group.push(block);
+      }
+      const canopy =
+        layouts.length && buildings.length
+          ? deriveCanopy(
+              [...groups].map(([l, blocks]) => ({ ...l, blocks })),
+              [...(this.blockers.get(key) ?? [])],
+              cellBox(key),
+            )
+          : EMPTY;
+      if (canopy.trees.length || canopy.dwellings.length) this.crops.set(key, canopy);
+      else this.crops.delete(key);
+    }
+    if (dirty.size) this.result = [...this.crops.values()];
+    return this.result;
+  }
+}
+function ringRect(ring: readonly Point[], pad: number): CellRect {
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
+  for (const p of ring) {
+    x0 = Math.min(x0, p.x);
+    x1 = Math.max(x1, p.x);
+    y0 = Math.min(y0, p.y);
+    y1 = Math.max(y1, p.y);
+  }
+  return { x0: x0 - pad, y0: y0 - pad, x1: x1 + pad, y1: y1 + pad };
+}
 /** Walkways: the minimum spanning forest of the platforms closer than `span`, plus a few short loops; never across a
  * building core or another trunk, never steeper than 1:3. One spiral stair per linked group, and a few more. */
 function linkPlatforms(nodes: CanopyTree[], span: number, cores: { ring: Point[]; core: Point[] }[], coreBins: Bins<number>): { walkways: CanopyWalkway[]; stairs: CanopyStair[] } {
@@ -296,7 +411,17 @@ function linkPlatforms(nodes: CanopyTree[], span: number, cores: { ring: Point[]
     };
   const walkways: CanopyWalkway[] = [],
     degree = new Array<number>(nodes.length).fill(0);
-  const crossesAny = (w: CanopyWalkway): boolean => walkways.some(o => segmentsCross(w.a, w.b, o.a, o.b));
+  const accepted = new Bins<CanopyWalkway>(span);
+  const accept = (w: CanopyWalkway): boolean => {
+    const x0 = Math.min(w.a.x, w.b.x),
+      y0 = Math.min(w.a.y, w.b.y),
+      x1 = Math.max(w.a.x, w.b.x),
+      y1 = Math.max(w.a.y, w.b.y);
+    for (const other of accepted.near(x0, y0, x1, y1)) if (segmentsCross(w.a, w.b, other.a, other.b)) return false;
+    accepted.add(w, x0, y0, x1, y1);
+    walkways.push(w);
+    return true;
+  };
   const extras: { i: number; j: number; d: number }[] = [];
   for (const c of candidates) {
     const ri = find(c.i),
@@ -306,17 +431,15 @@ function linkPlatforms(nodes: CanopyTree[], span: number, cores: { ring: Point[]
       continue;
     }
     const w = edge(c.i, c.j);
-    if (!w || crossesAny(w)) continue;
+    if (!w || !accept(w)) continue;
     parent[ri] = rj;
-    walkways.push(w);
     degree[c.i]++;
     degree[c.j]++;
   }
   for (const c of extras) {
     if (hash2(nodes[c.i].x + nodes[c.j].x, nodes[c.i].y + nodes[c.j].y, 77) > 0.22 || degree[c.i] > 3 || degree[c.j] > 3) continue;
     const w = edge(c.i, c.j);
-    if (!w || crossesAny(w)) continue;
-    walkways.push(w);
+    if (!w || !accept(w)) continue;
     degree[c.i]++;
     degree[c.j]++;
   }
@@ -371,6 +494,8 @@ const CROWN_GREENS = ['5a7b41', '5d7f44', '618347', '65874a'];
 /** Shade direction of the plan (south-east, as the building shadows), per metre of height. */
 export const SHADE = { x: 0.32, y: 0.42 };
 
+const naturalOrder = new WeakMap<CityCanopy, CanopyTree[]>();
+
 /** The grove, the tree-dwelling crowns and the walkways over the plan, after the buildings. */
 export function drawCityCanopy(ctx: CanvasRenderingContext2D, canopy: CityCanopy, o: CanopyDrawOptions): void {
   if (!canopy.trees.length && !canopy.dwellings.length) return;
@@ -380,7 +505,6 @@ export function drawCityCanopy(ctx: CanvasRenderingContext2D, canopy: CityCanopy
     pad = 20,
     px = (n: number): number => n * o.mpp;
   const visible = (t: CanopyTree): boolean => t.x + t.r + pad > v.minX && t.x - t.r - pad < v.maxX && t.y + t.r + pad > v.minY && t.y - t.r - pad < v.maxY;
-  const all = [...canopy.dwellings, ...canopy.trees].filter(visible);
   const far = o.mpp > 2.5,
     flat = !!ink.flat;
   const disc = (path: Path2D, x: number, y: number, r: number): void => {
@@ -390,11 +514,18 @@ export function drawCityCanopy(ctx: CanvasRenderingContext2D, canopy: CityCanopy
   ctx.save();
   if (o.palette === 'terrain') {
     // Natural grounds: the timber lies under the leaves, so the walkways go first and show between the crowns.
+    let order = naturalOrder.get(canopy);
+    if (!order) {
+      // Taller crowns cover lower ones. The order belongs to the trees, even when a new view draws a subset.
+      order = [...canopy.dwellings, ...canopy.trees].sort((a, b) => a.h + a.r * 0.6 - (b.h + b.r * 0.6));
+      naturalOrder.set(canopy, order);
+    }
     drawWalkways(ctx, canopy, o, ink, true);
-    drawNaturalCrowns(ctx, canopy, all, o);
+    drawNaturalCrowns(ctx, canopy, order.filter(visible), o);
     ctx.restore();
     return;
   }
+  const all = [...canopy.dwellings, ...canopy.trees].filter(visible);
   // Cast shadows of the crowns on the ground (and on the low roofs they overhang).
   if (!flat) {
     const shade = new Path2D();
@@ -641,16 +772,14 @@ function buildCrownSprites(key: string, night: boolean, groundSnow: number): Cro
   return { key, lobes, mean, shadow };
 }
 
-function drawNaturalCrowns(ctx: CanvasRenderingContext2D, canopy: CityCanopy, trees: readonly CanopyTree[], o: CanopyDrawOptions): void {
-  if (!trees.length) return;
+function drawNaturalCrowns(ctx: CanvasRenderingContext2D, canopy: CityCanopy, order: readonly CanopyTree[], o: CanopyDrawOptions): void {
+  if (!order.length) return;
   const groundSnow = mapGroundSnow(canopy.altitude),
     key = `${mapSeasonKey()}|${groundSnow.toFixed(3)}|${o.night ? 1 : 0}`;
   if (crownSprites?.key !== key) crownSprites = buildCrownSprites(key, !!o.night, groundSnow);
   const sprites = crownSprites;
   if (!sprites) return;
   const green = (t: CanopyTree): number => (t.seed >>> 3) % CROWN_GREENS.length;
-  // Taller trees last: their crowns cover the lower ones.
-  const order = [...trees].sort((a, b) => a.h + a.r * 0.6 - (b.h + b.r * 0.6));
   // Cast shadows: one soft disc per tree, offset along the building shadows.
   ctx.globalAlpha = o.night ? 0.18 : 0.34;
   for (const t of order) {
@@ -689,10 +818,9 @@ function drawNaturalCrowns(ctx: CanvasRenderingContext2D, canopy: CityCanopy, tr
 // ------------------------------------------------------------------ 3D
 
 type Mesh = ArchitectureVolume['roof_mesh'];
-const TRUNK = 'city3d:tree:trunk@4b3c2a',
+const TRUNK = `city3d:tree:trunk@${GROVE_TRUNK_COLOR.toString(16)}`,
   TIMBER = 'city3d:wall:timber';
-const CROWN = CROWN_GREENS.map(hex => `city3d:tree:crown@${hex}`);
-const crownMaterial = (tone: number): string => CROWN[Math.min(CROWN.length - 1, Math.floor(tone * CROWN.length))];
+const CROWN = CROWN_GREENS.map(hex => parseInt(hex, 16));
 
 function addFace(mesh: Mesh, points: { x: number; y: number; z: number }[], material: string): void {
   if (points.length < 3) return;
@@ -723,32 +851,7 @@ function loft(mesh: Mesh, rings: { x: number; y: number; z: number }[][], materi
   if (cap) addFace(mesh, rings[rings.length - 1], material);
 }
 /** A rounded lobe: flattened underside, broad shoulders, domed top. */
-function lobe(mesh: Mesh, x: number, y: number, z: number, r: number, material: string, n: number): void {
-  const levels = [
-    [0.55, -0.25],
-    [1, 0.12],
-    [0.86, 0.55],
-    [0.45, 0.85],
-  ];
-  const ring = (k: number, dz: number, i0: number): { x: number; y: number; z: number }[] =>
-    Array.from({ length: n }, (_, i) => {
-      const a = ((i + i0 * 0.5) / n) * Math.PI * 2;
-      return { x: x + Math.cos(a) * r * k, y: y + Math.sin(a) * r * k, z: z + dz * r };
-    });
-  const rings = levels.map(([k, dz], i) => ring(k, dz, i));
-  loft(mesh, rings, material, true);
-  addFace(mesh, [...rings[0]].reverse(), material);
-}
-function treeMesh(mesh: Mesh, t: CanopyTree, ground: number, light: boolean): void {
-  const n = light ? 5 : 7,
-    lean = { x: (hash2(t.x, t.y, 5) - 0.5) * t.r * 0.18, y: (hash2(t.x, t.y, 6) - 0.5) * t.r * 0.18 };
-  const ring = (f: number, k: number): { x: number; y: number; z: number }[] =>
-    Array.from({ length: n }, (_, i) => {
-      const a = (i / n) * Math.PI * 2,
-        root = f === 0 ? 1 + 0.35 * Math.cos(a * 3 + t.seed) : 1;
-      return { x: t.x + lean.x * f + Math.cos(a) * t.trunk * k * root, y: t.y + lean.y * f + Math.sin(a) * t.trunk * k * root, z: ground + t.h * f };
-    });
-  loft(mesh, [ring(0, 1.6), ring(0.15, 1.05), ring(0.65, 0.85), ring(1.05, 0.6)], TRUNK);
+function treeDetails(mesh: Mesh, t: CanopyTree, ground: number, light: boolean, lean: Point): void {
   // Limbs from the upper trunk to the outer lobes.
   const top = { x: t.x + lean.x * 0.7, y: t.y + lean.y * 0.7, z: ground + t.h * 0.7 };
   for (const l of t.lobes.slice(1, light ? 3 : 5)) {
@@ -780,8 +883,6 @@ function treeMesh(mesh: Mesh, t: CanopyTree, ground: number, light: boolean): vo
       TRUNK,
     );
   }
-  const lobes = light ? [t.lobes[0], ...t.lobes.slice(1, -1).filter((_, i) => i % 2 === 0), t.lobes[t.lobes.length - 1]] : t.lobes;
-  for (const l of lobes) lobe(mesh, l.x + lean.x, l.y + lean.y, ground + l.z, l.r, crownMaterial(l.tone), light ? 6 : 9);
   if (t.deck && !t.dwelling) {
     // giant tree: a ring deck around the trunk with its rail posts
     const z = ground + t.deck,
@@ -921,10 +1022,25 @@ function placed(id: string, mesh: Mesh, footprint: Shape[], low: number, high: n
 }
 /** Above this many grove trees, each one takes its light mesh (fewer sides and lobes). */
 const LIGHT_GROVE_FROM = 1500;
-/** Grove trees, walkways and stairs as display meshes, in chunks of CHUNK metres (one ground per chunk). */
-export function city3dCanopy(canopy: CityCanopy, heightAt?: (x: number, y: number) => number): PlacedBuilding[] {
+export interface City3dCanopy {
+  buildings: PlacedBuilding[];
+  instances: GroveInstances;
+}
+const EMPTY_3D: City3dCanopy = { buildings: [], instances: { light: false, blocks: [] } };
+/** The grove seats once on the shaped ground. Only the unique limbs, platforms, walkways and stairs are baked. */
+export function city3dCanopy(canopy: CityCanopy, heightAt?: (x: number, y: number) => number): City3dCanopy {
+  const steps = city3dCanopySteps(canopy, heightAt);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
+}
+
+export function* city3dCanopySteps(canopy: CityCanopy, heightAt?: (x: number, y: number) => number): Generator<void, City3dCanopy> {
+  if (!canopy.trees.length && !canopy.walkways.length && !canopy.stairs.length) return EMPTY_3D;
   const CHUNK = 48,
     chunks = new Map<string, { mesh: Mesh; footprint: Shape[]; low: number; high: number; origin: Point; kind: string }>();
+  const blocks = new Map<string, Omit<GroveBlock, 'trunks' | 'lobes'> & { trunks: number[]; lobes: number[] }>();
   const ground = (x: number, y: number): number => {
     const h = heightAt?.(x, y);
     return Number.isFinite(h) ? h! : 0;
@@ -938,14 +1054,48 @@ export function city3dCanopy(canopy: CityCanopy, heightAt?: (x: number, y: numbe
   const light = canopy.trees.length > LIGHT_GROVE_FROM;
   // One ground per chunk (the lowest trunk foot): the display exaggeration lifts a chunk with its relief.
   const lows = new Map<string, number>();
-  for (const t of canopy.trees) {
+  const grounds = canopy.trees.map(t => {
     const k = `${Math.floor(t.x / CHUNK)}:${Math.floor(t.y / CHUNK)}`;
-    lows.set(k, Math.min(lows.get(k) ?? Infinity, ground(t.x, t.y)));
-  }
-  for (const t of canopy.trees) {
+    const g = ground(t.x, t.y);
+    lows.set(k, Math.min(lows.get(k) ?? Infinity, g));
+    return g;
+  });
+  for (let i = 0; i < canopy.trees.length; i++) {
+    if (i > 0 && i % 64 === 0) yield;
+    const t = canopy.trees[i];
     const c = chunk('grove', t.x, t.y),
-      g = ground(t.x, t.y);
-    treeMesh(c.mesh, t, g, light);
+      g = grounds[i],
+      low = lows.get(`${Math.floor(t.x / CHUNK)}:${Math.floor(t.y / CHUNK)}`)!,
+      high = g + t.h + t.r * 1.6,
+      lean = { x: (hash2(t.x, t.y, 5) - 0.5) * t.r * 0.18, y: (hash2(t.x, t.y, 6) - 0.5) * t.r * 0.18 };
+    treeDetails(c.mesh, t, g, light, lean);
+
+    const bx = Math.floor(t.x / GROVE_BLOCK) * GROVE_BLOCK,
+      by = Math.floor(t.y / GROVE_BLOCK) * GROVE_BLOCK,
+      key = `${bx}:${by}`;
+    let b = blocks.get(key);
+    if (!b) blocks.set(key, (b = { origin: [bx, by], bounds: [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity], trunks: [], lobes: [] }));
+    b.trunks.push(t.x - bx, t.y - by, g, low, t.trunk, t.h, lean.x, lean.y, Math.cos(t.seed), Math.sin(t.seed), GROVE_TRUNK_COLOR, 1);
+    const bounds = b.bounds;
+    bounds[0] = Math.min(bounds[0], t.x - t.trunk * 2.16 - Math.abs(lean.x));
+    bounds[1] = Math.min(bounds[1], t.y - t.trunk * 2.16 - Math.abs(lean.y));
+    bounds[2] = Math.min(bounds[2], low);
+    bounds[3] = Math.max(bounds[3], t.x + t.trunk * 2.16 + Math.abs(lean.x));
+    bounds[4] = Math.max(bounds[4], t.y + t.trunk * 2.16 + Math.abs(lean.y));
+    bounds[5] = Math.max(bounds[5], high);
+    t.lobes.forEach((l, j) => {
+      if (light && j > 0 && j < t.lobes.length - 1 && j % 2 === 0) return;
+      const x = l.x + lean.x,
+        y = l.y + lean.y,
+        z = g + l.z;
+      b.lobes.push(x - bx, y - by, z, low, l.r, l.r, 0, 0, 0, 0, CROWN[Math.min(CROWN.length - 1, Math.floor(l.tone * CROWN.length))], 0);
+      bounds[0] = Math.min(bounds[0], x - l.r);
+      bounds[1] = Math.min(bounds[1], y - l.r);
+      bounds[2] = Math.min(bounds[2], z - l.r * 0.25);
+      bounds[3] = Math.max(bounds[3], x + l.r);
+      bounds[4] = Math.max(bounds[4], y + l.r);
+      bounds[5] = Math.max(bounds[5], z + l.r * 0.85);
+    });
     c.footprint.push({
       outer: [
         { x: t.x - t.trunk, y: t.y - t.trunk },
@@ -955,10 +1105,12 @@ export function city3dCanopy(canopy: CityCanopy, heightAt?: (x: number, y: numbe
       ],
       holes: [],
     });
-    c.low = Math.min(c.low, lows.get(`${Math.floor(t.x / CHUNK)}:${Math.floor(t.y / CHUNK)}`)!);
-    c.high = Math.max(c.high, g + t.h + t.r * 1.6);
+    c.low = Math.min(c.low, low);
+    c.high = Math.max(c.high, high);
   }
+  let work = 0;
   for (const w of canopy.walkways) {
+    if (++work % 24 === 0) yield;
     const ga = ground(w.a.x, w.a.y),
       gb = ground(w.b.x, w.b.y),
       c = chunk('walk', (w.a.x + w.b.x) / 2, (w.a.y + w.b.y) / 2);
@@ -981,6 +1133,7 @@ export function city3dCanopy(canopy: CityCanopy, heightAt?: (x: number, y: numbe
     c.high = Math.max(c.high, ga + w.za + 1.1, gb + w.zb + 1.1);
   }
   for (const s of canopy.stairs) {
+    if (++work % 24 === 0) yield;
     const g = ground(s.x, s.y),
       c = chunk('walk', s.x, s.y);
     stairMesh(c.mesh, s, g);
@@ -996,5 +1149,8 @@ export function city3dCanopy(canopy: CityCanopy, heightAt?: (x: number, y: numbe
     c.low = Math.min(c.low, g);
     c.high = Math.max(c.high, g + s.z);
   }
-  return [...chunks.entries()].filter(([, c]) => c.mesh.faces.length).map(([key, c]) => placed(`city3d-canopy:${key}`, c.mesh, c.footprint, c.low, c.high, c.origin));
+  return {
+    buildings: [...chunks.entries()].filter(([, c]) => c.mesh.faces.length).map(([key, c]) => placed(`city3d-canopy:${key}`, c.mesh, c.footprint, c.low, c.high, c.origin)),
+    instances: { light, blocks: [...blocks.values()].map(b => ({ ...b, trunks: Float32Array.from(b.trunks), lobes: Float32Array.from(b.lobes) })) },
+  };
 }

@@ -5,17 +5,18 @@
  * one, its plan, roof kind, storeys and material become one massing piece, by the rules the town massing uses for
  * the same catalogue words (Rust `urban/massing.rs`, `material_style` and `tradition`).
  * Shared by every page that draws the vector map (V2, City Bench, sheets). */
-import type { FarmBuilding, Farmstead, Polygon, Settlement, World } from '../gen/types';
+import type { FarmBuilding, Farmstead, Polygon, Polyline, Settlement, World } from '../gen/types';
 import { placeholderUrban } from '../gen/settlements/merge';
 import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import { sampleGrid } from '../gen/core/grid';
 import { roofGrain } from './buildingMaterials';
 import { buildCityBuildings, drawRoofedBuildings, type Box, type CityBuildings, type CityPalette } from './cityCanvas';
 import { readMassing, type MassingPiece, type MassingRoof } from './cityMassing';
-import { farmBuildingRidge } from './farms';
+import { FARM_ENCLOSURES, FARM_PLATFORM_EARTH, farmBuildingRidge, farmEnclosureKind } from './farms';
 import { groundAt } from './groundTone';
 import { mapGroundSnow } from './seasonPalette';
 import type { UrbanBuildingAppearance } from './urbanBuildingStyle';
+import { footprintTerrain } from './city3d/terrainSeat';
 
 const DWELLING = /house|dwell|cottage|hall|lodge|manor/;
 /** Cover and wall a catalogue material asks for (undefined: keep the roof kind's cover, a plastered wall). */
@@ -29,6 +30,8 @@ function materialLook(material: string | undefined, pitched: boolean): [string |
       return ['shingle', 'wood'];
     case 'brick':
       return [undefined, 'brick'];
+    case 'steel':
+      return ['metal', 'steel'];
     case 'stone':
     case 'granite':
     case 'marble':
@@ -112,11 +115,16 @@ function farmPiece(b: FarmBuilding, culture: string, tone: number): MassingPiece
 
 /** The farm buildings of the land use as placed buildings carrying their massing. `altitude` gives the ground
  * height (m) that decides their snow. */
-export function farmPlacedBuildings(farmsteads: readonly Farmstead[], altitude: (x: number, y: number) => number): PlacedBuilding[] {
+export function farmPlacedBuildings(farmsteads: readonly Farmstead[], altitude: (x: number, y: number) => number, raiseYard = true): PlacedBuilding[] {
   const out: PlacedBuilding[] = [];
   farmsteads.forEach((f, fi) => {
     const culture = f.culture ?? '',
-      ground = altitude(f.pos.x, f.pos.y);
+      sample = altitude(f.pos.x, f.pos.y),
+      ground = Number.isFinite(sample) ? sample : 0;
+    const platform = raiseYard ? f.plots?.find(p => p.kind === 'platform' && p.poly.length >= 3) : undefined;
+    const platformGround = platform ? footprintTerrain([{ outer: platform.poly, holes: [] }], altitude) : undefined;
+    const platformBase = platformGround?.low ?? ground;
+    const platformTop = platform ? (platformGround?.high ?? ground) + (platform.heightM ?? 1.5) : undefined;
     const parts: FarmBuilding[] = f.parts?.length ? f.parts : f.buildings.map(poly => ({ poly, use: 'house', arch: '', roof: 'gable' as const }));
     parts.forEach((b, bi) => {
       if (b.poly.length < 3) return;
@@ -139,7 +147,7 @@ export function farmPlacedBuildings(farmsteads: readonly Farmstead[], altitude: 
         variant_id: b.use,
         sitePart: { use: b.use, form: b.use, passage: b.passage },
         transform: { origin: { x: f.pos.x, y: f.pos.y }, orientation_deg: (Math.atan2(c.y - a.y, c.x - a.x) * 180) / Math.PI },
-        ground_z_m: Number.isFinite(ground) ? ground : 0,
+        ground_z_m: platformTop ?? ground,
         footprint,
         roof_footprint: footprint,
         courtyards: [],
@@ -153,68 +161,83 @@ export function farmPlacedBuildings(farmsteads: readonly Farmstead[], altitude: 
         simplification: 'recipe_volumes',
         diagnostics: [],
         resolved: null,
-        programme: { massing: sent ?? [farmPiece(b, culture, tone)], ...(f.cultivation === 'fungal' ? { fungalFarm: true } : {}) },
+        programme: { massing: sent ?? [farmPiece(b, culture, tone)], ...(platform ? { fixedFarmSeat: true } : {}), ...(f.cultivation === 'fungal' ? { fungalFarm: true } : {}) },
       } as unknown as PlacedBuilding);
     });
-    // The lot's works stand as bodies too: rail fences round the pens and paddocks (pieces of at most 8 m, each on
-    // its own ground), the threshing floor a low beaten-earth disc on a stone rim. Same records as the buildings.
-    (f.plots ?? []).forEach((plot, pi) => {
-      if (plot.poly.length < 3) return;
-      const body = (id: string, poly: Polygon, piece: MassingPiece): void => {
-        const footprint = [{ outer: poly, holes: [] }],
-          c = centreOf(poly),
-          z = altitude(c.x, c.y);
-        out.push({
-          id,
-          parcel_id: `farm:${fi}`,
-          function: 'warehouse',
-          culture: { culture, pack: '', mode: 'historical_inspired', borrowing: null },
-          recipe_id: 'silhouette',
-          variant_id: plot.kind,
-          ...(plot.kind === 'pen' || plot.kind === 'paddock' ? { sitePart: { use: plot.kind, form: 'farm-rail' } } : {}),
-          transform: { origin: c, orientation_deg: 0 },
-          ground_z_m: Number.isFinite(z) ? z : ground,
-          footprint,
-          roof_footprint: footprint,
-          courtyards: [],
-          circulation: [],
-          entrance: c,
-          access_id: '',
-          volumes: [],
-          useful_area_m2: 0,
-          domestic_units: 0,
-          structural_features: [],
-          simplification: 'recipe_volumes',
-          diagnostics: [],
-          resolved: null,
-          programme: { massing: [piece] },
-        } as unknown as PlacedBuilding);
-      };
-      if (plot.kind === 'threshing-floor') body(`farm:${fi}:floor:${pi}`, plot.poly, { floors: 1, eave_m: 0.25, rise_m: 0, roof: 'flat', ridges: [], cover: 'earth', wall: 'stone', tone: 0.5 } as MassingPiece);
-      if (plot.kind !== 'pen' && plot.kind !== 'paddock') return;
-      plot.poly.forEach((a, k) => {
-        const b = plot.poly[(k + 1) % plot.poly.length],
+    const body = (id: string, use: string, poly: Polygon, piece: MassingPiece, seat?: number, form?: string): void => {
+      const footprint = [{ outer: poly, holes: [] }],
+        c = centreOf(poly),
+        z = seat ?? altitude(c.x, c.y);
+      out.push({
+        id: `farm:${fi}:${id}`,
+        parcel_id: `farm:${fi}`,
+        function: 'warehouse',
+        culture: { culture, pack: '', mode: 'historical_inspired', borrowing: null },
+        recipe_id: 'silhouette',
+        variant_id: use,
+        ...(form ? { sitePart: { use, form } } : {}),
+        transform: { origin: c, orientation_deg: 0 },
+        ground_z_m: Number.isFinite(z) ? z : ground,
+        footprint,
+        roof_footprint: footprint,
+        courtyards: [],
+        circulation: [],
+        entrance: c,
+        access_id: '',
+        volumes: [],
+        useful_area_m2: 0,
+        domestic_units: 0,
+        structural_features: [],
+        simplification: 'recipe_volumes',
+        diagnostics: [],
+        resolved: null,
+        programme: { massing: [piece], ...(seat !== undefined ? { fixedFarmSeat: true } : {}) },
+      } as unknown as PlacedBuilding);
+    };
+    const flat = (height: number, cover: string, wall: string, tint?: string): MassingPiece => ({ floors: 1, eave_m: height, rise_m: 0, roof: 'flat', ridges: [], cover, wall, tone: 0.5, tint });
+    // Short pieces keep each run on its own terrain. Yard paths already have an opening at the gate.
+    const enclosure = (id: string, use: string, path: Polyline, closed: boolean, width: number, piece: MassingPiece, seat?: number, form?: string): void => {
+      const h = width / 2;
+      for (let k = 0; k < path.length - (closed ? 0 : 1); k++) {
+        const a = path[k],
+          b = path[(k + 1) % path.length],
           length = Math.hypot(b.x - a.x, b.y - a.y);
-        if (length < 0.5) return;
+        if (length < 0.5) continue;
         const ux = (b.x - a.x) / length,
           uy = (b.y - a.y) / length,
-          n = Math.ceil(length / 8),
-          h = 0.12;
+          n = Math.ceil(length / 8);
         for (let j = 0; j < n; j++) {
           const s0 = (length * j) / n,
             s1 = (length * (j + 1)) / n;
           body(
-            `farm:${fi}:fence:${pi}:${k}:${j}`,
+            `${id}:${k}:${j}`,
+            use,
             [
               { x: a.x + ux * s0 - uy * h, y: a.y + uy * s0 + ux * h },
               { x: a.x + ux * s1 - uy * h, y: a.y + uy * s1 + ux * h },
               { x: a.x + ux * s1 + uy * h, y: a.y + uy * s1 - ux * h },
               { x: a.x + ux * s0 + uy * h, y: a.y + uy * s0 - ux * h },
             ],
-            { floors: 1, eave_m: 1.1, rise_m: 0, roof: 'flat', ridges: [], cover: 'shingle', wall: 'wood', tone: 0.4 } as MassingPiece,
+            piece,
+            seat,
+            form,
           );
         }
-      });
+      }
+    };
+    if (platform && platformTop !== undefined) body('platform', 'platform', platform.poly, flat(platformTop - platformBase, 'earth', 'earth', FARM_PLATFORM_EARTH), platformBase);
+    const kind = farmEnclosureKind(f);
+    if (raiseYard && kind !== 'none' && f.walls?.length) {
+      const look = FARM_ENCLOSURES[kind],
+        piece = flat(look.height, look.cover, look.wall, look.color);
+      f.walls.forEach((path, i) => enclosure(`yard:${i}`, kind, path, false, look.width, piece, platformTop, kind === 'fence' ? 'farm-rail' : undefined));
+    }
+    // The lot's works stand as bodies too: rail fences round the pens and paddocks (pieces of at most 8 m, each on
+    // its own ground), the threshing floor a low beaten-earth disc on a stone rim. Same records as the buildings.
+    (f.plots ?? []).forEach((plot, pi) => {
+      if (plot.poly.length < 3) return;
+      if (plot.kind === 'threshing-floor') body(`floor:${pi}`, plot.kind, plot.poly, flat(0.25, 'earth', 'stone'), platformTop);
+      if (plot.kind === 'pen' || plot.kind === 'paddock') enclosure(`fence:${pi}`, plot.kind, plot.poly, true, 0.24, { ...flat(1.1, 'shingle', 'wood'), tone: 0.4 }, plot.kind === 'pen' ? platformTop : undefined, 'farm-rail');
     });
   });
   return out;
@@ -229,7 +252,7 @@ export function farmCityBuildings(world: World, Path?: new () => Path2D): CityBu
   let buildings = retained.get(farmsteads);
   if (!buildings) {
     const height = world.terrain?.height;
-    buildings = buildCityBuildings({ buildings: farmPlacedBuildings(farmsteads, (x, y) => (height ? sampleGrid(height, x, y) : 0)) });
+    buildings = buildCityBuildings({ buildings: farmPlacedBuildings(farmsteads, (x, y) => (height ? sampleGrid(height, x, y) : 0), false) });
     for (const item of buildings.items) item.snowAltitude = item.building.ground_z_m;
     buildings.pathClass = Path;
     retained.set(farmsteads, buildings);

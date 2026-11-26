@@ -33,7 +33,8 @@ import type { LiveCityEnv, LiveFrame, LiveLayer, LiveLayerStats } from '../../li
 import type { DrapeCanvas, DrapeSource } from '../../world/contract';
 import type { ResolvedAppearance } from '../../appearanceRecipe';
 import type { ExportLayers } from '../../exportLayers';
-import type { Box, CityBuildings, CityLayers, CityLod, CityPalette, CityScene } from '../model/contract';
+import { buildingTowns, type BuildingSet } from '../gl/buildingSet';
+import type { Box, CityLayers, CityLod, CityPalette, CityScene } from '../model/contract';
 import { selectCityLod } from '../levels';
 import { planFrame, planLineWidthPx } from '../planLook';
 import { buildingsShown, roofPansShown, roofsGrained } from '../buildingLook';
@@ -122,9 +123,9 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   const planOnly = (): boolean => !!env.volumeBuildings?.();
   /** The merge in progress, the scene handed to the renderer, the buildings last handed to it (`withBuildings`: they
    * were merged for this town), builds still running. */
-  let merging: Generator<void, { plan: CityScene; buildings?: CityBuildings }> | undefined;
+  let merging: Generator<void, { plan: CityScene; buildings?: BuildingSet }> | undefined;
   let requested: CityScene | undefined,
-    built: CityBuildings | undefined,
+    built: BuildingSet | undefined,
     withBuildings = false,
     building = 0;
   let lod: CityLod | undefined,
@@ -162,7 +163,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, instances: 0, gpuBytes: 0, uploadMs: 0, buildMs: 0, packMs: 0, prepareMs: 0, warmMs: 0, farTextures: 0 };
 
   /** One pass over the scene, at rest: what the look's townRestGaps needs to know of the towns. */
-  function townContent(plan: CityScene, buildings: CityBuildings | undefined): TownContent {
+  function townContent(plan: CityScene, buildings: BuildingSet | undefined): TownContent {
     const streetRoles = new Set<string>();
     for (const s of plan.streets) streetRoles.add(s.role);
     return {
@@ -172,7 +173,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       canopy: towns.canopies().some(c => c.trees.length > 0 || c.dwellings.length > 0 || c.walkways.length > 0),
       sites: towns.sites(),
       housePlans: towns.housePlans(),
-      millMarks: !!buildings?.items.some(b => !!b.marks?.length),
+      millMarks: !!buildings && buildingTowns(buildings).some(t => t.set.items.some(b => !!b.marks?.length)),
       reserves: plan.blocks.some(b => b.kind.startsWith('reserve')) || plan.parcels.some(p => p.use === 'reserve'),
     };
   }
@@ -652,8 +653,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
             coming = stale && !!requested;
             stale = false;
             requested = scene.plan;
-            track(r.setScene(scene.plan, scene.buildings));
-          } else if (scene.buildings) track(r.setBuildings(scene.buildings));
+            track(r.setScene(scene.plan, scene.buildings, towns.uploadOptions));
+          } else if (scene.buildings) track(r.setBuildings(scene.buildings, ...(towns.uploadOptions ? [towns.uploadOptions] : [])));
         });
         stats.buildMs = (stats.buildMs ?? 0) + performance.now() - start;
         return true;
@@ -668,7 +669,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
         const next = towns.buildingsFor(viewportOf(frame), 1 / frame.view.scale);
         if (next && next !== built) {
           built = next;
-          track(renderer.setBuildings(next));
+          track(renderer.setBuildings(next, ...(towns.uploadOptions ? [towns.uploadOptions] : [])));
           return true;
         }
       }
@@ -676,7 +677,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       const l = lookNow(),
         water = env.water?.();
       if (l.lamps && !lamps.ready(requested, towns.houses())) {
-        if (lamps.step(requested, towns.houses(), parallelLink)) {
+        if (lamps.step(requested, towns.houses(), parallelLink, towns.uploadOptions)) {
           drapeRevision++;
           env.invalidate();
         }
@@ -743,8 +744,9 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       try {
         const lists = towns.enclosures();
         if (!yardsFor || yardsFor.length !== lists.length || yardsFor.some((x, i) => x !== lists[i])) {
-          renderer.setYards(lists);
+          const changed = renderer.setYards(lists);
           yardsFor = lists;
+          if (!changed) return true;
           content = undefined;
           meshBytes = renderer.stats().gpuBytes;
           stats.gpuBytes = bytes();

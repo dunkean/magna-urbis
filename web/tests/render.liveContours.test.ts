@@ -1,16 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createContourInk, type ContourInkSource } from '../src/render/live/contourInk';
 import { createLiveRasterizer } from '../src/render/gpu/liveRasterizer';
-import { RecordingCanvas } from '../src/render/gpu/recorder';
-import type { LiveRasterizer } from '../src/render/gpu/contract';
+import { RecordingCanvas, RecordingContext } from '../src/render/gpu/recorder';
+import type { ContourTint, LiveRasterizer } from '../src/render/gpu/contract';
 import type { LiveFrame } from '../src/render/live/contract';
 
 vi.mock('../src/render/gpu/liveRasterizer', () => ({ createLiveRasterizer: vi.fn() }));
 
 function fixture() {
+  const tint: ContourTint = { rgba: [0.4, 0.2, 0.1, 0.5] };
   const canvas = new RecordingCanvas(4000, 4000),
-    ctx = canvas.getContext('2d')!;
-  ctx.drawImage({ width: 8192, height: 8192 } as HTMLCanvasElement, 0, 0, 4000, 4000);
+    ctx = canvas.getContext('2d')! as unknown as RecordingContext;
+  ctx.drawContourImage({ width: 8192, height: 8192 } as HTMLCanvasElement, tint, 0, 0, 8192, 8192, 0, 0, 4000, 4000);
   const initial: ContourInkSource = { terrain: {}, list: canvas.finish() };
   let source: ContourInkSource | null | undefined = initial;
   const raster = {
@@ -31,6 +32,7 @@ function fixture() {
   const frame = (scale = 1, x = 0, dpr = 1): LiveFrame => ({ view: { cx: x, cy: 0, scale }, worldToPixel: [scale * dpr, scale * dpr, -x * scale * dpr, 0], width: 1000, height: 800, quality: 'full' }) as unknown as LiveFrame;
   return {
     initial,
+    tint,
     ink,
     raster,
     frame,
@@ -41,12 +43,13 @@ function fixture() {
 }
 
 describe('retained overlay contours', () => {
-  it('uploads once across arbitrary zoom, pan and pixel-ratio changes, retaining op and path identity', () => {
+  it('uploads once across tint, zoom, pan and pixel-ratio changes, retaining sprite identity', () => {
     const f = fixture();
     expect(f.ink.work(1000, f.frame())).toBe(false);
     f.ink.draw(f.frame());
     const parts = vi.mocked(f.raster.replayLive).mock.calls[0][0],
       ops = parts[0].list.ops.slice();
+    f.tint.rgba = [0.2, 0.3, 0.1, 0.8];
     for (const scale of [0.01, 0.12, 0.8, 1, 4, 32]) {
       const frame = f.frame(scale, 350, 2);
       expect(f.ink.work(1000, frame)).toBe(false);
@@ -55,6 +58,7 @@ describe('retained overlay contours', () => {
       expect(shown[0].list.ops[0]).toBe(ops[0]);
       expect(shown[0].list.ops).toHaveLength(1);
       expect(shown[0].list.ops[0].type).toBe('sprites');
+      expect(shown[0].list.ops[0]).toMatchObject({ contourTint: { rgba: [0.2, 0.3, 0.1, 0.8] } });
       expect(shown[0].post).toEqual([scale * 2, 0, 0, scale * 2, -700 * scale, 0]);
     }
     expect(f.raster.prepareSteps).toHaveBeenCalledTimes(1);

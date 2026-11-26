@@ -12,7 +12,7 @@
 import type { Enclosure, Point, Shape } from '../../../rust/bridge/urban';
 import { polygonArea } from '../gen/core/geom';
 import type { Box, CityLod, CityPalette, CityScene } from './cityCanvas';
-import { META, STROKE_STRIDE, type CityGlStrokes } from './cityGlBuild';
+import { orderedStrokes, META, STROKE_STRIDE, type CityGlStrokes } from './cityGlBuild';
 import { earcut } from './cityGlEarcut';
 import { moatSpans, moatSpanShape } from './city3dMoat';
 import { MOAT_FIXED_PARTS, MOAT_PARTS, moatSpec, moatBucket, moatFormId, moatFormOf, moatInk, moatParts, moatPlanInk, moatState, type MoatForm, type MoatPart, type MoatSpec, type MoatState } from './moatModel';
@@ -378,18 +378,6 @@ export function cityWallDetails(scene: CityScene): Array<WallDetail | undefined>
   }
   return list;
 }
-const strokedScenes = new WeakMap<CityScene, CityScene>();
-/** The scene with only the walls drawn as plain strokes and disc towers (those without detailed fortifications). */
-export function cityStrokedWalls(scene: CityScene): CityScene {
-  let s = strokedScenes.get(scene);
-  if (!s) {
-    const d = cityWallDetails(scene);
-    s = d.some(Boolean) ? { ...scene, walls: scene.walls.filter((_, i) => !d[i]) } : scene;
-    strokedScenes.set(scene, s);
-  }
-  return s;
-}
-
 // ---------------------------------------------------------------- paint
 interface Tone {
   edge: string;
@@ -620,15 +608,19 @@ export function drawCityWalls(ctx: CanvasRenderingContext2D, scene: CityScene, o
 /** Wall stroke instances for cityGl: legacy walls exactly as before (feature = wall
  * index), detailed walls as body / core / stakes / arcade instances (features
  * walls + 4i + k), so their colours stay in the per-feature tables. */
-export function cityWallStrokes(scene: CityScene, origin: Point): CityGlStrokes {
+export function cityWallStrokes(scene: CityScene, origin: Point, previous?: { scene: CityScene; strokes: CityGlStrokes }): CityGlStrokes {
   const details = cityWallDetails(scene),
     n = scene.walls.length;
-  let segs = 0;
-  scene.walls.forEach((w, i) => {
-    const d = details[i];
-    if (!d) segs += w.pieces.reduce((t, p) => t + Math.max(0, p.length - 1), 0);
-    else for (const p of d.pieces) segs += (p.points.length - (p.closed ? 0 : 1)) * 3;
-  });
+  const old = previous && cityWallDetails(previous.scene);
+  return orderedStrokes(
+    scene.walls.map((w, i) => {
+      if (previous?.strokes.parts && previous.scene.walls[i] === w && old?.[i] === details[i] && (!details[i] || previous.scene.walls.length === n)) return previous.strokes.parts[i];
+      return wallStrokeRecord(w, details[i], i, n, origin);
+    }),
+  );
+}
+function wallStrokeRecord(w: CityScene['walls'][number], d: WallDetail | undefined, i: number, n: number, origin: Point): ArrayBuffer {
+  const segs = d ? d.pieces.reduce((t, p) => t + (p.points.length - (p.closed ? 0 : 1)) * 3, 0) : w.pieces.reduce((t, p) => t + Math.max(0, p.length - 1), 0);
   const buffer = new ArrayBuffer(Math.max(1, segs) * STROKE_STRIDE * 4),
     f = new Float32Array(buffer),
     u = new Uint32Array(buffer);
@@ -662,13 +654,11 @@ export function cityWallStrokes(scene: CityScene, origin: Point): CityGlStrokes 
       u[last * STROKE_STRIDE + 8] |= META.buttEnd;
     }
   };
-  scene.walls.forEach((wall, i) => {
-    const d = details[i];
-    if (!d) {
-      const palisade = wall.kind === 'palisade';
-      for (const p of wall.pieces) line(p, false, palisade ? 2 : 3.5, 2.4, i, 0, true);
-      return;
-    }
+
+  if (!d) {
+    const palisade = w.kind === 'palisade';
+    for (const p of w.pieces) line(p, false, palisade ? 2 : 3.5, 2.4, i, 0, true);
+  } else {
     const f0 = n + 4 * i;
     for (const p of d.pieces) {
       if (p.water) {
@@ -680,8 +670,8 @@ export function cityWallStrokes(scene: CityScene, origin: Point): CityGlStrokes 
       if (!d.stakes) line(p.points, p.closed, (d.width - 2 * d.edge) / 0.45, 0, f0 + 1, 0, !p.closed);
       else line(p.points, p.closed, d.family === 'hedge' ? 2 : 1.5, d.bank ? 2 : 2.4, f0 + 2, 0, !p.closed);
     }
-  });
-  return { data: buffer.slice(0, k * STROKE_STRIDE * 4), count: k, firstWithRank: new Array(16).fill(0) };
+  }
+  return buffer.slice(0, k * STROKE_STRIDE * 4);
 }
 const rgbOf = (hex: string): [number, number, number] => {
   const v = parseInt(hex.slice(1), 16);

@@ -47,11 +47,12 @@ const centroid = (rings: Vec2[][]): Vec2 | undefined => {
   return { x: (Math.min(...points.map(p => p.x)) + Math.max(...points.map(p => p.x))) / 2, y: (Math.min(...points.map(p => p.y)) + Math.max(...points.map(p => p.y))) / 2 };
 };
 /** Native objects without generated names are available for naming without changing city geometry. */
-export function nativeLabelCandidates(world: World): LabelCandidate[] {
+export function nativeLabelCandidates(world: World, townKey?: string): LabelCandidate[] {
   const out: LabelCandidate[] = [];
   const native = nativeCityRecords(world) ?? {};
   const towns = [{ key: 'main', urban: world.urban }, ...(world.settlements ?? []).filter(s => !s.main && s.key !== 'main')];
   for (const town of towns) {
+    if (townKey !== undefined && town.key !== townKey && !(town.key === 'main' && world.settlements?.some(place => place.key === townKey && place.main))) continue;
     if (native[town.key]) continue;
     const urban = town.urban,
       prefix = town.key === 'main' ? 'classic' : `classic:${encodeURIComponent(town.key)}`;
@@ -69,6 +70,7 @@ export function nativeLabelCandidates(world: World): LabelCandidate[] {
     }
   }
   for (const [cityKey, city] of Object.entries(nativeCityRecords(world) ?? {})) {
+    if (townKey !== undefined && cityKey !== townKey) continue;
     const prefix = encodeURIComponent(cityKey);
     for (const layout of city.layouts ?? []) {
       for (const [index, quarter] of layout.quarters.entries()) {
@@ -119,10 +121,10 @@ export function labelCandidates(world: World): LabelCandidate[] {
   return [...entries, ...nativeLabelCandidates(world).filter(e => !ids.has(e.id))];
 }
 /** Applied after generation so author text remains independent of display-language recomposition. */
-export function applyLabelEdits(world: World, edits?: Record<string, LabelEdit>): void {
+export function applyLabelEdits(world: World, edits?: Record<string, LabelEdit>, townKey?: string): void {
   if (!world.names || !edits || !Object.keys(edits).length) return;
   const originals = new Map(world.names.entries.map(e => [e.id, e]));
-  const extra = new Map(nativeLabelCandidates(world).map(e => [e.id, e]));
+  const extra = new Map(nativeLabelCandidates(world, townKey).map(e => [e.id, e]));
   for (const [id, edit] of Object.entries(edits)) {
     const existing = originals.get(id),
       candidate = extra.get(id);

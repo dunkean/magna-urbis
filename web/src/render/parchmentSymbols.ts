@@ -1,5 +1,7 @@
 import { unzlibSync } from 'fflate';
 import sheet from './assets/parchment-symbols.json';
+import type { SpriteTint } from './gpu/contract';
+import { RecordingContext } from './gpu/recorder';
 import type { CanvasLike } from './canvas';
 
 /** Hand-drawn parchment symbols (assets/parchment-symbols.json, see PROVENANCE.md): two masks per cell, ink and wash.
@@ -13,14 +15,13 @@ const rgb = (h: string): [number, number, number] => {
 };
 
 /** One tint (ink colour, wash colour, wash strength) of the sheet. Every cell lives in one atlas canvas (2 px
- * transparent gutters), so a run of stamps shares one image source: the GPU vector engine draws it as one instanced batch. */
+ * transparent gutters). With null colours it stores coverage for the GPU pen shader. */
 export class ParchmentSymbols {
   private atlas: CanvasImageSource | null | undefined;
   private stride = 0;
   private columns = 1;
   constructor(
-    private ink: string,
-    private wash: string,
+    private readonly colors: readonly [ink: string, wash: string] | null,
     private washAlpha: number,
     private makeCanvas: (w: number, h: number) => CanvasLike | null,
   ) {}
@@ -28,7 +29,7 @@ export class ParchmentSymbols {
   private sheetImage(): CanvasImageSource | null {
     if (this.atlas !== undefined) return this.atlas;
     this.atlas = null;
-    if (!/^#[\da-f]{6}/i.test(this.ink) || !/^#[\da-f]{6}/i.test(this.wash)) return null;
+    if (this.colors && !this.colors.every(color => /^#[\da-f]{6}/i.test(color))) return null;
     masks ??= unzlibSync(Uint8Array.from(atob(sheet.zlib), c => c.charCodeAt(0)));
     const n = sheet.size,
       cells = Math.floor(masks.length / (n * n * 2)),
@@ -39,8 +40,8 @@ export class ParchmentSymbols {
       cx = canvas?.getContext('2d');
     if (!canvas || !cx) return null;
     const image = cx.createImageData(columns * stride, rows * stride),
-      [ir, ig, ib] = rgb(this.ink),
-      [wr, wg, wb] = rgb(this.wash),
+      [ir, ig, ib] = this.colors ? rgb(this.colors[0]) : [0, 0, 0],
+      [wr, wg, wb] = this.colors ? rgb(this.colors[1]) : [0, 0, 0],
       w = columns * stride;
     for (let cell = 0; cell < cells; cell++) {
       const base = cell * n * n * 2,
@@ -52,6 +53,14 @@ export class ParchmentSymbols {
           a = ai + aw;
         if (a <= 0) continue;
         const o = ((oy + Math.floor(i / n)) * w + ox + (i % n)) * 4;
+        if (!this.colors) {
+          // Opaque data pixels preserve the two contributions through Canvas and premultiplied texture upload.
+          // Quantise their sum once, as the coloured Canvas sheet does for its alpha.
+          image.data[o] = masks[base + i * 2];
+          image.data[o + 1] = Math.round(a * 255) - image.data[o];
+          image.data[o + 3] = 255;
+          continue;
+        }
         image.data[o] = (ir * ai + wr * aw) / a;
         image.data[o + 1] = (ig * ai + wg * aw) / a;
         image.data[o + 2] = (ib * ai + wb * aw) / a;
@@ -65,12 +74,16 @@ export class ParchmentSymbols {
   }
 
   /** Stamp a cell centred on (x, y), `size` map units wide. */
-  draw(ctx: CanvasRenderingContext2D, cell: number, x: number, y: number, size: number): void {
+  draw(ctx: CanvasRenderingContext2D, cell: number, x: number, y: number, size: number, tint?: SpriteTint): void {
     const image = this.sheetImage();
     if (!image) return;
     const n = sheet.size,
       sx = (cell % this.columns) * this.stride + 1,
       sy = Math.floor(cell / this.columns) * this.stride + 1;
+    if (tint && ctx instanceof RecordingContext) {
+      ctx.drawImage(image, sx, sy, n, n, x - size / 2, y - size / 2, size, size, tint);
+      return;
+    }
     ctx.drawImage(image, sx, sy, n, n, x - size / 2, y - size / 2, size, size);
   }
 }

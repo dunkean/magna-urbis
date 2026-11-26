@@ -136,6 +136,40 @@ export function drawNightBuildings(ctx: CanvasRenderingContext2D, buildings: rea
   ctx.restore();
 }
 
+export function streetLamps(s: CityScene['streets'][number], camp: boolean, out: number[]): void {
+  if (s.rank > 2 || s.role === 'track' || s.role === 'ford' || camp) return;
+  const p = s.street.path,
+    spacing = s.rank <= 1 ? 30 : 46;
+  let next = 9 + (hash(`${s.layout}:${s.index}`) % 14);
+  for (let i = 1; i < p.length; i++) {
+    const a = p[i - 1],
+      b = p[i],
+      dx = b.x - a.x,
+      dy = b.y - a.y,
+      len = Math.hypot(dx, dy);
+    if (!len) continue;
+    while (next < len) {
+      const side = s.width * 0.4;
+      out.push(a.x + (dx * next) / len - (dy / len) * side, a.y + (dy * next) / len + (dx / len) * side, LAMP_REACH, STREET_LAMP);
+      next += spacing;
+    }
+    next -= len;
+  }
+}
+export function blockLamps(b: CityScene['blocks'][number], camp: boolean, out: number[]): void {
+  const ring = b.shape.outer;
+  if (b.kind !== 'place' || !ring.length) return;
+  if (!camp) out.push(ring[0].x, ring[0].y, LAMP_REACH, STREET_LAMP);
+  else out.push(ring.reduce((s, q) => s + q.x, 0) / ring.length, ring.reduce((s, q) => s + q.y, 0) / ring.length, 10, FIRE);
+}
+export function parcelLamps(p: CityScene['parcels'][number], camp: boolean, out: number[]): void {
+  const front = p.source.front;
+  if (p.use !== 'plot' || !front || !camp) return;
+  const h = hash(p.id ?? `${p.layout}:${p.index}`);
+  if (h % 4) return;
+  const t = 0.25 + ((h >>> 4) % 50) / 100;
+  out.push(front[0].x + (front[1].x - front[0].x) * t, front[0].y + (front[1].y - front[0].y) * t, 5.5 + ((h >>> 10) % 25) / 10, FIRE * (0.75 + ((h >>> 16) % 50) / 100));
+}
 const lampsOf = new WeakMap<CityScene, Float32Array>();
 /** The lanterns of a town's main streets and squares, and the fires of its camps (hearthLit: no lantern, a fire on each
  * common ground and before one dwelling in four, at the front of its lot): x, y, reach (m) and strength of each, kept per
@@ -143,42 +177,10 @@ const lampsOf = new WeakMap<CityScene, Float32Array>();
 export function nightLamps(scene: CityScene): Float32Array {
   const held = lampsOf.get(scene);
   if (held) return held;
-  const out: number[] = [],
-    camp = (layout: number): boolean => hearthLit(scene.layouts[layout]?.culture);
-  for (const s of scene.streets) {
-    if (s.rank > 2 || s.role === 'track' || s.role === 'ford' || camp(s.layout)) continue;
-    const p = s.street.path,
-      spacing = s.rank <= 1 ? 30 : 46;
-    let next = 9 + (hash(`${s.layout}:${s.index}`) % 14);
-    for (let i = 1; i < p.length; i++) {
-      const a = p[i - 1],
-        b = p[i],
-        dx = b.x - a.x,
-        dy = b.y - a.y,
-        len = Math.hypot(dx, dy);
-      if (!len) continue;
-      while (next < len) {
-        const side = s.width * 0.4;
-        out.push(a.x + (dx * next) / len - (dy / len) * side, a.y + (dy * next) / len + (dx / len) * side, LAMP_REACH, STREET_LAMP);
-        next += spacing;
-      }
-      next -= len;
-    }
-  }
-  for (const b of scene.blocks) {
-    const ring = b.shape.outer;
-    if (b.kind !== 'place' || !ring.length) continue;
-    if (!camp(b.layout)) out.push(ring[0].x, ring[0].y, LAMP_REACH, STREET_LAMP);
-    else out.push(ring.reduce((s, q) => s + q.x, 0) / ring.length, ring.reduce((s, q) => s + q.y, 0) / ring.length, 10, FIRE);
-  }
-  for (const p of scene.parcels) {
-    const front = p.source.front;
-    if (p.use !== 'plot' || !front || !camp(p.layout)) continue;
-    const h = hash(p.id ?? `${p.layout}:${p.index}`);
-    if (h % 4) continue;
-    const t = 0.25 + ((h >>> 4) % 50) / 100;
-    out.push(front[0].x + (front[1].x - front[0].x) * t, front[0].y + (front[1].y - front[0].y) * t, 5.5 + ((h >>> 10) % 25) / 10, FIRE * (0.75 + ((h >>> 16) % 50) / 100));
-  }
+  const out: number[] = [];
+  for (const s of scene.streets) streetLamps(s, hearthLit(scene.layouts[s.layout]?.culture), out);
+  for (const b of scene.blocks) blockLamps(b, hearthLit(scene.layouts[b.layout]?.culture), out);
+  for (const p of scene.parcels) parcelLamps(p, hearthLit(scene.layouts[p.layout]?.culture), out);
   const lamps = Float32Array.from(out);
   lampsOf.set(scene, lamps);
   return lamps;

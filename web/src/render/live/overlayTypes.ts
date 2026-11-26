@@ -35,6 +35,9 @@ export interface OverlayHost {
   active(): boolean;
   /** Everything a retained region depends on besides its rectangle and `arrivals`; undefined when it cannot be recorded. */
   key(scale: number, dpr: number, light: boolean): string | undefined;
+  /** Region-limited changes to otherwise compatible recordings. */
+  contentRevision?(): number;
+  contentChanges?(since: number): readonly Rect4[] | undefined;
   /** Changes when a product made per view arrives (contour paths, the water raster of the view): a region with a
    * provisional band, recorded before, is made again; the others stay valid. */
   arrivals(): number;
@@ -88,10 +91,14 @@ export interface Region extends OverlayPlan {
   /** A band was drawn without a product still being made; `arrivals` was this when the region began. */
   provisional: boolean;
   arrivals: number;
+  content?: number;
+  /** A pending refresh borrows unchanged bands from the shown region until it completes. */
+  reuse?: { source: Region; boxes: readonly Rect4[]; bands: Set<Band> };
 }
 
 export const covers = (outer: Rect4, inner: Rect4): boolean => outer.minX <= inner.minX && outer.minY <= inner.minY && outer.maxX >= inner.maxX && outer.maxY >= inner.maxY;
 export const meets = (a: Rect4, b: Rect4): boolean => a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY;
+export const meetsChange = (a: Rect4, b: Rect4, pad: number): boolean => a.minX - pad <= b.maxX && b.minX <= a.maxX + pad && a.minY - pad <= b.maxY && b.minY <= a.maxY + pad;
 export const beyond = (k: number, ratio: number): boolean => k >= ratio || k <= 1 / ratio;
 
 /** Recorded pixels kept around a band for its bake gutter and antialiasing reach. */

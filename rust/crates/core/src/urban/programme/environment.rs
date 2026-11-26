@@ -20,12 +20,7 @@ pub(super) fn measure(
     let environment = crate::urban::par::map(&layout.blocks, |block, b| {
         let c = centroid(&b.shape);
         let h = surface.height_at(c);
-        let slope = b
-            .shape
-            .outer
-            .iter()
-            .map(|p| (surface.height_at(*p) - h).abs() / dist(*p, c).max(1.0))
-            .fold(0.0, f64::max);
+        let slope = block_slope(surface, &b.shape, c, h);
         let front = water_front(&surface, &b.shape).or(quay_water[block]);
         BlockEnvironment {
             pressure: if surface.wet(c) {
@@ -46,11 +41,17 @@ pub(super) fn measure(
     (block_contacts, environment)
 }
 
+pub(in crate::urban) fn block_slope(surface: Surface<'_>, shape: &Shape, center: Point, height: f64) -> f64 {
+    shape.outer.iter()
+        .map(|&p| (surface.height_at(p) - height).abs() / dist(p, center).max(1.0))
+        .fold(0.0, f64::max)
+}
+
 /// A coastal contour can lie a few micrometres outside the exact land after
 /// clipping. A wet boundary vertex alone must not disqualify an otherwise dry
 /// block. Only these suspicious blocks need a boolean clip; interiors retain
 /// the cheap point test. This is programme eligibility, not building clearance.
-pub(super) fn block_is_wet(surface: Surface<'_>, shape: &Shape, center: Point) -> bool {
+pub(in crate::urban) fn block_is_wet(surface: Surface<'_>, shape: &Shape, center: Point) -> bool {
     if surface.wet(center) {
         return true;
     }

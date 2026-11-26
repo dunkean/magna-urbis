@@ -8,7 +8,7 @@
  */
 import { RecOnlyPath2D } from '../../render/gpu/path';
 import { RecordingCanvas, RecordingContext } from '../../render/gpu/recorder';
-import type { DisplayList } from '../../render/gpu/contract';
+import type { ContourTint, DisplayList } from '../../render/gpu/contract';
 import { createContourInk, type ContourInkSource, type OverlayInk } from '../../render/live/contourInk';
 import { terrainStyle } from '../../render/terrainStyle';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
@@ -19,7 +19,7 @@ import type { Rect } from '../../render/tileindex';
 import { cityContourPaths, cityFineContours, cityContoursPending, cityContourPathsPending, cityContourPathsReady } from '../../render/cityContours';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../../render/strokes';
 import { countWork } from '../../render/workCount';
-import { contourRaster, type ContourRaster } from '../../render/contourRaster';
+import { contourRaster, contourTint, paintContourRaster, type ContourRaster } from '../../render/contourRaster';
 import type { Contours } from './contract';
 import type { MapState } from './mapState';
 
@@ -138,24 +138,15 @@ const chunkPath = (chunk: ContourChunk, recording: boolean): Path2D => {
   return (chunk.path ??= new Path2D(chunk.d));
 };
 
-const WORLD_LISTS = new WeakMap<ContourRaster, DisplayList>();
-/** The retained plate is one image, never millions of stroke triangles. */
-function worldContourList(plate: ContourRaster): DisplayList {
-  let list = WORLD_LISTS.get(plate);
-  if (list) return list;
-  const canvas = new RecordingCanvas(plate.worldSize, plate.worldSize);
-  canvas.getContext('2d')!.drawImage(plate.canvas, 0, 0, plate.worldSize, plate.worldSize);
-  list = canvas.finish();
-  WORLD_LISTS.set(plate, list);
-  return list;
-}
-
 export class ContourInk implements Contours {
   revision = 0;
   private contourWaiters = new Map<TerrainData, Set<() => void>>();
   private liveInks = new Map<WebGL2RenderingContext, OverlayInk>();
   private landform?: { revision: number; settings: MapState['settings']; size: number; look: { landform: string } | undefined };
   private liveAppearance?: Pick<MapState, 'townContent' | 'native' | 'settings' | 'resolved' | 'exportLayers' | 'world'> & { contours: number; source?: ContourInkSource };
+  private livePlate?: { plate: ContourRaster; list: DisplayList };
+  private readonly liveTint: ContourTint = { rgba: [0, 0, 0, 0] };
+  private platePaint?: { resolved: MapState['resolved']; tint: ContourTint };
 
   createLiveInk(gl: WebGL2RenderingContext): OverlayInk | undefined {
     if (!this.map.resolved?.ground.contours) return undefined;
@@ -194,24 +185,26 @@ export class ContourInk implements Contours {
       this.afterContours(this.contoursReady);
       return null;
     }
-    const source: ContourInkSource = { terrain, list: worldContourList(this.plate(paths)) };
+    const pal = terrainStyle(r.ground.style, r.palette.colors).palette,
+      plate = contourRaster(terrain, paths, pal, r.composition.recipe.ground.variant === 'topographic');
+    this.liveTint.rgba = this.tint(pal, mode.opacity).rgba;
+    if (this.livePlate?.plate !== plate) {
+      const canvas = new RecordingCanvas(plate.worldSize, plate.worldSize);
+      paintContourRaster(canvas.getContext('2d')!, plate, this.liveTint, 0, 0, plate.worldSize, plate.worldSize);
+      this.livePlate = { plate, list: canvas.finish() };
+    }
+    const source: ContourInkSource = { terrain, list: this.livePlate.list };
     this.liveAppearance = { ...appearance, source };
     return source;
   }
-  private plate(paths: ContourSet): ContourRaster {
-    const r = this.map.resolved!,
-      pal = terrainStyle(r.ground.style, r.palette.colors).palette;
-    return contourRaster(paths, this.map.native!.width, {
-      color: pal.contour,
-      opacity: pal.contourOpacity * contourDrawOf(r.composition.recipe).opacity,
-      thinWeight: pal.contourThinW ?? 1,
-      indexWeight: pal.contourIndexW / 1.6,
-      topographic: r.composition.recipe.ground.variant === 'topographic',
-    });
+  private tint(palette: Parameters<typeof contourTint>[0], opacity: number): ContourTint {
+    if (this.platePaint?.resolved !== this.map.resolved) this.platePaint = { resolved: this.map.resolved, tint: contourTint(palette, opacity) };
+    return this.platePaint!.tint;
   }
   dispose(): void {
     for (const ink of this.liveInks.values()) ink.dispose();
     this.liveInks.clear();
+    this.livePlate = this.liveAppearance = undefined;
   }
 
   constructor(
@@ -302,18 +295,13 @@ export class ContourInk implements Contours {
         return false;
       }
       if (!paths.step) return false;
-      const plate = this.plate(paths),
+      const plate = contourRaster(this.map.native!, paths, pal, topographic),
         x = Math.max(0, viewport.minX),
         y = Math.max(0, viewport.minY),
         w = Math.min(plate.worldSize, viewport.maxX) - x,
         h = Math.min(plate.worldSize, viewport.maxY) - y;
       if (!(w > 0 && h > 0)) return false;
-      const density = 1 / plate.metresPerTexel;
-      ctx.save();
-      ctx.globalAlpha = 1;
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(plate.canvas, x * density, y * density, w * density, h * density, x, y, w, h);
-      ctx.restore();
+      paintContourRaster(ctx, plate, this.tint(pal, mode.opacity), x, y, w, h);
       return true;
     }
     // Legacy zoom-detail looks retain their vector painter; fixed looks only sample their one plate above.

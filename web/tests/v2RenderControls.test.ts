@@ -5,7 +5,6 @@ import { validateSettings, parseProject, serializeProject } from '../src/v2/proj
 import { readSettingPath } from '../src/v2/parameterForm';
 import { DIAGNOSTICS } from '../src/render/displayDiagnostics';
 import { terrainCacheKey } from '../src/v2/engine';
-import { ROOF_MODES } from '../src/render/roofMode';
 
 describe('V2 retained-map render controls', () => {
   it('exposes physical city layers and existing terrain diagnostics without duplicate controls', () => {
@@ -17,7 +16,13 @@ describe('V2 retained-map render controls', () => {
     expect(renderControlFields.find(field => field.path === 'appearance.city.view')?.options).toHaveLength(5);
     expect(renderControlFields.find(field => field.path === 'appearance.city.palette')?.options).toHaveLength(5);
     const roof = renderControlFields.find(field => field.path === 'appearance.composition.buildings.roof');
-    expect(roof?.options?.map(choice => choice.value)).toEqual(ROOF_MODES);
+    expect(roof?.options?.map(choice => [choice.value, choice.label])).toEqual([
+      ['minimal', 'low'],
+      ['flat', 'medium'],
+      ['v2', 'high'],
+      ['v1', 'high*'],
+      ['crafted', 'extra'],
+    ]);
     expect(roof?.defaultValue).toBe('v2');
   });
   it('marks roof edits as custom, preserves them across ground edits, and applies the next preset default', () => {

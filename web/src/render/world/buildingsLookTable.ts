@@ -18,6 +18,8 @@ export class BuildingLookTable {
   filled = 0;
   private uploaded = 0;
   private rows = 0;
+  private readonly reused = new Set<number>();
+  private readonly dirtyRows = new Set<number>();
   texture?: WebGLTexture;
 
   constructor(
@@ -27,6 +29,10 @@ export class BuildingLookTable {
     public paint: BuildingPaint,
   ) {}
 
+  invalidate(index: number): void {
+    if (index < this.filled) this.reused.add(index);
+  }
+
   /** Fills the slots added since, until `deadline` (performance.now()); true once every slot has its paint. */
   fill(slots: BuildingColorSlots, deadline: number): boolean {
     const count = slots.length;
@@ -35,6 +41,13 @@ export class BuildingLookTable {
         grown = new Float32Array(rows * LOOK_TABLE_WIDTH * 4);
       grown.set(this.data.subarray(0, this.filled * 4));
       this.data = grown;
+    }
+    let repainted = 0;
+    for (const index of this.reused) {
+      slotLooks(slots, index, index + 1, this.paint, this.data);
+      this.reused.delete(index);
+      this.dirtyRows.add(Math.floor(index / LOOK_TABLE_WIDTH));
+      if (++repainted % FILL_CHUNK === 0 && performance.now() >= deadline) return false;
     }
     while (this.filled < count) {
       const to = Math.min(count, this.filled + FILL_CHUNK);
@@ -48,7 +61,7 @@ export class BuildingLookTable {
   /** Uploads the rows filled since: the whole table when it grew. */
   upload(gl: WebGL2RenderingContext): void {
     const rows = this.data.length / 4 / LOOK_TABLE_WIDTH;
-    if (!rows || (this.texture && this.rows === rows && this.uploaded === this.filled)) return;
+    if (!rows || (this.texture && this.rows === rows && this.uploaded === this.filled && !this.dirtyRows.size)) return;
     gl.activeTexture(gl.TEXTURE2);
     if (!this.texture || this.rows !== rows) {
       if (!this.texture) {
@@ -65,11 +78,13 @@ export class BuildingLookTable {
       const first = Math.floor(this.uploaded / LOOK_TABLE_WIDTH),
         last = Math.ceil(this.filled / LOOK_TABLE_WIDTH);
       gl.bindTexture(gl.TEXTURE_2D, this.texture);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, first, LOOK_TABLE_WIDTH, last - first, gl.RGBA, gl.FLOAT, this.data, first * LOOK_TABLE_WIDTH * 4);
+      if (this.uploaded < this.filled) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, first, LOOK_TABLE_WIDTH, last - first, gl.RGBA, gl.FLOAT, this.data, first * LOOK_TABLE_WIDTH * 4);
+      for (const row of this.dirtyRows) if (this.uploaded === this.filled || row < first || row >= last) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, row, LOOK_TABLE_WIDTH, 1, gl.RGBA, gl.FLOAT, this.data, row * LOOK_TABLE_WIDTH * 4);
     }
     gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0);
     this.uploaded = this.filled;
+    this.dirtyRows.clear();
   }
 
   get bytes(): number {

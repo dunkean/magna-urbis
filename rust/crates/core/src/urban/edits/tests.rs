@@ -91,6 +91,66 @@ fn blocks_of(l: &Layout, keep: impl Fn(usize) -> bool) -> Vec<String> {
         .map(json)
         .collect()
 }
+
+#[test]
+fn a_quarters_site_display_matches_its_rows_of_the_whole_town() {
+    use crate::urban::{building_sites, display::site_display_buffers};
+    let layout = town(&LayoutConfig::default());
+    let partition = lots(&layout, &ParcelConfig::default());
+    let (heights, water, levels) = ([20.0; 4], [0; 4], [0.0; 4]);
+    let surface = Surface {
+        geometry: None, width: 2000.0, n: 2, height: &heights, water: &water,
+        interpolation: Default::default(),
+    };
+    let layouts = std::slice::from_ref(&layout);
+    let partitions = std::slice::from_ref(&partition);
+    let full = building_sites::requests("edits", layouts, partitions, surface, &levels, None).unwrap();
+    let owners: std::collections::HashMap<_, _> = partition.parcels.iter()
+        .map(|p| (p.id.as_str(), p.block)).collect();
+    let quarter_of = |r: &serde_json::Value| layout.blocks[owners[r["parcel_id"].as_str().unwrap()]].quarter;
+    let q = quarter_of(&full[0]);
+    let selected: Vec<_> = full.iter().filter(|r| quarter_of(r) == q).cloned().collect();
+    assert!(selected.len() < full.len(), "the other quarter must have a site");
+    let blocks = layout.blocks.iter().enumerate().filter(|(_, b)| b.quarter == q).map(|(i, _)| i).collect();
+    let scope = [(layout.key.clone(), blocks)].into_iter().collect();
+    let bytes = building_sites::display_buffers("edits", layouts, partitions, surface, &levels, None, layout.center, 2, Some(&scope)).unwrap();
+    assert_eq!(bytes, site_display_buffers(&selected, layout.center, 2));
+}
+
+/// The full-plan oracle for a wealth edit can move a scarce automatic role
+/// from outside the selection. Freezing that role first changes the target.
+#[test]
+fn a_wealth_edit_can_win_an_automatic_role_held_outside_the_selection() {
+    use crate::urban::{Block, Quarter, UrbanDistrict, UrbanStructure, programme::BlockEnvironment, roles};
+    let mut plan: Layout = serde_json::from_value(serde_json::json!({
+        "key":"roles", "culture":"european-organic", "center":{"x":10,"y":10},
+        "quarters":[], "blocks":[], "streets":[], "warnings":[]
+    })).unwrap();
+    let mut structure = UrbanStructure::default();
+    let mut env = vec![];
+    for q in 0..7 {
+        let x = q as f64 * 20.;
+        let shape = g::rectangle(x, 0., x + 20., 20.);
+        plan.quarters.push(Quarter { shape: shape.clone(), phase: 0, zone: "core".into() });
+        plan.blocks.push(Block { shape, quarter: q, phase: None, kind: "block".into(), zone: "core".into(), axis: Point { x: 1., y: 0. } });
+        env.push(BlockEnvironment {
+            block: q, pressure: 0., slope: 0., wet: false, waterfront: false, height: if q == 1 { 100. } else { 0. },
+            district: None, water: String::new(), water_height: 0.,
+        });
+        if q != 1 {
+            structure.districts.push(UrbanDistrict { id: structure.districts.len(), center: 0, phase: 0, tissue: "core".into(),
+                quarters: if q == 0 { vec![0, 1] } else { vec![q] }, role: String::new(), label: String::new(), wealth: 0. });
+        }
+    }
+    plan.structure = Some(structure);
+    let elite = |mut layout: Layout| {
+        roles::assign(&mut layout, 2500, false, &env);
+        layout.structure.unwrap().districts.into_iter().filter(|d| d.role == "elite").flat_map(|d| d.quarters).collect::<Vec<_>>()
+    };
+    assert_eq!(elite(plan.clone()), [2]);
+    plan.config = Some(with_quarter(1, QuarterOverride { wealth: Some(0.9), ..Default::default() }));
+    assert_eq!(elite(plan), [1]);
+}
 fn main_streets(l: &Layout) -> BTreeSet<String> {
     l.streets.iter().filter(|s| s.rank <= 1).map(json).collect()
 }

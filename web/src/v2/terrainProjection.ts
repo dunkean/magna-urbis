@@ -48,40 +48,43 @@ export function vectorMouth(vector: { hydro: { n: number; sea: ArrayLike<number>
     }
   return lake ? 'lake' : 'edge';
 }
-/** Sets the planning sea (`sea` 1, `water` class 1) to the sea regions at the cell centres of an n × n grid, by scanlines
- * (even-odd over the outer rings and their islands: O(vertices + cells)). Lakes keep their class. Returns the sea cells. */
-export function rasterizeSea(regions: readonly { outer: Polygon; holes: Polygon[] }[], n: number, cell: number, sea: Uint8Array, water: Uint8Array): number {
+/** Scan the sea regions at the cell centres, with even-odd fill for islands. With `water`, replace the old sea in both
+ * planes and preserve lakes. Without `water`, write the sea spans into a zeroed plane. Returns the sea cell count. */
+export function rasterizeSea(rings: readonly Polygon[], n: number, cell: number, sea: Uint8Array, water?: Uint8Array): number {
+  if (!rings.length && !water) return 0;
   const crossings: number[][] = Array.from({ length: n }, () => []);
-  for (const region of regions)
-    for (const ring of [region.outer, ...region.holes])
-      for (let k = 0; k < ring.length; k++) {
-        const a = ring[k],
-          b = ring[(k + 1) % ring.length];
-        if (a.y === b.y) continue;
-        // Rows whose centre lies in [min, max) of the edge.
-        const low = Math.max(0, Math.ceil(Math.min(a.y, b.y) / cell - 0.5)),
-          high = Math.min(n - 1, Math.ceil(Math.max(a.y, b.y) / cell - 0.5) - 1);
-        for (let row = low; row <= high; row++) {
-          const y = (row + 0.5) * cell;
-          crossings[row].push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
-        }
+  for (const ring of rings)
+    for (let k = 0; k < ring.length; k++) {
+      const a = ring[k],
+        b = ring[(k + 1) % ring.length];
+      if (a.y === b.y) continue;
+      // Rows whose centre lies in [min, max) of the edge.
+      const low = Math.max(0, Math.ceil(Math.min(a.y, b.y) / cell - 0.5)),
+        high = Math.min(n - 1, Math.ceil(Math.max(a.y, b.y) / cell - 0.5) - 1);
+      for (let row = low; row <= high; row++) {
+        const y = (row + 0.5) * cell;
+        crossings[row].push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
       }
+    }
   let count = 0;
   for (let row = 0; row < n; row++) {
     const xs = crossings[row].sort((p, q) => p - q);
-    let at = 0,
-      inside = false;
-    for (let x = 0; x < n; x++) {
-      const centre = (x + 0.5) * cell;
-      while (at < xs.length && xs[at] <= centre) {
-        inside = !inside;
-        at++;
+    const start = row * n;
+    let lo = start;
+    for (let k = 0; k <= xs.length; k++) {
+      const hi = start + (k === xs.length ? n : Math.max(0, Math.min(n, Math.ceil(xs[k] / cell - 0.5))));
+      const value = k % 2;
+      if (water) {
+        for (let i = lo; i < hi; i++) {
+          if (water[i] === 2) continue;
+          sea[i] = water[i] = value;
+          count += value;
+        }
+      } else if (value) {
+        sea.fill(1, lo, hi);
+        count += hi - lo;
       }
-      const i = row * n + x;
-      if (water[i] === 2) continue;
-      sea[i] = inside ? 1 : 0;
-      water[i] = inside ? 1 : 0;
-      count += sea[i];
+      lo = hi;
     }
   }
   return count;
@@ -234,7 +237,14 @@ export function projectEngineTerrain(data: TerrainData): V2TerrainLayer {
   const seaRegions = traced ? shoreRegions(shore, width, sea, n) : polygons(sea, n, cell);
   // The planning sea is that coastline at the planning cells (their centres), so the masks the town engine plans with
   // (footprint, harbours, walls) agree with the drawn shore to a cell, never with the coarser drainage sea.
-  if (traced) seaCells = rasterizeSea(seaRegions, n, cell, sea, water);
+  if (traced)
+    seaCells = rasterizeSea(
+      seaRegions.flatMap(({ outer, holes }) => [outer, ...holes]),
+      n,
+      cell,
+      sea,
+      water,
+    );
   const rivers: River[] = [];
   if (vector?.rivers) {
     const network = vector.rivers;

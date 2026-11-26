@@ -277,7 +277,7 @@ export class GlRedraw {
   /** Draws `req`; false when nothing could be drawn (no base, lost context, no program linked yet). */
   draw(req: GlDrawRequest): boolean {
     if (req.capturing) req = { ...req, look: { ...req.look, displayLight: false } };
-    this.hooks.canvasDrawn();
+    if (req.framebuffer === null) this.hooks.canvasDrawn();
     const gl = this.gl,
       inputs = this.inputs,
       { look, framebuffer } = req,
@@ -305,7 +305,7 @@ export class GlRedraw {
     const started = performance.now();
     const dpr = req.pixelRatio,
       frame = redrawFrame(req.view, dpr);
-    if (this.canvas.width !== frame.width || this.canvas.height !== frame.height) {
+    if (framebuffer === null && (this.canvas.width !== frame.width || this.canvas.height !== frame.height)) {
       this.canvas.width = frame.width;
       this.canvas.height = frame.height;
     }

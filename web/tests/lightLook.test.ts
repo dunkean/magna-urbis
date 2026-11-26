@@ -216,7 +216,7 @@ describe('flat light look policy', () => {
   });
   it('uses one flat land fill and never constructs plant or furrow geometry in light', () => {
     const calls: unknown[][] = [];
-    const c = { activeLight: true, pal: { land: { forest: '#345' }, landOpacity: 0.4 }, deps: {}, world: { options: { landuse: true } } };
+    const c = { activeLight: true, ink: () => '#345', pal: { land: { forest: '#345' }, landOpacity: 0.4 }, deps: {}, world: { options: { landuse: true } } };
     const painters = landPainters(c as never, { fillPolys: (...args: unknown[]) => calls.push(args) } as never);
     expect([...painters.fillLandSteps('lu-field', 'field')]).toEqual([]);
     expect(calls).toHaveLength(1);

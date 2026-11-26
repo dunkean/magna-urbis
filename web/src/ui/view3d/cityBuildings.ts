@@ -134,7 +134,6 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     cityContext.stairInputs = [];
     cityContext.stairBuildings = [];
     cityContext.structureInputs = [];
-    cityContext.canopyInputs = [];
     cityContext.ornamentInputs = [];
   } else if (force) {
     // Swaps queued for the previous display must not be reinjected by id.
@@ -187,7 +186,7 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
       nextCanopyInputs = [layouts, canopySource, cityContext.heightAt];
     if (nextCanopyInputs.some((input, i) => input !== cityContext.canopyInputs[i])) {
       cityContext.canopyInputs = nextCanopyInputs;
-      cityContext.canopyBuildings = city3dCanopy(cityCanopy(layouts, canopySource), cityContext.heightAt);
+      cityContext.canopy = city3dCanopy(cityCanopy(layouts, canopySource), cityContext.heightAt);
     }
     // Underdark ornaments (underdarkOrnaments.ts): the same derivation as the 2D plan, on the shown buildings' heights.
     const nextOrnamentInputs = [layouts, scene, cityContext.heightAt, cityContext.display];
@@ -199,7 +198,11 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     // other building: the massing-to-mesh code, materials, classes, tint and snow of the towns, each on the terrain
     // under its own footprint.
     cityContext.farmBuildings ??= city3dFarmBuildings(city3dFarmSources(farmsteads, placeholders, ground?.at ?? cityContext.heightAt), { heightAt: cityContext.heightAt, ground });
-    cityContext.display = city3dWithExtras(cityContext.display, [...cityContext.structureBuildings, ...cityContext.stairBuildings, ...yardMeshes, ...cityContext.canopyBuildings, ...cityContext.ornamentBuildings, ...cityContext.farmBuildings]);
+    cityContext.display = city3dWithExtras(
+      cityContext.display,
+      [...cityContext.structureBuildings, ...cityContext.stairBuildings, ...yardMeshes, ...(cityContext.canopy?.buildings ?? []), ...cityContext.ornamentBuildings, ...cityContext.farmBuildings],
+      cityContext.canopy?.instances,
+    );
     cityContext.displayMs = performance.now() - started;
   }
   const appearance = cityContext.options.getBuildingAppearance?.(),

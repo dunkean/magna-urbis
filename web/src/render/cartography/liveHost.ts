@@ -14,10 +14,13 @@ import { liveVectorEngine, noteGpuFallback } from '../vectorEngine';
 import { noteLiveUnit } from '../live/liveStats';
 import { CanvasLike } from './contract';
 import type { CartographyContext } from './context';
+import { LandRecording } from './landRecording';
 import { drawVectorSteps } from './vector';
 import { growRect } from './geometry';
 import { releaseDrapeTemps, warmTreeMarks } from './woods';
 import { createMapRecording } from './mapRecording';
+import { roadCanopyRegions } from './roads';
+import { RegionalRevision } from '../../ui/terrain/revision';
 
 export function createLiveHost(c: CartographyContext) {
   const { deps, now } = c;
@@ -28,14 +31,27 @@ export function createLiveHost(c: CartographyContext) {
     REGION_MAX_WAIT_MS = 1500;
   /** Live overlay layer: a region is recorded in this many horizontal bands, each over idle work slices. */
   const REGION_BANDS = 4;
+  // One set of land ops per visible band. Captures, drapes and fixed sheets never populate this cache.
+  const landBands: LandRecording[] = [];
   const fixedRaster = (): boolean => c.pal.name === 'cadastre';
   /** A recording of the map for the live overlay layer has failed under this key: not tried again until it changes. */
   let regionFailed = '';
   /** Layers made by createLiveLayer and not yet disposed: a scene update makes their regions stale too. */
   const liveLayers = new Set<LiveLayer>();
+  const content = new RegionalRevision();
+  let seenCanopy = roadCanopyRevision();
+  const contentRevision = (): number => {
+    const revision = roadCanopyRevision();
+    if (seenCanopy !== revision) {
+      const boxes = roadCanopyRegions(c, seenCanopy);
+      seenCanopy = revision;
+      if (!boxes || boxes.length) content.bump(boxes);
+    }
+    return content.value();
+  };
   /** Everything a recorded region depends on besides its rectangle and the products made per view (`arrivals`). */
   const regionKey = (scale: number, dpr: number, light: boolean): string =>
-    `${c.syncPalette()}|${fixedRaster() ? 'fixed-cadastre' : `${scale}|${dpr}|${light}`}|${deps.semantic?.look() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
+    `${c.syncPalette()}|${fixedRaster() ? 'fixed-cadastre' : `${scale}|${dpr}|${light}`}|${deps.semantic?.look() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${whiteWaterRevision()}`;
   /** The region recorded for a view: a margin around it, edges on a lattice, the half-octave scale, horizontal bands. */
   function regionPlan(view: View, cssW: number, cssH: number, dpr: number, key: string): OverlayPlan {
     if (fixedRaster()) {
@@ -71,7 +87,9 @@ export function createLiveHost(c: CartographyContext) {
       unit = drape ? 'record:drape' : 'record:band';
     // Nearby tiles share their clipped paths across bands. Coarse map-wide tiles must cut to the band itself.
     const clip = drape ? growRect(plan.rect.maxX - plan.rect.minX <= 4 * c.scene.tileSize ? plan.rect : band, Math.max(16, 4 / (plan.scale * plan.dpr))) : undefined;
-    const steps = drawVectorSteps(c, { cx, cy, scale: plan.scale }, rec as unknown as CanvasLike, 'map', band);
+    const index = !drape && deps.palette && !fixedRaster() ? plan.bands.indexOf(band) : -1;
+    const land = index >= 0 ? (landBands[index] ??= new LandRecording()) : undefined;
+    const steps = drawVectorSteps(c, { cx, cy, scale: plan.scale }, rec as unknown as CanvasLike, 'map', band, land);
     try {
       for (;;) {
         const before = { stepwise: c.stepwise, light: c.activeLight, dpr: c.activeDpr, clip: c.recordingClip, crisp: c.markCrisp, recording: c.recordingNow },
@@ -123,6 +141,8 @@ export function createLiveHost(c: CartographyContext) {
         return key === regionFailed ? undefined : key;
       },
       plan: regionPlan,
+      contentRevision,
+      contentChanges: since => content.changesSince(since),
       arrivals: () => deps.semantic?.arrivals() ?? 0,
       warm: deadline => c.disposed || warmTreeMarks(c, deadline),
       // Recorded at the region's quality and at the compositor's pixel ratio; `record` runs every step in one call.
@@ -144,13 +164,19 @@ export function createLiveHost(c: CartographyContext) {
     liveLayers.add(layer);
     const end = layer.dispose;
     layer.dispose = (): void => {
+      landBands.length = 0;
       liveLayers.delete(layer);
       end();
     };
     return layer;
   }
   /** A scene update: the regions of every live layer become stale (they keep showing until replaced). */
-  const invalidateLayers = (): void => {
+  const invalidateLayers = (boxes?: readonly Rect4[]): void => {
+    landBands.length = 0;
+    if (boxes) {
+      if (boxes.length) content.bump(boxes);
+      return;
+    }
     for (const layer of liveLayers) layer.invalidate?.();
   };
   return { createLiveLayer, invalidateLayers };

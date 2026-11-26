@@ -19,7 +19,7 @@ pub(super) use epochs::{enclosed, epoch_densities, epoch_zone, planned_land};
 pub(super) use generate::generate;
 pub(super) use geometry::union;
 pub(super) use site::orientation;
-pub(super) use survey::slope_relax_ahead;
+pub(super) use survey::{SlopeStart, slope_relax_ahead};
 
 use crate::urban::{Shape, Street, UrbanStructure};
 
@@ -33,9 +33,8 @@ pub(super) struct Footprint {
     pub guides: Vec<Street>,
     /// Validated access through open land; never counted as an occupied ribbon.
     pub links: Vec<Street>,
-    /// Housable shares of the land the accessible growth first took, before
-    /// any terrain correction (`terrain`); None for other mechanisms.
-    pub land: Option<terrain::Survey>,
+    /// The cells of the first accepted growth, before any terrain correction.
+    land: Option<(terrain::Survey, growth::Taken)>,
 }
 
 #[cfg(test)]

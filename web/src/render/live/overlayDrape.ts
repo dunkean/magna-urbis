@@ -10,6 +10,7 @@ import type { BakedPrefix, DisplayList, LivePart, LiveRasterizer } from '../gpu/
 import { boundedList, clipList, cullList } from '../gpu/listTools';
 import type { OverlayRegions } from './overlayRegions';
 import { boxOf, covers, meets, type OverlayBand, type OverlayHost, type Region } from './overlayTypes';
+import { RegionalRevision } from '../../ui/terrain/revision';
 
 /** Scale of a drape tile over the scale of the region shown, between which the region's lists paint the tile. The
  * tiles of the view's own tier are within 0.75 to 1.5 of the view's scale, and the region within a quarter octave. */
@@ -24,8 +25,9 @@ const DRAPE_BAND_MS = 12,
 export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, retained: OverlayRegions, isFailed: () => boolean) {
   /** The map drape's tiles hold the overlay of this revision: bumped by `invalidate`, and when what the host records
    * changes besides its scale (its key). */
-  let drapeRevision = 0,
-    drapeKey: string | undefined;
+  const drapeRevision = new RegionalRevision();
+  let drapeKey: string | undefined,
+    seenContent = host.contentRevision?.();
   /** The drape tile recorded in bands: the recorded row its next band starts at, and what the last band cost per row. */
   let drapeRow = 0,
     drapeMsPerRow = 0;
@@ -93,13 +95,18 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
   const drape: DrapeSource = {
     revision(): number {
       // Content only: a product made per scale (contour paths) repaints the tiles painted without it (`arrivals`).
-      const key = isFailed() || raster.lost || !host.active() ? undefined : host.key(1, 1, false);
+      const key = isFailed() || raster.lost || !host.active() ? undefined : host.key(1, 1, false),
+        content = host.contentRevision?.();
       if (key !== drapeKey) {
         drapeKey = key;
-        drapeRevision++;
+        drapeRevision.bump();
+      } else if (key !== undefined && content !== seenContent) {
+        drapeRevision.bump(seenContent === undefined ? undefined : host.contentChanges?.(seenContent));
       }
-      return drapeRevision;
+      seenContent = content;
+      return drapeRevision.value();
     },
+    contentChanges: since => drapeRevision.changesSince(since),
     arrivals: () => host.arrivals(),
     // Nothing to paint (the vector engine is off, the layer failed) is ready; else the programs must be linked.
     ready(tile: DrapeCanvas): boolean {
@@ -232,7 +239,7 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
     source: drape,
     invalidate(): void {
       cancel();
-      drapeRevision++;
+      drapeRevision.bump();
     },
     cancel,
     wanted(frame: LiveFrame, wanted: boolean): void {

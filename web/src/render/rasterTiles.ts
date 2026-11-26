@@ -53,7 +53,7 @@ export class RasterTileCache<T> {
     tile.release();
   }
 
-  invalidate(rects?: Rect[], padding = 0): void {
+  invalidate(rects?: readonly Rect[], padding = 0): void {
     if (!rects) {
       this.clear();
       return;

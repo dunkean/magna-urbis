@@ -223,6 +223,35 @@ The Apple Silicon DMG is signed ad hoc and distributed without Apple notarizatio
 - On phones and tablets, a map left less than 30 minutes ago is resumed automatically after the browser discarded the tab. The Reload previous map preference still decides when it has been set.
 - When a phone or tablet runs out of graphics resources, the map keeps its lighter view and the next visit starts at Economy. If the graphics compositor fails to start, it is tried again a few times and 3D returns with it; the 3D button explains why it cannot tilt the map instead of staying greyed or doing nothing.
 
+- Selection edits keep names elsewhere on the map and transfer only changed town data, reducing the work after each edit.
+
+- Selection edits update nearby forest cover, roads under the canopy and the map background locally in 2D and 3D.
+
+- Editing a house or plot in the live 2D town view now reuses nearby streets, roofs and lighting and updates the affected 256 m cells.
+
+- The Valley terrain source shapes bends with steep outer banks and gentler inner slopes, keeping the same average width and depth.
+
+- On large coastal maps, towns follow the drawn shoreline at every planning resolution.
+
+- The Places building card shows resource names in the selected language, from ore and farmland to the roads serving isolated buildings.
+- Coastal smoothing and subdivision edit errors now appear in the selected language.
+
+- Water gates join street canals to nearby wet reaches of a canal moat.
+
+- Changing contour colour or opacity reuses the existing contour plate, reducing redraw work and memory use.
+
+- Farmyards show their generated enclosures in 2D and when tilted. Wetland farm buildings sit on raised earth platforms, and modern grain farms can add round metal silos through the outbuildings setting.
+
+- Select a wall to change that enclosure’s construction, moat or land gate target, or remove it. Road edits are saved in the recipe and reapplied when the region regenerates.
+
+- Large elven towns use less memory when switching map views, and their groves keep their crowns and elevated walkways.
+
+- Mountain towns can start with stepped foundations when steep or wet blocks leave too little land for ordinary houses.
+
+- Changing season on a Parchment map reuses recorded land-use washes and field strips, along with the ink and wash masks for open-land symbols.
+
+- Editing a quarter reuses city volumes outside it when the surrounding street and block layout stays in place.
+
 ## Alpha 0.3.10
 
 Replaces 0.3.9, whose build stopped on an outdated test before publication (no 0.3.9 packages exist).

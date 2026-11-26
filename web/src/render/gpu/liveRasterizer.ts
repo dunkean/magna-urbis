@@ -76,6 +76,7 @@ class LiveListRasterizer extends ListReplayer implements LiveRasterizer {
     if (this.parallel === undefined) this.parallel = gl.getExtension('KHR_parallel_shader_compile');
     let done = true;
     for (const kind of Object.keys(SHADERS) as ProgramKind[]) {
+      if (kind === 'contour' || kind === 'pen') continue; // Prepared only for lists that contain the corresponding mask.
       let p = this.programs.get(kind);
       if (!p) {
         p = Program.start(gl, kind);
@@ -111,6 +112,13 @@ class LiveListRasterizer extends ListReplayer implements LiveRasterizer {
         yield;
       }
       if (op.type === 'sprites') {
+        const mask = op.tint ? 'pen' : op.contourTint ? 'contour' : undefined;
+        if (mask && !this.programs.has(mask)) {
+          const program = Program.start(this.gl, mask);
+          program.settle(null);
+          this.programs.set(mask, program);
+          yield;
+        }
         resources.texture(op.source, op.smoothing);
         resources.uploadSprites(op);
         yield;

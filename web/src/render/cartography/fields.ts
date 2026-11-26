@@ -8,14 +8,14 @@ import { isUnderdarkBiome } from '../../gen/biomes';
 import { Palette, ruralInk } from '../styles';
 import { fieldBoundaryStyle, fieldHedgeStyle } from '../hedges';
 import { furrowDegrees, furrowSpacing, furrowStripe } from '../furrows';
-import { RecordingContext } from '../gpu/recorder';
+import { RecordingContext, setMapInk } from '../gpu/recorder';
 import { CANVAS_MAP_STROKES as MAP_STROKES, mapStrokeWidth } from '../strokes';
 import { trackInk } from '../roadStyle';
 import { WAY_SCALE, FURROW_MIN_PX, FURROW_HOLDER_BUDGET } from '../lod';
 import type { CartographyContext } from './context';
 import type { VectorFrame } from './frame';
 
-export function paintFieldTexture(c: CartographyContext, f: VectorFrame, kind: keyof Palette['land']): void {
+export function paintFieldTexture(c: CartographyContext, f: VectorFrame, kind: keyof Palette['land'], ink = c.ink): void {
   if (c.activeLight) return;
   const { pal, furrowSize, furrowPaths } = c;
   const { ctx, sc, lod, rect, budgetRect, fs, fillPolys, strokePolys, multiply } = f;
@@ -42,7 +42,7 @@ export function paintFieldTexture(c: CartographyContext, f: VectorFrame, kind: k
         // Holdings sorted by direction, so consecutive fills with one stripe merge into one op.
         drawn.sort((p, q) => furrowDegrees(areas[p].angle) - furrowDegrees(areas[q].angle) || p - q);
         ctx.save();
-        ctx.fillStyle = pal.furrow;
+        setMapInk(ctx, 'fillStyle', ink('furrow'));
         ctx.globalAlpha = pal.furrowAlpha * fade;
         for (const i of drawn) {
           const a = areas[i],
@@ -65,7 +65,7 @@ export function paintFieldTexture(c: CartographyContext, f: VectorFrame, kind: k
           ctx.save();
           ctx.clip(holder);
           ctx.clip(strips);
-          ctx.strokeStyle = pal.furrow;
+          setMapInk(ctx, 'strokeStyle', ink('furrow'));
           ctx.lineWidth = width;
           ctx.globalAlpha = pal.furrowAlpha * fade;
           ctx.lineCap = 'butt';
@@ -79,13 +79,13 @@ export function paintFieldTexture(c: CartographyContext, f: VectorFrame, kind: k
     // SVG tints the ploughed strips after their furrow texture; retain that compositing order.
     multiply(true);
     const mk = [0.5, 0.75, 0.3, 0.9];
-    for (let k = 0; k < 4; k++) if (pal.stripAlpha[k & 1] > 0) fillPolys('stripT' + k, k & 1 ? pal.stripB : pal.stripA, Math.min(1, pal.stripAlpha[k & 1] * mk[k]));
+    for (let k = 0; k < 4; k++) if (pal.stripAlpha[k & 1] > 0) fillPolys('stripT' + k, ink(k & 1 ? 'stripB' : 'stripA'), Math.min(1, pal.stripAlpha[k & 1] * mk[k]));
     multiply(false);
   }
   if (kind === 'field' && !isUnderdarkBiome(c.world.options.biome) && lod.strips && lod.band >= 2) {
-    for (let k = 0; k < 4; k++) strokePolys('stripT' + k, pal.furrow, mapStrokeWidth(MAP_STROKES.strip, sc), pal.furrowAlpha * 0.85);
+    for (let k = 0; k < 4; k++) strokePolys('stripT' + k, ink('furrow'), mapStrokeWidth(MAP_STROKES.strip, sc), pal.furrowAlpha * 0.85);
   }
-  if (kind === 'field' && !isUnderdarkBiome(c.world.options.biome) && lod.strips) strokePolys('furlong-edges', pal.furrow, mapStrokeWidth(MAP_STROKES.furlong, sc), pal.furlongAlpha ?? 0.55);
+  if (kind === 'field' && !isUnderdarkBiome(c.world.options.biome) && lod.strips) strokePolys('furlong-edges', ink('furrow'), mapStrokeWidth(MAP_STROKES.furlong, sc), pal.furlongAlpha ?? 0.55);
 }
 export function paintFieldNetwork(c: CartographyContext, f: VectorFrame): void {
   if (!c.activeLight && c.deps.fullLanduse && !c.deps.fullLanduse('field')) return;
@@ -98,7 +98,7 @@ export function paintFieldNetwork(c: CartographyContext, f: VectorFrame): void {
     const rk = ruralInk(pal);
     strokeLines(
       linesOf(l => l.name === 'headlands'),
-      pal.furrow,
+      c.ink('furrow'),
       () => mapStrokeWidth(MAP_STROKES.headland, sc),
       pal.rural.headland,
       [],
@@ -114,7 +114,7 @@ export function paintFieldNetwork(c: CartographyContext, f: VectorFrame): void {
       const hedge = fieldHedgeStyle(pal, u);
       strokeLines(
         linesOf(l => l.name === 'hedges'),
-        hedge.color,
+        c.ink('fieldHedge'),
         () => lw(hedge.width, 0.35),
         hedge.alpha * Math.min(1, sc / 0.3),
       );
@@ -135,8 +135,8 @@ export function paintFieldNetwork(c: CartographyContext, f: VectorFrame): void {
       if (!c.activeLight && lod.band >= 2 && polyL('hedge-trees')) {
         if (brushes) brushTrees('hedge-trees');
         else {
-          fillPolys('hedge-trees', pal.treeFill, 0.75 * (0.3 + 0.7 * (pal.season?.leaf ?? 1)));
-          strokePolys('hedge-trees', pal.treeInk, lw(0.3 * fu, 0.35), 0.5);
+          fillPolys('hedge-trees', c.ink('farmLeaves'), 0.75);
+          strokePolys('hedge-trees', c.ink('treeInk'), lw(0.3 * fu, 0.35), 0.5);
         }
       }
     }

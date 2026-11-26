@@ -290,6 +290,15 @@
         "roof": "cone",
         "round": true
       },
+      "silo": {
+        "width": [4.5, 5.5],
+        "depth": [4.5, 5.5],
+        "eave": [9, 12],
+        "roof": "cone",
+        "cover": "metal",
+        "wall": "steel",
+        "round": true
+      },
       "hut": {
         "width": [
           3.5,
@@ -462,6 +471,22 @@
         "core": [
           "barn"
         ]
+      },
+      "grain-farm": {
+        "arch": "grain-farm",
+        "roof": "gable",
+        "material": "wood",
+        "mats": { "silo": "steel" },
+        "layout": "scattered",
+        "enclosure": "fence",
+        "outbuildings": [2, 4],
+        "houseSize": [8, 13, 6, 9],
+        "yard": [5, 9],
+        "jitter": 0.22,
+        "cover": "metal",
+        "wall": "wood",
+        "ancillary": ["shed", "cart-shed"],
+        "core": ["barn", "silo"]
       },
       "longere": {
         "arch": "longere",
@@ -2678,7 +2703,7 @@
       "american-grid": {
         "types": [
           [
-            "haufenhof",
+            "grain-farm",
             1.5
           ],
           [
@@ -2754,6 +2779,10 @@
             1.5
           ],
           [
+            "grain-farm",
+            1
+          ],
+          [
             "cortijo",
             1
           ]
@@ -2784,7 +2813,7 @@
       "latin-american-grid": {
         "types": [
           [
-            "cortijo",
+            "grain-farm",
             1.5
           ],
           [

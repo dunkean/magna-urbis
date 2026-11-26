@@ -6,8 +6,8 @@
 import type { Point } from '../../../rust/bridge/urban';
 import type { CityPalette } from './cityCanvas';
 import type { YardBoundary } from './cityLotEnclosures';
-import { yardRuns, yardStyle, type YardGate, type YardRun } from './yardStyle';
-import { putPolyline, STROKE_STRIDE, strokeWriter, type CityGlStrokes } from './cityGlBuild';
+import { RetainedYardRuns, yardStyle, type YardGate, type YardRun } from './yardStyle';
+import { orderedStrokes, putPolyline, STROKE_STRIDE, strokeWriter, type CityGlStrokes } from './cityGlBuild';
 
 export interface CityGlYards {
   runs: CityGlStrokes;
@@ -19,61 +19,59 @@ const MATERIALS: YardBoundary['material'][] = ['hedge', 'fence', 'wall'];
 const JAMB = 0.6,
   CART = 2.4;
 
-/** The enclosures of several towns (each list as `scene.lotEnclosures`), relative to `origin`. */
-export function buildYardStrokes(lists: readonly (readonly YardBoundary[] | undefined)[], origin: Point): CityGlYards | undefined {
-  const runs: YardRun[] = [],
-    gates: YardGate[] = [];
-  for (const list of lists)
-    if (list?.length) {
-      const r = yardRuns(list);
-      runs.push(...r.runs);
-      gates.push(...r.gates);
+export class YardStrokeBuilder {
+  private towns: RetainedYardRuns[] = [];
+  readonly looks: YardBoundary[] = [];
+  private lookIndex = new Map<string, number>();
+  private buffers = new WeakMap<YardRun | YardGate, ArrayBuffer>();
+  constructor(private origin: Point) {}
+  private buffer(part: YardRun | YardGate): ArrayBuffer {
+    let data = this.buffers.get(part);
+    if (data) return data;
+    const e = part.source,
+      key = [e.material, e.culture ?? '', e.fenceStyle ?? ''].join('/');
+    let look = this.lookIndex.get(key);
+    if (look === undefined) {
+      this.lookIndex.set(key, (look = this.looks.length));
+      this.looks.push(e);
     }
-  if (!runs.length && !gates.length) return undefined;
-  const looks: YardBoundary[] = [],
-    index = new Map<string, number>();
-  const lookOf = (e: YardBoundary): number => {
-    const key = `${e.material}/${e.culture ?? ''}/${e.fenceStyle ?? ''}`;
-    let i = index.get(key);
-    if (i === undefined) {
-      index.set(key, (i = looks.length));
-      looks.push(e);
+    const style = yardStyle(e.material, e.culture, 'terrain', e.fenceStyle);
+    const w = strokeWriter('path' in part ? part.path.length : 2);
+    if ('path' in part) putPolyline(w, part.closed ? [...part.path, part.path[0]] : part.path, this.origin, style.width, style.minPx, look, 0, !part.closed);
+    else {
+      const { a, b } = part,
+        len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len > 0) {
+        const nx = (-(b.y - a.y) / len) * JAMB,
+          ny = ((b.x - a.x) / len) * JAMB;
+        for (const p of [a, b])
+          putPolyline(
+            w,
+            [
+              { x: p.x - nx, y: p.y - ny },
+              { x: p.x + nx, y: p.y + ny },
+            ],
+            this.origin,
+            style.width * 0.7,
+            1.3,
+            look,
+            len >= CART ? 0 : 1,
+            true,
+          );
+      }
     }
-    return i;
-  };
-  // Hedges under fences under walls, as the Canvas strokes are ordered.
-  runs.sort((a, b) => MATERIALS.indexOf(a.source.material) - MATERIALS.indexOf(b.source.material));
-  const rw = strokeWriter(runs.reduce((s, r) => s + r.path.length, 0));
-  for (const r of runs) {
-    if (r.path.length < 2) continue;
-    const style = yardStyle(r.source.material, r.source.culture, 'terrain', r.source.fenceStyle);
-    putPolyline(rw, r.closed ? [...r.path, r.path[0]] : r.path, origin, style.width, style.minPx, lookOf(r.source), 0, !r.closed);
+    data = w.buffer.slice(0, w.n * STROKE_STRIDE * 4);
+    this.buffers.set(part, data);
+    return data;
   }
-  const jw = strokeWriter(gates.length * 2);
-  for (const g of gates) {
-    const l = Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y);
-    if (!(l > 0)) continue;
-    const style = yardStyle(g.source.material, g.source.culture, 'terrain', g.source.fenceStyle),
-      look = lookOf(g.source);
-    const n = { x: (-(g.b.y - g.a.y) / l) * JAMB, y: ((g.b.x - g.a.x) / l) * JAMB },
-      rank = l >= CART ? 0 : 1;
-    for (const p of [g.a, g.b])
-      putPolyline(
-        jw,
-        [
-          { x: p.x - n.x, y: p.y - n.y },
-          { x: p.x + n.x, y: p.y + n.y },
-        ],
-        origin,
-        style.width * 0.7,
-        1.3,
-        look,
-        rank,
-        true,
-      );
+  build(lists: readonly (readonly YardBoundary[] | undefined)[]): CityGlYards | undefined {
+    const groups = lists.map((list, i) => (this.towns[i] ??= new RetainedYardRuns()).update(list ?? []));
+    this.towns.length = lists.length;
+    const runs = groups.flatMap(g => g.runs).sort((a, b) => MATERIALS.indexOf(a.source.material) - MATERIALS.indexOf(b.source.material));
+    const gates = groups.flatMap(g => g.gates);
+    if (!runs.length && !gates.length) return;
+    return { runs: orderedStrokes(runs.map(r => this.buffer(r))), jambs: orderedStrokes(gates.map(g => this.buffer(g))), looks: this.looks };
   }
-  const done = (w: ReturnType<typeof strokeWriter>): CityGlStrokes => ({ data: w.buffer.slice(0, w.n * STROKE_STRIDE * 4), count: w.n, firstWithRank: new Array(16).fill(0) });
-  return { runs: done(rw), jambs: done(jw), looks };
 }
 /** Colour tables of the looks for a palette: the stroke (colour, opacity) and the jambs (opaque). */
 export function yardColors(looks: readonly YardBoundary[], palette: CityPalette): { line: Uint8Array; jamb: Uint8Array } {

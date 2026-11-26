@@ -6,10 +6,11 @@ import { effectiveTerrainSettings } from '../src/v2/terrainSettings';
 import type { MapState } from '../src/v2/display/mapState';
 
 vi.mock('../src/render/live/contourInk', () => ({ createContourInk: vi.fn() }));
-vi.mock('../src/render/contourRaster', () => {
+vi.mock('../src/render/contourRaster', async importOriginal => {
   const plates = new WeakMap<object, object>();
   return {
-    contourRaster: (paths: object, worldSize: number) => {
+    ...(await importOriginal<typeof import('../src/render/contourRaster')>()),
+    contourRaster: ({ width: worldSize }: { width: number }, paths: object) => {
       let plate = plates.get(paths);
       if (!plate) {
         plate = { canvas: { width: 8192, height: 8192 }, worldSize, metresPerTexel: worldSize / 8192 };
@@ -22,7 +23,7 @@ vi.mock('../src/render/contourRaster', () => {
 vi.mock('../src/render/composition', () => ({ contourDrawOf: () => ({ detail: 'fixed', sparse: false, opacity: 1 }) }));
 vi.mock('../../rust/bridge/fantasyTerrain', () => ({ isFantasyStyle: () => false }));
 vi.mock('../src/v2/terrainSettings', () => ({ effectiveTerrainSettings: vi.fn(() => ({ relief: 'hills' })) }));
-vi.mock('../src/render/terrainStyle', () => ({ terrainStyle: () => ({ palette: { contour: '#987654', contourOpacity: 0.4, contourThinW: 1, contourIndexW: 1.6 } }) }));
+vi.mock('../src/render/terrainStyle', () => ({ terrainStyle: (_style: string, colors?: { contour: string }) => ({ palette: { contour: colors?.contour ?? '#987654', contourOpacity: 0.4, contourThinW: 1, contourIndexW: 1.6 } }) }));
 vi.mock('../src/render/cityContours', () => ({ cityContourPaths: vi.fn(), cityContourPathsPending: vi.fn(), cityContoursPending: () => 1 }));
 afterEach(() => {
   vi.clearAllTimers();
@@ -55,6 +56,9 @@ it('does not record the nonzero-interval placeholder while the fixed terrain set
   expect(retained.list.ops[0].type).toBe('sprites');
   expect(source()!.list).toBe(retained.list);
   expect(source()).toBe(retained);
+  map.resolved = { ...map.resolved!, palette: { ...map.resolved!.palette, colors: { ...map.resolved!.palette.colors, contour: '#008000' } } };
+  expect(source()!.list).toBe(retained.list);
+  expect(retained.list.ops[0]).toMatchObject({ contourTint: { rgba: [0, 128 / 255, 0, 0.4] } });
   for (let i = 0; i < 20; i++) contours.contourLook();
   expect(effectiveTerrainSettings).toHaveBeenCalledTimes(1);
   map.townContent = 1;

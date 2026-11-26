@@ -444,7 +444,7 @@ export abstract class ListReplayer {
     const hair = width < 1 && (op.composite === 'source-over' || op.composite === 'destination-out');
     const deviceWidth = hair ? 1 : Math.max(1, width),
       alpha = op.alpha * Math.min(1, width);
-    const direct = hair || (op.composite === 'source-over' && op.paint.kind === 'color' && op.paint.rgba[3] === 1 && alpha === 1 && op.dash.length === 0);
+    const direct = hair || (op.composite === 'source-over' && op.paint.kind === 'color' && !op.paint.slot && op.paint.rgba[3] === 1 && alpha === 1 && op.dash.length === 0);
     const pad = (deviceWidth * Math.max(1, op.join === 'miter' ? op.miterLimit : 1)) / 2 + 1;
     // Paths with pairwise disjoint bounds stroke together (one draw per instance kind, one cover): the draw-once
     // stencil then matches per-path Canvas strokes. Opaque direct strokes always batch.
@@ -502,7 +502,7 @@ export abstract class ListReplayer {
   private sprites(op: SpriteOp): void {
     if (!op.count) return;
     const gl = this.gl,
-      p = this.program('sprite'),
+      p = this.program(op.tint ? 'pen' : op.contourTint ? 'contour' : 'sprite'),
       t = this.resources.texture(op.source, op.smoothing);
     if (!t) return;
     // Instances are uploaded once per op and kept (a retained list replays them at every frame); the view goes in uPost.
@@ -511,6 +511,13 @@ export abstract class ListReplayer {
     gl.uniform2f(p.u('uImageSize'), t.width, t.height);
     gl.uniformMatrix3fv(p.u('uPost'), false, this.mat3(this.post));
     gl.uniform1i(p.u('uFull'), op.composite === 'destination-in' ? 1 : 0);
+    if (op.tint) {
+      gl.uniform4fv(p.u('uInk'), op.tint[0].rgba);
+      gl.uniform4fv(p.u('uWash'), op.tint[1].rgba);
+    } else if (op.contourTint) {
+      const [r, g, b, a] = op.contourTint.rgba;
+      gl.uniform4f(p.u('uContourTint'), r, g, b, a);
+    }
     const bind = (first: number): void => {
       const sizes = [4, 4, 4, 3];
       let offset = first * SPRITE_STRIDE * 4;

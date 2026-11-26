@@ -92,6 +92,7 @@ export interface BuildingWalkSolid {
 /** A cartographic projection is never a PlacedBuilding or a realization input. */
 export type Building3dVisual = (PlacedBuilding | NativeBuildingProjection | ParentMember3dVisual) & { walkSolids?: readonly BuildingWalkSolid[] };
 export interface Building3dScene {
+  grove?: import('./city3d/groveInstances').GroveInstances;
   buildings: readonly Building3dVisual[];
   materials?: HouseMaterial[];
   /** Accepted source records for terrain/forest exclusion, independent of

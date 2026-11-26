@@ -16,7 +16,7 @@ import { worldCampCover } from './campCover';
 import { worldForestClearings } from './forestClearings';
 import { renderView } from '../gen/settlements/merge';
 import { seaWithIslands } from './util';
-import { farmPlots, farmRidges, treePolys } from './farms';
+import { FARM_ENCLOSURES, farmEnclosureKind, farmPlots, farmRidges, treePolys, type FarmEnclosureKind } from './farms';
 import { fieldHedges } from './hedges';
 import { terraceMarks } from './terraces';
 import { urbanStrokeSpace } from './roadSurfaces';
@@ -434,13 +434,16 @@ export function buildScene(world0: World, tileSize = TILE_SIZE, build: SceneBuil
         'farm-buildings',
         fms.flatMap(f => f.buildings),
       );
-      addLines(
-        'farm-walls',
-        'farm',
-        'wall',
-        0.9,
-        fms.flatMap(f => f.walls ?? []),
-      );
+      const yardLines = new Map<FarmEnclosureKind, Polyline[]>();
+      for (const farm of fms) {
+        if (!farm.walls?.length) continue;
+        const kind = farmEnclosureKind(farm);
+        if (kind === 'none') continue;
+        let paths = yardLines.get(kind);
+        if (!paths) yardLines.set(kind, (paths = []));
+        for (const wall of farm.walls) paths.push(wall);
+      }
+      for (const [kind, paths] of yardLines) addLines(`farm-${kind}s`, 'farm', kind, FARM_ENCLOSURES[kind].width, paths);
       addLines('farm-ridges', 'farm', 'ridge', 0.35, fms.flatMap(farmRidges));
       addLines(
         'farm-drives',

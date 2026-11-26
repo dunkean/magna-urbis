@@ -4,7 +4,8 @@
  * (`CityGlSharedRenderer`: the live compositor's town layer), their statistics.
  */
 import type { Point } from '../../../../../rust/bridge/urban';
-import type { Box, CityBuildings, CityLayers, CityLod, CityPalette, CityPick, CityScene, CityView } from '../model/contract';
+import type { BuildingSet } from './buildingSet';
+import type { Box, CityLayers, CityLod, CityPalette, CityPick, CityScene, CityView } from '../model/contract';
 import { type CityGlLiveLook } from './styleTables';
 import type { RoofMode } from '../../roofMode';
 import type { YardBoundary } from '../../cityLotEnclosures';
@@ -86,6 +87,8 @@ export interface CityGlPick extends CityPick {
   kind?: 'building' | 'parcel' | 'block';
 }
 export interface CityGlSetOptions {
+  revision?: number;
+  edit?: { previous: number; rects: readonly import('./pages').CellRect[] };
   /** Triangulation workers (0 = on this thread). Default: up to 4. */ workers?: number;
 }
 export interface CityGlRenderer {
@@ -93,8 +96,8 @@ export interface CityGlRenderer {
   readonly gl: WebGL2RenderingContext;
   /** A retained plan is uploaded and the physical context is usable. */
   readonly ready: boolean;
-  setScene(scene: CityScene, buildings?: CityBuildings, options?: CityGlSetOptions): Promise<CityGlBuildStats>;
-  setBuildings(buildings: CityBuildings | undefined, options?: CityGlSetOptions): Promise<CityGlBuildStats>;
+  setScene(scene: CityScene, buildings?: BuildingSet, options?: CityGlSetOptions): Promise<CityGlBuildStats>;
+  setBuildings(buildings: BuildingSet | undefined, options?: CityGlSetOptions): Promise<CityGlBuildStats>;
   draw(options: CityGlDrawOptions): CityGlFrame;
   pick(point: Point, options?: Pick<CityGlDrawOptions, 'view' | 'lod' | 'metresPerPixel' | 'buildingsVisible'>): CityGlPick;
   /** Drawing-buffer size; defaults to the canvas CSS size × devicePixelRatio. */
@@ -123,7 +126,7 @@ export interface CityGlSharedRenderer extends Omit<CityGlRenderer, 'canvas' | 'r
   prepareSteps(options: CityGlDrawOptions): Generator<void, void>;
   /** Lot enclosures of the live look (each list a town's `scene.lotEnclosures`), relative to the uploaded scene; set
    * again after each new scene. Drawn when `layers.lotEnclosures` is not false, from the mid level, as drawLotEnclosures. */
-  setYards(lists: readonly (readonly YardBoundary[] | undefined)[]): void;
+  setYards(lists: readonly (readonly YardBoundary[] | undefined)[]): boolean;
   /** setScene / setBuildings pack their polygons in slices (never in one long task): `step` advances them for about
    * `budgetMs` and returns true while packing remains. Triangulation then runs on the workers as before. */
   step(budgetMs: number): boolean;

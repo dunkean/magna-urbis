@@ -5,7 +5,7 @@
  */
 import type { CartographyContext } from '../context';
 import type { VectorFrame } from '../frame';
-import { mixHex, TAU } from '../geometry';
+import { TAU } from '../geometry';
 import type { UrbanFrame } from './frame';
 
 export function paintPlanGrounds(c: CartographyContext, f: VectorFrame, u: UrbanFrame): void {
@@ -22,22 +22,22 @@ export function paintPlanGrounds(c: CartographyContext, f: VectorFrame, u: Urban
       })
     : null;
   if (polyL('u-terraces')) {
-    const tt = mixHex(pal.land.meadow, pal.land.garden, 0.4);
+    const tt = c.ink('terrace');
     fillPolys('u-terraces', tt);
     strokePolys('u-terraces', tt, lw(1.5, 0.5));
   }
-  paved('u-cornfields', mixHex(pal.land.field, U.gardenInk, 0.14), cornPat);
+  paved('u-cornfields', c.ink('cornfield'), cornPat);
   if (polyL('u-cornfields') && lod.band >= 1) strokePolys('u-cornfields', U.gardenInk, lw(0.45, 0.4), 0.55);
-  if (polyL('u-chinampa-canals')) fillPolys('u-chinampa-canals', pal.riverFill);
+  if (polyL('u-chinampa-canals')) fillPolys('u-chinampa-canals', c.ink('riverFill'));
   paved('u-chinampas', U.garden, gardenPat);
   // urban water (moats, tanks, mill races) and the moat line outside a planned town's wall
   strokeLines(
     linesOf(l => l.role === 'uline' && (l.kind === 'moat' || l.kind === 'canal')),
-    pal.riverFill,
+    c.ink('riverFill'),
     l => lw(l.width, 1),
   );
   if (polyL('u-water')) {
-    fillPolys('u-water', pal.riverFill, 1, 'nonzero');
+    fillPolys('u-water', c.ink('riverFill'), 1, 'nonzero');
     strokePolys('u-water', pal.riverEdge, lw(0.5, 0.4));
   }
   // compound grounds, mosque courts (sahn), cloister garths, ditch parcels, cemeteries, castle bases

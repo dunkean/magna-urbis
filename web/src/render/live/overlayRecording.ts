@@ -10,7 +10,7 @@ import { CRISP_MARK, type DisplayList, type LiveRasterizer } from '../gpu/contra
 import { clipList, cullList, markIndex, splitList } from '../gpu/listTools';
 import type { OverlayDiagnostics } from './overlayDiagnostics';
 import type { OverlayRegions } from './overlayRegions';
-import { beyond, boxOf, covers, type Band, type OverlayBand, type OverlayHost, type Region } from './overlayTypes';
+import { beyond, boxOf, covers, meetsChange, type Band, type OverlayBand, type OverlayHost, type Region } from './overlayTypes';
 
 /** Pixels of one baked band (four per region). */
 const BAKE_PIXELS = 4e6,
@@ -108,7 +108,15 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
     if (p.parts.length >= p.bands.length) return complete(p);
     const b = p.building;
     if (!b) {
-      const band = p.bands[p.parts.length];
+      const band = p.bands[p.parts.length],
+        reuse = p.reuse,
+        previous = reuse?.source.parts[p.parts.length];
+      if (reuse && previous && !reuse.boxes.some(box => meetsChange(band, box, 32 / p.scale))) {
+        reuse.bands.add(previous);
+        p.parts.push(previous);
+        p.live.push(previous.part);
+        return false;
+      }
       job ??= {
         steps: host.recordSteps
           ? host.recordSteps(p, band, p.light, false)
@@ -190,7 +198,8 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
     }
     const cur = retained.shown;
     // A draft serves while the view moves; at rest it is made again at full quality.
-    const fits = (r: Region): boolean => !r.stale && (!r.draft || moving) && retained.current(r) && r.key === key && (!!host.fixedRaster?.() || (r.dpr === frame.dpr && covers(r.rect, frame.rect)));
+    const fitsView = (r: Region): boolean => !r.stale && (!r.draft || moving) && r.key === key && (!!host.fixedRaster?.() || (r.dpr === frame.dpr && covers(r.rect, frame.rect)));
+    const fits = (r: Region): boolean => fitsView(r) && retained.current(r);
     if (cur && fits(cur)) {
       dropPending();
       needSince = -1;
@@ -212,12 +221,20 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
     // step alone does not abandon it: a zoom changes the key at every half-octave, and a region that never
     // completes leaves the far one on screen for the whole gesture. It completes, shows, and the next one follows.
     const p0 = pending;
-    if (p0 && (host.fixedRaster?.() ? p0.key !== key : p0.dpr !== frame.dpr || !covers(p0.rect, frame.rect) || (p0.key !== key && (p0.light !== light || host.key(p0.scale, p0.dpr, p0.light) !== p0.key || Math.abs(Math.log2(p0.scale / view.scale)) > KEEP_OCTAVES)))) dropPending();
+    if (
+      p0 &&
+      (retained.changes(p0)?.length !== 0 ||
+        (host.fixedRaster?.() ? p0.key !== key : p0.dpr !== frame.dpr || !covers(p0.rect, frame.rect) || (p0.key !== key && (p0.light !== light || host.key(p0.scale, p0.dpr, p0.light) !== p0.key || Math.abs(Math.log2(p0.scale / view.scale)) > KEEP_OCTAVES))))
+    )
+      dropPending();
     if (!pending) {
       // Nothing starts while the view moves, unless nothing can be shown or the gesture lasts: a region costs many slices.
       const nothing = !cur || cur.dpr !== frame.dpr;
       if (!nothing && start - movedAt < host.settleMs && start - needSince < host.maxWaitMs) return true;
-      pending = { ...host.plan(view, frame.cssW, frame.cssH, frame.dpr, key), light, stale: false, parts: [], live: [], draft: false, provisional: false, arrivals: host.arrivals() };
+      const boxes = cur && !cur.draft && fitsView(cur) && retained.arrivalsCurrent(cur) ? retained.changes(cur) : undefined;
+      const source = boxes?.length ? cur : undefined;
+      const plan = source ? { key, rect: source.rect, scale: source.scale, dpr: source.dpr, bands: source.bands } : host.plan(view, frame.cssW, frame.cssH, frame.dpr, key);
+      pending = { ...plan, light, stale: false, parts: [], live: [], draft: false, provisional: source?.provisional ?? false, arrivals: host.arrivals(), content: host.contentRevision?.(), reuse: source && boxes ? { source, boxes, bands: new Set() } : undefined };
       diagnostics?.regionStarted();
     }
     blocked = false;

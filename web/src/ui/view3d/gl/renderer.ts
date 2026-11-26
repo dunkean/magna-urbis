@@ -6,7 +6,7 @@
  */
 import { waterSeasonUniforms } from '../../../render/seasonPalette';
 import { freshWater3d } from '../../../render/waterPalette';
-import { bindForest, bindLandDetail, deleteForestTextures, forestTexture, forestTextures, type ForestTextures } from '../../terrain/gl/forest';
+import { bindForest, bindLandDetail, deleteForestTextures, forestTexture, forestTextures, patchForestTexture, type ForestTextures } from '../../terrain/gl/forest';
 import type { HeightLayer } from '../../terrain/contract';
 import { shoreRingPixels, shoreRingTexture } from '../../../../../rust/bridge/terrainForestBeach';
 import { bindForestBrushes, disposeForestBrushes } from '../../../render/forestBrushAtlas';
@@ -178,6 +178,10 @@ export class GlTerrainRenderer {
 
   uploadOccupation(occupation: ForestOccupation): WebGLTexture {
     return forestTexture(this.gl, occupation, true);
+  }
+
+  patchOccupation(texture: WebGLTexture, occupation: ForestOccupation, rects: NonNullable<ForestOccupation['dirty']>['rects']): void {
+    patchForestTexture(this.gl, texture, occupation, rects);
   }
 
   uploadLandDetail(detail: LandDetail): WebGLTexture {

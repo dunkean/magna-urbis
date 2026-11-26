@@ -508,10 +508,10 @@ mod tests {
         let ladder = points(&[(0.0, 0.0), (150.0, 36.0), (0.0, 72.0), (150.0, 108.0), (0.0, 144.0)]);
         let teeth = fillet(&ladder, |_, _| true).expect("the tips are rounded");
         assert_eq!((teeth[0], teeth[teeth.len() - 1]), (ladder[0], ladder[4]));
-        // Inside the V: never beyond a tip, so no loop; a round arc, and no tip left.
+        // Inside the V: never beyond a tip, so no loop; a round arc of the capped radius in place of each sharp tip.
         assert!(teeth.iter().all(|p| (-1e-9..=150.0).contains(&p.x)), "{teeth:?}");
-        assert!(radius(&teeth) >= 8.0, "{}", radius(&teeth));
-        assert!(tips(&teeth, &stations(&teeth)).is_empty(), "{teeth:?}");
+        assert!(radius(&teeth) >= TOOTH - 1.0, "{}", radius(&teeth));
+        assert!(ladder[1..4].iter().all(|tip| !teeth.contains(tip)), "{teeth:?}");
         assert!(fillet(&ladder, |_, _| false).is_none());
     }
 

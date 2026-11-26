@@ -31,6 +31,7 @@ import { urbanParentControls } from './generationEdits';
 import { runtimeBlockEdits, partitionLayout } from '../../../rust/bridge/urbanBlockEdits';
 import { replayUrbanRoadEdits, type UrbanStreetEdit, type UrbanRoadSources, type RoadChanges } from './urbanRoadEditing';
 import { roadBlockScope } from './urbanRoadBlocks';
+import { rasterizeSea } from './terrainProjection';
 
 export interface RustTownSnapshot {
   backend: 'rust-wasm-cpu' | 'rust-native-cpu';
@@ -190,7 +191,10 @@ export function rustSettlementRaster(world: World): SettlementRaster {
     cached.rivers.every((river, i) => river.path === terrain.rivers[i].path && river.width === terrain.rivers[i].width && river.id === terrain.rivers[i].id)
   )
     return cached.raster;
-  const planning = n !== grid.w ? settlementRaster(native!, n) : undefined;
+  const shore = native?.field;
+  const useShore = native && shore && !(shore.floor > 0) && shore.data.length === shore.n ** 2 && !native.caveMask.length && !shore.cave?.length;
+  // Both planning resolutions use the retained shore. Seed the alternate grid before laying its rivers.
+  const planning = n !== grid.w ? settlementRaster(native!, n, false, useShore ? (water, side, cell) => rasterizeSea([...terrain.coastline, ...(terrain.islands ?? [])], side, cell, water) : undefined) : undefined;
   // Projection marks cave rock as class 4, which Rust rejects: send it as class 2 at ground level and keep the rock mask JS-side.
   const projectedRock = !planning && terrain.water.includes(4);
   const rock = planning?.rock ?? (projectedRock ? Uint8Array.from(terrain.water, v => (v === 4 ? 1 : 0)) : undefined);
@@ -474,7 +478,18 @@ export async function generateRustTown(
   let snapshot: RustTownSnapshot =
     !retainedLayouts && previous?.layoutKey === layoutKey
       ? cloneRustTownSnapshot(previous)
-      : { backend: backend === 'native' ? 'rust-native-cpu' : 'rust-wasm-cpu', stage: 'layout', layoutKey, compositionKey, compositionLayouts: previousComposition, layouts: retainedLayouts ?? [], importedLayout, streetEdits: previous?.streetEdits, buildingIds: [], warnings: [] };
+      : {
+          backend: backend === 'native' ? 'rust-native-cpu' : 'rust-wasm-cpu',
+          stage: 'layout',
+          layoutKey,
+          compositionKey,
+          compositionLayouts: previousComposition,
+          layouts: retainedLayouts ?? [],
+          importedLayout,
+          streetEdits: previous?.streetEdits ?? settings.roadOverrides?.towns?.[key],
+          buildingIds: [],
+          warnings: [],
+        };
   // Reuse one terrain handle for this ordered request chain, not one copy for each urban step.
   let engine: UrbanEngine | undefined;
   // Wall time of each stage request as this realm sees it (engine, transfer, decode), kept in the town's stats.
@@ -555,13 +570,14 @@ export async function generateRustTown(
       }
       return { id: 1, error: '[held_partitions] The engine no longer holds these parcels.' };
     }
-    const { visuals, ...sent } = input as Record<string, unknown> & { visuals?: boolean };
+    const { visuals, siteBlocks, ...sent } = input as Record<string, unknown> & { visuals?: boolean; siteBlocks?: import('./urbanEditScope').TownBlocks };
     // City volumes: the binary site projection of the retained snapshot; complete requests stay in the engine.
     if (kind === 'buildingSites' && visuals && held?.source && input !== extras && runtime) {
       const query: UrbanBuildingSiteQuery = { source: held.source, seed: String(extras.seed), ...(typeof extras.architectureCulture === 'string' ? { architectureCulture: extras.architectureCulture } : {}) };
       try {
         const [{ readUrbanSiteVisuals }, { decodeCitySiteVisuals }] = await Promise.all([import('../../../rust/bridge/urbanDisplay'), import('../render/cityDisplayBuffers')]);
-        return { id: 1, sites: decodeCitySiteVisuals(await readUrbanSiteVisuals(query, runtime)) as unknown as UrbanSiteVisual[], siteQuery: query };
+        const blocks = siteBlocks && Object.fromEntries([...siteBlocks].map(([layout, indices]) => [layout, [...indices]]));
+        return { id: 1, sites: decodeCitySiteVisuals(await readUrbanSiteVisuals({ ...query, blocks }, runtime)) as unknown as UrbanSiteVisual[], siteQuery: siteBlocks ? undefined : query };
       } catch (error) {
         return { id: 1, error: String(error) };
       }
@@ -574,7 +590,12 @@ export async function generateRustTown(
           backend !== 'native' && kind === 'quarters' && urbanQuartersWave > 1
           ? { ...sent, batch: urbanQuartersWave }
           : sent;
-    const { visuals: _visuals, ...plain } = extras;
+    const { visuals: _visuals, siteBlocks: _siteBlocks, ...plain } = extras;
+    if (siteBlocks) {
+      const partitions = editScope.blockPartitions(extras.partitions as Partition[], siteBlocks);
+      input = { ...input, partitions };
+      plain.partitions = partitions;
+    }
     extras = plain;
     try {
       const pending = engine.run({ id: 1, kind, seed, runtime, ...(raster ? { raster } : {}), ...input } as Parameters<UrbanEngine['run']>[0], { terrainSent: resumed });
@@ -784,6 +805,23 @@ export async function generateRustTown(
     snapshot.scene = undefined;
     snapshot.capacityKey = undefined;
   }
+  // A fresh plan can reindex blocks or move a street. Decide whether the existing merge accepts it before
+  // generating any sites, and reuse that decision when installing the result.
+  const quarterTarget =
+    !retainedLayouts &&
+    stageIndex === 3 &&
+    architecture === 'silhouette' &&
+    previous?.scene &&
+    previous.sites &&
+    previous.layoutKey !== layoutKey &&
+    !Object.keys(previous.houseOverrides ?? {}).length &&
+    !Object.keys(buildingEdits).length &&
+    !Object.values(resolved.layout.overrides?.quarters ?? {}).some(e => e.houseConfig) &&
+    ![...Object.values(resolved.parcels.overrides?.parcels ?? {}), ...Object.values(resolved.parcels.overrides?.blocks ?? {})].some(e => e.role || e.houseConfig)
+      ? editMerge.editTarget(previous.editState, editState, [previous.layouts, snapshot.layouts], [previous.sites])
+      : undefined;
+  const retainedQuarter = quarterTarget && !quarterTarget.parcels.size && previous ? editMerge.retainedEditLayouts(previous, snapshot, quarterTarget) : undefined;
+  const quarterBlocks = Array.isArray(retainedQuarter) ? quarterTarget!.blocks : undefined;
   if (stageIndex >= 3) {
     const styleOnlyChange = !!snapshot.scene && snapshot.siteBaseKey === siteBaseKey && snapshot.requestKey !== requestKey;
     const { styleEditScope, withSiteSeeds, blockPartitions, siteBlocks, mergeSites, blockCount } = editScope;
@@ -818,7 +856,7 @@ export async function generateRustTown(
     } else if (!snapshot.sites || snapshot.requestKey !== requestKey) {
       report('urban-building-sites', 'Rust · domaines constructibles, accès et contraintes des maisons…', 3);
       snapshot.requests = snapshot.siteQuery = undefined;
-      const response = await request('buildingSites', { ...siteInput(), visuals: architecture === 'silhouette' });
+      const response = await request('buildingSites', { ...siteInput(), visuals: architecture === 'silhouette', ...(quarterBlocks ? { siteBlocks: quarterBlocks } : {}) });
       if (response.error) throw new Error(response.error);
       if (response.sites) {
         snapshot.sites = response.sites;
@@ -831,6 +869,25 @@ export async function generateRustTown(
         // City volumes keep only the projection; the complete requests stay in this worker for edits.
         if (architecture === 'silhouette') wasmSiteRequests.set(snapshot.sites, requests);
         else snapshot.requests = requests;
+      }
+      if (quarterBlocks && snapshot.sites) {
+        // A scoped binary pack numbers its own rows. Preserve each selected row's full-stage offset.
+        const selected = editScope.blockLots(sitePartitions(), quarterBlocks);
+        const offsets = new Map<string, number>();
+        let offset = 0;
+        for (const partition of sitePartitions())
+          for (const a of partition.programme?.allocations ?? []) {
+            if (a.role === 'open.garden') continue;
+            if (selected.has(a.parcelId)) offsets.set(a.parcelId, offset);
+            offset++;
+          }
+        const fullRequests = wasmSiteRequests.get(snapshot.sites);
+        snapshot.sites = snapshot.sites.filter(site => selected.has(site.parcel_id)).map(site => ({ ...site, offset: offsets.get(site.parcel_id)! }));
+        if (fullRequests)
+          wasmSiteRequests.set(
+            snapshot.sites,
+            fullRequests.filter(request => selected.has(request.parcel_id)),
+          );
       }
       snapshot.requestKey = requestKey;
       snapshot.siteProfile = architectureSettings;
@@ -1117,10 +1174,10 @@ export async function generateRustTown(
   // the previous snapshot's objects (`urbanEditMerge`).
   let scopeNote: string | undefined;
   if (!retainedLayouts) {
-    const editTarget = previous && editMerge.editTarget(previous.editState, editState, [previous.layouts, snapshot.layouts], [previous.sites, snapshot.sites]);
+    const editTarget = quarterTarget ?? (previous && editMerge.editTarget(previous.editState, editState, [previous.layouts, snapshot.layouts], [previous.sites, snapshot.sites]));
     if (previous && editTarget) {
       const freshSites = snapshot.sites,
-        merged = editMerge.mergeEditTarget(previous, snapshot, editTarget);
+        merged = editMerge.mergeEditTarget(previous, snapshot, editTarget, retainedQuarter);
       if (merged.reason) scopeNote = `whole town kept: ${merged.reason}`;
       else {
         snapshot = merged.snapshot;

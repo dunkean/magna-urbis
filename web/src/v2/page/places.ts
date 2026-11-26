@@ -8,7 +8,7 @@ import { settlementDisplayName } from '../mapPresentation';
 import { localFactsHtml, type LocalFactsInput } from '../localFacts';
 import { activitySitesOf } from '../activitySites';
 import { isolatedPlacesOf } from '../isolatedPlaces';
-import { activityKindLabel, activitySiteLabel, urbanCultureLabel } from '../urbanLabelNames';
+import { activityKindLabel, activityResourceLabel, activitySiteLabel, urbanCultureLabel } from '../urbanLabelNames';
 import { DEMOGRAPHIC_CLASSES } from '../../../../rust/bridge/settlementDemography';
 import { nativeCityRecords } from '../nativeProducts';
 import { cityReachedPopulation, populationText, populationShortfallText } from '../../render/cityPopulation';
@@ -203,9 +203,10 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
           if (!site) return;
           state.client.viewer.setView({ cx: site.x, cy: site.y, scale: 2 });
           actions.showInspector(site.parent);
+          const resource = activityResourceLabel(site.resource);
           setHTML(
             $('#building-inspector'),
-            `<div class="edit-building"><h3>${esc(translate(activitySiteLabel(site.template)))}</h3><p>${esc(translate(activityKindLabel(site.kind)))} · ${site.buildings.length} buildings · ${site.residents} inhabitants</p><p class="hint">${esc(site.resource)} · ${esc(translate(urbanCultureLabel(site.culture)))}</p></div>`,
+            `<div class="edit-building"><h3>${esc(translate(activitySiteLabel(site.template)))}</h3><p>${esc(translate(activityKindLabel(site.kind)))} · ${site.buildings.length} buildings · ${site.residents} inhabitants</p><p class="hint">${resource ? `<span>${esc(resource)}</span> · ` : ''}<span>${esc(urbanCultureLabel(site.culture))}</span></p></div>`,
           );
         }),
     );

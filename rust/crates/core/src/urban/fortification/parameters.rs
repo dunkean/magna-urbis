@@ -418,10 +418,20 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
     layout.enclosures.retain(|e|!e.purpose.is_empty() && e.purpose!="port");
     for (i,(shape,purpose)) in traced.into_iter().enumerate() {
         let mut path=shape.outer;path.push(path[0]);
+        let edit_key = super::trace_key("harbour", &path);
+        let edit = cfg.overrides.walls.get(&edit_key);
+        if edit.is_some_and(|v| v.present == Some(false)) { continue; }
+        let own = style.for_wall(edit, cfg, &layout.culture, pop);
+        let kind = edit.and_then(|v| v.style.as_deref()).map(super::family).unwrap_or(&template.kind);
+        if let Some(count) = edit.and_then(|v| v.gates) {
+            let circuit = super::Circuit { gates: Some(count), pop, purpose, kind, curtain_width: own.curtain_width, moat: own.ditch_width[1],
+                grade: cfg.max_street_grade, squared: false, streets_turn: false, key: &layout.key, improvisation: cfg.street_improvisation };
+            super::decide_gates(&Shape { outer: path[..path.len()-1].to_vec(), holes: vec![] }, &mut layout.streets, &circuit, surface);
+        }
         let gates=composition::gates(&path,&layout.streets);let land=gates.len();
         let banks=composition::water_gates(&path,surface);
-        let mut e=Enclosure {path,kind:template.kind.clone(),purpose:purpose.into(),gates,..Default::default()};
-        build(&mut e,land,&banks,&layout.streets,surface,&style,pop,&predicted,&Rng::new(&format!("{}:port-wall:{i}",layout.key)));
+        let mut e=Enclosure {edit_key,path,kind:kind.into(),purpose:purpose.into(),gates,..Default::default()};
+        build(&mut e,land,&banks,&layout.streets,surface,&own,pop,&predicted,&Rng::new(&format!("{}:port-wall:{i}",layout.key)));
         layout.enclosures.push(e);
     }
     settle(layout,surface);

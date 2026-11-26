@@ -2,7 +2,7 @@ import type { World, Polyline, Vec2, UrbanLayer } from '../gen/types';
 import type { Street, Layout, Shape } from '../../../rust/bridge/urban';
 import type { RoadOutput, RoadSegment } from '../../../rust/bridge/settlements';
 import type { RustTownSnapshot } from './rustUrban';
-import { nearestOnPolyline, roadCrossings, samePath } from './networkEdits';
+import { nearestOnPolyline, roadCrossings, roadSource, samePath } from './networkEdits';
 import { polylineLength } from '../gen/core/geom';
 import { roadPieceGeometry } from './roadControlModel';
 import { pointInRing } from '../gen/geo/poly';
@@ -43,7 +43,7 @@ const hash = (value: unknown) => {
 export const urbanStreetId = (layout: string, street: Street) => `${layout}:${hash([street.path, street.role, street.rank])}`;
 const width = (s: Street) => s.widths.reduce((a, b) => a + b, 0) / Math.max(1, s.widths.length) || 3;
 const kind = (s: Street): Road['kind'] => (['track', 'trail', 'stairs', 'lane'].includes(s.role) || width(s) < 3 ? 'track' : s.rank <= 1 ? 'major' : 'minor');
-const cls = (r: Road) => (r.kind === 'major' ? ('main' as const) : r.kind === 'minor' ? ('local' as const) : ('track' as const));
+const cls = (r: Road) => r.editorClass ?? (r.kind === 'major' ? ('main' as const) : r.kind === 'minor' ? ('local' as const) : ('track' as const));
 /** A drawn road entirely inside one settlement belongs to that town's editable street layer. */
 export function adoptUrbanRoad(world: World, index: number): World {
   const r = world.roads?.[index];
@@ -57,6 +57,7 @@ export function adoptUrbanRoad(world: World, index: number): World {
     }
   return world;
 }
+const classicStreet = (s: UrbanLayer['streets'][number]): Street => ({ path: s.path, widths: s.widths ?? s.path.map(() => s.width), rank: s.rank ?? 2, role: s.role });
 function cities(world: World) {
   const native = (world.debug?.v2RustCities ?? {}) as Record<string, RustTownSnapshot>;
   return (world.settlements ?? []).flatMap(t => {
@@ -64,19 +65,7 @@ function cities(world: World) {
       snapshot = native[t.key];
     const layouts =
       snapshot?.layouts ??
-      (urban
-        ? [
-            {
-              key: t.key,
-              culture: t.culture,
-              center: t.center,
-              quarters: urban.quarters.map(q => ({ shape: { outer: q.poly.outer, holes: q.poly.holes ?? [] }, phase: q.phase })),
-              blocks: [],
-              warnings: [],
-              streets: urban.streets.map(s => ({ path: s.path, widths: s.widths ?? s.path.map(() => s.width), rank: s.rank ?? 2, role: s.role })),
-            } as Layout,
-          ]
-        : []);
+      (urban ? [{ key: t.key, culture: t.culture, center: t.center, quarters: urban.quarters.map(q => ({ shape: { outer: q.poly.outer, holes: q.poly.holes ?? [] }, phase: q.phase })), blocks: [], warnings: [], streets: urban.streets.map(classicStreet) } as Layout] : []);
     if (!layouts.length) return [];
     const saved = world.debug?.v2LegacyStreetEdits as Record<string, UrbanStreetEdit[]> | undefined;
     const sources = world.debug?.v2LegacyRoadSources as Record<string, UrbanRoadSources[]> | undefined;
@@ -119,27 +108,39 @@ function sameGeometry(a: readonly UrbanRoadPart[], b: readonly UrbanRoadPart[]):
   );
 }
 
+function replayStreets(key: string, generated: Street[], edits: readonly UrbanStreetEdit[]): Street[] {
+  const relevant = new Map(edits.filter(e => e.layout === key).map(e => [e.id, e]));
+  if (!relevant.size) return generated;
+  const streets: Street[] = [];
+  for (const street of generated) {
+    const id = urbanStreetId(key, street),
+      edit = relevant.get(id);
+    if (edit) {
+      streets.push(...edit.parts.map(p => p.street));
+      relevant.delete(id);
+    } else streets.push(street);
+  }
+  for (const edit of relevant.values()) streets.push(...edit.parts.map(p => p.street));
+  return streets;
+}
+
+/** Classic towns have the same saved edits, with their native-style street source in debug. */
+export function replayClassicTownStreets(world: World, key: string, urban: UrbanLayer, edits: UrbanStreetEdit[]): UrbanLayer {
+  const generated = urban.streets.map(classicStreet);
+  const original = new Map(generated.map((s, i) => [s, urban.streets[i]]));
+  const streets = replayStreets(key, generated, edits);
+  world.debug = { ...world.debug, v2LegacyStreetEdits: { ...(world.debug?.v2LegacyStreetEdits as object), [key]: edits }, v2LegacyRoadSources: { ...(world.debug?.v2LegacyRoadSources as object), [key]: [{ layout: key, streets: generated }] } };
+  return { ...urban, streets: streets.map(s => original.get(s) ?? { path: s.path, widths: s.widths, width: width(s), rank: s.rank, role: s.role as UrbanLayer['streets'][number]['role'], kind: s.rank <= 1 ? 'main' : 'street', phase: 0 }) };
+}
+
 /** Replay manual road decisions after generation; native request payloads still contain plain Street objects. */
 export function replayUrbanRoadEdits(layouts: Layout[], edits: readonly UrbanStreetEdit[]): Layout[] {
   // Native sessions reuse layouts by identity through parcels, programme and binary
   // site visuals. An empty replay must not turn that retained chain into uploads.
   if (!edits.length) return layouts;
   return layouts.map(layout => {
-    const relevant = edits.filter(e => e.layout === layout.key);
-    if (!relevant.length) return layout;
-    const used = new Set<string>(),
-      streets: Street[] = [];
-    for (const street of layout.streets) {
-      const id = urbanStreetId(layout.key, street),
-        edit = relevant.find(e => e.id === id);
-      if (edit) {
-        streets.push(...edit.parts.map(p => p.street));
-        used.add(edit.id);
-      } else streets.push(street);
-    }
-    // A changed upstream recipe may no longer contain the former street: the user's replacement still wins.
-    for (const edit of relevant) if (!used.has(edit.id)) streets.push(...edit.parts.map(p => p.street));
-    return { ...layout, streets, ...(layout.claim ? { claim: { ...layout.claim, streets } } : {}) };
+    const streets = replayStreets(layout.key, layout.streets, edits);
+    return streets === layout.streets ? layout : { ...layout, streets, ...(layout.claim ? { claim: { ...layout.claim, streets } } : {}) };
   });
 }
 
@@ -289,7 +290,14 @@ function connectedGraph(world: World): World {
     for (const [pieceIndex, points] of pieces.entries()) {
       const same = pieces.length === 1 && samePath(points, r.path),
         owned = r.urban && { ...r.urban, ...(pieces.length > 1 ? { part: `${r.urban.part}:${String(pieceIndex).padStart(5, '0')}` } : {}) };
-      const road: Road = { ...r, path: same ? r.path : points, ...(pieces.length > 1 && r.editorId ? { editorId: `${r.editorId}:${pieceIndex}` } : {}), ...(owned ? { urban: owned } : {}), ...(r.controls && !same ? roadPieceGeometry(points, r.controls) : {}) };
+      const road: Road = {
+        ...r,
+        ...(!r.urban && !r.editorSource ? { editorSource: roadSource(r.path) } : {}),
+        path: same ? r.path : points,
+        ...(pieces.length > 1 && r.editorId ? { editorId: `${r.editorId}:${pieceIndex}` } : {}),
+        ...(owned ? { urban: owned } : {}),
+        ...(r.controls && !same ? roadPieceGeometry(points, r.controls) : {}),
+      };
       delete road.editorPickPaths;
       roads.push(road);
       const a = node(points[0]),

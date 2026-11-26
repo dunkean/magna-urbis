@@ -19,6 +19,7 @@
 //!   `mouthM` (through the town wall as a water gate); else a culture with `feederM` digs at most two
 //!   straight level feeders to water within that reach; a town with no water in reach digs nothing.
 //!   Every water piece is connected to a mouth or a feeder.
+//!   A canal reaching the curtain of a canal moat also opens a water gate into a nearby wet reach.
 //! - Network cultures (`branchSpacingM`) lay a hierarchy instead of a fringe along the shore: few openings,
 //!   far apart; a through canal between each pair of neighbouring openings, by the canal street nearest the
 //!   centre (the first `mains` are main canals); branches spaced `branchSpacingM` apart, a coarse pass at
@@ -39,6 +40,7 @@
 //! closures a Dijkstra bounded to 1.5 spacings from each branch end. Mouths are sought first, feeders
 //! (longer rays, sampled every 3 m) only by a town without a mouth and from its street ends and junctions.
 use crate::urban::warnings;
+use super::fortification::canal_moat;
 use super::{Layout,LayoutConfig,Point,Shape,Surface,geometry as g};
 use serde::{Serialize,Deserialize};
 use std::cmp::Reverse;
@@ -119,7 +121,11 @@ pub(super) fn canal_town(culture:&str,cfg:&LayoutConfig)->bool {params(culture,c
 pub(super) fn apply(layout:&mut Layout,cfg:&LayoutConfig,surface:Surface<'_>) {
     if layout.structure.is_none() {return;}
     let mut stats=Stats::default();
-    let water=match params(&layout.culture,cfg) {Some(p)=>plan(layout,p,surface,&mut stats),None=>vec![]};
+    let mut joins = vec![];
+    let water=match params(&layout.culture,cfg) {Some(p)=>plan(layout,p,surface,&mut stats,&mut joins),None=>vec![]};
+    for join in joins {
+        join.open(&mut layout.enclosures);
+    }
     // Keep one canal summary per town and log the lengths for tuning.
     layout.warnings.retain(|w|!w.starts_with(warnings::CANALS_PREFIX));
     if stats.town>0. {
@@ -331,16 +337,31 @@ impl Laid {
 #[derive(Default)]
 struct Stats { town:f64, candidates:[f64;4], openings:usize, reachable:f64, laid:f64, given_back:f64, pruned:f64, cut_off:f64, fin:f64, levels:usize, locks:usize }
 
-fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Waterway> {
+fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats,joins:&mut Vec<canal_moat::Join>)->Vec<Waterway> {
     let st=streets(layout);
     let points=&st.points; let n=points.len();
     let town:f64=st.segs.iter().filter(|s|s.4).map(|s|s.3).sum();
     let quarters:Vec<g::ContainmentIndex>=layout.quarters.iter().map(|q|g::ContainmentIndex::new(&q.shape)).collect();
     let inside=|q:Point|quarters.is_empty() || quarters.iter().any(|c|c.contains(q));
-    let blocks:Vec<g::ContainmentIndex>=layout.blocks.iter().filter(|b|!matches!(b.kind.as_str(),"place"|"water"|"quay")).map(|b|g::ContainmentIndex::new(&b.shape)).collect();
+    let has_moat = layout.enclosures.iter().any(canal_moat::eligible);
+    let mut land_shapes = vec![];
+    let mut land_boxes = vec![];
+    let blocks:Vec<_>=layout.blocks.iter().filter(|b|!matches!(b.kind.as_str(),"place"|"water"|"quay")).map(|b| {
+        if has_moat {
+            land_shapes.push(&b.shape);
+            land_boxes.push(g::bbox(&b.shape));
+        }
+        g::ContainmentIndex::new(&b.shape)
+    }).collect();
     let private=|q:Point|blocks.iter().any(|b|b.contains(q));
     let mut degree=vec![0usize;n]; let mut street_w=vec![0f64;n];
-    for s in &st.segs {degree[s.0]+=1;degree[s.1]+=1;street_w[s.0]=street_w[s.0].max(s.2);street_w[s.1]=street_w[s.1].max(s.2);}
+    let mut street_boxes = vec![];
+    for s in &st.segs {
+        degree[s.0]+=1;degree[s.1]+=1;street_w[s.0]=street_w[s.0].max(s.2);street_w[s.1]=street_w[s.1].max(s.2);
+        if has_moat {
+            street_boxes.push(canal_moat::bounds(points[s.0], points[s.1]));
+        }
+    }
 
     // Candidates: town streets inside the quarters, off the water and not along a shore.
     let mut segs:Vec<Seg>=vec![]; let mut seen=BTreeSet::new();
@@ -691,6 +712,13 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
     let chosen:Vec<usize>=(0..segs.len()).filter(|&e|in_w[e]).collect();
     if chosen.is_empty() {return vec![];}
 
+    let moats: Vec<_> = layout.enclosures.iter().enumerate().filter(|(_, e)| canal_moat::eligible(e))
+        .map(|(i, e)| canal_moat::Circuit::new(i, e)).collect();
+    let private_land = has_moat.then(|| g::BoxGrid::new(land_boxes));
+    let clear = |shape: &Shape| private_land.as_ref().is_none_or(|land| {
+        land.query(g::bbox(shape), 0.0).into_iter().all(|i| !canal_moat::overlaps(shape, land_shapes[i]))
+    });
+
     // Reaches joined by loops share one level; a lock is a tree edge between two reaches.
     let mut parent:Vec<usize>=(0..reaches.len()).collect();
     for &e in &chosen {
@@ -742,6 +770,9 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
         }
         water.push(Waterway{shape:ribbon(from,to,w),level_m:level(r),crossings:vec![],kind,rank,path:vec![from,to],width_m:w,bank_m:bank,locks});
         index_of[e]=water.len()-1;
+        for moat in &moats {
+            moat.connect(&water[index_of[e]], surface, p.rise, &clear, joins);
+        }
     }
     // Pools at junctions and dead ends, terminal basins, mouths and feeders.
     let main_centre=mains.first().copied().filter(|&m|wdeg[m]>0);
@@ -769,6 +800,9 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
             water.push(Waterway{shape:ribbon(c,end,w),level_m:level(r),crossings:vec![],kind:(if o.feeder {"feeder"} else {"mouth"}).into(),rank:0,path:vec![c,end],width_m:w,
                 bank_m:h[i].min(surface.height_at(lerp(c,o.to,0.5))),locks:vec![]});
             let piece=water.len()-1;
+            for moat in &moats {
+                moat.connect(&water[piece], surface, p.rise, &clear, joins);
+            }
             // Streets crossed by the opening keep their way over a bridge.
             for &(a,b,sw,_,_) in &st.segs {
                 if a==i || b==i {continue;}
@@ -802,6 +836,32 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
             let t=unit(c,other(e)); let off=wmax[i]/2.*1.03+DECK/2.+0.4;
             let at=if segs[e].len>2.*off+2. {add(c,t,off)} else {lerp(c,other(e),0.5)};
             bridge(&mut water,index_of[e],at,deck(at,t,width[e]/2.+LANDING,DECK));
+        }
+    }
+    // Keep existing land routes over a new branch. The street index is made only when a
+    // connector was actually dug, from the graph already used by the canal planner.
+    if joins.iter().any(|j| j.channel.is_some()) {
+        let streets = g::BoxGrid::new(street_boxes);
+        for join in joins {
+            let Some(channel) = &mut join.channel else { continue };
+            let piece = water.len();
+            let bounds = g::bbox(&channel.shape);
+            let candidates = streets.query(bounds, 0.0);
+            let width = channel.width_m;
+            water.push(channel.clone());
+            for w in channel.path.windows(2) {
+                let t = unit(w[0], w[1]);
+                for &i in &candidates {
+                    let (a,b,sw,_,_) = st.segs[i];
+                    let (pa,pb) = (points[a],points[b]);
+                    let Some((_, q)) = g::segment_hit(w[0],w[1],pa,pb) else { continue };
+                    let along=unit(pa,pb); let sin=(t.x*along.y-t.y*along.x).abs();
+                    if sin >= 0.35 {
+                        let span = (width/2.+LANDING)/sin;
+                        bridge(&mut water,piece,q,ribbon(add(q,along,-span),add(q,along,span),sw.clamp(DECK,4.)));
+                    }
+                }
+            }
         }
     }
     water
@@ -838,6 +898,51 @@ mod tests {
     fn ways(layout:&Layout)->&[Waterway] {&layout.structure.as_ref().unwrap().waterways}
     /// Water east of x = 610 m: the town's east street runs 10 m from the shore.
     fn east_water()->Vec<u8> {(0..N*N).map(|i|u8::from(i%N>60)).collect()}
+
+    #[test]
+    fn canals_join_a_wet_moat_through_water_gates() {
+        let point = |x, y| Point { x, y };
+        let path = vec![point(290., 290.), point(595., 290.), point(595., 610.),
+            point(290., 610.), point(290., 290.)];
+        let mut layout = town("venetian-lagoon");
+        layout.enclosures.push(super::super::Enclosure {
+            path: path.clone(),
+            kind: "wall".into(),
+            style: "curtain".into(),
+            curtain_width_m: 4.,
+            height_m: 7.,
+            moat: Some(super::super::MoatSpec { form: "canal".into(), ..Default::default() }),
+            ditch: (0..5).map(|i| {
+                // Land approaches cut the wet ring square on either side of each street.
+                let y = 300. + 60. * f64::from(i);
+                super::super::Work { kind: "wet".into(), shape: g::rectangle(607., y + 8., 616., y + 52.),
+                    height_m: 2.5, passage: None }
+            }).collect(),
+            ..Default::default()
+        });
+        let height = vec![1.; N * N];
+        let mut dry = layout.clone();
+        apply(&mut dry, &full(), surface(&height, &vec![0; N * N]));
+        assert!(ways(&dry).is_empty() && dry.enclosures[0].gates.is_empty());
+
+        let water: Vec<_> = (0..N * N).map(|i| u8::from(i % N > 61)).collect();
+        let ground = surface(&height, &water);
+        apply(&mut layout, &full(), ground);
+        super::super::fortification::drop_dead_gates(&mut layout);
+        let e = &layout.enclosures[0];
+        assert_eq!(e.path, path);
+        let channels: Vec<_> = ways(&layout).iter().filter(|w| w.path.len() == 3).collect();
+        assert!(!channels.is_empty(), "a canal branches beyond the curtain into the road-cut moat");
+        for channel in channels {
+            assert!(e.ditch.iter().any(|d| canal_moat::overlaps(&channel.shape, &d.shape)));
+            assert!(ways(&layout).iter().any(|w| matches!(w.kind.as_str(), "canal" | "rio")
+                && w.level_m == channel.level_m && canal_moat::overlaps(&channel.shape, &w.shape)));
+            let (_, at) = g::segment_hit(channel.path[0], channel.path[1], path[1], path[2]).unwrap();
+            assert!(e.gatehouses.iter().any(|g| g.kind == "water" && e.gates[g.gate] == g.passage[0]
+                && g.passage[0].y < at.y && at.y < g.passage[1].y));
+        }
+        assert_eq!(super::super::fortification::water_audit(&layout, ground)[0].gaps, 0);
+    }
 
     #[test]
     fn canals_open_onto_adjacent_water_and_form_one_connected_network() {

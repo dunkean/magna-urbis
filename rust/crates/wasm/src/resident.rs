@@ -504,6 +504,7 @@ impl SettlementTerrain {
                 architecture_culture.as_deref(),
                 origin,
                 version,
+                None,
             )
             .map_err(|e| JsValue::from_str(&e))
     }

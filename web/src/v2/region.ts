@@ -7,6 +7,8 @@ import { chooseSiteRust } from '../../../rust/bridge/siteNative';
 import { sizeForPop } from '../gen/options';
 import { circle, clipConvex, voronoiRegions } from '../gen/settlements/planner';
 import { effectiveRegion, validateRegionSettings } from './regionSettings';
+import { REGIONAL_EXIT_CLASSES } from './regionalExits';
+import { replayRegionalRoads } from './roadOverrides';
 import type { V2Settings, ProgressCallback } from './contracts';
 import type { SettlementEngine } from '../../../rust/bridge/settlementEngine';
 import { loopbackServer } from './platform';
@@ -108,14 +110,31 @@ export async function settleRegionSite(world: World): Promise<void> {
 export async function planRustRegion(world: World, settings: V2Settings, onProgress?: ProgressCallback, roadsOnly = false, deferSite = false): Promise<World> {
   pendingSite = undefined;
   const t0 = performance.now(),
-    { placement, roads, resolution } = effectiveRegion(settings);
-  validateRegionSettings({ placement, roads, resolution }, world.mapSize);
+    { placement, roads: requested, resolution } = effectiveRegion(settings);
+  validateRegionSettings({ placement, roads: requested, resolution }, world.mapSize);
+  // The recipe already counts drawn/deleted boundary entries. Route the automatic share once.
+  const edits = settings.roadOverrides;
+  let roads = requested;
+  if (requested && edits?.exits) {
+    const exits = { ...requested.exits };
+    for (const { report, present } of Object.values(edits.exits)) {
+      const cls = report.requested === 'trail' ? 'track' : report.requested;
+      exits[cls] += present ? -1 : 1;
+    }
+    let remaining = 16;
+    for (const cls of REGIONAL_EXIT_CLASSES) {
+      exits[cls] = Math.min(remaining, Math.max(0, exits[cls]));
+      remaining -= exits[cls];
+    }
+    roads = edits.fromDisabled && remaining === 16 ? null : { ...requested, exits };
+  }
   const populationPlan = regionalPopulation(settings);
   if (!roadsOnly && placement.mode === 'list' && !placement.list.length) {
     world.settlements = [];
     world.roads = [];
     world.bridges = [];
     world.debug = { ...world.debug, v2RustRegion: { placement: { settlements: [], activities: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, roads: null } satisfies RustRegionSnapshot };
+    if (edits) Object.assign(world, replayRegionalRoads(world, edits));
     Object.assign(world.stats, { 'v2.stage': 'region', settlements: 0, 'settlements.requested': 0, 'v2.regionPopulation': 0, 'v2.requestedRegionPopulation': populationPlan.population });
     return world;
   }
@@ -209,15 +228,16 @@ export async function planRustRegion(world: World, settings: V2Settings, onProgr
   }
   world.roads = (response.roads?.segments ?? []).map(s => ({ path: s.path, width: s.width, kind: s.class === 'highway' || s.class === 'main' ? 'major' : s.class === 'local' ? 'minor' : 'track' }));
   world.bridges = (response.roads?.segments ?? []).flatMap(s => s.crossings.filter(c => c.kind === 'bridge').map(c => ({ a: c.path[0], b: c.path[c.path.length - 1], width: s.width })));
+  world.debug = { ...world.debug, v2RustRegion: { placement: output, roads: response.roads } satisfies RustRegionSnapshot, v2BaseBridges: structuredClone(world.bridges), v2TownBridges: {} };
+  if (edits) Object.assign(world, replayRegionalRoads(world, edits));
   // Dug road tunnels join the natural ones: the names and the 2D tunnel strokes read them there (replaced on every run).
   const caverns = world.terrain.caverns;
   if (caverns) {
-    const dug = (response.roads?.segments ?? []).flatMap(s => (s.tunnels ?? []).filter(t => t.path.length >= 2).map(t => ({ kind: 'dug' as const, path: t.path, halfWidth: s.width / 2 + 1 })));
+    const dug = ((world.debug.v2RustRegion as RustRegionSnapshot).roads?.segments ?? []).flatMap(s => (s.tunnels ?? []).filter(t => t.path.length >= 2).map(t => ({ kind: 'dug' as const, path: t.path, halfWidth: s.width / 2 + 1 })));
     const tunnels = [...(caverns.tunnels ?? []).filter(t => t.kind !== 'dug'), ...dug];
     if (tunnels.length) caverns.tunnels = tunnels;
     else delete caverns.tunnels;
   }
-  world.debug = { ...world.debug, v2RustRegion: { placement: output, roads: response.roads } satisfies RustRegionSnapshot, v2BaseBridges: structuredClone(world.bridges), v2TownBridges: {} };
   const warnings = [...output.warnings, ...(response.roads?.warnings ?? [])];
   Object.assign(world.stats, { 'v2.regionPopulation': world.settlements?.reduce((n, p) => n + p.population, 0) ?? 0, 'v2.requestedRegionPopulation': populationPlan.population, 'v2.requestedIsolatedSites': populationPlan.isolatedCount });
   Object.assign(world.stats, {

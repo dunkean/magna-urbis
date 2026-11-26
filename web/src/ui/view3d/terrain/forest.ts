@@ -7,7 +7,7 @@ import type { ForestField, ForestOccupation, LandDetail } from '../../../../../r
 import { DEFAULT_TERRAIN_LIGHTING } from '../../../render/terrainLighting';
 import type { Building3dScene } from '../../../render/urbanBuildingGeometry';
 import { occupationMergeSlot, withBuildingOccupation } from '../../forestOccupation';
-import type { ForestTextures } from '../../terrain/gl/forest';
+import { occupationPatch, type ForestTextures } from '../../terrain/gl/forest';
 import type { TerrainViewContext } from './context';
 import type { Terrain3dForestSettings, TerrainResources } from './contract';
 
@@ -42,14 +42,17 @@ export class TerrainForest {
     if (this.mergedSource !== occupation || this.mergedScene !== this.buildingScene()) {
       const source = occupation,
         scene = this.buildingScene(),
-        merge = this.context.options.mergeOccupation;
+        merge = this.context.options.mergeOccupation,
+        previousSource = this.mergedSource;
       this.mergedSource = source;
       this.mergedScene = scene;
       const buildings = scene?.occupationBuildings ?? scene?.buildings;
       if (!merge || !source || !scene || !buildings?.length || occupationMergeSlot(source, scene).value) this.merged = withBuildingOccupation(source, scene);
       else {
         // The merge of a whole town took ~0.5 s on the page at opening (an average machine: seconds): off-thread now.
-        this.merged = source;
+        // Keep the uploaded merge while a revision of the same occupation grid is being made. A progressive
+        // upload of the unmerged source would discard the texture that the completed edit patches.
+        if (!this.merged || !occupationPatch(previousSource, source)) this.merged = source;
         this.merges++;
         const current = (): boolean => !this.context.disposed && this.mergedSource === source && this.mergedScene === scene;
         void merge(source, scene)
@@ -74,8 +77,15 @@ export class TerrainForest {
       if (hadForest !== !!field) this.selectProgram(!!this.context.ground || !!field);
     }
     if (occupation !== this.occupation?.data) {
-      if (this.occupation) this.resources.deleteTexture(this.occupation.texture);
-      this.occupation = occupation && { data: occupation, texture: this.resources.uploadOccupation(occupation) };
+      const held = this.occupation;
+      const rects = occupation && held && occupationPatch(held.data, occupation);
+      if (held && occupation && rects) {
+        if (rects.length) this.resources.patchOccupation(held.texture, held.data, occupation, rects);
+        held.data = occupation;
+      } else {
+        if (held) this.resources.deleteTexture(held.texture);
+        this.occupation = occupation && { data: occupation, texture: this.resources.uploadOccupation(occupation) };
+      }
     }
     if (occupation?.detail !== this.landDetail?.data) {
       if (this.landDetail) this.resources.deleteTexture(this.landDetail.texture);
@@ -91,7 +101,7 @@ export class TerrainForest {
 
   /** A restored WebGL context comes back empty: re-upload the retained rasters. */
   reupload(): void {
-    this.textures = this.occupation = undefined;
+    this.textures = this.occupation = this.landDetail = undefined;
     this.set(this.field, this.source, this.settings);
   }
 

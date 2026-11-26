@@ -8,6 +8,7 @@ import type { Vec2 } from '../../gen/types';
 import { entitiesAt, type Entity, type EntityKind, type TownHit } from '../entityPick';
 import { entityFacts, entityLabel, type EntityFacts, type EntityFactsInput } from '../entityFacts';
 import { lineIcon } from '../editorIcons';
+import { nativeCityRecords } from '../nativeProducts';
 import { onLanguageChange, registerMessages, translate } from '../i18n';
 import { renameToponym, TOPONYM_MAX_LENGTH } from '../toponymOverrides';
 import { onUnitsChange } from '../units';
@@ -51,7 +52,7 @@ const EDITORS: Partial<Record<EntityKind, keyof EntityEditors>> = { building: 'b
 export const entityEditor = (kind: EntityKind): keyof EntityEditors | undefined => EDITORS[kind];
 
 /** The existing inspectors and map editors, opened on the picked entity: the road tool with the road selected, the river
- * tool with the river's deletion plan, the town's fortification settings for a wall (there is no per-enclosure edit). */
+ * tool with the river's deletion plan, and the chosen circuit's own editor. */
 export function entityEditors(state: PageState, actions: PageActions): EntityEditors {
   /** The map editors work on the top view: a tilted camera comes down over the entity first. */
   const onTopView = (entity: Entity): Entity => {
@@ -70,14 +71,7 @@ export function entityEditors(state: PageState, actions: PageActions): EntityEdi
     },
     road: entity => state.roadEditor.start('roads', onTopView(entity).point),
     river: entity => state.riverEditor.start('rivers', onTopView(entity).point),
-    walls: entity => {
-      if (!entity.town) return false;
-      actions.showInspector(entity.town);
-      const field = document.querySelector<HTMLSelectElement>('#local-walls');
-      field?.scrollIntoView({ block: 'center' });
-      field?.focus();
-      return true;
-    },
+    walls: entity => !!entity.town && actions.editWall(entity.town, entity.index),
   };
 }
 
@@ -237,7 +231,7 @@ export function createEntitySheet(state: PageState, actions: PageActions) {
     }
     const bar = document.createElement('div');
     bar.className = 'entity-sheet-actions';
-    if (entityEditor(entity.kind)) bar.append(button('Edit', () => void edit(entity)));
+    if (entityEditor(entity.kind) && (entity.kind !== 'wall' || nativeCityRecords(state.world)?.[entity.town!]?.layouts[0]?.enclosures?.[entity.index]?.edit_key)) bar.append(button('Edit', () => void edit(entity)));
     if (['block', 'quarter', 'settlement'].includes(entity.kind)) bar.append(button('Redraw', () => redraw(entity), 'Redraw this place or area differently'));
     bar.append(
       button('Centre', () => centre(entity)),

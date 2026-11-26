@@ -10,6 +10,10 @@ import { Pool, Params } from './parameters';
 import { Gpu3d } from './device';
 import { mipCount } from './images';
 import { T } from './layouts';
+import { GROVE_STRIDE, groveTemplate, type GroveBlock, type GroveInstances, type GroveTemplate } from '../../../render/city3d/groveInstances';
+import { groveBlockVisible } from '../grove';
+
+type GroveBatch = { buffer: GPUBuffer; indices: number; count: number };
 
 /** UrbanBuildingPass recording into the 3D view's render pass (UrbanBuildingPassGpu.target). */
 export class UrbanBuildingPassGpu extends UrbanBuildingPass {
@@ -19,6 +23,9 @@ export class UrbanBuildingPassGpu extends UrbanBuildingPass {
   private gpuHouseAtlas?: GPUTexture;
   private houseLayers = 0;
   private placeholder: GPUTexture;
+  private groveSource?: GroveInstances;
+  private groveBlocks: { block: GroveBlock; trunks: GroveBatch; lobes?: GroveBatch }[] = [];
+  private readonly groveTemplates = new Map<GroveTemplate, { vertices: GPUBuffer; indices: GPUBuffer }>();
   constructor(
     private gpu: Gpu3d,
     onTexturesReady?: () => void,
@@ -30,6 +37,81 @@ export class UrbanBuildingPassGpu extends UrbanBuildingPass {
     const buffer = this.gpu.device.createBuffer({ label: 'building batch', size: values.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.gpu.device.queue.writeBuffer(buffer, 0, values.buffer, values.byteOffset, values.byteLength);
     batch.gpu = buffer;
+  }
+  protected override setGrove(source: GroveInstances | undefined): void {
+    if (source === this.groveSource) return;
+    this.clearGrove();
+    if (!source) return;
+    const device = this.gpu.device;
+    const upload = (values: Float32Array | Uint16Array, usage: GPUBufferUsageFlags = GPUBufferUsage.VERTEX): GPUBuffer => {
+      const buffer = device.createBuffer({ label: 'town grove', size: values.byteLength, usage: usage | GPUBufferUsage.COPY_DST });
+      device.queue.writeBuffer(buffer, 0, values.buffer, values.byteOffset, values.byteLength);
+      return buffer;
+    };
+    const trunk = groveTemplate(true, source.light),
+      lobe = groveTemplate(false, source.light);
+    for (const template of [trunk, lobe]) if (!this.groveTemplates.has(template)) this.groveTemplates.set(template, { vertices: upload(template.vertices), indices: upload(template.indices, GPUBufferUsage.INDEX) });
+    const batch = (data: Float32Array, template: GroveTemplate): GroveBatch => ({ buffer: upload(data), count: data.length / GROVE_STRIDE, indices: template.indices.length });
+    this.groveBlocks = source.blocks.map(block => ({ block, trunks: batch(block.trunks, trunk), lobes: block.lobes.length ? batch(block.lobes, lobe) : undefined }));
+    this.groveSource = source;
+    this.gpu.pipeline('grove');
+  }
+  protected override drawGrove(frame: BuildingFrame, stats: { drawCalls: number; triangles: number }): boolean {
+    const target = this.target;
+    if (!target || !this.groveSource) return false;
+    const pipeline = this.gpu.pipeline('grove', target.samples);
+    if (!pipeline) return true;
+    const { pass, params } = target,
+      p = this.params,
+      device = this.gpu.device;
+    const placeholder = this.placeholder.createView({ dimension: '2d-array' });
+    p.setArray('matrix', frame.matrix);
+    p.set('exaggeration', frame.exaggeration);
+    p.set('uRoofInkDpr', 0);
+    p.set('uHouseSurfaceReady', 0);
+    p.set('uNight', frame.cave || !this.night ? 0 : this.lightsOn ? 1 : 2);
+    p.setArray('uCave', caveUniform(frame, this.lightsOn));
+    p.setArray('uCaveEye', frame.cave?.eye ?? [0, 0, 0]);
+    const trunk = this.groveTemplates.get(groveTemplate(true, this.groveSource.light))!,
+      lobe = this.groveTemplates.get(groveTemplate(false, this.groveSource.light))!;
+    let group: GPUBindGroup | undefined, groupBuffer: GPUBuffer | undefined;
+    pass.setPipeline(pipeline);
+    for (const { block, trunks, lobes } of this.groveBlocks) {
+      if (!groveBlockVisible(block, frame)) continue;
+      const [x, y] = block.origin;
+      p.set('offset', x - frame.cameraX, -frame.targetHeight, y - frame.cameraY);
+      p.set('sectorOrigin', x, y);
+      const slot = params.alloc(p.bytes);
+      if (slot.buffer !== groupBuffer) {
+        groupBuffer = slot.buffer;
+        group = device.createBindGroup({
+          layout: this.gpu.layouts.building,
+          entries: [
+            { binding: 0, resource: { buffer: slot.buffer, offset: 0, size: p.bytes.byteLength } },
+            { binding: 4, resource: this.gpu.samplers.repeat },
+            { binding: T.albedoTex, resource: placeholder },
+            { binding: T.normalTex, resource: placeholder },
+            { binding: T.uHouseSurface, resource: placeholder },
+          ],
+        });
+      }
+      pass.setBindGroup(0, group!, [slot.offset]);
+      pass.setVertexBuffer(0, trunk.vertices);
+      pass.setVertexBuffer(1, trunks.buffer);
+      pass.setIndexBuffer(trunk.indices, 'uint16');
+      pass.drawIndexed(trunks.indices, trunks.count);
+      stats.drawCalls++;
+      stats.triangles += (trunks.indices * trunks.count) / 3;
+      if (lobes) {
+        pass.setVertexBuffer(0, lobe.vertices);
+        pass.setVertexBuffer(1, lobes.buffer);
+        pass.setIndexBuffer(lobe.indices, 'uint16');
+        pass.drawIndexed(lobes.indices, lobes.count);
+        stats.drawCalls++;
+        stats.triangles += (lobes.indices * lobes.count) / 3;
+      }
+    }
+    return false;
   }
   protected override releaseBatch(batch: Batch): void {
     batch.gpu?.destroy();
@@ -134,6 +216,20 @@ export class UrbanBuildingPassGpu extends UrbanBuildingPass {
     this.atlases?.normal.destroy();
     this.atlases = undefined;
     this.placeholder.destroy();
+    this.clearGrove();
+    for (const { vertices, indices } of this.groveTemplates.values()) {
+      vertices.destroy();
+      indices.destroy();
+    }
+    this.groveTemplates.clear();
     this.releaseHouseAtlas();
+  }
+  private clearGrove(): void {
+    for (const { trunks, lobes } of this.groveBlocks) {
+      trunks.buffer.destroy();
+      lobes?.buffer.destroy();
+    }
+    this.groveBlocks = [];
+    this.groveSource = undefined;
   }
 }

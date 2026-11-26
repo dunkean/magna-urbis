@@ -105,12 +105,19 @@ pub fn display_buffers(
     architecture_culture: Option<&str>,
     origin: Point,
     version: u32,
+    blocks: Option<&BTreeMap<String, std::collections::BTreeSet<usize>>>,
 ) -> Result<Vec<u8>, String> {
     const CHUNK: usize = 8192;
     #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
     let selected: Vec<_> = (0..partitions.len()).collect();
-    let index = BuildingSiteIndex::prepare(layouts, partitions, &selected)?;
+    let mut index = BuildingSiteIndex::prepare(layouts, partitions, &selected)?;
+    if let Some(blocks) = blocks {
+        index.sites.retain(|site| {
+            let partition = &partitions[index.partitions[site.partition].partition];
+            blocks.get(&partition.key).is_some_and(|own| own.contains(&partition.parcels[site.parcel].block))
+        });
+    }
     let total = index.total();
     let mut display = super::display::SiteDisplay::new(origin, total, version);
     let mut start = 0;

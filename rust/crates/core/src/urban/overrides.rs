@@ -17,6 +17,22 @@ use serde::{Deserialize, Serialize};
 #[serde(default, rename_all = "camelCase")]
 pub struct UrbanOverrides {
     pub quarters: std::collections::BTreeMap<String, QuarterOverride>,
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub walls: std::collections::BTreeMap<String, WallOverride>,
+}
+/// One generated circuit. Its key is assigned on its source trace, before edits.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct WallOverride {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub present: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moat: Option<String>,
+    /// Requested land passages. Water gates and indispensable accesses stay open.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gates: Option<usize>,
 }
 /// Plan recipe of one growth zone; an empty field keeps the settlement's own.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

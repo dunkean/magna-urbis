@@ -139,7 +139,7 @@ const dirOf = (from: Vec2, to: Vec2): Dir4 => {
 };
 
 /* ---------------------------------------------------------------- generator */
-export function generateNames(world: World, root: Rng, presentation: NamePresentation = { mode: 'cultural' }, regionPolicy?: NamingPolicy): NamesLayer {
+export function generateNames(world: World, root: Rng, presentation: NamePresentation = { mode: 'cultural' }, regionPolicy?: NamingPolicy, townOnly = false): NamesLayer {
   const rng = root.fork('names');
   const opts = world.options;
   const family = familyFor(opts.culture, opts.language, world.seed);
@@ -191,16 +191,17 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
   const pop = u?.population ?? 0;
 
   // ---- rivers (stable native id, otherwise exact path identity)
-  t.rivers.forEach(rv => {
-    const len = polylineLength(rv.path);
-    if (rv.path.length < 2) return;
-    const key = featureNameKey(rv, 'river', shapeKey(rv.path));
-    const parts = feature('river', key);
-    if (rv.cls) parts.role = `water.${rv.cls}`;
-    const text = parts.cultural;
-    rv.name = text;
-    add({ entityKey: key, kind: 'river', text, parts, rank: rv.main ? 1 : 3, anchor: pathMid(rv.path), path: rv.path, detail: rv.main ? 0 : Math.max(0.12, Math.min(1, 1 - len / S)) });
-  });
+  if (!townOnly)
+    t.rivers.forEach(rv => {
+      const len = polylineLength(rv.path);
+      if (rv.path.length < 2) return;
+      const key = featureNameKey(rv, 'river', shapeKey(rv.path));
+      const parts = feature('river', key);
+      if (rv.cls) parts.role = `water.${rv.cls}`;
+      const text = parts.cultural;
+      rv.name = text;
+      add({ entityKey: key, kind: 'river', text, parts, rank: rv.main ? 1 : 3, anchor: pathMid(rv.path), path: rv.path, detail: rv.main ? 0 : Math.max(0.12, Math.min(1, 1 - len / S)) });
+    });
 
   // ---- town: manual names are resolved before castles and destination labels.
   const main = world.settlements?.find(place => place.main);
@@ -268,7 +269,7 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
       : undefined;
     const dest = target ? generatedSettlementName(world, target) : unique('dest:' + featureNameKey(r, 'road', shapeKey(r.path)), 1);
     roadInfos.push({ key: featureNameKey(r, 'road', shapeKey(r.path)), path: r.path, exit, dest, kind: r.kind, target: target?.key });
-    if (internal) return;
+    if (internal || townOnly) return;
     const inward = { x: center.x - exit.x, y: center.y - exit.y };
     const l = Math.hypot(inward.x, inward.y) || 1;
     const k = Math.min(0.035 * S, 90);
@@ -287,7 +288,7 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
     return best;
   };
   // regional road labels outside the footprint
-  {
+  if (!townOnly) {
     const footprintBoxes = (u?.footprint ?? []).map(f => bbox(f));
     for (const r of roadInfos) {
       if (polylineLength(r.path) < 25) continue;
@@ -306,7 +307,7 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
   }
 
   // ---- hills (local maxima of the height field); the underdark has rock masses, not summits
-  if (world.options.biome !== 'underdark') {
+  if (!townOnly && world.options.biome !== 'underdark') {
     const hg = t.height;
     const R = Math.max(2, Math.round(160 / hg.cell));
     const picks: { p: Vec2; h: number }[] = [];
@@ -346,7 +347,7 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
   }
 
   // ---- underdark caverns: the widest chambers (local maxima of the distance to the rock) take a cavern name
-  if (world.options.biome === 'underdark')
+  if (!townOnly && world.options.biome === 'underdark')
     if (world.options.biome === 'underdark' && t.caverns?.mask?.length === t.height.w * t.height.h) {
       const { w, h, cell } = t.height,
         rock = t.caverns.mask,
@@ -415,13 +416,14 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
     }
 
   // ---- water bodies, forests
-  t.lakes.forEach((lk, i) => {
-    if (lk.length < 3 || areaOf(lk) < 1) return;
-    const pole = poleOf(lk);
-    const key = featureNameKey(lk, 'lake', shapeKey(lk));
-    add({ entityKey: key, kind: 'lake', text: proper('lake', key), parts: feature('lake', key), rank: 2, anchor: pole.p, span: horizontalSpan(lk, pole.p.x, pole.p.y) });
-  });
-  if (t.seaFraction > 0.02) {
+  if (!townOnly)
+    t.lakes.forEach((lk, i) => {
+      if (lk.length < 3 || areaOf(lk) < 1) return;
+      const pole = poleOf(lk);
+      const key = featureNameKey(lk, 'lake', shapeKey(lk));
+      add({ entityKey: key, kind: 'lake', text: proper('lake', key), parts: feature('lake', key), rank: 2, anchor: pole.p, span: horizontalSpan(lk, pole.p.x, pole.p.y) });
+    });
+  if (!townOnly && t.seaFraction > 0.02) {
     const hg = t.height;
     let sx = 0,
       sy = 0,
@@ -450,7 +452,7 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
       if (best) add({ kind: 'sea', text: proper('sea', 'sea'), parts: feature('sea', 'sea'), rank: 1, anchor: best, span: Math.sqrt(n * 9) * hg.cell * 0.8 });
     }
   }
-  if (world.landuse) {
+  if (!townOnly && world.landuse) {
     const forests = world.landuse.areas
       .filter(a => a.kind === 'forest' && a.poly.length >= 3)
       .map(a => ({ a, ar: areaOf(a.poly) }))

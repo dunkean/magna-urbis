@@ -234,6 +234,7 @@ export class GpuInputs {
       region = undefined;
     }
     this.forestRegion = region;
+    if (region && !region.length) return 'none';
     this.forestVersion++;
     return 'content';
   }

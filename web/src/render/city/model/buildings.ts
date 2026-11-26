@@ -49,6 +49,8 @@ export function cityBuildingCulture(building: PlacedBuilding, plan?: CityScene):
   const { parcel, allocation } = cityBuildingLink(building, plan);
   return building.culture?.culture || allocation?.culture || (parcel === undefined ? '' : plan?.layouts[plan.parcels[parcel].layout]?.culture) || '';
 }
+/** Snow uses the mean altitude of each layout. A changed mean also invalidates roof paint outside a local edit. */
+export const snowLevelsOf = new WeakMap<readonly CityBuilding[], string>();
 /** Snow line of each item: the mean ground of its town. */
 export function citySnowAltitudes(items: CityBuilding[], plan?: CityScene): void {
   const altitudes = new Map<number, { sum: number; count: number }>();
@@ -59,6 +61,7 @@ export function citySnowAltitudes(items: CityBuilding[], plan?: CityScene): void
     a.count++;
     altitudes.set(town, a);
   }
+  snowLevelsOf.set(items, JSON.stringify([...altitudes].sort((a, b) => a[0] - b[0]).map(([key, v]) => [key, v.sum / v.count])));
   for (const b of items) {
     const town = b.parcel === undefined ? -1 : (plan?.parcels[b.parcel]?.layout ?? -1),
       a = altitudes.get(town)!;

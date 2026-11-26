@@ -8,6 +8,10 @@ import { townRoofAltitudes } from '../render/roofSnow';
 import { buildingBatches, buildingBounds, type BuildingBounds, type Vec3 } from '../render/world/buildingsMesh';
 import { BUILDING_GRAIN_GLSL, BUILDING_NIGHT_GLSL, FACE_EXTRA_GLSL, ROOF_INK_GLSL, ROOF_SNOW_GLSL } from '../render/world/buildingsShader';
 import { buildingBox } from '../render/world/buildingsBlocks';
+import type { GroveInstances } from '../render/city3d/groveInstances';
+import { GroveBuffers } from '../render/world/groveBuffers';
+import { startVolumeProgram, uniformsOf, volumeProgramLinked } from '../render/world/volumes';
+import { BENCH_GROVE_VS, groveBlockVisible } from './view3d/grove';
 
 type Bounds = BuildingBounds;
 export interface BuildingFrame {
@@ -101,6 +105,7 @@ void main(){vec3 N=normalize(n);vec3 gx=dFdx(grainPosition),gy=dFdy(grainPositio
   float light=buildingLight(N);vec3 rgb=buildingNight(albedo*light*baseOcclusion(n,facadePosition),facadePosition,lit,wallGlow(extra,N,grainPosition,facadePosition.y,fp));
   if(uRoofInkDpr>0.) rgb*=1.-roofInk(roofEdge,gx,gy,uRoofInkDpr);
   color=vec4(buildingCave(rgb,facadePosition,lit,N),1.);}`;
+const GROVE_UNIFORMS = ['matrix', 'exaggeration', 'offset', 'sectorOrigin', 'uNight', 'uCave', 'uCaveEye'] as const;
 
 /** Textured variant: per-vertex uv (metres on the face: walls along the face and down, roofs along the ridge and down
  * the slope) and material layer; albedo + normal map arrays; same lighting model. Layer < 0 keeps the flat colour. */
@@ -237,6 +242,9 @@ export class UrbanBuildingPass {
   /** Draw calls and sectors of the last draw (render stats). */
   lastDraw = { drawCalls: 0, sectors: 0, triangles: 0 };
   private texProgram?: WebGLProgram;
+  private grove?: GroveBuffers;
+  private groveProgram?: WebGLProgram;
+  private groveUniforms?: Record<(typeof GROVE_UNIFORMS)[number], WebGLUniformLocation | null>;
   private textures?: { albedo: WebGLTexture; normal: WebGLTexture };
   protected texturesRequested = false;
   private source?: Building3dScene;
@@ -261,6 +269,7 @@ export class UrbanBuildingPass {
     if (this.source === scene && this.appearanceKey === key) return;
     this.clear();
     this.source = scene;
+    if (scene) this.setGrove(scene.grove);
     this.appearance = { ...appearance };
     this.appearanceKey = key;
     const crafted = showsCraftedHouses(appearance);
@@ -384,7 +393,7 @@ export class UrbanBuildingPass {
     const started = performance.now();
     let pending = false,
       prepared = 0;
-    if (!this.sectors.length) return false;
+    if (!this.sectors.length && !this.source?.grove) return false;
     ++this.tick;
     // Textured materials: the atlases load once (the flat colours show until they arrive).
     const wantTex = !!this.appearance.textured && this.appearance.roof !== 'crafted';
@@ -445,6 +454,7 @@ export class UrbanBuildingPass {
     }
     if (this.crafted && shown.length && !this.prepareHouseAtlas()) pending = true;
     this.render(frame, shown, wantTex);
+    if (this.source?.grove) pending = this.drawGrove(frame, stats) || pending;
     this.lastDraw = stats;
     let bytes = this.sectors.reduce((total, sector) => total + (sector.cached?.batches.reduce((n, batch) => n + batch.count * batch.stride * 4, 0) ?? 0), 0);
     if (bytes > MAX_CACHE_BYTES)
@@ -464,6 +474,39 @@ export class UrbanBuildingPass {
   }
   protected prepareHouseAtlas(): boolean {
     return (this.houseAtlas ??= new HouseSurfaceTexture(this.gl!)).step();
+  }
+  protected setGrove(source: GroveInstances | undefined): void {
+    if (!source) {
+      this.grove?.set(undefined);
+      return;
+    }
+    const gl = this.gl!;
+    const buffers = (this.grove ??= new GroveBuffers(gl));
+    buffers.set(source);
+    buffers.step(Infinity);
+    this.groveProgram ??= startVolumeProgram(gl, BENCH_GROVE_VS, fragmentColor);
+  }
+  protected drawGrove(frame: BuildingFrame, stats: { drawCalls: number; triangles: number }): boolean {
+    const gl = this.gl!,
+      program = this.groveProgram!;
+    if (!this.groveUniforms && !volumeProgramLinked(gl, program, 'Town grove')) return true;
+    const u = (this.groveUniforms ??= uniformsOf(gl, program, GROVE_UNIFORMS));
+    gl.useProgram(program);
+    gl.uniformMatrix4fv(u.matrix, false, frame.matrix);
+    gl.uniform1f(u.exaggeration, frame.exaggeration);
+    gl.uniform1i(u.uNight, frame.cave || !this.night ? 0 : this.lightsOn ? 1 : 2);
+    gl.uniform4fv(u.uCave, caveUniform(frame, this.lightsOn));
+    gl.uniform3fv(u.uCaveEye, frame.cave?.eye ?? [0, 0, 0]);
+    for (const entry of this.grove!.blocks) {
+      if (!groveBlockVisible(entry.block, frame)) continue;
+      const [x, y] = entry.block.origin;
+      gl.uniform3f(u.offset, x - frame.cameraX, -frame.targetHeight, y - frame.cameraY);
+      gl.uniform2f(u.sectorOrigin, x, y);
+      stats.triangles += this.grove!.draw(entry);
+      stats.drawCalls += entry.lobes ? 2 : 1;
+    }
+    gl.bindVertexArray(null);
+    return false;
   }
   protected render(frame: BuildingFrame, shown: readonly Sector[], textured: boolean): void {
     const gl = this.gl!;
@@ -577,6 +620,8 @@ export class UrbanBuildingPass {
     this.releaseHouseAtlas();
     if (this.colorProgram) gl.deleteProgram(this.colorProgram);
     if (this.texProgram) gl.deleteProgram(this.texProgram);
+    if (this.groveProgram) gl.deleteProgram(this.groveProgram);
+    this.grove?.drop();
     if (this.textures) {
       gl.deleteTexture(this.textures.albedo);
       gl.deleteTexture(this.textures.normal);

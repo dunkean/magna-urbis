@@ -186,15 +186,7 @@ impl Style {
         self.canals = cfg.lagoon_canals.map_or(self.canals, |v| v > 0.0);
         // « Moat »: by culture and site (empty), none, or one kind for the
         // whole circuit; a style without a ditch of its own digs a 6–10 m one.
-        if matches!(cfg.moat.as_str(), "none" | "dry" | "wet") {
-            self.ditch = cfg.moat.clone();
-            self.ditch_p = 1.0;
-            self.ditch_wetness = None;
-            self.dry_ditches = false;
-            if self.ditch_width[1] <= 0.0 {
-                self.ditch_width = [6.0, 10.0];
-            }
-        }
+        self.override_moat(&cfg.moat);
         if self.medieval {
             self.tower_spacing = Some(pair(&data()["styles"][&self.id]["towerSpacing"], [25.0, 35.0])
                 .map(|v| v.clamp(20.0, 40.0)));
@@ -203,6 +195,31 @@ impl Style {
             self.tower_spacing = Some([spacing; 2]);
             self.medieval = true;
         }
+    }
+    fn override_moat(&mut self, moat: &str) {
+        if matches!(moat, "none" | "dry" | "wet") {
+            self.ditch = moat.into();
+            self.ditch_p = 1.0;
+            self.ditch_wetness = None;
+            self.dry_ditches = false;
+            if self.ditch_width[1] <= 0.0 { self.ditch_width = [6.0, 10.0]; }
+        }
+    }
+
+    /// The construction of one circuit, after the town-wide and older-circuit defaults.
+    pub(in super::super) fn for_wall(&self, edit: Option<&crate::urban::overrides::WallOverride>, cfg: &LayoutConfig, culture: &str, pop: u32) -> std::borrow::Cow<'_, Self> {
+        let Some(edit) = edit.filter(|e| e.style.is_some() || e.moat.is_some()) else {
+            return std::borrow::Cow::Borrowed(self);
+        };
+        let mut style = if let Some(id) = &edit.style {
+            let mut s = styled(id, culture, pop);
+            s.forced = true;
+            s.options(cfg);
+            s.cave = self.cave;
+            s
+        } else { self.clone() };
+        if let Some(moat) = &edit.moat { style.override_moat(moat); }
+        std::borrow::Cow::Owned(style)
     }
     /// Culture overrides (`fortifications.json` then `catalogue.json`).
     fn apply(&mut self, o: &Value) {

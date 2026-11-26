@@ -2,7 +2,8 @@
 import { generateTerrain, planRegion, rerouteRegion, generateTowns, generateTown, generateTownStage, updateRoadTowns, updateLocalTown, clearTerrainPreviews, namesRenamedAfterActions } from './engine';
 import type { V2WorkerRequest, V2WorkerResponse, V2ResourceRequest, ProgressCallback } from './contracts';
 import { WorkerWorld } from './workerWorld';
-import { renameMap } from './mapNaming';
+import { renameLocalTown, renameMap } from './mapNaming';
+import { packLocalEdit } from './localEditIntern';
 import { wasmThreadsInfo } from '../../../rust/bridge/wasmThreads';
 import { showCityStageOutput } from './cityStageOutput';
 import { packWorldLanduse } from './landusePack';
@@ -14,7 +15,7 @@ const scope = self as unknown as DedicatedWorkerGlobalScope;
 // Serialize actions; the procedural cores retain per-thread scratch buffers.
 let queue = Promise.resolve();
 const retained = new WorkerWorld();
-// Every action below ends with renameMap: the town stage need not name its result first.
+// Results are named after generation, so the town stage can skip its own names pass.
 namesRenamedAfterActions();
 scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest | V2ResourceRequest | { type: 'release' | 'release-urban-lanes' }>) => {
   if ('type' in request && request.type === 'resources') {
@@ -62,6 +63,7 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest | V2ResourceR
     try {
       // A world sent by the page carries its town partitions packed (urbanPack.ts).
       let world = retained.resolve(request.retainedWorldId, unpackWorldPartitions(request.world));
+      const local = action === 'town' && request.localEdit && request.key && world ? { key: request.key, base: world } : undefined;
       if (action === 'terrain' || action === 'all') world = await stage(effective => generateTerrain(effective, progress, undefined, request.assetBase, request.terrainStage));
       if (!world) throw new Error('No map to process.');
       if (action === 'region' || action === 'settlements' || action === 'all') world = await stage(effective => planRegion(world!, effective, progress, action === 'all'));
@@ -83,14 +85,27 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest | V2ResourceR
         );
       }
       if (!['terrain', 'region', 'roads', 'towns', 'town', 'settlements', 'all'].includes(action)) throw new Error('Unknown action.');
-      world = renameMap(world, settings);
-      if (request.cityOutput) world = showCityStageOutput(world, request.cityOutput, request.key ? [request.key] : request.keys);
-      else if (world.stats['v2.cityOutput']) {
+      world = local ? renameLocalTown(local.base, world, settings, local.key) : renameMap(world, settings);
+      if (request.cityOutput) {
+        const urban = world.urban;
+        world = showCityStageOutput(world, request.cityOutput, request.key ? [request.key] : request.keys);
+        if (local && !world.settlements?.some(place => place.main && place.key === local.key)) world.urban = urban;
+      } else if (world.stats['v2.cityOutput']) {
         world = { ...world, stats: { ...world.stats } };
         delete world.stats['v2.cityOutput'];
         delete world.stats['v2.cityOutputKeys'];
       }
       retained.retain(id, world);
+      if (local) {
+        const { delta, transfer } = packLocalEdit(local.base, world, local.key);
+        const heavy = transfer.reduce((sum, buffer) => sum + buffer.byteLength, 0) > HEAVY_RESULT_BYTES;
+        if (heavy) {
+          retained.clear();
+          await (await import('./rustUrban')).releaseUrbanLanes();
+        }
+        scope.postMessage({ id, type: 'local-result', delta, wasm: wasmThreadsInfo(), ...(heavy ? { heavy } : {}) } satisfies V2WorkerResponse, transfer);
+        return;
+      }
       // The WASM mode this worker actually runs (window.magnaWasmThreads on the page).
       // Land-use areas and town partitions travel packed (landusePack.ts, urbanPack.ts); the retained world keeps its own objects.
       const landuse = packWorldLanduse(world),

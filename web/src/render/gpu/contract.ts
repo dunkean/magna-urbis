@@ -27,6 +27,27 @@ export type ImageSource = CanvasImageSource;
 /** Straight (non-premultiplied) RGBA in 0..1. */
 export type Rgba = readonly [number, number, number, number];
 
+/** Draw-time pigment for a contour coverage image (thin in red, index in green). */
+export interface ContourTint {
+  rgba: Rgba;
+}
+export const CONTOUR_THIN_OPACITY = 0.7;
+
+/** One named ink of a retained recording. Its buffer survives a season change. */
+export class ColorSlot {
+  private static nextId = 0;
+  readonly id = ++ColorSlot.nextId;
+  readonly kind = 'color' as const;
+  readonly rgba = new Float32Array(4);
+  get slot(): this {
+    return this;
+  }
+  css = '';
+  valid = true;
+}
+
+type PaintColor = { readonly rgba: Rgba | Float32Array; readonly slot?: ColorSlot };
+
 /** Parallel lines anchored in the user space of the op: unit normal (nx, ny), lines where `nx x + ny y = offset + k period`,
  * each `width` user units wide (plough furrows, render/furrows.ts). */
 export interface Stripe {
@@ -38,12 +59,12 @@ export interface Stripe {
 }
 
 export type Paint =
-  | { readonly kind: 'color'; readonly rgba: Rgba }
+  | ({ readonly kind: 'color' } & PaintColor)
   /** `transform` maps pattern space (source pixels) to the user space of the op (Canvas `pattern.setTransform`). */
   | { readonly kind: 'pattern'; readonly source: ImageSource; readonly repeat: Repeat; readonly transform: Mat; readonly smoothing: boolean }
   /** The colour inside the stripe lines, transparent between them (`RecordingContext.fillStripes`): the fragment shader
    * draws them from the distance to the nearest line, box-filtered by the pixel footprint, with no texture. */
-  | { readonly kind: 'stripes'; readonly rgba: Rgba; readonly stripe: Stripe };
+  | ({ readonly kind: 'stripes'; readonly stripe: Stripe } & PaintColor);
 
 /**
  * Flattened path: polylines only. `points` holds x,y pairs in the path's own coordinates (the op transform applies).
@@ -78,7 +99,7 @@ export interface ClipNode {
   readonly path: RecordedPath;
   readonly rule: FillRule;
   readonly transform: Mat;
-  /** Unique, increasing id within a recording (lets the rasterizer detect a changed clip cheaply). */
+  /** Unique id across recordings and reused sections (lets the rasterizer detect a changed clip cheaply). */
   readonly id: number;
 }
 
@@ -115,6 +136,9 @@ export interface StrokeOp extends OpState {
   readonly dashOffset: number;
 }
 
+/** Premultiplied pen-sheet coverage in R (ink) and G (wash). */
+export type SpriteTint = readonly [ink: ColorSlot, wash: ColorSlot];
+
 /**
  * drawImage calls with the same source, composite, clip and smoothing, merged in call order.
  * Per instance (SPRITE_STRIDE floats): sx, sy, sw, sh (source pixels), dx, dy, dw, dh (user units),
@@ -124,6 +148,8 @@ export interface StrokeOp extends OpState {
  */
 export interface SpriteOp {
   readonly type: 'sprites';
+  readonly contourTint?: ContourTint;
+  readonly tint?: SpriteTint;
   readonly source: ImageSource;
   readonly smoothing: boolean;
   readonly composite: Composite;

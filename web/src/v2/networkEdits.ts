@@ -154,10 +154,20 @@ export function riverAt(world: World, p: Vec2, tolerance: number): ({ index: num
   }
   return best;
 }
+/** Anchor the original undirected link at its junctions, even if a reroute resamples its interior.
+ * Parallel paths with the same two anchors are saved together. Every later split inherits the key. */
+export function roadSource(path: Polyline, kind: 'region' | 'rural' = 'region'): string {
+  const a = path[0],
+    b = path.at(-1);
+  if (!a || !b) return `${kind}:empty`;
+  const end = (p: Vec2) => `${Math.round(p.x * 1000)},${Math.round(p.y * 1000)}`;
+  return `${kind}:${[end(a), end(b)].sort().join('/')}`;
+}
+
 /** Native class of a road: its segment's class, else the closest class of its world kind. */
 export function roadClassOf(world: World, index: number): RoadClass {
   const segments = alignedOutput(world)?.segments;
-  return segments?.[index]?.class ?? classOfKind(world.roads?.[index]?.kind ?? 'track');
+  return segments?.[index]?.class ?? world.roads?.[index]?.editorClass ?? classOfKind(world.roads?.[index]?.kind ?? 'track');
 }
 /** Points a road end can snap to: native junctions, or road ends and settlement centres without a native output. */
 export function junctionPoints(world: World): { point: Vec2; site: string | null }[] {
@@ -275,6 +285,7 @@ const bridgesOf = (segment: Pick<RoadSegment, 'crossings' | 'width'>): Bridge[] 
 // ---------------------------------------------------------------------------------------------------------------
 // Road edits
 export interface RoadEditOptions {
+  editorSource?: string;
   routingVariant?: number;
   /** Snap distance (m) for changed road ends: junctions, settlement centres, then other roads (split into a T). 0: no snapping. */
   snap?: number;
@@ -334,8 +345,9 @@ function splitRoad(d: Draft, k: number, hit: PolylineHit): number {
     point = { x: hit.point.x, y: hit.point.y };
   const first = [...p.slice(0, hit.segment + 1), point],
     second = [point, ...p.slice(hit.segment + 1)];
-  d.roads[k] = { ...road, path: first, ...(road.controls ? roadPieceGeometry(first, road.controls) : {}) };
-  d.roads.push({ ...road, editorId: road.editorId ? `${road.editorId}:split` : undefined, path: second, ...(road.controls ? roadPieceGeometry(second, road.controls) : {}) });
+  const source = !road.urban && !road.editorSource ? { editorSource: roadSource(p) } : {};
+  d.roads[k] = { ...road, ...source, path: first, ...(road.controls ? roadPieceGeometry(first, road.controls) : {}) };
+  d.roads.push({ ...road, ...source, editorId: road.editorId ? `${road.editorId}:split` : undefined, path: second, ...(road.controls ? roadPieceGeometry(second, road.controls) : {}) });
   if (road.urban) {
     d.roads[k].urban = { ...road.urban, part: `${road.urban.part}:0` };
     d.roads.at(-1)!.urban = { ...road.urban, part: `${road.urban.part}:1` };
@@ -425,7 +437,7 @@ function writeRoad(d: Draft, index: number, rawPath: Polyline, options: RoadEdit
   const terrain = d.world.terrain,
     old = index >= 0 ? d.roads[index] : undefined,
     oldSegment = index >= 0 ? d.output?.segments[index] : undefined;
-  const cls = options.cls ?? oldSegment?.class ?? (old ? classOfKind(old.kind) : 'local');
+  const cls = options.cls ?? oldSegment?.class ?? old?.editorClass ?? (old ? classOfKind(old.kind) : 'local');
   const width = options.width ?? (old && !options.cls ? old.width : oldSegment && options.cls === oldSegment.class ? oldSegment.width : typicalWidth(d, cls));
   if (!(width > 0 && width < 200)) throw new Error('Invalid road width.');
   const snapped = normalizeRoadPath(rawPath, d.world.mapSize),
@@ -433,7 +445,7 @@ function writeRoad(d: Draft, index: number, rawPath: Polyline, options: RoadEdit
   let a = oldSegment?.a ?? -1,
     b = oldSegment?.b ?? -1;
   // Ends that moved are re-attached (possibly splitting another road into a T); an unchanged end keeps its junction.
-  if (!old || !samePoint(old.path[0], snapped[0])) {
+  if (!options.connections && (!old || !samePoint(old.path[0], snapped[0]))) {
     if (options.preserveConnections && a >= 0 && d.output) d.output.junctions[a] = { ...d.output.junctions[a], point: snapped[0] };
     else {
       const end = attachEnd(d, snapped[0], snap, index);
@@ -442,7 +454,7 @@ function writeRoad(d: Draft, index: number, rawPath: Polyline, options: RoadEdit
     }
   }
   const last = snapped.length - 1;
-  if (!old || !samePoint(old.path[old.path.length - 1], snapped[last])) {
+  if (!options.connections && (!old || !samePoint(old.path[old.path.length - 1], snapped[last]))) {
     if (options.preserveConnections && b >= 0 && d.output) d.output.junctions[b] = { ...d.output.junctions[b], point: snapped[last] };
     else {
       const end = attachEnd(d, snapped[last], snap, index);
@@ -461,6 +473,8 @@ function writeRoad(d: Draft, index: number, rawPath: Polyline, options: RoadEdit
     path,
     kind: roadKindOf(cls),
     width,
+    ...((options.editorSource ?? old?.editorSource) ? { editorSource: options.editorSource ?? old?.editorSource } : {}),
+    ...(!d.output && cls !== classOfKind(roadKindOf(cls)) ? { editorClass: cls } : {}),
     ...(old?.editorId ? { editorId: old.editorId } : {}),
     ...(old?.urban ? { urban: old.urban } : {}),
     ...((options.routingVariant ?? old?.routingVariant) !== undefined ? { routingVariant: options.routingVariant ?? old?.routingVariant } : {}),
@@ -607,7 +621,7 @@ export function splitRoadWithGap(world: World, index: number, first: RoadGeometr
     old = d.roads[index],
     cls = roadClassOf(world, index);
   writeRoad(d, index, first.path, { controls: first.controls, connections: [segment?.a, undefined] });
-  const at = writeRoad(d, -1, second.path, { controls: second.controls, cls, width: old.width, routingVariant: old.routingVariant, connections: [undefined, segment?.b] });
+  const at = writeRoad(d, -1, second.path, { editorSource: old.editorSource, controls: second.controls, cls, width: old.width, routingVariant: old.routingVariant, connections: [undefined, segment?.b] });
   if (old.editorId) d.roads[at].editorId = `${old.editorId}:${crypto.randomUUID()}`;
   if (old.urban) {
     d.roads[index].urban = { ...old.urban, part: `${old.urban.part}:0` };
@@ -627,6 +641,32 @@ export function deleteRoads(world: World, indices: readonly number[]): World {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Apply all regional replacements in one graph transaction. Junction IDs belong to the newly generated graph.
+export function replaceRoadPieces(world: World, remove: number[], pieces: readonly (import('./roadOverrides').RoadPiece & { source: string })[]): World {
+  if (!remove.length && !pieces.length) return world;
+  const d = draft(world);
+  if (!d.output && regionOf(world) && !world.roads?.length && pieces.length) {
+    d.output = { segments: [], junctions: (world.settlements ?? []).map(t => ({ point: t.center, degree: 0, site: t.key })), exits: [], routes: 0, lengthByClass: {}, lengthBySurface: {}, warnings: [], unreachable: [], ms: 0 };
+  }
+  for (const index of remove.sort((a, b) => b - a)) removeRoad(d, index);
+  const pointKey = (p: Vec2) => `${p.x},${p.y}`;
+  const nodes = new Map(d.output?.junctions.map((j, i) => [pointKey(j.point), i]));
+  const endpoint = (p: Vec2, site?: string | null): number => {
+    const key = pointKey(p),
+      found = nodes.get(key);
+    // A farm drive or town street can have introduced a T on a regenerated, unsplit road.
+    const index = found ?? attachEnd(d, p, 1e-5, -1).junction;
+    if (site && !d.output!.junctions[index].site) d.output!.junctions[index].site = site;
+    nodes.set(key, index);
+    return index;
+  };
+  for (const p of pieces) {
+    const connections: RoadEditOptions['connections'] = d.output ? [endpoint(p.path[0], p.sites?.[0]), endpoint(p.path.at(-1)!, p.sites?.[1])] : undefined;
+    writeRoad(d, -1, p.path, { cls: p.cls, width: p.width, controls: p.controls, routingVariant: p.routingVariant, editorSource: p.source, connections, snap: 1e-5 });
+  }
+  return commit(d);
+}
+
 // River deletion
 export interface RiverDeletionOptions {
   /** Also follow rivers that reach the deleted course through a lake (Rust lake links). Default true. */

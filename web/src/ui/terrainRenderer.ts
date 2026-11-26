@@ -26,6 +26,7 @@ export type TerrainRenderer = Pick<
   | 'setView'
   | 'setForest'
   | 'captureMap'
+  | 'captureMapPatch'
   | 'redrawForCapture'
   | 'captureRegion'
   | 'captureWaterMask'
@@ -38,6 +39,7 @@ export type TerrainRenderer = Pick<
   | 'drawMs'
   | 'renderWorldTile'
   | 'contentRevision'
+  | 'contentChanges'
 >;
 
 export type TerrainBackend = 'webgl' | 'webgpu';

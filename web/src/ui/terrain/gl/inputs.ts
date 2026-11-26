@@ -218,6 +218,7 @@ export class GlInputs {
       region = undefined;
     }
     this.forestRegion = region;
+    if (region && !region.length) return 'none';
     this.forestVersion++;
     return 'content';
   }

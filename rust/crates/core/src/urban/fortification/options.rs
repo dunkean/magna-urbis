@@ -206,8 +206,35 @@ pub(in super::super) fn finish_options(layout:&mut Layout,cfg:&LayoutConfig,surf
             distance(a).total_cmp(&distance(b))
         }));
         if path.iter().any(|&p|surface.wet(p)) {continue;}
-        layout.enclosures.push(Enclosure {path,kind:"wall".into(),style:"curtain".into(),purpose:purpose.into(),
-            material:"stone".into(),curtain_width_m:1.2,height_m:5.0,gates:gate.into_iter().collect(),..Default::default()});
+        let edit_key = super::trace_key(purpose, &path);
+        let edit = cfg.overrides.walls.get(&edit_key);
+        if edit.is_some_and(|v| v.present == Some(false)) { continue; }
+        let mut e = Enclosure {edit_key,path,kind:"wall".into(),style:"curtain".into(),purpose:purpose.into(),
+            material:"stone".into(),curtain_width_m:1.2,height_m:5.0,gates:gate.into_iter().collect(),..Default::default()};
+        if let Some(v) = edit {
+            let pop = layout.structure.as_ref().map_or(1000, |s| s.metrics.planned_population as u32);
+            let default = super::style::styled("curtain", &layout.culture, pop);
+            let mut own = default.for_wall(Some(v), cfg, &layout.culture, pop).into_owned();
+            own.attached = 0.0;
+            e.kind = own.kind.clone();
+            if let Some(count) = v.gates {
+                let circuit = super::Circuit { gates: Some(count), pop, purpose, kind: &e.kind, curtain_width: own.curtain_width,
+                    moat: own.ditch_width[1], grade: cfg.max_street_grade, squared: false, streets_turn: false,
+                    key: &layout.key, improvisation: cfg.street_improvisation };
+                super::decide_gates(&inner, &mut layout.streets, &circuit, surface);
+                let mut gates = composition::gates(&e.path, &layout.streets);
+                if gates.is_empty() && count > 0 { gates = e.gates; }
+                e.gates = gates;
+            }
+            if v.style.is_some() || v.moat.is_some() {
+                let predicted = super::Predicted {widths:[9.0,8.0,5.0,3.5,3.0],arterial:1,dwelling:[5.0;2]};
+                let banks = composition::water_gates(&e.path, surface);
+                let land = e.gates.len();
+                let rng = Rng::new(&layout.key).fork(&e.edit_key);
+                super::build(&mut e, land, &banks, &layout.streets, surface, &own, pop, &predicted, &rng);
+            }
+        }
+        layout.enclosures.push(e);
     }
     // The retained circuit is an inhabited elite enclosure, not an opaque castle lot.
     let citadels:Vec<_>=layout.enclosures.iter().filter(|e|e.purpose=="citadel")

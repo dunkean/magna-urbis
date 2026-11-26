@@ -4,6 +4,7 @@
  * places, greens, yards, blocks, meadows and plazas.
  * Reads: world, palette, the path cache, patterns.
  */
+import { type MapInk } from '../../gpu/recorder';
 import { isUnderdarkBiome } from '../../../gen/biomes';
 import { drawPanelCanvas } from '../../legend';
 import { underdarkMark } from '../../underdark';
@@ -25,7 +26,7 @@ export function paintStreetSpace(c: CartographyContext, f: VectorFrame, u: Urban
             return;
           }
           cx.globalAlpha = 0.75;
-          cx.strokeStyle = pal.grass;
+          cx.strokeStyle = c.ink('grass').css;
           cx.lineWidth = 0.35 * k;
           cx.beginPath();
           for (const [x, y] of [
@@ -44,7 +45,7 @@ export function paintStreetSpace(c: CartographyContext, f: VectorFrame, u: Urban
       near && isUnderdarkBiome(c.world.options.biome)
         ? getPattern(ctx, 'fungal-open', 6, 6, 0, (cx, k) => drawPanelCanvas(cx, { w: 0, h: 0, prims: [...underdarkMark('garden', 2 * k, 2 * k, 1.1 * k, pal, k), ...underdarkMark('garden', 4.5 * k, 4.5 * k, 1.1 * k, pal, k)] }, 0, 0, family))
         : null;
-    const tint = (name: string, color: string, alpha: number, pat: CanvasPattern | null): void => {
+    const tint = (name: string, color: MapInk, alpha: number, pat: CanvasPattern | null): void => {
       const l = polyL(name);
       if (!l) return;
       if (pal.landBlend === 'multiply') ctx.globalCompositeOperation = 'multiply';
@@ -56,14 +57,14 @@ export function paintStreetSpace(c: CartographyContext, f: VectorFrame, u: Urban
       }
     };
     // the settlement's ground (the footprint and a margin round it, off the water), opaque where it hides roads
-    if (polyL('u-ground-solid')) fillPolys('u-ground-solid', mixHex(pal.paper, pal.land.meadow, 0.35), 1, 'nonzero');
-    tint('u-ground', pal.land.meadow, pal.landOpacity * 0.8, tuft);
-    tint('u-open-grass', pal.land.pasture, pal.landOpacity * 0.85, tuft);
-    tint('u-open-green', pal.land.meadow, pal.landOpacity, tuft);
-    tint('u-open-garden', pal.land.garden, pal.landOpacity, fungal);
-    tint('u-open-field', pal.land.field, pal.landOpacity, fungal);
-    if (!isUnderdarkBiome(c.world.options.biome) && polyL('u-open-field')) strokePolys('u-open-field', pal.furrow, lw(0.4, 0.4), 0.4);
-    tint('u-open-commons', pal.land.pasture, pal.landOpacity * 0.8, null);
+    if (polyL('u-ground-solid')) fillPolys('u-ground-solid', c.ink('openGround'), 1, 'nonzero');
+    tint('u-ground', c.ink('meadow'), pal.landOpacity * 0.8, tuft);
+    tint('u-open-grass', c.ink('pasture'), pal.landOpacity * 0.85, tuft);
+    tint('u-open-green', c.ink('meadow'), pal.landOpacity, tuft);
+    tint('u-open-garden', c.ink('garden'), pal.landOpacity, fungal);
+    tint('u-open-field', c.ink('field'), pal.landOpacity, fungal);
+    if (!isUnderdarkBiome(c.world.options.biome) && polyL('u-open-field')) strokePolys('u-open-field', c.ink('furrow'), lw(0.4, 0.4), 0.4);
+    tint('u-open-commons', c.ink('pasture'), pal.landOpacity * 0.8, null);
     // churned mud (a war camp), puddles
     if (polyL('u-mud')) {
       const dk = mixHex(pal.trackFill, '#000000', 0.25);
@@ -99,7 +100,7 @@ export function paintStreetSpace(c: CartographyContext, f: VectorFrame, u: Urban
       }
     }
     if (polyL('u-puddle')) {
-      fillPolys('u-puddle', pal.riverFill, 0.7);
+      fillPolys('u-puddle', c.ink('riverFill'), 0.7);
       strokePolys('u-puddle', mixHex(pal.trackFill, '#000000', 0.2), lw(0.3, 0.3), 0.6);
     }
     fillPolys('u-yard-earth', mixHex(pal.farmYard, pal.trackFill, 0.12), 0.85);

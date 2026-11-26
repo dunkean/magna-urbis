@@ -40,6 +40,7 @@ export interface Block {
   phase?: number;
 }
 export interface Enclosure {
+  edit_key?: string;
   path: Point[];
   kind: string;
   gates: Point[];

@@ -35,7 +35,7 @@ import { RIM_DEVICE_MPP, roofFrame, roofPansShown, type VolumeTownLook } from '.
 import { cityBuildingAppearance, city3dPlanOptions } from '../../render/cityDrawOptions';
 import { toneStamp } from '../../render/groundTone';
 import { roofSeasonKey } from '../../render/seasonPalette';
-import { city3dCanopy, cityCanopy } from '../../render/cityGrove';
+import { city3dCanopySteps, cityCanopy, type City3dCanopy } from '../../render/cityGrove';
 import { placeholderPlacedBuildings } from '../../render/farmRoofs';
 import { city3dUnderdarkOrnaments, underdarkOrnaments } from '../../render/underdarkOrnaments';
 import type { UrbanBuildingAppearance } from '../../render/urbanBuildingStyle';
@@ -145,6 +145,8 @@ export class WorldVolumes {
   private madeFor: { world?: World; content: number; resolved?: ResolvedAppearance; heights?: TerrainHeights; city?: NativeCityMap } = { content: -1 };
   /** What the town was composed from, besides the world and the relief. */
   private townOf: { cities: readonly RustTownSnapshot[]; world?: World; heights?: TerrainHeights; city?: NativeCityMap; key: string } = { cities: [], key: '' };
+  /** Layout and source arrays shared by every look of the same town content. */
+  private sourceOf?: { cities: readonly RustTownSnapshot[]; activities: ReturnType<typeof activityScene>; layouts: RustTownSnapshot['layouts']; source: ReturnType<typeof combineV2NativeScenes> };
   /** The towns' meshes (city3dBuildingsSteps), which no look changes, and the scenes composed from them per look (a few,
    * most recent last): a switch between looks of the same town publishes the scene it made before, whose blocks the
    * buildings layer keeps. Dropped with the town or the relief. */
@@ -161,6 +163,8 @@ export class WorldVolumes {
     shape: GroundShape | undefined;
     display: City3dDisplayScene | undefined;
     farms: Building3dVisual[];
+    grove?: City3dCanopy;
+    groveJob?: Generator<void, City3dCanopy>;
     scenes: Map<string, { display?: City3dDisplayScene; collisions?: Terrain3dCollisions }>;
   };
   /** The meshes made for the buildings on one relief and ground options, kept across compositions: a local edit gives
@@ -259,10 +263,13 @@ export class WorldVolumes {
     }
     if (world?.terrain !== made.world?.terrain) this.treeSource = undefined;
     if (!world || !settings || !resolved || !heights) {
+      this.job = undefined;
       this.display = this.treeSource = undefined;
       this.caveOf = undefined;
       this.walkCollisions = undefined;
       this.townOf = { cities: [], key: '' };
+      this.sourceOf = undefined;
+      this.townMeshes = undefined;
       this.yardMeshes = false;
       return;
     }
@@ -428,8 +435,11 @@ export class WorldVolumes {
     const unit = heights.exaggeration > 0 ? 1 / heights.exaggeration : 1,
       naturalAt = (x: number, y: number): number => heights.naturalAt(x, y) * unit,
       heightAt: City3dHeight = (x, y) => heights.groundAt(x, y) * unit;
-    const layouts = cities.flatMap(city => city.layouts),
-      source = withV2ActivityScene(combineV2NativeScenes(cities), activityScene(world));
+    const activities = activityScene(world),
+      heldSource = this.sourceOf;
+    if (!heldSource || heldSource.activities !== activities || !sameV2NativeInputs(heldSource.cities, cities, 'scene') || !sameV2NativeInputs(heldSource.cities, cities, 'layouts'))
+      this.sourceOf = { cities, activities, layouts: cities.length === 1 ? cities[0].layouts : cities.flatMap(city => city.layouts), source: withV2ActivityScene(combineV2NativeScenes(cities), activities) };
+    const { layouts, source } = this.sourceOf!;
     if (!sameTown) {
       countWork('volumes.compose');
       // The buildings' floors are set on the natural ground, and the ground is shaped to them. The caves keep their own.
@@ -482,15 +492,21 @@ export class WorldVolumes {
     yield;
     const enclosures = yards && city ? city3dLotEnclosures(yield* city.lotEnclosureSteps(), heightAt, plan.palette) : [];
     yield;
-    const groves = buildingsOnly ? [] : city3dCanopy(cityCanopy(layouts, source?.buildings), heightAt);
+    if (!buildingsOnly && !meshes!.grove) {
+      // A look change can replace the surrounding composition while the grove is still seating on this ground.
+      meshes!.groveJob ??= city3dCanopySteps(cityCanopy(layouts, source?.buildings), heightAt);
+      meshes!.grove = yield* meshes!.groveJob;
+      meshes!.groveJob = undefined;
+    }
+    const grove = buildingsOnly ? undefined : meshes!.grove;
     yield;
     const ornaments = buildingsOnly ? [] : city3dUnderdarkOrnaments(underdarkOrnaments(layouts, source?.buildings), heightAt, display?.buildings);
     yield;
     // Published whole, once made: the buildings layer starts its blocks again for a new scene object.
     this.townOf = { cities, world, heights, city, key };
     this.appearance = appearance;
-    const extras = [...(structures ? [...structures.bridges, ...structures.walls, ...structures.quays, ...structures.boardwalks] : []), ...stairs, ...enclosures, ...groves, ...ornaments];
-    this.display = city3dWithExtras(display, [...(this.meshReuse?.heights === heights ? this.sameVolumes(extras, this.meshReuse) : extras), ...meshes!.farms]);
+    const extras = [...(structures ? [...structures.bridges, ...structures.walls, ...structures.quays, ...structures.boardwalks] : []), ...stairs, ...enclosures, ...ornaments];
+    this.display = city3dWithExtras(display, [...(this.meshReuse?.heights === heights ? this.sameVolumes(extras, this.meshReuse) : extras), ...(grove?.buildings ?? []), ...meshes!.farms], grove?.instances);
     this.walkCollisions = this.display ? new Terrain3dCollisions(this.display, heights, heights.exaggeration) : undefined;
     meshes!.scenes.set(key, { display: this.display, collisions: this.walkCollisions });
     if (meshes!.scenes.size > LOOK_SCENES) meshes!.scenes.delete(meshes!.scenes.keys().next().value!);

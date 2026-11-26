@@ -144,7 +144,7 @@ const GRAZING: f64 = 0.26;
 /// roads first (regional roads, then main streets, a grazing one last, then the widest), at most the
 /// budget and spaced by about a third of an even share of the circuit; then `POSTERNS` lesser streets.
 /// A walled `VILLAGE` keeps a gate on each of its few roads.
-fn choose(path: &[Point], streets: &[Street], pop: u32, purpose: &str, surface: Surface<'_>) -> (Vec<Passage>, Vec<Passage>) {
+fn choose(path: &[Point], streets: &[Street], pop: u32, purpose: &str, requested: Option<usize>, surface: Surface<'_>) -> (Vec<Passage>, Vec<Passage>) {
     let cum = cumulated(path);
     let total = cum[path.len() - 1].max(1.0);
     let mut all = crossings(path, &cum, streets, surface);
@@ -154,6 +154,10 @@ fn choose(path: &[Point], streets: &[Street], pop: u32, purpose: &str, surface: 
             .then(b.width.total_cmp(&a.width))
             .then(a.arc.total_cmp(&b.arc))
     });
+    if let Some(count) = requested {
+        let dropped = all.split_off(count.min(all.len()));
+        return (all, dropped);
+    }
     let village = pop < VILLAGE;
     let (budget, posterns) = if village { (usize::MAX, usize::MAX) } else { (gate_budget(pop, purpose), POSTERNS) };
     let spacing = if village { 0.0 } else { (total / budget as f64 * 0.35).clamp(40.0, 250.0) };
@@ -450,6 +454,7 @@ fn fit_passages(mut ring: Vec<Point>, passages: &mut [Passage], streets: &mut [S
 /// What `decide` needs to know of a circuit.
 pub(in super::super) struct Circuit<'a> {
     pub(in super::super) pop: u32,
+    pub(in super::super) gates: Option<usize>,
     /// "" for a town circuit, else `castle` or `citadel`.
     pub(in super::super) purpose: &'a str,
     pub(in super::super) kind: &'a str,
@@ -477,7 +482,7 @@ pub(in super::super) fn decide(wall: &Shape, streets: &mut Vec<Street>, c: &Circ
         return (wall.clone(), vec![], vec![]);
     }
     let path = closed(&wall.outer);
-    let (mut kept, dropped) = choose(&path, streets, c.pop, c.purpose, surface);
+    let (mut kept, dropped) = choose(&path, streets, c.pop, c.purpose, c.gates, surface);
     if kept.is_empty() && dropped.is_empty() {
         return (wall.clone(), kept, dropped);
     }

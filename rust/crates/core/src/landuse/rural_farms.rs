@@ -258,30 +258,7 @@ impl Builder<'_> {
             pl.o.y + pl.v.y * pl.lf.d / 2.0,
         );
         let key = format!("{},{}", (c.x + 0.5).floor(), (c.y + 0.5).floor());
-        if !Rng::new(&input.seed)
-            .fork("outbuildings")
-            .fork(&key)
-            .chance(plan(input)["outbuildings"].as_f64().unwrap_or(0.5))
-            && arr(&g["parts"]).len() > 1
-        {
-            let parts = arr(&g["parts"]);
-            let mut main = &parts[0];
-            for b in parts {
-                if area(&poly(&b["poly"])).abs() > area(&poly(&main["poly"])).abs() {
-                    main = b;
-                }
-            }
-            let houses: Vec<_> = parts
-                .iter()
-                .filter(|p| s(&p["use"]) == "house")
-                .cloned()
-                .collect();
-            g["parts"] = if houses.is_empty() {
-                Value::Array(vec![main.clone()])
-            } else {
-                Value::Array(houses)
-            };
-        }
+        keep_outbuildings(&mut g, &input.seed, &key, plan(input)["outbuildings"].as_f64().unwrap_or(0.5));
         self.lots.push((c, 0.5 * pl.lf.w.hypot(pl.lf.d)));
         farm_massing(&mut g, culture, &pl.lf.type_, pl.lf.size, &format!("{}:farm:{key}", input.seed));
         let gate: Point = serde_json::from_value(g["gate"].clone()).unwrap_or_default();
@@ -312,6 +289,26 @@ impl Builder<'_> {
         self.farms.push(g);
     }
 }
+/// Keep the same share of fully equipped farmyards as the house outbuildings control.
+pub(super) fn keep_outbuildings(g: &mut Value, seed: &str, key: &str, share: f64) {
+    let parts = arr(&g["parts"]);
+    if Rng::new(seed).fork("outbuildings").fork(key).chance(share) || parts.len() <= 1 {
+        return;
+    }
+    let houses: Vec<_> = parts.iter().filter(|p| s(&p["use"]) == "house").cloned().collect();
+    g["parts"] = if houses.is_empty() {
+        let mut main = &parts[0];
+        for b in parts {
+            if area(&poly(&b["poly"])).abs() > area(&poly(&main["poly"])).abs() {
+                main = b;
+            }
+        }
+        Value::Array(vec![main.clone()])
+    } else {
+        Value::Array(houses)
+    };
+}
+
 /// Gives every building of a placed farm its `massing`: the display contract of the town
 /// buildings (`volumes[]`, composed roofs, culture materials), raised by the code of the
 /// settlement farmsteads (urban/activities.rs `countryside_farm_massing`) for the farm's

@@ -501,16 +501,22 @@ pub(super) fn fortify(
     // other crossings close. The quarters are then cut along curtains whose gates are final. A
     // planned rectangle, a bastioned front, a cave barrier and a stretch shared by two circuits
     // keep their line.
-    let moat = style.ditch_width[1];
-    let gated = |purpose: &'static str, curtain_width: f64, squared: bool, streets_turn: bool| fortification::Circuit {
-        pop: site.population, purpose, kind, curtain_width, moat, grade: cfg.max_street_grade, squared, streets_turn, key: &site.key,
+    let gated = |purpose: &'static str, curtain_width: f64, moat: f64, gates: Option<usize>, squared: bool, streets_turn: bool| fortification::Circuit {
+        pop: site.population, gates, purpose, kind, curtain_width, moat, grade: cfg.max_street_grade, squared, streets_turn, key: &site.key,
         improvisation: cfg.street_improvisation,
     };
     let squared = !(square || attached || cave || style.id == "bastioned");
     let mut passages = vec![];
     let mut decided = Vec::with_capacity(walls.len());
-    for wall in &walls {
-        let (wall, kept, shut) = fortification::decide_gates(wall, &mut plan.streets, &gated("", style.curtain_width, squared, !(attached || cave)), surface);
+    for (i, wall) in walls.into_iter().enumerate() {
+        let edit = cfg.overrides.walls.get(&format!("outer-{i}"));
+        if edit.is_some_and(|e| e.present == Some(false)) {
+            passages.push((vec![], vec![]));
+            decided.push(wall);
+            continue;
+        }
+        let own = style.for_wall(edit, cfg, culture, site.population);
+        let (wall, kept, shut) = fortification::decide_gates(&wall, &mut plan.streets, &gated("", own.curtain_width, own.ditch_width[1], edit.and_then(|e| e.gates), squared, !(attached || cave)), surface);
         passages.push((kept, shut));
         decided.push(wall);
     }
@@ -640,9 +646,13 @@ pub(super) fn fortify(
     for (i, wall) in walls.iter().chain(&inner_walls).chain(castle.iter()).enumerate() {
         // An older circuit and the castle open their gates by the same budget, on their trace as it is.
         let purpose = if i >= castle_at { "castle" } else if citadel && i >= outer { "citadel" } else { "" };
+        let edit_key = if i >= castle_at { "castle".into() } else if i < outer { format!("outer-{i}") } else { format!("inner-{}", i - outer) };
+        let edit = cfg.overrides.walls.get(&edit_key);
+        if edit.is_some_and(|e| e.present == Some(false)) { continue; }
+        let own = if i < outer || i >= castle_at { &style } else { &inner_style };
+        let own = own.for_wall(edit, cfg, culture, site.population);
         let (kept, shut) = if i < outer { std::mem::take(&mut passages[i]) } else {
-            let width = if i >= castle_at { style.curtain_width } else { inner_style.curtain_width };
-            let (_, kept, shut) = fortification::decide_gates(wall, &mut plan.streets, &gated(purpose, width, false, false), surface);
+            let (_, kept, shut) = fortification::decide_gates(wall, &mut plan.streets, &gated(purpose, own.curtain_width, own.ditch_width[1], edit.and_then(|e| e.gates), false, false), surface);
             (kept, shut)
         };
         let path = closed(&wall.outer);
@@ -651,8 +661,8 @@ pub(super) fn fortify(
         // Where the curtain crosses a channel it opens on a water gate (`fortification::build`).
         let banks = water_gates(&path, surface);
         let mut enclosure = Enclosure {
-            path,
-            kind: kind.into(),
+            edit_key, path,
+            kind: edit.and_then(|e| e.style.as_deref()).map(fortification::family).unwrap_or(kind).into(),
             purpose: purpose.into(),
             gates,
             ..Default::default()
@@ -666,7 +676,7 @@ pub(super) fn fortify(
             &banks,
             &plan.streets,
             surface,
-            if i < outer || i >= castle_at { &style } else { &inner_style },
+            &own,
             site.population,
             &predicted,
             &base.fork(&format!("enc:{i}")),
@@ -678,7 +688,8 @@ pub(super) fn fortify(
     }
     laps.lap("build");
     // The two attached circuits keep no ditch or outwork inside each other.
-    if attached && outer >= 2 {
+    if attached && outer >= 2 && plan.enclosures.get(first + 1).is_some_and(|e| e.edit_key == "outer-1")
+        && plan.enclosures[first].edit_key == "outer-0" {
         let (a, b) = (closed_shape(&plan.enclosures[first]), closed_shape(&plan.enclosures[first + 1]));
         fortification::trim_shared(&mut plan.enclosures[first], &b);
         fortification::trim_shared(&mut plan.enclosures[first + 1], &a);

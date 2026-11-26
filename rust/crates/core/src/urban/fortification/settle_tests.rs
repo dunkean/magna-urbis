@@ -30,6 +30,33 @@ fn review_forced_circuits_gain_water_gates_and_keep_regional_access() {
     assert_eq!(e.gatehouses.iter().filter(|g|g.kind=="water").count(),2);
 }
 
+#[test]
+fn wall_override_follows_its_circuit_when_a_sibling_is_removed() {
+    use crate::urban::overrides::WallOverride;
+    let h = vec![10.0; N * N];
+    let w = vec![0; N * N];
+    let mut layout = Layout {
+        key: "wall-edit".into(), config: None, programme: None, culture: "european-organic".into(),
+        center: pt(1000.0,1000.0), streets: vec![], quarters: vec![], blocks: vec![], warnings: vec![],
+        enclosures: vec![], phases: vec![], archetype: String::new(), structure: None, claim: Default::default(),
+    };
+    let circuit = |a: f64, b: f64| Enclosure {
+        path: closed(&g::rectangle(a,a,b,b).outer), kind: "wall".into(), ..Default::default()
+    };
+    layout.enclosures = vec![circuit(200.0,400.0), circuit(600.0,1400.0)];
+    layout.streets = vec![street(&[(500.0,1000.0),(1500.0,1000.0)], 3, 4.0)];
+    let hidden = super::trace_key("trace", &layout.enclosures[0].path);
+    let kept = super::trace_key("trace", &layout.enclosures[1].path);
+    let cfg = layout.config.get_or_insert_with(Default::default);
+    cfg.overrides.walls.insert(hidden, WallOverride { present: Some(false), ..Default::default() });
+    cfg.overrides.walls.insert(kept.clone(), WallOverride { style: Some("palisade".into()), moat: Some("none".into()), gates: Some(1), ..Default::default() });
+    settle(&mut layout,surface(&h,&w));
+    assert_eq!(layout.enclosures.len(), 1);
+    let wall = &layout.enclosures[0];
+    assert_eq!((&wall.edit_key, wall.style.as_str(), wall.gates.len()), (&kept, "palisade", 1));
+    assert!(wall.ditch.is_empty() && wall.moat.is_none());
+}
+
 /// Walls review 16/11: a secondary street crossing the curtain away from
 /// every gate opens no bare gap: it ends clear of the wall on both sides;
 /// a main street keeps its crossing (it is a gate).

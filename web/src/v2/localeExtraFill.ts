@@ -1,5 +1,8 @@
 /** Translations for strings the V2 shows that no other catalogue covers. Row = [en, es, pt, zh, ar, ru, ja]. */
 const rows: readonly (readonly [string, string, string, string, string, string, string])[] = [
+  ["Land gate target", "Número deseado de puertas terrestres", "Número desejado de portas terrestres", "陆路城门目标数量", "العدد المطلوب للبوابات البرية", "Желаемое число сухопутных ворот", "陸側の城門の希望数"],
+  ["Required road and water crossings stay open.", "Los pasos imprescindibles por tierra y agua permanecen abiertos.", "As passagens essenciais por terra e água permanecem abertas.", "保留必要的道路和水路通道。", "تبقى المعابر البرية والمائية الضرورية مفتوحة.", "Необходимые сухопутные и водные проходы остаются открытыми.", "必要な道路と水路の通行口は維持されます。"],
+  ["Invalid enclosure override.", "Modificación de recinto no válida.", "Alteração de muralha inválida.", "围墙修改无效。", "تعديل السور غير صالح.", "Недопустимые настройки укрепления.", "囲郭の変更内容が無効です。"],
   ["No heightmap loaded yet. Import one from the sidebar.", "Aún no hay ningún mapa de alturas cargado. Importe uno desde la barra lateral.", "Nenhum mapa de alturas carregado. Importe um pela barra lateral.", "尚未加载高度图。请从侧栏导入。", "لم تُحمّل خريطة ارتفاع بعد. استورد واحدة من الشريط الجانبي.", "Карта высот ещё не загружена. Импортируйте её с боковой панели.", "高さマップはまだ読み込まれていません。サイドバーからインポートしてください。"],
   ["Elevation of black (m)", "Altitud del negro (m)", "Altitude do preto (m)", "黑色高程（m）", "ارتفاع الأسود (m)", "Высота чёрного (m)", "黒の標高（m）"],
   ["Elevation of white (m)", "Altitud del blanco (m)", "Altitude do branco (m)", "白色高程（m）", "ارتفاع الأبيض (m)", "Высота белого (m)", "白の標高（m）"],

@@ -75,6 +75,18 @@ describe('engine and bridge presentation-message coverage', () => {
     expect(message('Architectural deficit: allocation missing from the cadastre or duplicated.', 'fr')).toBe('Déficit architectural : allocation absente du cadastre ou dupliquée.');
   });
 
+  it('localizes coastal smoothing and subdivision validation errors while retaining edited IDs', () => {
+    const coast = 'Invalid coastal smoothing';
+    const subdivision = 'Invalid quarter edit q-42 (shape or parts)';
+    expect(message(coast, 'fr')).toBe('Lissage côtier invalide');
+    expect(message(subdivision, 'fr')).toBe('Retouche de quartier q-42 invalide (forme ou parties)');
+    for (const language of ['es', 'pt', 'zh', 'ar', 'ru', 'ja'] as const) {
+      expect(message(coast, language)).not.toContain(coast);
+      expect(message(subdivision, language)).not.toContain(subdivision);
+      expect(message(subdivision, language)).toContain('q-42');
+    }
+  });
+
   it('retains explicit source-text labels for diagnostics awaiting translation in the other six locales', () => {
     for (const language of ['es', 'pt', 'zh', 'ar', 'ru', 'ja'] as const) {
       for (const [, english] of [...engineRuntimeEntries, ...engineRuntimeTemplates]) {

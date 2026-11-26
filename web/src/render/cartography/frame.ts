@@ -4,6 +4,7 @@
  * road and land-use painters). Built by vector.ts at each call; the layer modules (landuse, fields, water, roads,
  * farmsteads, urban, structures, symbols) take it with the renderer context.
  */
+import { type MapInk } from '../gpu/recorder';
 import type { Lod } from '../lod';
 import type { Rect4, View } from '../view';
 import type { LineLayer, PolyLayer } from '../scene';
@@ -11,7 +12,7 @@ import type { Palette } from '../styles';
 import type { BrushKind } from '../brushes';
 import type { RoadStyle, strokeNaturalRoad } from '../roadStyle';
 import type { FrameStats } from './contract';
-import type { DrawMode } from './context';
+import type { CartographyContext, DrawMode } from './context';
 
 export interface FrameBase {
   readonly ctx: CanvasRenderingContext2D;
@@ -38,9 +39,9 @@ export interface FrameBase {
   readonly lw: (w: number, minPx: number) => number;
   readonly polyPaths: (l: PolyLayer) => Path2D[];
   readonly linePaths: (l: LineLayer) => Path2D[];
-  readonly fillPolys: (name: string, color: string, alpha?: number, rule?: CanvasFillRule) => PolyLayer | undefined;
-  readonly strokePolys: (name: string, color: string, width: number, alpha?: number, dash?: number[]) => void;
-  readonly strokeLines: (ls: LineLayer[], color: string, widthOf: (l: LineLayer) => number, alpha?: number, dash?: number[], cap?: CanvasLineCap) => void;
+  readonly fillPolys: (name: string, color: MapInk, alpha?: number, rule?: CanvasFillRule) => PolyLayer | undefined;
+  readonly strokePolys: (name: string, color: MapInk, width: number, alpha?: number, dash?: number[]) => void;
+  readonly strokeLines: (ls: LineLayer[], color: MapInk, widthOf: (l: LineLayer) => number, alpha?: number, dash?: number[], cap?: CanvasLineCap) => void;
 }
 
 /** The road painters of a frame (roads.ts roadPainters). */
@@ -64,10 +65,8 @@ export interface LandPainters {
   readonly brushTrees: (name: string, orchard?: boolean) => void;
   /** Land use is drawn (the mask of another pass, or the world option). */
   readonly luOn: boolean;
-  readonly landFill: (kind: keyof Palette['land']) => string;
-  readonly landAlpha: (kind: keyof Palette['land']) => number;
   readonly fillLand: (name: string, kind: keyof Palette['land']) => void;
-  readonly fillLandSteps: (name: string, kind: keyof Palette['land']) => Generator<void>;
+  readonly fillLandSteps: (name: string, kind: keyof Palette['land'], ink?: CartographyContext['ink']) => Generator<void>;
   readonly multiply: (on: boolean) => void;
 }
 

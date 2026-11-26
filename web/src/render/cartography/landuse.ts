@@ -6,9 +6,10 @@
  * the farmsteads, the field network and the urban natural ground use them too.
  * Reads: world, scene, palette, the path cache, patterns, the forest washes, activeLight, terrainImg.
  */
+import { setMapInk, type MapInk } from '../gpu/recorder';
 import { brushTextureOn, type BrushKind } from '../brushes';
 import { isUnderdarkBiome } from '../../gen/biomes';
-import { forestLandPaint } from '../landuseForestTone';
+import { forestLandPaint, getLanduseForestTone } from '../landuseForestTone';
 import { CANVAS_MAP_STROKES as MAP_STROKES, mapStrokeWidth } from '../strokes';
 import { LAND_ORDER } from '../scene';
 import type { Palette } from '../styles';
@@ -28,7 +29,7 @@ export function paintContours(c: CartographyContext, f: VectorFrame): void {
   }
 }
 
-export function* paintLandUseSteps(c: CartographyContext, f: VectorFrame): Generator<void> {
+export function* paintLandUseSteps(c: CartographyContext, f: VectorFrame, ink = c.ink): Generator<void> {
   const { pal, brushes, polyL, timedRec } = c;
   const { ctx, sc, lod, rect, lw, strokePolys, brushFill, luOn, fillLandSteps, multiply } = f;
   for (const kind of LAND_ORDER) {
@@ -44,11 +45,11 @@ export function* paintLandUseSteps(c: CartographyContext, f: VectorFrame): Gener
       if (clip) ctx.clip(clip, 'nonzero');
     }
     multiply(true);
-    yield* fillLandSteps(name, kind);
+    yield* fillLandSteps(name, kind, ink);
     multiply(false);
-    if (kind === 'field') paintFieldTexture(c, f, kind);
+    if (kind === 'field') paintFieldTexture(c, f, kind, ink);
     if (!c.activeLight && brushes && lod.textures && (kind === 'field' || (kind === 'garden' && brushTextureOn(kind, pal, c.world.options.biome)))) brushFill(name, kind, sc);
-    if ((kind === 'orchard' || kind === 'garden') && lod.strips) strokePolys(name, pal.hedge, lw(0.8, 0.8), 0.7);
+    if ((kind === 'orchard' || kind === 'garden') && lod.strips) strokePolys(name, ink('hedge'), lw(0.8, 0.8), 0.7);
     if (kind === 'forest' && !c.activeLight) ctx.restore();
     yield;
   }
@@ -97,9 +98,10 @@ export function landPainters(c: CartographyContext, f: FrameBase): LandPainters 
   const luOn = deps.mask?.landuse !== undefined ? deps.mask.landuse !== false : world.options.landuse;
   const luAlpha = pal.landOpacity;
   // Forest class: tone chosen by the shared « forest land use » setting (landuseForestTone.ts).
-  const landFill = (kind: keyof Palette['land']): string => (kind === 'forest' ? forestLandPaint(pal).color : pal.land[kind]);
+
   const landAlpha = (kind: keyof Palette['land']): number => (kind === 'forest' ? forestLandPaint(pal).alpha : luAlpha);
-  const fillLandSteps = function* (name: string, kind: keyof Palette['land']): Generator<void> {
+  const fillLandSteps = function* (name: string, kind: keyof Palette['land'], ink = c.ink): Generator<void> {
+    const landFill = (kind: keyof Palette['land']) => ink(kind === 'forest' ? (getLanduseForestTone() === 'ground' ? 'groundForest' : 'markedForest') : kind);
     if (c.activeLight) {
       fillPolys(name, landFill(kind), landAlpha(kind));
       return;
@@ -117,7 +119,7 @@ export function landPainters(c: CartographyContext, f: FrameBase): LandPainters 
         const gains = [0.2, 0.24, 0.32, 0.46];
         for (let i = 0; i < wash.levels.length; i++) {
           ctx.globalAlpha = landAlpha(kind) * gains[i];
-          ctx.fillStyle = landFill(kind);
+          setMapInk(ctx, 'fillStyle', landFill(kind));
           for (const path of polyPaths(wash.levels[i])) ctx.fill(path, 'evenodd');
           yield;
         }
@@ -135,7 +137,7 @@ export function landPainters(c: CartographyContext, f: FrameBase): LandPainters 
         if (!clip) return;
         ctx.save();
         ctx.clip(clip, 'nonzero');
-        ctx.fillStyle = landFill('forest');
+        setMapInk(ctx, 'fillStyle', landFill('forest'));
         // Parchment: one narrow engraved rim instead of the stepped halo (the steps read as contour rings).
         if (pal.name !== 'parchment')
           for (const level of wash.fringe) {
@@ -144,18 +146,18 @@ export function landPainters(c: CartographyContext, f: FrameBase): LandPainters 
           }
         else {
           // The 14 m band stamped at small offsets: a smooth gradient, dark on the shadow side (south-east), faintly lit north-west.
-          const stamp = (dx: number, dy: number, color: string, alpha: number, op: GlobalCompositeOperation): void => {
+          const stamp = (dx: number, dy: number, color: MapInk, alpha: number, op: GlobalCompositeOperation): void => {
             ctx.save();
             ctx.globalCompositeOperation = op;
             ctx.translate(dx, dy);
-            ctx.fillStyle = color;
+            setMapInk(ctx, 'fillStyle', color);
             ctx.globalAlpha = alpha;
             for (const path of polyPaths(wash.fringe[0])) ctx.fill(path, 'evenodd');
             ctx.restore();
           };
           if (wash.fringe[0]) {
             for (let k = 1; k <= 3; k++) stamp(-3.5 * k, -4 * k, pal.paper, 0.05, 'source-over');
-            for (let k = 0; k <= 6; k++) stamp(1.8 * k, 2.1 * k, pal.treeInk, 0.042, 'multiply');
+            for (let k = 0; k <= 6; k++) stamp(1.8 * k, 2.1 * k, ink('treeInk'), 0.042, 'multiply');
           }
         }
         ctx.restore();
@@ -171,5 +173,5 @@ export function landPainters(c: CartographyContext, f: FrameBase): LandPainters 
   const multiply = (on: boolean): void => {
     ctx.globalCompositeOperation = on && pal.landBlend === 'multiply' ? 'multiply' : 'source-over';
   };
-  return { brushFill, brushTrees, luOn, landFill, landAlpha, fillLand, fillLandSteps, multiply };
+  return { brushFill, brushTrees, luOn, fillLand, fillLandSteps, multiply };
 }

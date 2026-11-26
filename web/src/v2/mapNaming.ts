@@ -13,10 +13,11 @@ import { generateToponymRecord } from '../gen/names/toponyms';
 import { resolveToponymProfile } from '../gen/names/profiles';
 import { vocabularyForProfile } from '../gen/names/culturalVocabulary';
 import { VOCAB } from '../gen/names/grammar';
-import type { NameParts } from '../gen/names/types';
+import type { NameEntry } from '../gen/names/types';
 import { nativeCityRecords } from './nativeProducts';
 import { featureNameKey } from '../gen/names/identity';
 import { renameParts } from '../gen/names/rename';
+import { sameContent } from './terrainIntern';
 
 /** Detach only metadata that the names stage writes; physical geometry stays shared. */
 function namingUrban(source: UrbanLayer | undefined): UrbanLayer | undefined {
@@ -32,6 +33,18 @@ function namingUrban(source: UrbanLayer | undefined): UrbanLayer | undefined {
 
 /** Rebuild only names. Retained geometry, heights and random streams are untouched. */
 export function renameMap(source: World, settings: V2Settings, language: Language = 'en'): World {
+  return nameMap(source, settings, language);
+}
+
+/** Use the full run's naming inputs and bank for the changed town, with the rest of the map retained. */
+export function renameLocalTown(previous: World, source: World, settings: V2Settings, key: string): World {
+  if (source.stats['osm.attribution'] && source.names?.entries.some(entry => entry.id.startsWith('osm:'))) return source;
+  return nameMap(source, settings, 'en', { previous, key });
+}
+
+const urbanKinds = new Set<NameEntry['kind']>(['street', 'quarter', 'castle', 'church', 'gate', 'square']);
+
+function nameMap(source: World, settings: V2Settings, language: Language, local?: { previous: World; key: string }): World {
   const presentation = { mode: settings.naming?.mode ?? ('localized' as const), language: settings.naming?.mapLanguage && settings.naming.mapLanguage !== 'ui' ? settings.naming.mapLanguage : language, script: settings.naming?.script };
   if (source.stats['osm.attribution'] && source.names?.entries.some(entry => entry.id.startsWith('osm:'))) {
     const world = { ...source, settlements: source.settlements?.map(place => ({ ...place })), names: { ...source.names, presentation, entries: source.names.entries.map(entry => ({ ...entry })) } };
@@ -56,13 +69,23 @@ export function renameMap(source: World, settings: V2Settings, language: Languag
     const cleaned = cleanSettlementName(name);
     if (cleaned) manual.set(key, cleaned);
   }
+  const oldPlace = local?.previous.settlements?.find(place => place.key === local.key);
+  const namingInputs = (urban: UrbanLayer | undefined): unknown[] => [urban?.footprint, urban?.streets, urban?.quarters.map(({ nameScope, nameSource, nameProfile, ...quarter }) => quarter), urban?.sites, urban?.macro, urban?.landmarks, urban?.walls, urban?.squares];
+  const edited = local && source.settlements?.find(place => place.key === local.key);
+  const mainEdit = !!edited?.main;
+  const oldUrban = mainEdit ? local?.previous.urban : oldPlace?.urban;
+  const editedUrban = mainEdit ? source.urban : edited?.urban;
+  const reuseUrbanNames = !!(local && source.names && oldPlace && edited && edited.culture === oldPlace.culture && sameContent(source.bridges, local.previous.bridges) && sameContent(namingInputs(editedUrban), namingInputs(oldUrban)));
+  const refreshPlaceLabel = !!(local && !mainEdit && edited && (!oldPlace || edited.population !== oldPlace.population || edited.detail !== oldPlace.detail || edited.culture !== oldPlace.culture || !sameContent(oldPlace.core ?? oldPlace.center, edited.core ?? edited.center)));
+  const namedUrban = (urban: UrbanLayer | undefined): UrbanLayer | undefined => (reuseUrbanNames && urban && oldUrban ? { ...urban, streets: oldUrban.streets, quarters: oldUrban.quarters, sites: oldUrban.sites, macro: oldUrban.macro } : namingUrban(urban));
   const settlements = source.settlements?.map(place => {
+    if (local && place.key !== local.key) return place;
     const policy = namingPolicy(settings.naming, place.key);
     const spec = source.options.workflow === 'list' && specs && typeof specs === 'object' && 'list' in specs ? specs.list.find((s, index) => (index === 0 ? 'main' : (s.key ?? String(index))) === place.key)?.options : undefined;
     return {
       ...place,
       culture: settings.local[place.key]?.culture ?? (place.main ? settings.options.culture : place.culture),
-      urban: namingUrban(place.urban),
+      urban: namedUrban(place.urban),
       options: {
         ...place.options,
         ...settings.local[place.key],
@@ -82,13 +105,14 @@ export function renameMap(source: World, settings: V2Settings, language: Languag
       nameSource: settings.naming?.source ?? settings.options.nameSource,
       culture: settings.options.culture,
     },
-    terrain: cloneV2TerrainForStage(source.terrain),
-    urban: namingUrban(source.urban),
+    terrain: local ? source.terrain : cloneV2TerrainForStage(source.terrain),
+    urban: local ? (mainEdit ? namedUrban(source.urban) : source.urban) : namingUrban(source.urban),
     settlements,
-    roads: source.roads?.every(road => (road as { nameKey?: string }).nameKey) ? source.roads : source.roads?.map(road => ({ ...road })),
-    landuse: source.landuse ? { ...source.landuse, areas: source.landuse.areas.map(area => ({ ...area })), farmsteads: source.landuse.farmsteads.map(farm => ({ ...farm })) } : undefined,
+    roads: local || source.roads?.every(road => (road as { nameKey?: string }).nameKey) ? source.roads : source.roads?.map(road => ({ ...road })),
+    landuse: local ? source.landuse : source.landuse ? { ...source.landuse, areas: source.landuse.areas.map(area => ({ ...area })), farmsteads: source.landuse.farmsteads.map(farm => ({ ...farm })) } : undefined,
   };
   for (const city of [{ key: 'main', urban: world.urban }, ...(settlements ?? []).filter(s => !s.main)]) {
+    if (local && (reuseUrbanNames || city.key !== (mainEdit ? 'main' : local.key))) continue;
     const layout = nativeCityRecords(world)?.[city.key]?.layouts[0];
     for (const [index, q] of (city.urban?.quarters ?? []).entries()) {
       const id = layout ? `urban:${encodeURIComponent(city.key)}:quarter:${encodeURIComponent(layout.key)}:${q.nativeId ?? index}` : featureNameKey(q, 'quarter', JSON.stringify(q.poly.outer));
@@ -110,25 +134,42 @@ export function renameMap(source: World, settings: V2Settings, language: Languag
   };
   const root = new Rng('magna-urbis:' + namingView.seed);
   const mainPolicy = namingPolicy(settings.naming, 'main');
-  world.names = generateNames(
-    {
-      ...namingView,
-      options: {
-        ...namingView.options,
-        ...settings.local.main,
-        culture: settings.local.main?.culture ?? main?.culture ?? settings.options.culture,
-        language: mainPolicy.profile ?? main?.options?.language ?? world.options.language,
-        nameSource: mainPolicy.source ?? main?.options?.nameSource ?? world.options.nameSource,
-      },
-    },
-    root,
-    presentation,
-    { ...namingPolicy(settings.naming), profile: namingPolicy(settings.naming).profile ?? settings.options.language ?? 'auto' },
-  );
+  const ownLabel = (entry: NameEntry): boolean =>
+    !!local && (entry.cityKey === local.key || ownsNativeLabel(entry.id) || (refreshPlaceLabel && entry.id === `settlement:${local.key}`) || (mainEdit && !entry.cityKey && entry.sub !== 'free' && (urbanKinds.has(entry.kind) || entry.id === 'settlement:main')));
+  const ownsNativeLabel = (id: string): boolean => !!local && (id.startsWith(`urban:${encodeURIComponent(local.key)}:`) || (id.startsWith(mainEdit ? 'classic:' : `classic:${encodeURIComponent(local.key)}:`) && (!mainEdit || /^classic:(quarter|parcel|building):/.test(id))));
+  const retainedEntries = new Map(local ? source.names?.entries.filter(ownLabel).map(entry => [entry.id, entry]) : undefined);
+  const retainedUrban = local && [...retainedEntries.values()].filter(entry => !ownsNativeLabel(entry.id) && !(refreshPlaceLabel && entry.id === `settlement:${local.key}`));
+  world.names =
+    local && source.names && (!mainEdit || reuseUrbanNames)
+      ? { ...source.names, entries: reuseUrbanNames ? retainedUrban || [] : [] }
+      : generateNames(
+          {
+            ...namingView,
+            options: {
+              ...namingView.options,
+              ...settings.local.main,
+              culture: settings.local.main?.culture ?? main?.culture ?? settings.options.culture,
+              language: mainPolicy.profile ?? main?.options?.language ?? world.options.language,
+              nameSource: mainPolicy.source ?? main?.options?.nameSource ?? world.options.nameSource,
+            },
+          },
+          root,
+          presentation,
+          { ...namingPolicy(settings.naming), profile: namingPolicy(settings.naming).profile ?? settings.options.language ?? 'auto' },
+          !!local,
+        );
   namingView.names = world.names;
-  settlementNames(namingView, root);
+  if (!local) settlementNames(namingView, root);
+  else if (refreshPlaceLabel) {
+    const place = settlements?.find(place => place.key === local.key);
+    if (place) {
+      const one = { ...namingView, settlements: [place], names: { ...world.names, entries: [] as NameEntry[] } };
+      settlementNames(one, root);
+      world.names.entries.push(...one.names.entries);
+    }
+  }
   for (const place of settlements ?? []) {
-    if (place.main || !place.urban) continue;
+    if (place.main || !place.urban || (local && (local.key !== place.key || reuseUrbanNames))) continue;
     // Only the town's own names are kept below: its view carries no lake, forest or farm, whose label anchors
     // (pole of inaccessibility of every polygon) were otherwise recomputed once per built place.
     const localView: World = {
@@ -140,8 +181,8 @@ export function renameMap(source: World, settings: V2Settings, language: Languag
       settlements: [{ ...place, main: true }],
       options: { ...namingView.options, ...place.options, culture: place.culture, workflow: 'list', settlements: { list: [{ key: place.key, population: place.population, name: manual.get(place.key) }] } },
     };
-    const names = generateNames(localView, root.fork(place.key), presentation);
-    for (const entry of names.entries.filter(e => ['street', 'quarter', 'castle', 'church', 'gate', 'square'].includes(e.kind))) {
+    const names = generateNames(localView, root.fork(place.key), presentation, undefined, !!local);
+    for (const entry of names.entries.filter(e => urbanKinds.has(e.kind))) {
       entry.id = `city:${place.key}:${entry.id}`;
       entry.entityKey = entry.id;
       entry.cityKey = place.key;
@@ -149,9 +190,11 @@ export function renameMap(source: World, settings: V2Settings, language: Languag
       world.names.entries.push(entry);
     }
   }
-  appendNativeNames(world, settings.naming, namingView.seed);
+  appendNativeNames(world, settings.naming, namingView.seed, local && { key: local.key, entries: retainedEntries });
+  const kept = (entry: NameEntry): boolean => !!local && retainedEntries.get(entry.id) === entry;
   // Apply per-object overrides using the same profile vocabulary as the rest of the map.
   for (const entry of world.names.entries) {
+    if (kept(entry)) continue;
     const override = settings.naming?.features?.[entry.id] ?? (settings.naming?.variations?.[`feature:${entry.id}`] ? {} : undefined);
     if (!override || entry.id.startsWith('urban:') || entry.manual || (entry.reference?.form === 'name' && manual.has(entry.reference.key))) continue;
     const city = entry.cityKey ?? 'main';
@@ -171,6 +214,7 @@ export function renameMap(source: World, settings: V2Settings, language: Languag
   const citySources = new Map(settlements?.map(s => [s.key, s.options?.nameSource]));
   const migrating = source.names?.algorithmVersion === '2' && !source.names.bank && !settings.naming?.toponymCulture && !settings.naming?.profile && !settings.naming?.source && !settings.naming?.region && !settings.naming?.local && !settings.naming?.features;
   for (const entry of world.names.entries) {
+    if (kept(entry)) continue;
     const city = entry.cityKey ?? (entry.sub?.startsWith('settlement:') ? entry.sub.slice(11) : 'main');
     const natural = ['river', 'lake', 'sea', 'forest', 'hill', 'farm'].includes(entry.kind) && !entry.id.startsWith('settlement:');
     const key = namePolicyKey(settings.naming, entry, city, (natural ? settings.options.nameSource : citySources.get(city)) ?? world.options.nameSource ?? 'auto'),
@@ -191,7 +235,7 @@ export function renameMap(source: World, settings: V2Settings, language: Languag
     }
   }
   world.names.bank = bank;
-  if (world.names.regionParts) {
+  if (!local && world.names.regionParts) {
     const regional = { id: 'region', kind: 'farm' as const, parts: world.names.regionParts };
     const key = namePolicyKey(settings.naming, regional as import('../gen/names/types').NameEntry, undefined, settings.options.nameSource ?? world.options.nameSource ?? 'auto');
     world.names.regionParts = previous.region?.policyKey === key ? { ...previous.region.parts } : world.names.regionParts;
@@ -200,6 +244,39 @@ export function renameMap(source: World, settings: V2Settings, language: Languag
     bank.region = { parts: { ...world.names.regionParts }, policyKey: key };
   }
   // References are composed after restoring frozen settlement identities.
+  if (local) {
+    // Only fresh labels are mutable here. Resolve their references against the same retained place identities.
+    const fresh = { ...world, urban: mainEdit ? world.urban : undefined, settlements: settlements?.filter(place => place.key === local.key), names: { ...world.names, entries: world.names.entries.filter(entry => !kept(entry)) } };
+    const destinationNames = new Map(settlements?.map(place => [place.main ? 'main' : place.key, place.name]));
+    for (const label of fresh.names.entries) if (label.reference?.form === 'name') destinationNames.set(label.reference.key, manual.get(label.reference.key) ?? label.parts?.proper ?? label.text);
+    for (const key of new Set(fresh.names.entries.flatMap(entry => (entry.reference ? [entry.reference.key] : [])))) {
+      const name = destinationNames.get(key);
+      if (name) setSettlementName(fresh, key, name);
+    }
+    const freshIds = new Set(fresh.names.entries.map(entry => entry.id));
+    const labels = Object.fromEntries(Object.entries(settings.naming?.labels ?? {}).filter(([id]) => freshIds.has(id) || (ownsNativeLabel(id) && !world.names!.entries.some(entry => entry.id === id))));
+    applyLabelEdits(fresh, labels, local.key);
+    const changed = new Map([...world.names.entries, ...fresh.names.entries].map(entry => [entry.id, entry]));
+    const merged: NameEntry[] = [];
+    for (const entry of source.names?.entries ?? []) {
+      const next = changed.get(entry.id);
+      if (next && retainedEntries.has(entry.id)) {
+        // Ordinal aliases are import metadata. A local run does not assign map-wide ordinals.
+        if (next !== entry && entry.legacyId !== undefined) next.legacyId = entry.legacyId;
+        merged.push(next === entry || (sameContent(entry, next) && sameContent(next, entry)) ? entry : next);
+        changed.delete(entry.id);
+      } else if (!retainedEntries.has(entry.id)) {
+        merged.push(entry);
+        changed.delete(entry.id);
+      }
+    }
+    world.names = { ...(source.names ?? world.names), nativeManaged: world.names.nativeManaged, entries: [...merged, ...changed.values()], bank };
+    if (edited && mainEdit && world.urban) {
+      const main = settlements?.find(place => place.key === local.key);
+      if (main && source.urban === edited.urban) main.urban = world.urban;
+    }
+    return { ...world, options: source.options };
+  }
   for (const entry of world.names.entries) if (entry.reference?.form === 'name') setSettlementName(world, entry.reference.key, manual.get(entry.reference.key) ?? entry.parts?.proper ?? entry.text);
   world.names.region = world.names.regionParts ? presentName(world.names.regionParts, presentation) : world.names.region;
   if (settings.naming?.title?.trim()) world.names.town = settings.naming.title.trim();

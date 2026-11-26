@@ -47,6 +47,22 @@ export function centroid(shapes: readonly Shape[]): Point | undefined {
 // ---------------------------------------------------------------- spatial bins
 /** Uniform bins over item boxes; a query returns each candidate once, in input order. */
 export class SpatialBins {
+  /** Merge query results in original town order without reinserting their boxes into another grid. */
+  static combined(parts: readonly SpatialBins[]): SpatialBins {
+    if (parts.length === 1) return parts[0];
+    const offsets: number[] = [];
+    let n = 0;
+    for (const p of parts) {
+      offsets.push(n);
+      n += p.boxes.length;
+    }
+    const result = new SpatialBins([]);
+    // Most live scenes only query the bins. Direct box lookups materialise the reference array once.
+    let boxes: Box[] | undefined;
+    Object.defineProperty(result, 'boxes', { get: () => (boxes ??= parts.flatMap(p => p.boxes)) });
+    result.query = box => parts.flatMap((p, i) => p.query(box).map(index => index + offsets[i]));
+    return result;
+  }
   private cells = new Map<number, number[]>();
   private overflow: number[] = [];
   private seen: Uint32Array;

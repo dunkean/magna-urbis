@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { World } from '../../src/gen/types';
 import { identifyRoads, insertRoadControlGeometry, roadControlSegment, translatedRoadSegment, deleteRoadControlSegment } from '../../src/v2/roadGestures';
-import { commitRoutedRoads, connectedRoadControls, cutRoadControl } from '../../src/v2/roadEditing';
+import { addRoadEntries, commitRoutedRoads, connectedRoadControls, cutRoadControl, roadOutput, roadExitReports } from '../../src/v2/roadEditing';
 import { editableRoadGeometry, roadGeometry } from '../../src/v2/roadControlModel';
 import { editableUrbanRoads, syncUrbanRoadEdits } from '../../src/v2/urbanRoadEditing';
-import { deleteRoad } from '../../src/v2/networkEdits';
+import { addRoad, deleteRoad } from '../../src/v2/networkEdits';
+import { recordRoadOverrides, replayRegionalRoads, withRoadSources } from '../../src/v2/roadOverrides';
+import { parseProject, serializeProject } from '../../src/v2/project';
+import { defaultSettings } from '../../src/v2/settings';
 
 const p = (x: number, y: number) => ({ x, y });
 function fixture(): World {
@@ -65,6 +68,39 @@ describe('road point, segment and line gestures', () => {
     expect(next.roads![0].path.at(-1)).toEqual(p(199, 200));
     expect(next.roads!.at(-1)!.path[0]).toEqual(p(201, 200));
     expect(next.roads!.at(-1)!.path.at(-1)).toEqual(p(400, 200));
+  });
+  it('reapplies a cut, deletion and drawn entry from settings alone to a fresh regional graph', () => {
+    const raw = fixture(),
+      generated = raw.roads!;
+    const fresh = (order: number[]) => {
+      const roads = order.map(i => ({ ...generated[i], editorId: undefined }));
+      const junctions = [p(100, 200), p(400, 200), p(600, 400)].map((point, i) => ({ point, site: null, degree: i === 1 ? 2 : 1 }));
+      const segments = order.map((index, i) => ({ a: index, b: index + 1, path: roads[i].path, width: roads[i].width, class: index ? 'track' : 'local', surface: 'dirt', profile: 'medieval', length: 300, crossings: [], grade: 0, importance: 0 }));
+      return { ...raw, roads, debug: { v2RustRegion: { roads: { segments, junctions, exits: [], lengthByClass: {}, lengthBySurface: {}, warnings: [], unreachable: [], routes: 2, ms: 0 } } } };
+    };
+    const before = withRoadSources(fresh([0, 1]));
+    let next = cutRoadControl(before, 0, 1, 2);
+    next = deleteRoad(next, 1).world;
+    const drawn = addRoad(next, [p(400, 200), p(1000, 200)], { editorSource: 'draw:test', cls: 'main', snap: 1, width: 9 });
+    next = addRoadEntries(drawn.world, drawn.road!, [1]);
+    const settings = defaultSettings();
+    settings.roadOverrides = recordRoadOverrides(undefined, before, next);
+    expect(
+      Object.values(settings.roadOverrides!.routes!)
+        .map(parts => parts.length)
+        .sort(),
+    ).toEqual([0, 1, 2]);
+    const saved = parseProject(serializeProject(settings)).settings;
+    const regenerated = fresh([1, 0]);
+    // The generated road between the original junctions can have a different sampled centreline.
+    const sampled = [p(100, 200), p(250, 210), p(400, 200)];
+    regenerated.roads[1].path = regenerated.debug.v2RustRegion.roads.segments[1].path = sampled;
+    const replayed = replayRegionalRoads(regenerated, saved.roadOverrides);
+    expect(replayed.roads!.map(r => r.path)).toEqual(next.roads!.map(r => r.path));
+    expect(replayed.roads!.map(r => r.controls)).toEqual(next.roads!.map(r => r.controls));
+    expect(roadOutput(replayed)?.segments.map(s => [s.class, s.width])).toEqual(roadOutput(next)?.segments.map(s => [s.class, s.width]));
+    expect(roadOutput(replayed)?.junctions.find(j => j.point.x === 400)?.degree).toBe(2);
+    expect(roadExitReports(replayed)).toEqual(roadExitReports(next));
   });
   it('keeps a bent urban road as one editable line when its hidden regional source has the same samples', () => {
     const w = fixture(),

@@ -74,6 +74,7 @@ export class Terrain3d {
       uploadForest: field => this.uploadForest(field),
       releaseForest: textures => this.releaseForest(textures),
       uploadOccupation: occupation => this.uploadOccupation(occupation),
+      patchOccupation: (texture, previous, next, rects) => this.patchOccupation(texture, previous, next, rects),
       uploadLandDetail: detail => this.uploadLandDetail(detail),
       uploadMesh: (patch, values) => this.uploadMesh(patch, values),
       releaseMesh: patch => this.releaseMesh(patch),
@@ -623,6 +624,10 @@ export class Terrain3d {
 
   protected uploadOccupation(occupation: ForestOccupation): WebGLTexture {
     return this.webgl!.uploadOccupation(occupation);
+  }
+
+  protected patchOccupation(texture: WebGLTexture, _previous: ForestOccupation, next: ForestOccupation, rects: NonNullable<ForestOccupation['dirty']>['rects']): void {
+    this.webgl!.patchOccupation(texture, next, rects);
   }
 
   protected uploadLandDetail(detail: LandDetail): WebGLTexture {

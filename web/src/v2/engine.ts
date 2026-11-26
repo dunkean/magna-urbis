@@ -478,6 +478,7 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
     world.stats['v2.planKey'] = regionKey(settings);
     world.stats['v2.placementKey'] = placementKey(settings);
     Object.assign(world.stats, { settlements: 0, 'settlements.requested': 0, 'v2.regionPopulation': 0, 'v2.requestedRegionPopulation': regionalPopulation(settings).population });
+    if (settings.roadOverrides) Object.assign(world, (await import('./roadOverrides')).replayRegionalRoads(world, settings.roadOverrides));
     recordGenerationValidity(world, settings, 'region');
     return world;
   }
@@ -565,6 +566,7 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
   world.stats['v2.requestedRegionPopulation'] = regionalPopulation(settings).population;
   if (world.site.warning) plan.warnings.push(world.site.warning);
   if (plan.warnings.length) world.stats['settlements.warning'] = plan.warnings.join(' | ');
+  if (settings.roadOverrides) Object.assign(world, (await import('./roadOverrides')).replayRegionalRoads(world, settings.roadOverrides));
   world.stats['ms.region'] = Math.round(performance.now() - t0);
   nameWorld(world, mainOptions);
   refreshCavernMask(world);
@@ -708,6 +710,11 @@ async function buildTown(
       townBridges[key] = result.bridges;
     }
   }
+  const editedStreets = settings.roadOverrides?.towns?.[key];
+  if (backend === 'typescript' && settlement.urban && editedStreets?.length) {
+    settlement.urban = (await import('./urbanRoadEditing')).replayClassicTownStreets(world, key, settlement.urban, editedStreets);
+    if (settlement.main) world.urban = settlement.urban;
+  }
   settlement.population = options.population;
   settlement.culture = options.culture;
   settlement.options = localOverrides(options);
@@ -777,6 +784,7 @@ async function finishTowns(world: World, settings: V2Settings, onProgress?: Prog
     );
     world.landuse = rural.layer;
   }
+  if (settings.roadOverrides?.routes) (await import('./roadOverrides')).replayRuralRoads(world, settings.roadOverrides.routes);
   if (!renamedAfterActions) nameWorld(world, settings.local.main);
   refreshCavernMask(world);
   // Isolated buildings (farms, mills, chapels…) follow the architecture in use, like the towns.
@@ -950,9 +958,16 @@ export async function generateTownStage(regionWorld: World, settings: V2Settings
 export async function updateLocalTown(source: World, settings: V2Settings, key: string, onProgress?: ProgressCallback): Promise<World> {
   validateSettings(settings);
   assertRegion(source, settings);
-  const world = cloneV2WorldForGeneration(source),
-    previous = (source.debug?.v2RustCities as Record<string, import('./rustUrban').RustTownSnapshot> | undefined)?.[key];
-  await buildTown(world, settings, key, onProgress, previous?.stage ?? 'buildings');
+  const cities = source.debug?.v2RustCities as Record<string, import('./rustUrban').RustTownSnapshot> | undefined;
+  const world: World = {
+    ...source,
+    terrain: { ...source.terrain },
+    settlements: source.settlements?.map(place => (place.key === key ? { ...place } : place)),
+    stats: { ...source.stats },
+    debug: { ...source.debug, v2TownBridges: { ...(source.debug?.v2TownBridges as object) }, ...(cities ? { v2RustCities: { ...cities } } : {}) },
+  };
+  await buildTown(world, settings, key, onProgress, cities?.[key]?.stage ?? 'buildings');
+  // The native engine only refreshes the cached city ground metadata on the terrain copy.
   return { ...world, terrain: source.terrain, landuse: source.landuse };
 }
 

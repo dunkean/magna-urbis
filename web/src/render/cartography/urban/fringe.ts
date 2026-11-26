@@ -4,6 +4,7 @@
  * contours, natural land use and textures, regional roads and earth streets replayed over it).
  * Reads: world, scene, palette, the path cache, patterns, the forest washes. Writes: textureTiles of the frame stats.
  */
+import { setMapInk } from '../../gpu/recorder';
 import { cityCountrysideTextureVisible } from '../../cityEnvironment';
 import { isUnderdarkBiome } from '../../../gen/biomes';
 import { brushTextureOn, isBrushKind } from '../../brushes';
@@ -33,7 +34,7 @@ export function paintCountryFringe(c: CartographyContext, f: VectorFrame, u: Urb
               return;
             }
             cx.globalAlpha = 0.6;
-            cx.strokeStyle = pal.grass;
+            cx.strokeStyle = c.ink('grass').css;
             cx.lineWidth = 0.4 * k;
             cx.lineCap = 'round';
             cx.beginPath();
@@ -48,7 +49,7 @@ export function paintCountryFringe(c: CartographyContext, f: VectorFrame, u: Urb
             }
             cx.stroke();
             cx.globalAlpha = 0.5;
-            cx.fillStyle = pal.grass;
+            cx.fillStyle = c.ink('grass').css;
             cx.beginPath();
             cx.arc(15 * k, 5 * k, 0.55 * k, 0, TAU);
             cx.fill();
@@ -80,7 +81,7 @@ export function paintCountryFringe(c: CartographyContext, f: VectorFrame, u: Urb
         if (luOn) {
           multiply(true);
           ctx.globalAlpha = alpha * pal.landOpacity;
-          ctx.fillStyle = pal.land[kind];
+          setMapInk(ctx, 'fillStyle', c.ink(kind));
           ctx.fill(p, 'evenodd');
           multiply(false);
           if (ruralPattern) {

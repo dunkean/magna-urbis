@@ -7,6 +7,15 @@ import { createLiveRasterizer } from '../src/render/gpu/liveRasterizer';
 import type { BakedPrefix, DisplayList, LiveRasterizer } from '../src/render/gpu/contract';
 import type { LiveFrame } from '../src/render/live/contract';
 import type { DrapeCanvas } from '../src/render/world/contract';
+import { RegionalRevision } from '../src/ui/terrain/revision';
+
+import { CartographyContext } from '../src/render/cartography/context';
+import { LandRecording } from '../src/render/cartography/landRecording';
+import { createMapRecording } from '../src/render/cartography/mapRecording';
+import { drawVectorSteps } from '../src/render/cartography/vector';
+import { applySeason, seasonPaint } from '../src/render/seasonPalette';
+import { PALETTES } from '../src/render/styles';
+import { fakeWorld } from '../scripts/fakeworld';
 
 vi.mock('../src/render/gpu/liveRasterizer', () => ({ createLiveRasterizer: vi.fn() }));
 
@@ -118,6 +127,31 @@ function fixture() {
 beforeEach(() => vi.clearAllMocks());
 
 describe('live overlay layer', () => {
+  it('reuses the unaffected band and reports regional changes to tilted tiles', () => {
+    const f = fixture(),
+      content = new RegionalRevision(),
+      frame = f.frame();
+    f.host.contentRevision = () => content.value();
+    f.host.contentChanges = since => content.changesSince(since);
+    f.layer.work!(10000, frame);
+    const before = f.layer.drape!.revision();
+    expect(f.host.record).toHaveBeenCalledTimes(2);
+    const away = { minX: 200, minY: 200, maxX: 240, maxY: 240 };
+    content.bump([away]);
+    expect(f.layer.restExact!(frame)).toBe(true);
+    expect(f.layer.work!(10000, frame)).toBe(false);
+    expect(f.host.record).toHaveBeenCalledTimes(2);
+    const north = { minX: -10, minY: -80, maxX: 10, maxY: -70 };
+    content.bump([north]);
+    expect(f.layer.restExact!(frame)).toBe(false);
+    expect(f.layer.work!(10000, frame)).toBe(false);
+    expect(f.host.record).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(f.host.record).mock.calls.at(-1)![1].maxY).toBe(0);
+    expect(f.raster.releaseBaked).toHaveBeenCalledTimes(1);
+    expect(f.layer.restExact!(frame)).toBe(true);
+    expect(f.layer.drape!.revision()).toBe(before + 1);
+    expect(f.layer.drape!.contentChanges?.(before)).toEqual([away, north]);
+  });
   it('uses the fixed cadastral sheet for drape tiles at any scale, DPR and quality without recording or replay', () => {
     const f = fixture();
     f.host.fixedRaster = () => true;
@@ -523,4 +557,47 @@ describe('live overlay layer', () => {
     expect(f.layer.ready(f.frame())).toBe(true);
     expect(f.layer.stats!()).toMatchObject({ regions: 2, failed: 0 });
   });
+});
+
+it('reuses land-use ops across dates while the band records the current backdrop', () => {
+  const w = fakeWorld({ mapSize: 1600, buildings: 0, streets: 0, landAreas: 0 });
+  w.urban = undefined;
+  w.roads = [];
+  w.terrain.rivers = [];
+  w.options.landuse = true;
+  const poly = [
+    { x: 200, y: 200 },
+    { x: 800, y: 200 },
+    { x: 800, y: 800 },
+    { x: 200, y: 800 },
+  ];
+  w.landuse!.areas = [{ kind: 'field', poly, strips: [poly], stripAngle: 0.63 }];
+  const palette = (date: number) => applySeason(PALETTES.parchment, seasonPaint(date, 'nordic'));
+  let pal = palette(0.75);
+  const c = new CartographyContext(createMapRecording(900, 700), w, 'parchment', { dpr: 1, palette: () => pal, createCanvas: () => null, terrain: () => ({ width: 64, height: 64 }) as CanvasImageSource });
+  const retained = new LandRecording();
+  const record = (scale: number) => {
+    const canvas = createMapRecording(900, 700);
+    for (const _ of drawVectorSteps(c, { cx: 500, cy: 500, scale }, canvas, 'map', undefined, retained)) {
+      /* finish the band */
+    }
+    const list = canvas.finish();
+    expect(list.unsupported).toBeUndefined();
+    const field = list.ops.find(op => op.type === 'fill' && op.paint.kind === 'stripes');
+    if (field?.type !== 'fill' || field.paint.kind !== 'stripes') throw new Error('Missing furrow recording');
+    const backdrop = list.ops.find(op => op.type === 'sprites');
+    if (backdrop?.type !== 'sprites') throw new Error('Missing backdrop');
+    return { list, field, paint: field.paint, backdrop };
+  };
+  const fall = record(2),
+    fallInk = [...fall.paint.rgba];
+  pal = palette(0);
+  const winter = record(2);
+  expect(winter.list.ops).toHaveLength(fall.list.ops.length);
+  expect(winter.field).toBe(fall.field);
+  expect(winter.field.paths).toBe(fall.field.paths);
+  expect([...winter.paint.rgba]).not.toEqual(fallInk);
+  expect(winter.paint.slot?.css).toBe(pal.furrow);
+  expect(winter.backdrop.source).not.toBe(fall.backdrop.source);
+  expect(record(3).field).not.toBe(fall.field);
 });

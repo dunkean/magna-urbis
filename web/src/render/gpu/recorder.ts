@@ -5,8 +5,31 @@
  * renderer and turns the calls into a `DisplayList` (displayList.ts). Anything it cannot represent sets `unsupported`
  * (first reason wins) and recording continues cheaply; the caller then falls back to the CPU engine.
  */
-import { IDENTITY, SPRITE_STRIDE, type ClipNode, type Composite, type DisplayList, type DrawOp, type FillRule, type ImageSource, type LineCap, type LineJoin, type Mat, type Paint, type RecordedPath, type Repeat, type Rgba, type Stripe } from './contract';
+import {
+  ColorSlot,
+  IDENTITY,
+  SPRITE_STRIDE,
+  type ClipNode,
+  type Composite,
+  type ContourTint,
+  type DisplayList,
+  type DrawOp,
+  type FillRule,
+  type ImageSource,
+  type LineCap,
+  type LineJoin,
+  type Mat,
+  type Paint,
+  type RecordedPath,
+  type Repeat,
+  type Rgba,
+  type SpriteTint,
+  type Stripe,
+} from './contract';
 import { PlainPath, RecPath2D, matFromInit, pAppend, pArcTo, pClose, pCopy, pCubic, pEllipse, pLineTo, pMoveTo, pQuad, pRect, pReset, pRoundRect, pTransform, type PathData } from './path';
+
+import { canvasColor } from './colors';
+export { parseColor } from './colors';
 
 const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 const finite = (v: number): boolean => v * 0 === 0;
@@ -32,135 +55,12 @@ type ColorPaint = { readonly kind: 'color'; readonly rgba: Rgba };
 const INVALID = 'invalid' as const;
 type ColorEntry = ColorPaint | typeof INVALID | null;
 
-const c255 = (v: number): number => v / 255;
-const NAMED: Record<string, Rgba> = {
-  black: [0, 0, 0, 1],
-  white: [1, 1, 1, 1],
-  red: [1, 0, 0, 1],
-  green: [0, c255(128), 0, 1],
-  blue: [0, 0, 1, 1],
-  yellow: [1, 1, 0, 1],
-  cyan: [0, 1, 1, 1],
-  aqua: [0, 1, 1, 1],
-  magenta: [1, 0, 1, 1],
-  fuchsia: [1, 0, 1, 1],
-  gray: [c255(128), c255(128), c255(128), 1],
-  grey: [c255(128), c255(128), c255(128), 1],
-  silver: [c255(192), c255(192), c255(192), 1],
-  maroon: [c255(128), 0, 0, 1],
-  olive: [c255(128), c255(128), 0, 1],
-  lime: [0, 1, 0, 1],
-  teal: [0, c255(128), c255(128), 1],
-  navy: [0, 0, c255(128), 1],
-  purple: [c255(128), 0, c255(128), 1],
-  orange: [1, c255(165), 0, 1],
-  brown: [c255(165), c255(42), c255(42), 1],
-  transparent: [0, 0, 0, 0],
-};
-
-const clamp01 = (v: number): number => (v <= 0 ? 0 : v >= 1 ? 1 : v);
-const num = (s: string): number => (s.length ? Number(s) : NaN);
-
-function parseHex(s: string): Rgba | null {
-  const n = s.length - 1;
-  if ((n !== 3 && n !== 4 && n !== 6 && n !== 8) || !/^#[0-9a-f]+$/.test(s)) return null;
-  const h = (i: number, l: number): number => {
-    const v = parseInt(s.slice(1 + i * l, 1 + i * l + l), 16);
-    return l === 1 ? (v * 17) / 255 : v / 255;
-  };
-  const l = n <= 4 ? 1 : 2;
-  return [h(0, l), h(1, l), h(2, l), n === 4 || n === 8 ? h(3, l) : 1];
-}
-
-function alphaOf(s: string | undefined): number {
-  if (s === undefined) return 1;
-  const v = s.endsWith('%') ? num(s.slice(0, -1)) / 100 : num(s);
-  return finite(v) ? clamp01(v) : NaN;
-}
-
-function hueOf(s: string): number {
-  const unit = /[a-z]+$/.exec(s)?.[0] ?? '';
-  const v = num(unit ? s.slice(0, -unit.length) : s);
-  return unit === '' || unit === 'deg' ? v : unit === 'rad' ? (v * 180) / Math.PI : unit === 'grad' ? v * 0.9 : unit === 'turn' ? v * 360 : NaN;
-}
-
-/** Parses #rgb, #rgba, #rrggbb, #rrggbbaa, rgb()/rgba(), hsl()/hsla() and a few named colours to straight RGBA 0..1. */
-export function parseColor(input: string): Rgba | null {
-  const s = input.trim().toLowerCase();
-  if (s.charCodeAt(0) === 35) return parseHex(s);
-  const open = s.indexOf('(');
-  if (open > 0 && s.charCodeAt(s.length - 1) === 41) {
-    const fn = s.slice(0, open).trim();
-    const args = s
-      .slice(open + 1, -1)
-      .split(/[\s,/]+/)
-      .filter(a => a.length > 0);
-    if (args.length !== 3 && args.length !== 4) return null;
-    const a = alphaOf(args[3]);
-    if (fn === 'rgb' || fn === 'rgba') {
-      const ch = (v: string): number => (v.endsWith('%') ? num(v.slice(0, -1)) / 100 : num(v) / 255);
-      const r = ch(args[0]),
-        gg = ch(args[1]),
-        b = ch(args[2]);
-      return finite(r) && finite(gg) && finite(b) && finite(a) ? [clamp01(r), clamp01(gg), clamp01(b), a] : null;
-    }
-    if (fn === 'hsl' || fn === 'hsla') {
-      const pc = (v: string): number => num(v.endsWith('%') ? v.slice(0, -1) : v) / 100;
-      const h = hueOf(args[0]),
-        sat = clamp01(pc(args[1])),
-        lig = clamp01(pc(args[2]));
-      if (!finite(h) || !finite(sat) || !finite(lig) || !finite(a)) return null;
-      const hh = (((h % 360) + 360) % 360) / 30;
-      const f = (n: number): number => {
-        const k = (n + hh) % 12;
-        return lig - sat * Math.min(lig, 1 - lig) * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-      };
-      return [clamp01(f(0)), clamp01(f(8)), clamp01(f(4)), a];
-    }
-    return null;
-  }
-  return NAMED[s] ?? null;
-}
-
-type Normaliser = { fillStyle: string | CanvasGradient | CanvasPattern };
-let normaliser: Normaliser | null | undefined;
-/** Browser fallback: let a 1x1 canvas normalise the colour. 'invalid' when the canvas rejects it, null without a canvas. */
-function normaliseColor(s: string): string | null {
-  if (normaliser === undefined) {
-    normaliser = null;
-    try {
-      if (typeof OffscreenCanvas !== 'undefined') normaliser = new OffscreenCanvas(1, 1).getContext('2d');
-      else if (typeof document !== 'undefined') normaliser = document.createElement('canvas').getContext('2d');
-    } catch {
-      normaliser = null;
-    }
-  }
-  const n = normaliser;
-  if (!n) return null;
-  n.fillStyle = '#010203';
-  n.fillStyle = s;
-  const r = n.fillStyle;
-  if (typeof r !== 'string') return null;
-  if (r === '#010203') {
-    n.fillStyle = '#030201';
-    n.fillStyle = s;
-    if (n.fillStyle === '#030201') return INVALID;
-  }
-  return r;
-}
-
 const COLORS = new Map<string, ColorEntry>();
 function colorEntry(s: string): ColorEntry {
   let e = COLORS.get(s);
   if (e !== undefined) return e;
-  let rgba = parseColor(s);
-  e = null;
-  if (rgba === null) {
-    const n = normaliseColor(s);
-    if (n === INVALID) e = INVALID;
-    else if (n !== null) rgba = parseColor(n);
-  }
-  if (rgba !== null) e = { kind: 'color', rgba };
+  const rgba = canvasColor(s);
+  e = rgba === 'invalid' || rgba === null ? rgba : { kind: 'color', rgba };
   if (COLORS.size >= 4096) COLORS.clear();
   COLORS.set(s, e);
   return e;
@@ -168,9 +68,10 @@ function colorEntry(s: string): ColorEntry {
 
 const BLACK: ColorPaint = { kind: 'color', rgba: [0, 0, 0, 1] };
 
-const sameRgba = (a: Rgba, b: Rgba): boolean => a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+type SolidOrStripe = Exclude<Paint, { kind: 'pattern' }>;
+const sameColor = (a: SolidOrStripe, b: SolidOrStripe): boolean => (a.slot || b.slot ? a.slot === b.slot : a.rgba[0] === b.rgba[0] && a.rgba[1] === b.rgba[1] && a.rgba[2] === b.rgba[2] && a.rgba[3] === b.rgba[3]);
 const sameStripe = (a: Stripe, b: Stripe): boolean => a === b || (a.nx === b.nx && a.ny === b.ny && a.period === b.period && a.offset === b.offset && a.width === b.width);
-const samePaint = (a: Paint, b: Paint): boolean => a === b || (a.kind === 'color' && b.kind === 'color' && sameRgba(a.rgba, b.rgba)) || (a.kind === 'stripes' && b.kind === 'stripes' && sameRgba(a.rgba, b.rgba) && sameStripe(a.stripe, b.stripe));
+const samePaint = (a: Paint, b: Paint): boolean => a === b || (a.kind === 'color' && b.kind === 'color' && sameColor(a, b)) || (a.kind === 'stripes' && b.kind === 'stripes' && sameColor(a, b) && sameStripe(a.stripe, b.stripe));
 
 // ---------------------------------------------------------------------------------------------------- patterns
 
@@ -263,7 +164,15 @@ const COMPOSITES = new Set([
 const RECORDABLE = new Set<string>(['source-over', 'multiply', 'destination-in', 'destination-out']);
 const EMPTY_DASH: readonly number[] = [];
 
-type Style = string | CanvasGradient | CanvasPattern;
+type Style = string | CanvasGradient | CanvasPattern | ColorSlot;
+export type MapInk = string | ColorSlot;
+export function setMapInk(ctx: CanvasRenderingContext2D, style: 'fillStyle' | 'strokeStyle', ink: MapInk): void {
+  if (typeof ink === 'string') ctx[style] = ink;
+  else if (ctx instanceof RecordingContext && ink.valid) {
+    const rec: RecordingContext = ctx;
+    rec[style] = ink;
+  } else ctx[style] = ink.css;
+}
 
 class State {
   a = 1;
@@ -349,6 +258,7 @@ class State {
 }
 
 interface SpriteRec {
+  tint?: SpriteTint;
   type: 'sprites';
   source: ImageSource;
   smoothing: boolean;
@@ -360,9 +270,16 @@ interface SpriteRec {
 
 type AnyPath = RecordedPath & PathData;
 const ruleOf = (r: unknown): FillRule => (r === 'evenodd' ? 'evenodd' : 'nonzero');
-const isClear = (p: Paint): boolean => (p.kind === 'color' && p.rgba[3] <= 0) || (p.kind === 'stripes' && (p.rgba[3] <= 0 || !(p.stripe.width > 0)));
+const isClear = (p: Paint): boolean => (p.kind === 'color' && !p.slot && p.rgba[3] <= 0) || (p.kind === 'stripes' && ((!p.slot && p.rgba[3] <= 0) || !(p.stripe.width > 0)));
 
 // ---------------------------------------------------------------------------------------------------- canvas
+
+export interface RecordedSection {
+  readonly ops: readonly DrawOp[];
+  readonly calls: number;
+  readonly paths: number;
+  readonly sprites: number;
+}
 
 /** Canvas stand-in whose 2D context records a display list (satisfies canvas.ts `CanvasLike`). */
 export class RecordingCanvas {
@@ -395,7 +312,7 @@ export class RecordingContext {
   private nPaths = 0;
   private nSprites = 0;
   private t0 = now();
-  private clipSeq = 0;
+  private static clipSeq = 0;
   /** The last clip made under each parent, with the version its path had: the same clip set again (save, clip,
    * restore in a loop) returns the same node, which the rasterizer recognises by identity instead of rebuilding. */
   private clipMemo = new Map<ClipNode | null, { node: ClipNode; version: number }>();
@@ -447,6 +364,31 @@ export class RecordingContext {
     this.nCalls = this.nPaths = this.nSprites = 0;
     this.t0 = now();
     return list;
+  }
+
+  /** Capture a self-contained paint pass. Its caller guarantees the same incoming transform and clip on reuse. */
+  *captureSection(steps: Generator<void>): Generator<void, RecordedSection | undefined> {
+    const start = this.ops.length,
+      calls = this.nCalls,
+      paths = this.nPaths,
+      sprites = this.nSprites;
+    this.last = null;
+    this.save();
+    try {
+      yield* steps;
+      if (!this.reason) return { ops: this.ops.slice(start), calls: this.nCalls - calls, paths: this.nPaths - paths, sprites: this.nSprites - sprites };
+    } finally {
+      this.restore();
+      this.last = null;
+    }
+  }
+  appendSection(section: RecordedSection): void {
+    for (const op of section.ops) this.ops.push(op);
+    this.last = null;
+    this.drawn ||= section.ops.length > 0;
+    this.nCalls += section.calls;
+    this.nPaths += section.paths;
+    this.nSprites += section.sprites;
   }
 
   // ---- state
@@ -506,6 +448,10 @@ export class RecordingContext {
       s.fillPaint = e;
       s.fillPattern = null;
       s.fillReason = e ? '' : `colour ${v}`;
+    } else if (v instanceof ColorSlot) {
+      s.fillStyle = v;
+      s.fillPaint = v;
+      s.fillPattern = null;
     } else if (v instanceof RecPattern) {
       s.fillStyle = v;
       s.fillPaint = null;
@@ -529,6 +475,10 @@ export class RecordingContext {
       s.strokePaint = e;
       s.strokePattern = null;
       s.strokeReason = e ? '' : `colour ${v}`;
+    } else if (v instanceof ColorSlot) {
+      s.strokeStyle = v;
+      s.strokePaint = v;
+      s.strokePattern = null;
     } else if (v instanceof RecPattern) {
       s.strokeStyle = v;
       s.strokePaint = null;
@@ -922,7 +872,7 @@ export class RecordingContext {
       this.fail(this.s.fillReason || 'stripe colour');
       return;
     }
-    this.emitFill(p, this.matNow(), ruleOf(rule), false, { ...base, kind: 'stripes', stripe });
+    this.emitFill(p, this.matNow(), ruleOf(rule), false, { kind: 'stripes', rgba: base.rgba, slot: base.slot, stripe });
   }
 
   stroke(a?: Path2D): void {
@@ -970,7 +920,7 @@ export class RecordingContext {
       this.s.clip = memo.node;
       return;
     }
-    const node: ClipNode = { parent, path, rule, transform: t, id: ++this.clipSeq };
+    const node: ClipNode = { parent, path, rule, transform: t, id: ++RecordingContext.clipSeq };
     this.clipMemo.set(parent, { node, version: path.version });
     this.s.clip = node;
   }
@@ -1000,7 +950,17 @@ export class RecordingContext {
     this.push({ type: 'clear', transform: this.matNow(), clip: this.s.clip, x, y, w, h });
   }
 
-  drawImage(image: CanvasImageSource, a: number, b: number, c?: number, d?: number, e?: number, f?: number, g?: number, h?: number): void {
+  /** One coverage sprite, isolated from ordinary image batching. */
+  drawContourImage(image: CanvasImageSource, contourTint: ContourTint, ...rect: [number, number, number, number, number, number, number, number]): void {
+    const at = this.ops.length;
+    this.last = null;
+    this.drawImage(image, ...rect);
+    const op = this.ops[at];
+    if (op?.type === 'sprites') this.ops[at] = { ...op, contourTint };
+    this.last = null;
+  }
+
+  drawImage(image: CanvasImageSource, a: number, b: number, c?: number, d?: number, e?: number, f?: number, g?: number, h?: number, tint?: SpriteTint): void {
     this.nCalls++;
     if (this.reason !== undefined) return;
     if (!imageSize(image)) {
@@ -1077,8 +1037,8 @@ export class RecordingContext {
     const s = this.s;
     if (comp !== 'destination-in' && s.alpha <= 0) return;
     let op = this.last as SpriteRec | null;
-    if (op === null || op.type !== 'sprites' || comp === 'destination-in' || op.source !== image || op.composite !== comp || op.clip !== s.clip || op.smoothing !== s.smoothing) {
-      op = { type: 'sprites', source: image, smoothing: s.smoothing, composite: comp, clip: s.clip, instances: new Float32Array(comp === 'destination-in' ? SPRITE_STRIDE : 16 * SPRITE_STRIDE), count: 0 };
+    if (op === null || op.type !== 'sprites' || comp === 'destination-in' || op.source !== image || op.tint?.[0] !== tint?.[0] || op.tint?.[1] !== tint?.[1] || op.composite !== comp || op.clip !== s.clip || op.smoothing !== s.smoothing) {
+      op = { type: 'sprites', source: image, tint, smoothing: s.smoothing, composite: comp, clip: s.clip, instances: new Float32Array(comp === 'destination-in' ? SPRITE_STRIDE : 16 * SPRITE_STRIDE), count: 0 };
       this.push(op as unknown as DrawOp);
     }
     let k = op.count * SPRITE_STRIDE;
@@ -1131,7 +1091,7 @@ export class RecordingContext {
     const s = this.s;
     if (s.alpha <= 0) return;
     let op = this.last as SpriteRec | null;
-    if (op === null || op.type !== 'sprites' || op.source !== image || op.composite !== comp || op.clip !== s.clip || op.smoothing !== s.smoothing) {
+    if (op === null || op.type !== 'sprites' || op.source !== image || op.tint || op.composite !== comp || op.clip !== s.clip || op.smoothing !== s.smoothing) {
       op = { type: 'sprites', source: image, smoothing: s.smoothing, composite: comp, clip: s.clip, instances: new Float32Array(16 * SPRITE_STRIDE), count: 0 };
       this.push(op as unknown as DrawOp);
     }

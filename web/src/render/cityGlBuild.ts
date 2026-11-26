@@ -54,10 +54,10 @@ class Grow<T extends Float32Array | Uint32Array> {
 }
 
 export class CityGlPacker {
-  private coords = new Grow(new Float32Array(1 << 16));
-  private rings = new Grow(new Uint32Array(1 << 12));
-  private polys = new Grow(new Uint32Array(1 << 11));
-  private features = new Grow(new Uint32Array(1 << 11));
+  private coords = new Grow(new Float32Array(512));
+  private rings = new Grow(new Uint32Array(64));
+  private polys = new Grow(new Uint32Array(64));
+  private features = new Grow(new Uint32Array(64));
   private hiddenEdges?: Map<number, number>;
   constructor(readonly origin: Point) {
     this.rings.push(0);
@@ -213,6 +213,7 @@ export function mergeTriangulations(parts: Array<{ result: CityGlTriangulation; 
 export type CityGlBox4 = [number, number, number, number];
 export const CITY_GL_CELL = 512;
 export interface CityGlChunk {
+  key?: number;
   box: CityGlBox4;
   triangles: CityGlRange;
   lines: CityGlRange;
@@ -236,7 +237,7 @@ export interface CityGlFillMesh {
 export interface CityGlSourceLayer {
   features: [number, number];
   polygons: [number, number];
-  chunks: Array<{ box: CityGlBox4; polygons: [number, number] }>;
+  chunks: Array<{ key?: number; box: CityGlBox4; polygons: [number, number] }>;
 }
 export interface CityGlFillSource {
   polygons: CityGlPolygons;
@@ -293,7 +294,7 @@ function* packLayerSteps(packer: CityGlPacker, items: ReadonlyArray<readonly Sha
     if (++n % PACK_STEP === 0) yield;
     if (!current || keys[i] !== key) {
       if (current) current.polygons[1] = packer.polygonCount;
-      current = { box: [Infinity, Infinity, -Infinity, -Infinity], polygons: [packer.polygonCount, packer.polygonCount] };
+      current = { key: keys[i], box: [Infinity, Infinity, -Infinity, -Infinity], polygons: [packer.polygonCount, packer.polygonCount] };
       chunks.push(current);
       key = keys[i];
     }
@@ -308,10 +309,12 @@ export function cityOrigin(scene: Pick<CityScene, 'extent'>): Point {
   const e = scene.extent;
   return Number.isFinite(e.minX) ? { x: Math.round((e.minX + e.maxX) / 2), y: Math.round((e.minY + e.maxY) / 2) } : { x: 0, y: 0 };
 }
+/** The retained fill inputs omit the town's unrelated buildings, streets and spatial bins. */
+export type CityFillPlan = Pick<CityScene, 'extent' | 'footprint' | 'blocks' | 'parcels' | 'quays' | 'enclosureProfiles'> & (Pick<CityScene, 'layouts'> | { waterways: NonNullable<NonNullable<CityScene['layouts'][number]['structure']>['waterways']> });
 /** Plan polygons: footprint, blocks, parcels, quays (feature ids in that order). */
-export const packPlan = (scene: CityScene, origin = cityOrigin(scene)): CityGlFillSource => runSteps(packPlanSteps(scene, origin));
+export const packPlan = (scene: CityFillPlan, origin = cityOrigin(scene)): CityGlFillSource => runSteps(packPlanSteps(scene, origin));
 /** `packPlan` in resumable steps (live compositor: packed a few milliseconds at a time between frames). */
-export function* packPlanSteps(scene: CityScene, origin = cityOrigin(scene)): Generator<void, CityGlFillSource> {
+export function* packPlanSteps(scene: CityFillPlan, origin = cityOrigin(scene)): Generator<void, CityGlFillSource> {
   const packer = new CityGlPacker(origin),
     layers: CityGlFillSource['layers'] = {};
   let feature = 0;
@@ -341,7 +344,7 @@ export function* packPlanSteps(scene: CityScene, origin = cityOrigin(scene)): Ge
   );
   feature += quays.length;
   // Canal ribbons and their bridges and lock gates (drawCityWaterways); coloured by the live look only.
-  const canals = scene.layouts.flatMap(layout => layout.structure?.waterways ?? []);
+  const canals = 'waterways' in scene ? scene.waterways : scene.layouts.flatMap(layout => layout.structure?.waterways ?? []);
   const ribbons = canals.map(w => [w.shape]),
     crossings = canals.flatMap(w => [...w.crossings, ...(w.locks ?? [])]).map(s => [s]);
   layers.waterways = yield* packLayerSteps(packer, ribbons, feature);
@@ -401,7 +404,7 @@ export function fillMesh(source: CityGlFillSource, t: CityGlTriangulation): City
   }
   const layers: Record<string, CityGlFillLayer> = {};
   const ranges = (p: [number, number]): { triangles: CityGlRange; lines: CityGlRange } => ({ triangles: { start: triStart[p[0]], count: triStart[p[1]] - triStart[p[0]] }, lines: { start: lineStart[p[0]], count: lineStart[p[1]] - lineStart[p[0]] } });
-  for (const [name, l] of Object.entries(source.layers)) layers[name] = { features: l.features, polygons: l.polygons, ...ranges(l.polygons), chunks: l.chunks.map(c => ({ box: c.box, ...ranges(c.polygons) })) };
+  for (const [name, l] of Object.entries(source.layers)) layers[name] = { features: l.features, polygons: l.polygons, ...ranges(l.polygons), chunks: l.chunks.map(c => ({ key: c.key, box: c.box, ...ranges(c.polygons) })) };
   return { origin: source.origin, positions: p.coords, vertexFeatures, triangles: t.triangles, lines: t.lines, layers, featureCount: source.featureCount };
 }
 export const buildFillMeshSync = (source: CityGlFillSource): CityGlFillMesh => fillMesh(source, triangulatePolygons(source.polygons));
@@ -417,6 +420,7 @@ export function meshFeatureAt(mesh: CityGlFillMesh, layer: string, point: Point)
     T = mesh.triangles;
   let hit: number | undefined;
   for (let i = l.triangles.start; i < l.triangles.start + l.triangles.count; i += 3) {
+    if (T[i] === 0xffffffff) continue;
     const a = T[i] * 2,
       b = T[i + 1] * 2,
       c = T[i + 2] * 2;
@@ -434,12 +438,19 @@ export function meshFeatureAt(mesh: CityGlFillMesh, layer: string, point: Point)
 export const STROKE_STRIDE = 9;
 export const META = { rank: 0xf, crossing: 1 << 4, buttStart: 1 << 5, buttEnd: 1 << 6, solidEdge: 1 << 8 } as const;
 export interface CityGlStrokes {
+  /** Independently retained records in draw order (lot boundaries). */
+  parts?: readonly ArrayBuffer[];
   data: ArrayBuffer;
   count: number;
   /** Spatial chunks in instance order (boxes padded by the stroke width); absent = draw all. */
   chunks?: Array<{ box: CityGlBox4; first: number; count: number }>;
   /** firstWithRank[k]: first instance whose sort key ≤ k (instances are sorted minor → major, crossings last). */
   firstWithRank: number[];
+  /** Retained street geometry keyed by its feature index in the source scene. */
+  streets?: readonly { data: ArrayBuffer; rank: number; cell: number; box: CityGlBox4 }[];
+  /** Source feature to sorted instance record. Shared while ranks, cells and segment counts stay fixed. */
+  streetSlots?: { part: number; offset: number; chunk: number }[];
+  crossingStart?: number;
 }
 export function strokeWriter(segments: number): { f: Float32Array; u: Uint32Array; buffer: ArrayBuffer; n: number; put(a: Point, b: Point, o: Point, width: number, minPx: number, along: number, feature: number, meta: number): void } {
   const buffer = new ArrayBuffer(Math.max(1, segments) * STROKE_STRIDE * 4),
@@ -487,49 +498,117 @@ export function putPolyline(w: ReturnType<typeof strokeWriter>, path: readonly P
   if (start && first >= 0) w.u[first * STROKE_STRIDE + 8] |= META.buttStart;
   if (end && last >= 0) w.u[last * STROKE_STRIDE + 8] |= META.buttEnd;
 }
-/** Streets: feature = street index in the scene. Minor ranks first, crossings last. */
-/** Each street follows its joined stroke (roadSurface.ts joinStreets) with square ends. `surface` (layer `roadSurface`):
- * per-vertex widths; off, one width. */
-export function buildStreetStrokes(scene: CityScene, origin: Point, surface = true, planPath = false): CityGlStrokes {
-  const key = (i: number): number => {
-    const s = scene.streets[i];
-    return CROSSINGS.has(s.role) ? -1 : Math.min(15, Math.max(0, s.rank));
+function writeStreet(w: ReturnType<typeof strokeWriter>, scene: CityScene, i: number, origin: Point, surface: boolean, planPath: boolean) {
+  const s = scene.streets[i],
+    rank = Math.min(15, Math.max(0, s.rank));
+  const layout = scene.layouts[s.layout];
+  const traffic = streetTraffic(s, layoutStreetPavements(layout)?.[s.index], layout?.programme?.population);
+  const wear = traffic === 'cart' ? 1 : traffic === 'foot' ? 2 : traffic === 'stone' ? 3 : 0;
+  const meta = (wear << 9) | rank | (CROSSINGS.has(s.role) ? META.crossing : 0) | (s.role === 'bridge' || s.role === 'mole' ? META.solidEdge : 0);
+  putPolyline(w, s.joined.stroke, origin, !surface || isBoardwalk(s.role) || !s.joined.widths.length ? s.width : s.joined.widths.map(x => (Number.isFinite(x) && x > 0 ? x : s.width)), streetMinPx(s.role, s.rank, planPath), i, meta, true);
+}
+/** Chunks are immutable, in painter order. A flat CPU buffer is needed only for the first GPU upload. */
+export function orderedStrokes(parts: ArrayBuffer[], bytes = parts.reduce((n, p) => n + p.byteLength, 0)): CityGlStrokes {
+  let packed: ArrayBuffer | undefined;
+  return {
+    parts,
+    count: bytes / (STROKE_STRIDE * 4),
+    firstWithRank: new Array(16).fill(0),
+    get data() {
+      if (!packed) {
+        const out = new Uint8Array(bytes);
+        let offset = 0;
+        for (const p of parts) {
+          out.set(new Uint8Array(p), offset);
+          offset += p.byteLength;
+        }
+        packed = out.buffer;
+      }
+      return packed;
+    },
   };
-  // Rank first (draw order, level-of-detail suffix), then grid cell (culling).
-  const boxes = scene.streets.map(s => {
-    const b = shapesBox([{ outer: s.street.path, holes: [] }]);
-    return [b[0] - s.width, b[1] - s.width, b[2] + s.width, b[3] + s.width] as CityGlBox4;
-  });
-  const cells = boxes.map(cellKey);
-  const order = scene.streets.map((_, i) => i).sort((a, b) => key(b) - key(a) || cells[a] - cells[b] || a - b);
-  const chunks: NonNullable<CityGlStrokes['chunks']> = [];
-  let chunkKey = '';
-  const w = strokeWriter(scene.streets.reduce((s, x) => s + Math.max(0, x.street.path.length - 1), 0));
-  const firstWithRank = new Array(16).fill(-1);
-  for (const i of order) {
+}
+/** Street instances remain in rank, culling-cell, then scene order. Reordering only moves the
+ * retained records on the GPU; joined geometry is packed only for the changed features. */
+export function buildStreetStrokes(scene: CityScene, origin: Point, surface = true, planPath = false, previous?: CityGlStrokes, changed?: ReadonlySet<number>): CityGlStrokes {
+  const make = (i: number) => {
     const s = scene.streets[i],
-      k = key(i),
-      rank = Math.min(15, Math.max(0, s.rank));
-    for (let r = Math.max(0, k); r < 16; r++) if (firstWithRank[r] < 0) firstWithRank[r] = w.n;
-    const layout = scene.layouts[s.layout];
-    const traffic = streetTraffic(s, layoutStreetPavements(layout)?.[s.index], layout?.programme?.population);
-    const wear = traffic === 'cart' ? 1 : traffic === 'foot' ? 2 : traffic === 'stone' ? 3 : 0;
-    const meta = (wear << 9) | rank | (CROSSINGS.has(s.role) ? META.crossing : 0) | (s.role === 'bridge' || s.role === 'mole' ? META.solidEdge : 0);
-    const ck = `${k}|${cells[i]}`,
-      before = w.n;
-    putPolyline(w, s.joined.stroke, origin, !surface || isBoardwalk(s.role) || !s.joined.widths.length ? s.width : s.joined.widths.map(x => (Number.isFinite(x) && x > 0 ? x : s.width)), streetMinPx(s.role, s.rank, planPath), i, meta, true);
-    if (w.n === before) continue;
-    let chunk = chunks[chunks.length - 1];
-    if (!chunk || ck !== chunkKey) {
-      chunk = { box: [Infinity, Infinity, -Infinity, -Infinity], first: before, count: 0 };
-      chunks.push(chunk);
-      chunkKey = ck;
+      held = previous?.streets?.[i];
+    const b = shapesBox([{ outer: s.street.path, holes: [] }]),
+      box: CityGlBox4 = [b[0] - s.width, b[1] - s.width, b[2] + s.width, b[3] + s.width],
+      w = strokeWriter(s.joined.stroke.length);
+    writeStreet(w, scene, i, origin, surface, planPath);
+    const bytes = w.n * STROKE_STRIDE * 4,
+      prior = held && new Uint8Array(held.data),
+      data = new Uint8Array(w.buffer, 0, bytes);
+    return { data: prior?.length === bytes && data.every((v, k) => v === prior[k]) ? held!.data : w.buffer.slice(0, bytes), rank: CROSSINGS.has(s.role) ? -1 : Math.min(15, Math.max(0, s.rank)), box, cell: cellKey(box) };
+  };
+  const records = previous?.streets && changed ? previous.streets.slice(0, scene.streets.length) : scene.streets.map((_, i) => make(i));
+  if (previous?.streets && changed) for (const i of changed) records[i] = make(i);
+  if (
+    previous?.streetSlots &&
+    previous.parts &&
+    previous.chunks &&
+    previous.streets?.length === records.length &&
+    changed &&
+    [...changed].every(i => {
+      const p = previous.streets![i],
+        q = records[i];
+      return p.rank === q.rank && p.cell === q.cell && p.data.byteLength === q.data.byteLength;
+    })
+  ) {
+    const parts = previous.parts.slice(),
+      chunks = previous.chunks.slice(),
+      dirtyChunks = new Set<number>();
+    for (const i of changed) {
+      const slot = previous.streetSlots[i],
+        r = records[i];
+      parts[slot.part] = r.data;
+      if (slot.chunk >= 0 && r.box.some((v, j) => v !== previous.streets![i].box[j])) dirtyChunks.add(slot.chunk);
     }
-    chunk.count = w.n - chunk.first;
-    grow4(chunk.box, boxes[i]);
+    if (dirtyChunks.size) {
+      for (const i of dirtyChunks) chunks[i] = { ...chunks[i], box: [Infinity, Infinity, -Infinity, -Infinity] };
+      for (const [i, slot] of previous.streetSlots.entries()) if (dirtyChunks.has(slot.chunk)) grow4(chunks[slot.chunk].box, records[i].box);
+    }
+    const strokes = orderedStrokes(parts, previous.count * STROKE_STRIDE * 4);
+    strokes.streets = records;
+    strokes.chunks = chunks;
+    strokes.streetSlots = previous.streetSlots;
+    strokes.firstWithRank = previous.firstWithRank;
+    strokes.crossingStart = previous.crossingStart;
+    return strokes;
   }
-  for (let r = 0; r < 16; r++) if (firstWithRank[r] < 0) firstWithRank[r] = w.n;
-  return { data: w.buffer.slice(0, w.n * STROKE_STRIDE * 4), count: w.n, firstWithRank, chunks };
+  // A rank, cell or length changed. Rebuild the ordered offsets, retaining the other packed records.
+  const order = records.map((_, i) => i).sort((a, b) => records[b].rank - records[a].rank || records[a].cell - records[b].cell);
+  const strokes = orderedStrokes(order.map(i => records[i].data)),
+    chunks: NonNullable<CityGlStrokes['chunks']> = [],
+    slots: NonNullable<CityGlStrokes['streetSlots']> = new Array(records.length),
+    firstWithRank = new Array<number>(16).fill(-1);
+  let n = 0,
+    last: (typeof records)[number] | undefined,
+    crossing = strokes.count;
+  for (const [part, i] of order.entries()) {
+    const r = records[i];
+    slots[i] = { part, offset: n * STROKE_STRIDE * 4, chunk: -1 };
+    for (let rank = Math.max(0, r.rank); rank < 16; rank++) if (firstWithRank[rank] < 0) firstWithRank[rank] = n;
+    const count = r.data.byteLength / (STROKE_STRIDE * 4);
+    if (!count) continue;
+    if (r.rank === -1 && crossing === strokes.count) crossing = n;
+    if (!last || last.rank !== r.rank || last.cell !== r.cell) chunks.push({ box: [Infinity, Infinity, -Infinity, -Infinity], first: n, count: 0 });
+    slots[i].chunk = chunks.length - 1;
+    const chunk = chunks[chunks.length - 1];
+    grow4(chunk.box, r.box);
+    chunk.count += count;
+    n += count;
+    last = r;
+  }
+  for (let i = 0; i < 16; i++) if (firstWithRank[i] < 0) firstWithRank[i] = n;
+  strokes.streetSlots = slots;
+  strokes.streets = records;
+  strokes.crossingStart = crossing;
+  strokes.firstWithRank = firstWithRank;
+  strokes.chunks = chunks;
+  return strokes;
 }
 /** Walls: feature = wall index; pieces already stop at the gates. Width 2 m (palisade,
  * dashed) or 3.5 m, at least 2.4 px (1.6 px far, set by the renderer). */

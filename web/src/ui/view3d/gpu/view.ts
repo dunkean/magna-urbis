@@ -35,6 +35,7 @@ import { fullPatchIndices, patchClipKey, clippedPatchIndices } from '../terrain/
 import type { FrameGeometry, Patch, PatchDraw, Terrain3dOptions, Terrain3dTile, Terrain3dTileContent } from '../terrain/contract';
 import { buildingFrame } from '../gl/renderer';
 import type { ForestTextures } from '../../terrain/gl/forest';
+import { patchRgbaImage, rgbaImage } from '../../terrain/gpu/resources';
 import type { HeightLayer } from '../../terrain/contract';
 import * as WGSL from '../../terrain3dWgsl.generated';
 import { halfFloats, type CavernField } from '../../../render/underdarkCavern';
@@ -211,7 +212,10 @@ export class Terrain3dGpu extends Terrain3d {
     if (textures.beach) this.deleteTexture(textures.beach);
   }
   protected override uploadOccupation(occupation: ForestOccupation): WebGLTexture {
-    return this.rgbaImage(occupation, true);
+    return rgbaImage(this.device, occupation, true);
+  }
+  protected override patchOccupation(texture: WebGLTexture, previous: ForestOccupation, next: ForestOccupation, rects: NonNullable<ForestOccupation['dirty']>['rects']): void {
+    patchRgbaImage(this.device, image(texture), previous, next, rects);
   }
   protected override uploadLandDetail(detail: LandDetail): WebGLTexture {
     return this.rgbaImage(detail, true);

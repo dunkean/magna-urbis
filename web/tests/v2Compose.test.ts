@@ -105,7 +105,7 @@ describe('V2 project composition', () => {
     expect(result.world!.landuse).toEqual(generateNaturalCover(original.terrain, 'forest', new Rng('magna-urbis:' + original.seed)));
     expect(result.world!.stats['v2.urbanBackend']).toBeUndefined();
     const planned = await planRegion(result.world!, result.settings);
-    expect(planned.settlements).toHaveLength(1);
+    expect(planned.settlements?.map(place => place.key)).toEqual(regionalPopulation(result.settings).places.map(place => place.key));
     expectPhysicalEquality(planned.terrain, result.world!.terrain);
     result.world!.terrain.height.data[0] = 999;
     expectPhysicalEquality(source.world!.terrain, original.terrain);

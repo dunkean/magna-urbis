@@ -332,8 +332,9 @@ export const CAVE_ROCK_DEPTH = 1000;
 /** Adapt the completed terrain and the displayed water geometry, without regenerating either. */
 /** `upsample`: the planning grid may be finer than the physical source (heights on the cubic B-spline the ground is drawn
  * with: bilinear cells have one slope each, which every slope material and frontier then shows as blocks; water and river
- * masks rasterised from the vector network at the finer cell). Decor exports ask for it; live planning does not. */
-export function settlementRaster(t: TerrainData, maxResolution = 512, upsample = false): SettlementRaster {
+ * masks rasterised from the vector network at the finer cell). Decor exports ask for it; live planning does not.
+ * `paintSea`, when supplied, seeds class 1 from the displayed shore in the fresh water plane. */
+export function settlementRaster(t: TerrainData, maxResolution = 512, upsample = false, paintSea?: (water: Uint8Array, n: number, cell: number) => void): SettlementRaster {
   const source = t.physical?.height ?? t.height,
     sn = t.physical?.n ?? t.resolution;
   validatePhysicalTerrain({ n: sn, height: source });
@@ -373,6 +374,7 @@ export function settlementRaster(t: TerrainData, maxResolution = 512, upsample =
   const vector = t.water,
     hydro = t.hydrology;
   const lakes = vector ? vector.lakeField : undefined;
+  paintSea?.(water, n, cell);
   for (let y = 0; y < n; y++)
     for (let x = 0; x < n; x++) {
       const i = y * n + x,
@@ -380,10 +382,7 @@ export function settlementRaster(t: TerrainData, maxResolution = 512, upsample =
         py = (y + 0.5) * cell;
       height[i] = groundAt(x, y);
       waterLevel[i] = height[i];
-      if (height[i] <= 0) {
-        water[i] = 1;
-        waterLevel[i] = 0;
-      }
+      if (!paintSea && height[i] <= 0) water[i] = 1;
       if (t.caveMask.length || t.field?.cave?.length) {
         const cave = t.field?.cave ?? t.caveMask,
           cn = t.field?.cave ? t.field.n : t.resolution;
@@ -399,8 +398,7 @@ export function settlementRaster(t: TerrainData, maxResolution = 512, upsample =
         const h = vector.hydro,
           c = Math.min(h.n - 1, Math.floor((py / width) * h.n)) * h.n + Math.min(h.n - 1, Math.floor((px / width) * h.n));
         if (h.sea[c]) {
-          water[i] = 1;
-          waterLevel[i] = 0;
+          if (!paintSea) water[i] = 1;
         } else if (lakeSample(lakes!, width, px, py) >= 0) {
           water[i] = 2;
           waterLevel[i] = Number.isFinite(vector.lakeLevel?.[c]) ? vector.lakeLevel![c] : h.filled[c];
@@ -409,13 +407,13 @@ export function settlementRaster(t: TerrainData, maxResolution = 512, upsample =
         const hn = hydro.resolution,
           c = Math.min(hn - 1, Math.floor((py / width) * hn)) * hn + Math.min(hn - 1, Math.floor((px / width) * hn));
         if (hydro.seaMask?.[c]) {
-          water[i] = 1;
-          waterLevel[i] = 0;
+          if (!paintSea) water[i] = 1;
         } else if (hydro.lakeLabels[c] && hydro.lakeDepth[c] > 0) {
           water[i] = 2;
           waterLevel[i] = hydro.filled[c];
         }
       }
+      if (water[i] === 1) waterLevel[i] = 0;
     }
   const segment = (ax: number, ay: number, bx: number, by: number, wd: number, levelA: number, levelB: number, id: number): void => {
     const rad = Math.max(wd / 2, cell * 0.6),

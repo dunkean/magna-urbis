@@ -9,11 +9,12 @@ import { captureLook, captureViewState, displayPixelRatio, settled, settledDetai
 import type { GpuShared } from './device';
 import type { GpuInputs } from './inputs';
 import type { GpuRedraw } from './redraw';
-import { releaseGpuLayer, type Surface } from './resources';
+import { GpuViewTargets, releaseGpuLayer, type Surface } from './resources';
 import type { HeightLayer, TerrainLook } from '../contract';
 
 export class GpuCaptures {
   private canvas?: { canvas: HTMLCanvasElement; context: GPUCanvasContext; opaque?: boolean };
+  private patchTargets?: GpuViewTargets;
   constructor(
     private readonly gpu: GpuShared,
     private readonly redraw: GpuRedraw,
@@ -34,7 +35,7 @@ export class GpuCaptures {
     return { canvas: this.canvas.canvas, context: this.canvas.context, opaque };
   }
   /** A world-space LOD tile with the same material and detail as the map; `restore` redraws the display after. */
-  region(look: TerrainLook, region: { x: number; y: number; width: number }, size: number, includeDetails: boolean, restore: (() => void) | undefined, height?: HeightLayer, groundOverlay = false, alphaOnly?: Uint8Array): HTMLCanvasElement {
+  region(look: TerrainLook, region: { x: number; y: number; width: number }, size: number, includeDetails: boolean, restore: (() => void) | undefined, height?: HeightLayer, groundOverlay = false, alphaOnly?: Uint8Array, isolated = false): HTMLCanvasElement {
     const inputs = this.inputs;
     const capturedHeight = height ? inputs.upload(height, false) : undefined;
     const output = document.createElement('canvas');
@@ -56,7 +57,7 @@ export class GpuCaptures {
         stylePixelRatio: includeDetails ? displayPixelRatio() : 1,
         surface,
         offscreen: true,
-        targets: this.redraw.liveTargets,
+        targets: isolated ? (this.patchTargets ??= new GpuViewTargets()) : this.redraw.liveTargets,
         wait: true,
         capturing: false,
         tile: false,
@@ -74,5 +75,6 @@ export class GpuCaptures {
   }
   dispose(): void {
     this.canvas?.context.unconfigure();
+    this.patchTargets?.dispose();
   }
 }

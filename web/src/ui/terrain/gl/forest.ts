@@ -47,16 +47,17 @@ export function patchForestTexture(gl: WebGL2RenderingContext, texture: WebGLTex
 }
 /** The texel rectangles by which `next` differs from `held` (ForestOccupation.dirty) when it was made from it on the
  * same grid; undefined: `next` must be uploaded whole. The same pixels (one product spread again): no rectangle. */
-export function occupationPatch(held: ForestOccupation | undefined, next: ForestOccupation): readonly TexelRect[] | undefined {
+type OccupationRaster = Pick<ForestOccupation, 'x' | 'y' | 'n' | 'width' | 'rgba'> & Partial<Pick<ForestOccupation, 'key' | 'dirty'>>;
+export function occupationPatch(held: OccupationRaster | undefined, next: OccupationRaster): readonly TexelRect[] | undefined {
   if (!held || held.n !== next.n || held.x !== next.x || held.y !== next.y || held.width !== next.width) return undefined;
   if (held.rgba === next.rgba) return [];
-  return next.dirty?.base === held.key ? next.dirty.rects : undefined;
+  return next.dirty && next.dirty.base === held.key ? next.dirty.rects : undefined;
 }
 /** Occupation texels around a changed one whose ground pixels may change: bilinear reads, a distance read a little off
  * the fragment (soft edges, symbols). Coarse tiles add their own reach (render/live/groundLayer.ts). */
 export const OCCUPATION_PAD = 4;
 /** The world boxes (metres) of texel rectangles of an occupation, grown by `pad` texels (bilinear reads, mipmaps). */
-export function occupationWorldRects(occupation: ForestOccupation, rects: readonly TexelRect[], pad: number): Rect4[] {
+export function occupationWorldRects(occupation: OccupationRaster, rects: readonly TexelRect[], pad: number): Rect4[] {
   const cell = occupation.width / occupation.n;
   return rects.map(r => ({ minX: occupation.x + (r.x - pad) * cell, minY: occupation.y + (r.y - pad) * cell, maxX: occupation.x + (r.x + r.width + pad) * cell, maxY: occupation.y + (r.y + r.height + pad) * cell }));
 }

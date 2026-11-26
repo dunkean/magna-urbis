@@ -1,3 +1,6 @@
+import { changedStreets } from '../src/render/city/gl/sceneChanges';
+import { streetColorsSteps } from '../src/render/city/gl/styleTables';
+import { runSteps } from '../src/render/cityGlBuild';
 import { describe, expect, it } from 'vitest';
 import { buildCityBuildings, buildCityScene } from '../src/render/cityCanvas';
 import { cityGlPick, cityGlPlanMesh } from '../src/render/cityGl';
@@ -153,6 +156,24 @@ describe('cityGl scene, picking and styles', () => {
     expect(u[3 * STROKE_STRIDE + 8] & (META.crossing | META.buttStart | META.buttEnd)).toBe(META.crossing | META.buttStart | META.buttEnd);
     expect(s.count - s.firstWithRank[1]).toBe(3); // far: main (2 segments) + bridge
     expect(f[STROKE_STRIDE * 2 + 6]).toBeCloseTo(120, 5); // second main segment starts 120 m along
+  });
+
+  it('keeps unchanged street geometry and recomputes rank, culling and colour entries for an edited lane', () => {
+    const origin = { x: 1000, y: 1000 },
+      previous = buildStreetStrokes(scene, origin);
+    const streets = layout.streets.map((s, i) => (i === 1 ? { ...s, rank: 1, widths: [5] } : s));
+    const next = buildCityScene([{ ...layout, streets }], [partition]),
+      indices = changedStreets(scene, next)!;
+    expect(indices).toContain(1);
+    const changed = buildStreetStrokes(next, origin, true, false, previous, new Set(indices)),
+      fresh = buildStreetStrokes(next, origin);
+    expect(changed.streets![2].data).toBe(previous.streets![2].data);
+    expect(new Uint8Array(changed.data)).toEqual(new Uint8Array(fresh.data));
+    expect(changed.chunks).toEqual(fresh.chunks);
+    expect(changed.firstWithRank).toEqual(fresh.firstWithRank);
+    const some = runSteps(streetColorsSteps(next, 'growth', false, undefined, undefined, indices)),
+      full = streetColors(next, 'growth', false);
+    for (const [j, i] of indices.entries()) expect(some.inner.slice(4 * j, 4 * j + 4)).toEqual(full.inner.slice(4 * i, 4 * i + 4));
   });
 
   it('groups polygons in grid chunks and draws only the chunks in view', () => {

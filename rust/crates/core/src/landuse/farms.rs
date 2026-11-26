@@ -2101,7 +2101,7 @@ fn dress(t: &str, p: &Part, tags: &[String]) -> Value {
     if p.round && roof == "gable" {
         roof = "conical".into();
     }
-    let storeys = if ["tower", "farm-tower", "pigeon-tower"].contains(&u) {
+    let storeys = if ["tower", "farm-tower", "pigeon-tower", "silo"].contains(&u) {
         3
     } else if u == "house" && ["masseria", "vierkanthof", "dvor"].contains(&t) {
         2
@@ -2138,7 +2138,15 @@ pub fn place(lf: &LocalFarm, o: Point, v: Point) -> Value {
             d
         })
         .collect();
-    serde_json::json!({"lot":poly(&rrect(-lf.w/2.0,0.0,lf.w/2.0,lf.d)),"parts":parts,"yard":poly(&lf.yard),"walls":lf.walls.iter().map(poly).collect::<Vec<_>>(),"plots":lf.plots.iter().map(|p|serde_json::json!({"kind":p.kind,"poly":poly(&p.poly)})).collect::<Vec<_>>(),"trees":lf.trees.iter().copied().map(point).collect::<Polygon>(),"gate":point(p(lf.gate_u,0.0)),"entry":point(lf.entry),"angle":u.y.atan2(u.x)})
+    let plots: Vec<_> = lf.plots.iter().map(|p| {
+        let mut plot = serde_json::json!({"kind":p.kind,"poly":poly(&p.poly)});
+        if p.kind == "platform" {
+            plot["heightM"] = 1.5.into();
+        }
+        plot
+    }).collect();
+    let enclosure = data()["types"][&lf.type_]["enclosure"].as_str().unwrap_or("none");
+    serde_json::json!({"lot":poly(&rrect(-lf.w/2.0,0.0,lf.w/2.0,lf.d)),"parts":parts,"yard":poly(&lf.yard),"enclosure":enclosure,"walls":lf.walls.iter().map(poly).collect::<Vec<_>>(),"plots":plots,"trees":lf.trees.iter().copied().map(point).collect::<Polygon>(),"gate":point(p(lf.gate_u,0.0)),"entry":point(lf.entry),"angle":u.y.atan2(u.x)})
 }
 pub fn seg_rect_dist(a: Point, b: Point, u0: f64, v0: f64, u1: f64, v1: f64) -> f64 {
     let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
@@ -2184,6 +2192,49 @@ pub fn seg_rect_dist(a: Point, b: Point, u0: f64, v0: f64, u1: f64, v1: f64) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn farm_parts_grain_silo_follows_outbuilding_share() {
+        use super::super::rural_farms::{farm_massing, keep_outbuildings};
+
+        let build = |kind: &str, culture: &str, share| {
+            let ctx = Context { culture: culture.into(), ..Context::default() };
+            let lf = layout(kind, 2, &ctx, frame(p(0.0, 1.0), None), Rng::new("grain-yard"));
+            let mut farm = place(&lf, p(100.0, 100.0), p(0.0, 1.0));
+            keep_outbuildings(&mut farm, "grain-yard", "100,100", share);
+            farm_massing(&mut farm, culture, kind, lf.size, "grain-yard");
+            farm
+        };
+        let farm = build("grain-farm", "american-grid", 1.0);
+        let silo = arr(&farm["parts"]).iter().find(|b| b["use"] == "silo").expect("grain silo");
+        assert_eq!(arr(&silo["poly"]).len(), 12);
+        assert_eq!(silo["massing"][0]["roof"], "cone");
+        assert_eq!(silo["massing"][0]["cover"], "metal");
+        assert!(num(&silo["massing"][0]["eave_m"]) > 8.0);
+        let bare = build("grain-farm", "american-grid", 0.0);
+        assert_eq!(arr(&bare["parts"]).len(), 1);
+        assert_eq!(bare["parts"][0]["use"], "house");
+        let historic = build("haufenhof", "european-organic", 1.0);
+        assert!(arr(&historic["parts"]).iter().all(|b| b["use"] != "silo"));
+    }
+
+    #[test]
+    fn farm_parts_wet_yard_serializes_enclosure_and_supports_buildings() {
+        let ctx = Context { culture: "italian".into(), wet: 0.7, ..Context::default() };
+        let lf = layout("masseria", 0, &ctx, frame(p(0.0, 1.0), None), Rng::new("wet-yard"));
+        let farm = place(&lf, p(500.0, 500.0), p(0.0, 1.0));
+        assert_eq!(farm["enclosure"], "wall");
+        let paths = arr(&farm["walls"]);
+        assert!(!paths.is_empty());
+        assert!(paths.iter().all(|path| arr(path).first() != arr(path).last()));
+        let platform = arr(&farm["plots"]).iter().find(|p| p["kind"] == "platform").expect("wet platform");
+        assert_eq!(num(&platform["heightM"]), 1.5);
+        let b = bbox(&poly(&platform["poly"]));
+        for part in arr(&farm["parts"]) {
+            assert!(poly(&part["poly"]).iter().all(|q| (b.x0..=b.x1).contains(&q.x) && (b.y0..=b.y1).contains(&q.y)));
+        }
+    }
+
     /// Two cultures on the same site build different farm types and ground plans; every
     /// building carries the massing of the town buildings in its culture's materials;
     /// the parts stay inside the lot, clear of each other.

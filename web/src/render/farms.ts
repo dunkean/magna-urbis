@@ -1,6 +1,18 @@
 /** Farmstead drawing helpers shared by the SVG and Canvas renderers (lots, plots, ridges of the raised massing). */
-import type { Farmstead, FarmBuilding, Polygon, Polyline, Vec2 } from '../gen/types';
+import type { Farmstead, FarmBuilding, FarmEnclosure, Polygon, Polyline, Vec2 } from '../gen/types';
 import { readMassing } from './cityMassing';
+import { yardStyle } from './yardStyle';
+
+export const FARM_ENCLOSURES = {
+  wall: { ...yardStyle('wall'), height: 1.55, cover: 'stone', wall: 'stone' },
+  hedge: { ...yardStyle('hedge'), height: 1.25, cover: 'turf', wall: 'earth' },
+  fence: { ...yardStyle('fence'), height: 1.1, cover: 'shingle', wall: 'wood' },
+  bank: { color: '#78644a', width: 1.2, height: 0.55, minPx: 1, alpha: 0.9, cover: 'turf', wall: 'earth' },
+} as const;
+export type FarmEnclosureKind = keyof typeof FARM_ENCLOSURES;
+export const farmEnclosureKind = (f: Farmstead): FarmEnclosure => f.enclosure ?? 'wall';
+export const isFarmEnclosureKind = (kind: string): kind is FarmEnclosureKind => Object.hasOwn(FARM_ENCLOSURES, kind);
+export const FARM_PLATFORM_EARTH = '#9b8262';
 
 /** Ridge lines of the farm buildings, those of the volumes both views raise (farmRoofs.ts farmPlacedBuildings): the
  * engine's massing when it sends one (no line on a volume whose roof is explicit pans, a tree or a small decorative

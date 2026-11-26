@@ -169,7 +169,6 @@ export function mountCity3d(options: City3dOptions): City3d {
   cityContext.structureBuildings = [];
 
   cityContext.canopyInputs = [];
-  cityContext.canopyBuildings = [];
 
   cityContext.ornamentInputs = [];
   cityContext.ornamentBuildings = [];

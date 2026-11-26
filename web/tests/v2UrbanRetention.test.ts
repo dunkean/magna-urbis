@@ -121,6 +121,43 @@ beforeEach(() => {
     }));
 });
 describe('immutable retained native stages', () => {
+  it('generates only the edited quarter’s city volumes while keeping the adjoining lot as party-wall context', async () => {
+    const { world, settings } = fixture();
+    settings.urban!.architecture = 'silhouette';
+    const run = native.run.getMockImplementation()!;
+    const parcels = ['p0', 'p1'].map((id, block) => ({ id, block, use: 'plot', shape: square(block * 8) }));
+    const adjacency = [{ a: 'p0', b: 'p1', sharedLength: 8 }];
+    const generated: string[][] = [];
+    native.run.mockImplementation(async request => {
+      if (request.kind === 'quarters') {
+        const layout = (await run(request)).layouts[0];
+        return { layouts: [{ ...layout, config: request.layoutConfig, quarters: parcels.map(p => ({ shape: p.shape, phase: 0 })), blocks: parcels.map(p => ({ shape: p.shape, quarter: p.block, kind: 'block' })) }] };
+      }
+      if (request.kind === 'parcels') return { partitions: [{ key: 'main', parcels, warnings: [] }] };
+      if (request.kind === 'programme') return { partitions: [{ key: 'main', parcels, warnings: [], programme: { demands: [], allocations: parcels.map(p => ({ parcelId: p.id, role: 'dwelling' })), adjacency, environment: [], reservations: [] } }] };
+      if (request.kind === 'buildingSites') {
+        const partition = request.partitions[0] as Partition;
+        const ids = partition.programme!.allocations.map(a => a.parcelId);
+        expect(partition.parcels.map(p => p.id)).toEqual(['p0', 'p1']);
+        expect(partition.programme!.adjacency).toEqual(adjacency);
+        generated.push(ids);
+        const wealth = request.layouts[0].config.overrides?.quarters?.['1']?.wealth;
+        return { placementRequests: (await run(request)).placementRequests.filter((r: PlacementRequest) => ids.includes(r.parcel_id)).map((r: PlacementRequest) => ({ ...r, programme: { wealth } })) };
+      }
+      return run(request);
+    });
+    const first = await generateRustTown(world, settings, 'main');
+    world.debug = { v2RustCities: { main: freeze(first.snapshot) } };
+    settings.urban!.local = { main: { layout: { overrides: { quarters: { '1': { wealth: 0.9 } } } } } };
+    const edited = await generateRustTown(world, settings, 'main');
+    delete world.debug.v2RustCities;
+    const full = await generateRustTown(world, settings, 'main');
+    expect(generated).toEqual([['p0', 'p1'], ['p1'], ['p0', 'p1']]);
+    expect(edited.snapshot.sites![1]).toEqual(full.snapshot.sites![1]);
+    expect(edited.snapshot.scene!.buildings[1]).toEqual(full.snapshot.scene!.buildings[1]);
+    expect(edited.snapshot.sites![0]).toBe(first.snapshot.sites![0]);
+    expect(edited.snapshot.scene!.buildings[0]).toBe(first.snapshot.scene!.buildings[0]);
+  });
   it('changes one house culture without planning its neighbours again', async () => {
     const run = native.run.getMockImplementation()!;
     native.run.mockImplementation(async request => {

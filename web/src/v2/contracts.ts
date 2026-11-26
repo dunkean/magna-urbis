@@ -107,6 +107,7 @@ export interface V2Settings {
   /** Full bench terrain recipe; legacy Options remain the settlement/biome defaults. */
   terrain?: V2TerrainSettings;
   region?: V2RegionSettings;
+  roadOverrides?: import('./roadOverrides').RoadOverrides;
   /** A saved decor opened as the whole world (relief, sea, lakes, rivers): `bytes` = the gzip file web/decors/<id>.decor. */
   decor?: { id: string; bytes: Uint8Array };
   urban?: V2UrbanSettings;
@@ -180,6 +181,7 @@ export type V2WorkerResponse =
   /** `heavy`: the town packs moved with the result exceed HEAVY_RESULT_BYTES (urbanPack.ts); the page replaces this worker
    * before unpacking, so the tab's shared JS heap never holds the worker's copy of the town and the page's at once. */
   | { id: number; type: 'result'; world: World; wasm?: WasmThreadsInfo; heavy?: boolean }
+  | { id: number; type: 'local-result'; delta: import('./localEditIntern').LocalEditDelta; wasm?: WasmThreadsInfo; heavy?: boolean }
   | { id: number; type: 'error'; error: string; wasm?: WasmThreadsInfo };
 
 export interface V2Project {

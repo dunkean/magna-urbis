@@ -63,6 +63,7 @@ export interface UrbanSiteVisualsRequest {
   source: UrbanSourceHandle;
   seed: string;
   architectureCulture?: string;
+  blocks?: Record<string, number[]>;
 }
 /** Engines with `urban.site-visuals-v2` send per-site programme texts without the fields no display reads. */
 const siteVisualsV2 = new Map<string, Promise<boolean>>();
@@ -88,7 +89,7 @@ export async function readUrbanSiteVisuals(input: UrbanSiteVisualsRequest, runti
   if (runtime.profile !== 'local') throw new Error('Retained urban site visuals require the local runtime.');
   validateUrbanSource(input.source);
   const version = (await siteVisualsVersion(runtime)) ? 2 : undefined;
-  const response = await nativeRequest(runtime, '/urban', JSON.stringify({ kind: 'buildingSiteVisuals', source: input.source, seed: input.seed, architectureCulture: input.architectureCulture, version }));
+  const response = await nativeRequest(runtime, '/urban', JSON.stringify({ kind: 'buildingSiteVisuals', source: input.source, seed: input.seed, architectureCulture: input.architectureCulture, version, blocks: input.blocks }));
   if (response.headers.get('content-type')?.split(';', 1)[0].trim() !== 'application/octet-stream') {
     throw new Error('The local runtime did not return binary urban site visuals.');
   }

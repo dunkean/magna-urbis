@@ -327,6 +327,8 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
     let mut list: Vec<&'static str>;
     if farm {
         list = names("core");
+        // The silo belongs to the working farm's optional outbuildings.
+        if !ancillary { list.retain(|&label| label != "silo"); }
         if ancillary {
             let n = (rng.int(lo as u32, hi.max(lo) as u32) as usize + usize::from(wealth > 0.7)).saturating_sub(usize::from(wealth < 0.3)).max(list.len());
             let pool = names("ancillary");
@@ -436,7 +438,8 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
     let m = 2.5;
     let yard: Vec<Value> = [(s0 - m, t0 - m), (s1 + m, t0 - m), (s1 + m, t1 + m), (s0 - m, t1 + m)].iter()
         .map(|&(s, t)| { let p = f.at(s, t); json!({"x": (p.x * 100.0).round() / 100.0, "y": (p.y * 100.0).round() / 100.0}) }).collect();
-    let enclosure = d["cultures"][culture]["enclosure"].as_str().or(ty["enclosure"].as_str()).unwrap_or("fence");
+    let home_enclosure = d["cultures"][culture]["enclosure"].as_str().filter(|_| !farm);
+    let enclosure = home_enclosure.or(ty["enclosure"].as_str()).unwrap_or("fence");
     let mut cluster = json!({"type": kind, "layout": layout, "farm": farm, "enclosure": enclosure, "yard": yard, "outbuildings": placed});
     // A court's own wall or hedge: the same box round the house and its bodies,
     // clipped to the lot (cityLotEnclosures.ts draws it instead of the lot limits).

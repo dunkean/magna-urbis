@@ -244,6 +244,7 @@ export interface TerrainResources {
   uploadForest(field: ForestField): ForestTextures;
   releaseForest(textures: ForestTextures | undefined): void;
   uploadOccupation(occupation: ForestOccupation): WebGLTexture;
+  patchOccupation(texture: WebGLTexture, previous: ForestOccupation, next: ForestOccupation, rects: NonNullable<ForestOccupation['dirty']>['rects']): void;
   uploadLandDetail(detail: LandDetail): WebGLTexture;
   uploadMesh(patch: Patch, values: Float32Array): void;
   releaseMesh(patch: Patch): void;

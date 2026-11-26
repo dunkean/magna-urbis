@@ -139,6 +139,7 @@ export interface LandArea {
 }
 export type RoofKind = 'gable' | 'hip' | 'flat' | 'dome' | 'pyramidal' | 'pagoda' | 'thatch-round' | 'none' | 'tiled-hip' | 'conical' | 'barrel' | 'terraced';
 export type FarmSize = 'cottage' | 'family' | 'large' | 'manor';
+export type FarmEnclosure = 'wall' | 'hedge' | 'fence' | 'bank' | 'none';
 /** One farm building with its architecture metadata (`use`: house, barn, byre, stable, shed, dovecote, gatehouse, ...). */
 export interface FarmBuilding {
   poly: Polygon;
@@ -158,6 +159,8 @@ export interface FarmBuilding {
 export interface FarmPlot {
   kind: 'farmyard' | 'garden' | 'orchard' | 'paddock' | 'pond' | 'pen' | 'threshing-floor' | 'platform';
   poly: Polygon;
+  /** Height of a platform above the highest ground beneath it, in metres. */
+  heightM?: number;
 }
 export interface Farmstead {
   /** Centre of the lot. */
@@ -177,6 +180,7 @@ export interface Farmstead {
   lot?: Polygon;
   parts?: FarmBuilding[];
   plots?: FarmPlot[];
+  enclosure?: FarmEnclosure;
   /** Yard walls, enclosure banks and fences (open polylines; the gap is the gate). */
   walls?: Polyline[];
   /** Orchard and shelter-belt trees. */
@@ -476,6 +480,10 @@ export interface World {
     width: number;
     /** Stable selection identity through local edits and redraws. */
     editorId?: string;
+    /** Generated route (or drawn road) shared by all its editable pieces. */
+    editorSource?: string;
+    /** Exact authored road class when the projected map has no native road graph. */
+    editorClass?: import('../../../rust/bridge/settlements').RoadClass;
     /** User routing constraints, independent of zoom and of the sampled engine path. */
     controls?: Polyline;
     controlIndices?: number[];

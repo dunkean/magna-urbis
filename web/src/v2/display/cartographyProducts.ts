@@ -14,14 +14,14 @@ import { getDistanceUnit } from '../units';
 import { cityOverlayLandKinds, cityOverlayLandKey, cityCountrysideCanvasOptions, cityOverlayPlanMarks } from '../../render/cityEnvironment';
 import type { World, LandKind } from '../../gen/types';
 import { createCanvasRenderer, type CanvasRenderer } from '../../render/canvas';
-import { mapSeasonKey } from '../../render/seasonPalette';
+import { mapSeasonKey, seasonalPalette } from '../../render/seasonPalette';
 import { regionalGroundRoads } from '../../render/groundRoads';
 import { mapRoadTones, roadGroundKey, type RoadStyle } from '../../render/roadStyle';
 import { displayWorld } from '../../render/displayWorld';
 import { buildingOccupationShapes } from '../../ui/forestOccupation';
 import { nativeCitiesOf } from '../nativeProducts';
 import { activityScene } from '../activitySites';
-import { biomePalette } from '../../render/biomes';
+import { climatePalette } from '../../render/biomes';
 import type { Palette } from '../../render/styles';
 import { displayBiomeName, displayTerrainSettings } from '../displayBiome';
 import { renderSvg } from '../../render/svg';
@@ -38,6 +38,7 @@ import { contourDrawOf } from '../../render/composition';
 import { hasRetainedInk } from '../../render/cartography/mapRecording';
 import type { SemanticLegendEntry } from '../../render/legend';
 import { sceneDirty, worldDirty, changedShapes, shapeKey, mergeRects } from '../../render/sceneDiff';
+import type { LineLayer } from '../../render/scene';
 import type { Rect } from '../../render/tileindex';
 import { seedSubset } from '../../../../rust/bridge/generationSeed';
 import { isUnderdarkBiome } from '../../gen/biomes';
@@ -47,6 +48,8 @@ import type { ViewRasterRegion } from '../../render/viewRaster';
 import type { Cartography, DisplayParts, Ground, SemanticState, WorldBox } from './contract';
 import type { MapState } from './mapState';
 import { paintedBrushes } from './paintedBrushes';
+import { localEditRegions } from '../localEditRegion';
+import { growRect } from '../../render/cartography/geometry';
 
 /** Pixel width of the whole-map renderSvg overlay of exports. */
 const EXPORT_OVERLAY_PX = 4096;
@@ -65,13 +68,21 @@ function overlayPalette(source: Palette, decor: boolean): Palette {
   return found;
 }
 type CartographyProduct = { renderer: CanvasRenderer; overlay: HTMLCanvasElement; state: { config: string; scene: Scene; world: World } };
+/** Ordered paths of the ground road pass, as it queries them in each changed part of the map. */
+function groundRoadPaths(layers: readonly LineLayer[], box?: Rect): string[] {
+  return layers.flatMap(layer => {
+    const paths = box ? layer.index.query(box).map(i => layer.lines[i]) : layer.lines;
+    return paths.length ? [`${layer.name}:${layer.kind}:${layer.role}:${layer.width}:${layer.pavement}`, ...paths.map(path => shapeKey(path))] : [];
+  });
+}
+const samePaths = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((path, i) => path === b[i]);
 
 export class CartographyProducts implements Cartography {
   renderer?: CanvasRenderer;
   /** The canvas the overlay renderer draws into; swapped when the renderer of another look comes back from the store. */
   overlay = document.createElement('canvas');
   private roadsOnGround = false;
-  private roadSource?: { scene: Scene; key: string; gpu: Ground['gpu'] };
+  private roadSource?: { scene: Scene; world: World; key: string; gpu: Ground['gpu']; roads: LineLayer[] };
   private syncGroundRoads(scene: Scene): void {
     const r = this.map.resolved!,
       layers = this.map.exportLayers,
@@ -87,12 +98,23 @@ export class CartographyProducts implements Cartography {
       r.ground.traits.family === 'material' &&
       r.composition.networks.roads.look === 'rendered'
     );
-    const key = JSON.stringify([this.roadsOnGround, r.keys.roads, r.quality, roadGroundKey(), mapSeasonKey(), r.cartography.landuse]);
-    if (this.roadSource?.scene === scene && this.roadSource.key === key && this.roadSource.gpu === ground.gpu) return;
-    this.roadSource = { scene, key, gpu: ground.gpu };
-    const roads = scene.lines.filter(l => (l.role === 'road' ? r.composition.networks.roads.visible : r.cartography.landuse && (l.role === 'drive' || l.name === 'field-ways')));
-    ground.gpu?.setGroundRoads?.(this.roadsOnGround && roads.length ? regionalGroundRoads(roads, this.roadStyle) : undefined);
-    if (this.roadsOnGround) ground.dropBackground();
+    const key = JSON.stringify([this.roadsOnGround, r.keys.roads, r.quality, roadGroundKey(), mapSeasonKey(), r.cartography.landuse]),
+      held = this.roadSource,
+      sameLook = held?.key === key && held.gpu === ground.gpu;
+    if (sameLook && held.scene === scene) return;
+    const world = this.map.world!,
+      roads = this.roadsOnGround ? scene.lines.filter(l => (l.role === 'road' ? r.composition.networks.roads.visible : r.cartography.landuse && (l.role === 'drive' || l.name === 'field-ways'))) : [];
+    this.roadSource = { scene, world, key, gpu: ground.gpu, roads };
+    if (!roads.length && (!held?.roads.length || held.gpu !== ground.gpu)) return;
+    const local = sameLook ? localEditRegions(held.world, world) : undefined;
+    let changed: Rect[] | undefined;
+    if (local) {
+      const reach = Math.max(...[...roads, ...held!.roads].map(l => l.width), (8 * world.mapSize) / 1024);
+      changed = local.map(r => growRect({ minX: r.x0, minY: r.y0, maxX: r.x1, maxY: r.y1 }, reach)).filter(box => !samePaths(groundRoadPaths(held!.roads, box), groundRoadPaths(roads, box)));
+      if (!changed.length) return;
+    } else if (sameLook && samePaths(groundRoadPaths(held.roads), groundRoadPaths(roads))) return;
+    ground.gpu?.setGroundRoads(roads.length ? regionalGroundRoads(roads, this.roadStyle) : undefined, changed);
+    ground.dropBackground(changed);
   }
   private roadStyle = (): RoadStyle => {
     const r = this.map.resolved!;
@@ -270,7 +292,7 @@ export class CartographyProducts implements Cartography {
       biome = displayBiomeName(this.map.settings, world),
       decor = layers.decor !== false;
     // The palette of the moment: a new season is a new object, read at each paint (CanvasRendererDeps.palette).
-    const palette = (): Palette => overlayPalette(biomePalette(mapStyle, biome), decor);
+    const palette = (): Palette => seasonalPalette(overlayPalette(climatePalette(mapStyle, biome), decor));
     const semanticLook = (): string =>
       `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, this.parts.water.regime]) : ''}|v${this.map.volumeBuildings ? 1 : 0}${this.map.volumeBuildings ? '' : `|roof:${this.map.resolved?.composition.buildings.roof ?? r.composition.buildings.roof}`}`;
     this.woodsOnGround = this.parts.ground.gpuActive && !!this.parts.ground.treeSymbols();

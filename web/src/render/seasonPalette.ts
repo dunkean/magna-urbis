@@ -5,6 +5,11 @@
 import { calendarSeason, seasonWeights, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import { CLIMATE_ZONE_VALUES, type ClimateValues, type ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { AUTUMN_CROWN_MEAN } from '../../../rust/bridge/terrainForestSeason';
+import { ColorSlot } from './gpu/contract';
+import { canvasColor } from './gpu/colors';
+import { forestLandPaint } from './landuseForestTone';
+import { fieldHedgeStyle } from './hedges';
+import { mixHex } from './cartography/geometry';
 import type { Palette } from './styles';
 
 export interface SeasonPaint {
@@ -303,13 +308,16 @@ function woodTone(c: string, s: SeasonPaint): string {
   const deciduous = 1 - s.evergreen;
   return mix(autumnWood(mix(c, BARE_WOOD, 0.7 * (1 - s.leaf)), s), SPRING_WOOD, 0.15 * s.spring * deciduous);
 }
+const seasonSources = new WeakMap<Palette, Palette>();
+export const seasonSource = (pal: Palette): Palette => seasonSources.get(pal) ?? pal;
+
 /** Land use and water share the calendar; paper and relief keep their authored tones. */
 export function applySeason(pal: Palette, s: SeasonPaint, crownSnow = 0.7): Palette {
   const snowed = (c: string, cover = 0.85): string => mix(c, SNOW, s.snow * cover);
   const herbs = (c: string): string => snowed(tinted(c, s.herb));
   const crops = (c: string): string => snowed(cropTone(c, s.herb), 0.8);
   const wood = (c: string): string => snowed(woodTone(c, s), 0.4);
-  return {
+  const result = {
     ...waterSeason(pal, s),
     land: {
       ...pal.land,
@@ -333,6 +341,8 @@ export function applySeason(pal: Palette, s: SeasonPaint, crownSnow = 0.7): Pale
     grass: snowed(tinted(pal.grass, s.herb), 0.6),
     reed: snowed(tinted(pal.reed, s.herb), 0.5),
   };
+  seasonSources.set(result, seasonSource(pal));
+  return result;
 }
 const MONOCHROME = new Set(['engraving', 'blueprint', 'night', 'white']);
 const cache = new WeakMap<Palette, Map<string, Palette>>();
@@ -363,4 +373,89 @@ export function seasonalPalette(pal: Palette): Palette {
     entries.set(key, (found = applySeason(pal, seasonPaint(season, zone!, calendar), calendar?.crownSnow)));
   }
   return found;
+}
+
+/** Each recipe reads the resolved palette, including biome, season and user colour overrides. */
+const landColor = (key: keyof Palette['land']) => (p: Palette) => p.land[key];
+const token =
+  <K extends keyof Palette>(key: K) =>
+  (p: Palette) =>
+    p[key];
+const pen = (key: 'treeFill' | 'treeInk' | 'grass' | 'reed' | 'orchardDot') => (p: Palette) => mixHex(p[key], p.inkSoft, 0.32);
+const inks = {
+  field: landColor('field'),
+  garden: landColor('garden'),
+  pasture: landColor('pasture'),
+  meadow: landColor('meadow'),
+  forest: landColor('forest'),
+  commons: landColor('commons'),
+  marsh: landColor('marsh'),
+  orchard: landColor('orchard'),
+  stripA: token('stripA'),
+  stripB: token('stripB'),
+  furrow: token('furrow'),
+  hedge: token('hedge'),
+  treeInk: token('treeInk'),
+  treeFill: token('treeFill'),
+  grass: token('grass'),
+  reed: token('reed'),
+  orchardDot: token('orchardDot'),
+  riverFill: token('riverFill'),
+  waterEdge: token('waterEdge'),
+  seaFill: token('seaFill'),
+  lakeFill: token('lakeFill'),
+  waterShore: (p: Palette) => p.water.stops[0][1],
+  markedForest: (p: Palette) => forestLandPaint(p, 'marked').color,
+  groundForest: (p: Palette) => forestLandPaint(p, 'ground').color,
+  fieldHedge: (p: Palette) => fieldHedgeStyle(p, 1).color,
+  openGround: (p: Palette) => mixHex(p.paper, p.land.meadow, 0.35),
+  terrace: (p: Palette) => mixHex(p.land.meadow, p.land.garden, 0.4),
+  cornfield: (p: Palette) => mixHex(p.land.field, p.urban.gardenInk, 0.14),
+  turfWall: (p: Palette) => mixHex(p.grass, p.urban.wall, 0.35),
+  farmLeaves: token('treeFill'),
+  symbolLeaves: token('treeFill'),
+  penLeaves: pen('treeFill'),
+  penTreeFill: pen('treeFill'),
+  penTreeInk: pen('treeInk'),
+  penGrass: pen('grass'),
+  penReed: pen('reed'),
+  penOrchardDot: pen('orchardDot'),
+  sheetGrass: (p: Palette) => mixHex(p.inkSoft, p.grass, 0.3),
+  sheetReed: (p: Palette) => mixHex(p.inkSoft, p.reed, 0.3),
+  sheetWash: (p: Palette) => mixHex(p.treeFill, p.inkSoft, 0.3),
+};
+export type SeasonInk = keyof typeof inks;
+
+/** Renderer-local: independently visible renderers can show different dates and colour overrides.
+ * Only slots actually used by a recording need updating. */
+export class SeasonColorTable {
+  private readonly slots = new Map<SeasonInk, ColorSlot>();
+  constructor(private palette: Palette) {}
+  readonly ink = (name: SeasonInk): ColorSlot => {
+    let slot = this.slots.get(name);
+    if (!slot) {
+      slot = new ColorSlot();
+      this.slots.set(name, slot);
+      this.write(name, slot);
+    }
+    return slot;
+  };
+  update(palette: Palette): void {
+    if (this.palette === palette) return;
+    this.palette = palette;
+    for (const [name, slot] of this.slots) this.write(name, slot);
+  }
+  private write(name: SeasonInk, slot: ColorSlot): void {
+    const color = inks[name](this.palette);
+    const leaf = this.palette.season?.leaf ?? 1;
+    const alpha = name === 'farmLeaves' ? 0.3 + 0.7 * leaf : name === 'symbolLeaves' || name === 'penLeaves' ? 0.25 + 0.75 * leaf : 1;
+    const rgba = canvasColor(color);
+    // Unrepresentable custom CSS retains native Canvas assignment semantics.
+    slot.css = color;
+    slot.valid = !!rgba && rgba !== 'invalid';
+    if (!rgba || rgba === 'invalid') return;
+    slot.rgba.set(rgba);
+    slot.rgba[3] *= alpha;
+    if (alpha !== 1) slot.css = `rgba(${rgba[0] * 255},${rgba[1] * 255},${rgba[2] * 255},${rgba[3] * alpha})`;
+  }
 }

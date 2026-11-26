@@ -1,3 +1,4 @@
+import type { CityFillPlan } from '../../cityGlBuild';
 /**
  * Style tables of the GPU town: the per-feature colour tables (RGBA8, straight alpha) and the list of draws for one
  * (view, level of detail, palette, layers) state. Called by renderer.ts (styleFrame, prepareSteps).
@@ -132,7 +133,7 @@ function putPaintOps(tables: { fill: Uint8Array; line: Uint8Array; hatch?: Uint8
 /** Colours of the plan mesh (footprint, blocks, parcels, quays, canals) and the draw list. */
 export const planColors = (scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers' | 'featureCount'>, s: CityGlStyleState): CityGlPlanColors => finish(planColorsSteps(scene, mesh, s));
 /** `planColors` in resumable steps (the live town layer: a few milliseconds per call between frames). */
-export function* planColorsSteps(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers' | 'featureCount'>, s: CityGlStyleState): Generator<void, CityGlPlanColors> {
+export function* planColorsSteps(scene: CityFillPlan, mesh: Pick<CityGlFillMesh, 'layers' | 'featureCount'>, s: CityGlStyleState): Generator<void, CityGlPlanColors> {
   const { view, lod, layers, live } = s,
     footprint = s.buildingStyle === 'silhouette';
   const plan = planFrame({ view, lod, palette: s.palette, layers, width: live?.lineWidth ?? 0.6, groundBlend: !!s.blended, roadLook: live?.roadLook, planPath: planPathOf(s) });
@@ -323,14 +324,14 @@ function flatStreetPaint(paint: StreetPaint, at: Point): string | undefined {
  * or ink casing) of the look's street paint at one pixel per metre, without its marks. */
 export const streetColors = (scene: CityScene, palette: CityPalette, blended = false, custom?: RenderColors, live?: CityGlLiveLook): { outer: Uint8Array; inner: Uint8Array } => finish(streetColorsSteps(scene, palette, blended, custom, live));
 /** `streetColors` in resumable steps. */
-export function* streetColorsSteps(scene: CityScene, palette: CityPalette, blended = false, custom?: RenderColors, live?: CityGlLiveLook): Generator<void, { outer: Uint8Array; inner: Uint8Array }> {
-  const n = Math.max(1, scene.streets.length),
+export function* streetColorsSteps(scene: CityScene, palette: CityPalette, blended = false, custom?: RenderColors, live?: CityGlLiveLook, indices?: readonly number[]): Generator<void, { outer: Uint8Array; inner: Uint8Array }> {
+  const n = Math.max(1, indices?.length ?? scene.streets.length),
     outer = new Uint8Array(n * 4),
     inner = new Uint8Array(n * 4);
   const frame = streetFrame({ lod: 'near', palette, mpp: 1, layers: { roadSurface: false }, roadLook: live?.roadLook, roadEmphasis: live?.emphasis ?? 1, groundBlend: blended, colors: custom, paintColors: custom });
-  for (let i = 0; i < scene.streets.length; i++) {
+  for (let i = 0; i < (indices?.length ?? scene.streets.length); i++) {
     if ((i + 1) % COLOR_STEP === 0) yield;
-    const s = scene.streets[i],
+    const s = scene.streets[indices?.[i] ?? i],
       layout = scene.layouts[s.layout],
       path = s.street.path,
       mid = path[path.length >> 1] ?? { x: 0, y: 0 };
@@ -371,7 +372,7 @@ export function roofMaterialTable(buildings: CityBuildings | undefined, s: CityG
   return out;
 }
 /** Plan fills drawn textured: plazas (place / market blocks and parcels). */
-export function planMaterialTable(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers' | 'featureCount'>): Uint8Array {
+export function planMaterialTable(scene: CityFillPlan, mesh: Pick<CityGlFillMesh, 'layers' | 'featureCount'>): Uint8Array {
   const out = new Uint8Array(mesh.featureCount * 4),
     layer = placeLayer();
   const b0 = mesh.layers.blocks.features[0],
@@ -385,13 +386,14 @@ export function planMaterialTable(scene: CityScene, mesh: Pick<CityGlFillMesh, '
   return out;
 }
 /** Street surfaces by role and rank; planks (timber decks) run along the street. */
-export function streetMaterialTable(scene: CityScene): Uint8Array {
-  const out = new Uint8Array(Math.max(1, scene.streets.length) * 4);
+export function streetMaterialTable(scene: CityScene, indices?: readonly number[]): Uint8Array {
+  const out = new Uint8Array(Math.max(1, indices?.length ?? scene.streets.length) * 4);
   // Narrow bridges are timber decks (planks along the span); wider ones are stone paving.
-  scene.streets.forEach((st, i) => {
+  for (let i = 0; i < (indices?.length ?? scene.streets.length); i++) {
+    const st = scene.streets[indices?.[i] ?? i];
     const planks = isBoardwalk(st.role) || (st.role === 'bridge' && st.width < 4),
       layer = planks ? MATERIALS.road.bridge_timber : streetLayer(st.role, st.rank);
     matPut(out, i, layer, planks ? 1 : 0, 1);
-  });
+  }
   return out;
 }

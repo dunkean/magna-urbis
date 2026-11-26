@@ -1,9 +1,9 @@
 //! Coarse terrain sampling for epoch capacity and advance slope relaxation.
 use super::epochs::{budget, enclosed, epoch_densities, epoch_fractions, epoch_zone};
 use super::site::{buildable_grade, slope};
-use super::{capacity, generate, terrain};
+use super::{capacity, generate, growth::Taken, terrain};
 use crate::urban::{
-    LayoutConfig, Morph, Point, Site, Street, Surface, composition, culture, geography, profiles,
+    LayoutConfig, Morph, Point, Shape, Site, Street, Surface, composition, culture, geography, profiles, programme,
     with_tissue,
 };
 use std::f64::consts::PI;
@@ -71,6 +71,57 @@ const AHEAD_SURVEY: f64 = 0.95;
 /// plan houses the town (the closed loop's and the capacity warning's bound,
 /// `quarters::generate`).
 const HOUSED_SHORTFALL: f64 = 0.05;
+
+/// An advance setting, or a disputed strict forecast to check on the first
+/// relaxed plan's real blocks before discarding the strict alternative.
+pub(in crate::urban) enum SlopeStart {
+    Level(f64),
+    CheckFirstRung,
+}
+
+/// Group the land growth actually reached into typical block widths. Give each
+/// block the area of its selected growth cells, including those on the bank.
+/// The programme admits or refuses the whole block. Sample its rim at the
+/// terrain resolution so a short steep or flooded stretch counts too.
+fn block_shares(taken: &Taken, gate: terrain::Gate, surface: Surface<'_>) -> [f64; 2] {
+    let grid = &taken.grid;
+    let span = (gate.block_side() / grid.step).round().clamp(1.0, grid.nx.max(grid.ny) as f64) as usize;
+    let columns = grid.nx.div_ceil(span);
+    let mut areas = vec![0usize; columns * grid.ny.div_ceil(span)];
+    for &cell in &taken.cells {
+        areas[(cell / grid.nx / span) * columns + cell % grid.nx / span] += 1;
+    }
+    let side = span as f64 * grid.step;
+    let raster_cell = surface.width / surface.height_resolution().max(surface.n) as f64;
+    let segments = (side / raster_cell).ceil().max(1.0) as usize;
+    let mut rim = Vec::with_capacity(4 * segments);
+    for (dx, dy, sx, sy) in [(0., 0., 1., 0.), (1., 0., 0., 1.), (1., 1., -1., 0.), (0., 1., 0., -1.)] {
+        for j in 0..segments {
+            let t = j as f64 / segments as f64;
+            rim.push((dx + sx * t, dy + sy * t));
+        }
+    }
+    let mut shape = Shape { outer: Vec::with_capacity(rim.len()), holes: vec![] };
+    let half_limit = gate.at(terrain::LEVELS[1]);
+    let mut admitted = [0usize; 2];
+    for (i, area) in areas.into_iter().enumerate().filter(|(_, area)| *area > 0) {
+        let col = i % columns * span;
+        let row = i / columns * span;
+        let x = grid.x0 + col as f64 * grid.step;
+        let y = grid.y0 + row as f64 * grid.step;
+        let width = ((grid.nx - col).min(span) as f64 * grid.step).min(surface.width - x);
+        let height = ((grid.ny - row).min(span) as f64 * grid.step).min(surface.width - y);
+        let center = Point { x: x + width * 0.5, y: y + height * 0.5 };
+        shape.outer.clear();
+        shape.outer.extend(rim.iter().map(|&(u, v)| Point { x: x + u * width, y: y + v * height }));
+        let slope = programme::block_slope(surface, &shape, center, surface.height_at(center));
+        if slope <= half_limit && !programme::block_is_wet(surface, &shape, center) {
+            admitted[0] += usize::from(slope <= gate.strict) * area;
+            admitted[1] += area;
+        }
+    }
+    admitted.map(|area| area as f64 / taken.cells.len() as f64)
+}
 /// Relaxation of the house slope gates a town needs, read from the terrain
 /// before the first pass. A coarse survey of its nominal land first: where
 /// the strict gates admit nearly all of it (all ordinary ground) the answer is
@@ -81,7 +132,7 @@ const HOUSED_SHORTFALL: f64 = 0.05;
 /// its houses may use `profiles::SLOPE_RELAX_GOAL` of the land
 /// (`terrain::Survey::relaxation`) and the lowest at which that land houses
 /// the town (`housing_relaxation`).
-pub(in crate::urban) fn slope_relax_ahead(seed: &str, site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, roads: &[Street]) -> f64 {
+pub(in crate::urban) fn slope_relax_ahead(seed: &str, site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, roads: &[Street]) -> SlopeStart {
     let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
     let small = crate::settlements::demographics::below(site.population, "town");
     // The morph the footprint is sized with (`composition`): the founding recipe.
@@ -98,32 +149,33 @@ pub(in crate::urban) fn slope_relax_ahead(seed: &str, site: &Site, cfg: &LayoutC
     let Ok(morph) = composition::phase_morph(
         culture, &recipe, zone, &cfg.preset, &cfg.recipe, cfg.density, &cfg.params, "quarters",
     ) else {
-        return 0.0;
+        return SlopeStart::Level(0.0);
     };
     let morph = with_tissue(morph, &cfg.tissue);
     let radius = if cfg.radius > 0.0 { cfg.radius } else { site.radius * cfg.radius_scale };
     let (nominal, _) = budget(site, cfg, &morph, radius);
     let (cells, step) = nominal_cells(site, cfg, nominal, surface);
-    let Some(coarse) = terrain_survey(site, cfg, &morph, &cells, step, surface) else { return 0.0 };
+    let Some(coarse) = terrain_survey(site, cfg, &morph, &cells, step, surface) else { return SlopeStart::Level(0.0) };
     if coarse.levels[0] >= AHEAD_SURVEY || cfg.footprint.mechanism == "legacy" {
-        return 0.0;
+        return SlopeStart::Level(0.0);
     }
     // The first pass's inputs (`quarters::generate_once`): stairs as the
     // culture allows them, water at its raster shoreline.
     let first = LayoutConfig { allow_stairs: profiles::stairs_allowed(cfg, culture), ..cfg.clone() };
     let shoreline = geography::raster_shoreline(&surface);
-    let surface = shoreline.as_ref().map_or(surface, |s| s.surface(surface));
-    let footprint = generate(seed, site, &first, &morph, surface, roads, radius);
+    let drawn_surface = shoreline.as_ref().map_or(surface, |s| s.surface(surface));
+    let footprint = generate(seed, site, &first, &morph, drawn_surface, roads, radius);
     #[cfg(not(target_arch = "wasm32"))]
     if std::env::var("URBAN_PROFILE").is_ok() {
-        eprintln!("  terrain.ahead: coarse {:?} land {:?}", coarse.levels, footprint.land.map(|l| l.levels));
+        eprintln!("  terrain.ahead: coarse {:?} land {:?}", coarse.levels, footprint.land.as_ref().map(|(s, _)| s.levels));
     }
-    let Some(land) = footprint.land else { return 0.0 };
+    let Some((land, taken)) = footprint.land else { return SlopeStart::Level(0.0) };
     if land.levels[0] >= AHEAD_SURVEY {
-        return 0.0;
+        return SlopeStart::Level(0.0);
     }
     let allocated = footprint.structure.metrics.allocated_area;
-    let mut epochs = capacity_epochs_surveyed(site, &first, &morph, nominal, surface).0;
+    let cells = if shoreline.is_some() { nominal_cells(site, &first, nominal, drawn_surface).0 } else { cells };
+    let mut epochs = capacity_epochs(site, &first, &morph, nominal, &cells);
     let shortfall = |share: f64| {
         for e in &mut epochs {
             e.steep = 1.0 - share;
@@ -131,7 +183,18 @@ pub(in crate::urban) fn slope_relax_ahead(seed: &str, site: &Site, cfg: &LayoutC
         capacity::plan(site, &first, &epochs, nominal, Some(allocated))
             .map(|p| (p.shortfall - HOUSED_SHORTFALL * p.required).max(0.0))
     };
-    land.relaxation().max(housing_relaxation(&land.levels, shortfall))
+    let level = land.relaxation().max(housing_relaxation(&land.levels, shortfall));
+    if level == 0.0 && coarse.refused() && cfg.programme.intent == "settlement" {
+        let [strict, half] = block_shares(&taken, land.gate, surface);
+        #[cfg(not(target_arch = "wasm32"))]
+        if std::env::var("URBAN_PROFILE").is_ok() {
+            eprintln!("  terrain.ahead.blocks: strict {strict:.3}, half {half:.3}");
+        }
+        if strict < profiles::SLOPE_RELAX_GOAL && half > strict {
+            return SlopeStart::CheckFirstRung;
+        }
+    }
+    SlopeStart::Level(level)
 }
 /// Lowest of `terrain::LEVELS` at which the land of a town houses it:
 /// `shortfall` gives the households a capacity plan of that land still misses
@@ -163,13 +226,17 @@ pub(super) fn capacity_epochs_surveyed(
     area: f64,
     surface: Surface<'_>,
 ) -> (Vec<capacity::Epoch>, Option<terrain::Survey>) {
+    let (cells, step) = nominal_cells(site, cfg, area, surface);
+    (capacity_epochs(site, cfg, morph, area, &cells), terrain_survey(site, cfg, morph, &cells, step, surface))
+}
+
+fn capacity_epochs(site: &Site, cfg: &LayoutConfig, morph: &Morph, area: f64, cells: &[(f64, f64, Point)]) -> Vec<capacity::Epoch> {
     let culture = if cfg.culture == "site" {
         &site.culture
     } else {
         &cfg.culture
     };
     let fractions = epoch_fractions(&epoch_densities(site, cfg, morph));
-    let (cells, step) = nominal_cells(site, cfg, area, surface);
     // A block's slope is its steepest rim over its centroid: about 1.3 times
     // the ground gradient. Blocks steeper than the houses admit hold none.
     let slopes: Vec<f64> = {
@@ -182,7 +249,6 @@ pub(super) fn capacity_epochs_surveyed(
     let median = slopes.get(slopes.len() / 2).copied().unwrap_or(0.0);
     let max_slope = culture::mapping_for(culture, &cfg.programme.period)
         .map_or(0.15, |m| profiles::house_slope(culture, m.admissibility.max_slope, cfg.programme.slope_relax));
-    let survey = terrain_survey(site, cfg, morph, &cells, step, surface);
     let steep =
         slopes.iter().filter(|&&s| s > max_slope).count() as f64 / slopes.len().max(1) as f64;
     let access: Vec<(f64, f64)> = capacity::epoch_access(&fractions, area)
@@ -190,7 +256,7 @@ pub(super) fn capacity_epochs_surveyed(
         .map(|(p, r)| (p / (1.0 + 3.0 * median), r))
         .collect();
     let mut previous = 0.0;
-    let epochs = fractions
+    fractions
         .iter()
         .zip(access)
         .enumerate()
@@ -212,8 +278,7 @@ pub(super) fn capacity_epochs_surveyed(
                 },
             }
         })
-        .collect();
-    (epochs, survey)
+        .collect()
 }
 
 #[cfg(test)]

@@ -84,11 +84,12 @@ export function* city3dPadSteps(buildings: readonly PlacedBuilding[], ground: Se
 
 /** The display scene with `extra` meshes added to its buildings (and to those that clear the forest); a scene of
  * them alone when there is no display. */
-export function city3dWithExtras(display: City3dDisplayScene | undefined, extra: Building3dVisual[]): City3dDisplayScene | undefined {
-  if (!extra.length) return display;
+export function city3dWithExtras(display: City3dDisplayScene | undefined, extra: Building3dVisual[], grove?: City3dDisplayScene['grove']): City3dDisplayScene | undefined {
+  const instances = grove?.blocks.length ? { grove } : undefined;
+  if (!extra.length && !instances) return display;
   return display
-    ? { ...display, buildings: [...display.buildings, ...extra], ...(display.occupationBuildings ? { occupationBuildings: [...display.occupationBuildings, ...extra] } : {}) }
-    : { materials: city3dScene({ schema_version: '1', generator_version: '', buildings: [], refusals: [], open_spaces: [] }).materials, buildings: extra, kinds: { silhouette: 0, compact: 0, detailed: 0 } };
+    ? { ...display, ...instances, buildings: [...display.buildings, ...extra], ...(display.occupationBuildings ? { occupationBuildings: [...display.occupationBuildings, ...extra] } : {}) }
+    : { materials: city3dScene({ schema_version: '1', generator_version: '', buildings: [], refusals: [], open_spaces: [] }).materials, buildings: extra, ...instances, kinds: { silhouette: 0, compact: 0, detailed: 0 } };
 }
 
 /** Tree dwellings in a town beyond which city3dScene gives each one its light mesh (scene.ts LIGHT_TREES_FROM). */

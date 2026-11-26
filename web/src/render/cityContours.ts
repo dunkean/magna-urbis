@@ -165,7 +165,10 @@ export function fixedContourInterval(relief: Relief, topographic = false, _range
   return topographic ? 1 : CONTOUR_INTERVAL[relief] * (sparse ? 2 : 1);
 }
 function contourKey(entry: Entry, scale: number, topographic = false, detail: ContourDetail = 'zoom', sparse = false): { key: string; step: number; metresPerPixel: number } {
-  if (detail === 'fixed' || topographic) return { key: `fixed:${topographic}:${sparse}`, step: fixedContourInterval(entry.relief, topographic, entry.range, sparse), metresPerPixel: 0 };
+  if (detail === 'fixed' || topographic) {
+    const step = fixedContourInterval(entry.relief, topographic, entry.range, sparse);
+    return { key: `fixed:${topographic}:${step}`, step, metresPerPixel: 0 };
+  }
   const metresPerPixel = 2 ** Math.round(Math.log2(1 / Math.max(1e-6, scale)));
   const step = topographic ? topographicContourInterval(entry.relief, 1 / metresPerPixel, entry.slope, entry.range) : cityContourInterval(entry.relief, scale, entry.slope);
   return { key: `${topographic}:${step}:${metresPerPixel}`, step, metresPerPixel };

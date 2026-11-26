@@ -886,7 +886,8 @@ pub(crate) fn farm_yard(id: &str, culture: &str, centre: super::Point, angle: f6
         if super::farmsteads::build(&mut parts, &lot, culture, true, true, wealth, &seed, true).is_none() {
             continue;
         }
-        parts.retain(|(p, _)| !wet(&p.outer) && ground_fits(&p.outer, culture, ground));
+        // Activity yards have a fixed programme and do not receive the house outbuilding setting.
+        parts.retain(|(p, label)| *label != "silo" && !wet(&p.outer) && ground_fits(&p.outer, culture, ground));
         if parts.len() > best.len() {
             best = parts;
             best_seed = seed;
@@ -936,6 +937,7 @@ pub(crate) fn countryside_farm_massing(culture: &str, kind: &str, bodies: &[(Vec
             "byre" => "byre",
             "stable" | "gatehouse" => "stable",
             "granary" | "spore-store" => "granary",
+            "silo" => "silo",
             "raised-granary" => "raised-granary",
             "shed" | "lean-to" => "shed",
             "cart-shed" | "covered-yard" => "cart-shed",

@@ -7,16 +7,19 @@ import type { ExportLayers } from '../../exportLayers';
 import type { Box, CityBuildings, CityLayers, CityScene } from '../model/contract';
 import type { YardBoundary } from '../../cityLotEnclosures';
 import type { CityCanopy } from '../../cityGrove';
+import type { BuildingSet } from '../gl/buildingSet';
 import type { LiveLayer } from '../../live/contract';
 
 /** What the owner of the towns (v2/nativeCityMap.ts) gives the layer. */
 export interface LiveCityTowns {
+  /** Local snapshot transition; the renderer checks it against the currently uploaded content. */
+  uploadOptions?: import('../gl/contract').CityGlSetOptions;
   /** Every town's plan and buildings merged as one GL scene (the GL path's plan; buildings of every town, those of the
    * native house renderer as their city volumes), in resumable steps. Run at rest, once per town content. */
-  sceneSteps(planOnly?: boolean): Generator<void, { plan: CityScene; buildings?: CityBuildings }>;
+  sceneSteps(planOnly?: boolean): Generator<void, { plan: CityScene; buildings?: BuildingSet }>;
   /** Merged buildings for a view when a town is prepared in tiers (more than LARGE_TOWN_BUILDINGS): the same object
    * while the tiers of that view do not change. Undefined: no tiered town. */
-  buildingsFor?(viewport: Box, mpp: number): CityBuildings | undefined;
+  buildingsFor?(viewport: Box, mpp: number): BuildingSet | undefined;
   /** Layers the exact town draws with this appearance and visibility (nativeCityMap townLayers). */
   layers(appearance: ResolvedAppearance, visibility: Partial<ExportLayers>): CityLayers;
   /** Towns drawn as a far raster on satellite grounds, with the whole town's buildings (drawFarTown's key). */

@@ -248,8 +248,8 @@ export class GpuRedraw {
   /** Draws `req`; false when nothing could be drawn (no base, lost device, no pipeline yet). */
   draw(req: GpuDrawRequest): boolean {
     if (req.capturing) req = { ...req, look: { ...req.look, displayLight: false } };
-    // A world tile leaves the display canvas as it is: its CSS-transformed picture stays valid.
-    if (!req.tile) this.hooks.displayDrawn();
+    // Offscreen targets leave the display canvas as it is.
+    if (!req.offscreen) this.hooks.displayDrawn();
     if (!this.hooks.alive() || !this.inputs.base || this.gpu.lost) return false;
     const look = req.look;
     const quality = terrainDrawQuality(look, displayQualityUniform(!(req.capturing || (req.offscreen && !req.tile) || req.wait || look.mesh3d === true)));

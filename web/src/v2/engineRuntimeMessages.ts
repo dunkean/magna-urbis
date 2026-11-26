@@ -1,5 +1,6 @@
 /** Display catalog for authored Rust/bridge diagnostics. Keep protocol keys and slot values intact. */
 export const engineRuntimeEntries: readonly (readonly [string, string])[] = [
+  ["Retouche d’enceinte invalide.", "Invalid enclosure override."],
   ['Contour conservé — contraintes du site', 'Outline kept — site constraints'],
   ['Enceinte flanquée — site pentu', 'Flanked wall — steep site'],
   ["Village groupé — pas de voie traversante", "Clustered village — no through road"],
@@ -89,6 +90,7 @@ export const engineRuntimeEntries: readonly (readonly [string, string])[] = [
   ["Les côtes doivent être un masque de huit directions (0 à 255).","Coasts must be an eight-direction mask (0 to 255)."],
   ["Choisissez île, archipel, presqu’île ou aléatoire.","Choose island, archipelago, peninsula or random."],
   ["Échantillons de relief côtier invalides","Invalid coast relief samples"],
+  ["Lissage côtier invalide", "Invalid coastal smoothing"],
   ["Côte tracée invalide : format attendu traced:<16..128>:<masque hexadécimal en minuscules>","Invalid traced coast: expected traced:<16..128>:<lowercase hex mask>"],
   ["Une côte tracée doit contenir au moins une cellule terrestre","A traced coast must contain at least one land cell"],
   ["Résolution physique invalide (2 à 8192 cellules).","Invalid physical resolution (2 to 8192 cells)."],
@@ -756,6 +758,11 @@ export const engineRuntimeEntries: readonly (readonly [string, string])[] = [
 ];
 
 export const engineRuntimeTemplates: readonly (readonly [string, string])[] = [
+  ["Retouche de parcelle {id} invalide (parties)", "Invalid lot edit {id} (parts)"],
+  ["Retouche d’îlot {id} invalide (clé)", "Invalid block edit {id} (key)"],
+  ["Retouche d’îlot {id} invalide (forme ou parties)", "Invalid block edit {id} (shape or parts)"],
+  ["Retouche de quartier {k} invalide (clé)", "Invalid quarter edit {k} (key)"],
+  ["Retouche de quartier {k} invalide (forme ou parties)", "Invalid quarter edit {k} (shape or parts)"],
   ["Emprise réduite de {percent} % — contraintes du site", "Town land {percent} % short — site constraints"],
   ["Budget foncier {density} hab./ha — densité automatique", "Land budget {density} people/ha — automatic density"],
   ["Style {style} écarté — fortification incompatible", "Wall style {style} skipped — incompatible fortification"],

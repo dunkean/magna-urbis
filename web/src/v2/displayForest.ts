@@ -219,6 +219,7 @@ export function withBuildingOccupationAsync(base: ForestOccupation | undefined, 
   const slot = occupationMergeSlot(base, scene);
   if (slot.value) return Promise.resolve(slot.value.detail === base?.detail ? slot.value : { ...slot.value, detail: base?.detail });
   if (slot.pending) return slot.pending.then(value => value && (value.detail === base?.detail ? value : { ...value, detail: base?.detail }));
+  if (region && !region.rects.length) return Promise.resolve((slot.value = { ...region.previous, detail: base?.detail, ways: base?.ways, clearings: base?.clearings }));
   const shapes = buildingOccupationShapes(scene);
   if (!shapes) return Promise.resolve(base);
   const regional = region && withOccupationShapesRegion(region.previous, base, shapes, region.rects);

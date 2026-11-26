@@ -3,6 +3,8 @@
  * One cohesive unit of shader text: the shared vertex helpers, fan (stencil winding), cover (paint), stroke (segment,
  * disc and join instances), sprite (instanced images), clear and baked (a baked band texture of the live overlay).
  */
+import { CONTOUR_THIN_OPACITY } from './contract';
+
 const COMMON_VS = `
 precision highp float;
 uniform vec2 uViewport;
@@ -212,15 +214,40 @@ void main() {
   vAlpha = aTail.z; gl_Position = position(p);
 }
 `;
-const SPRITE_FS = `#version 300 es
+const SPRITE_SAMPLE = `
 precision highp float;
 uniform sampler2D uImage;
 in vec2 vUV, vDestination;
 flat in float vAlpha;
 out vec4 outColor;
+bool insideSprite() {
+  return all(greaterThanEqual(vDestination, vec2(0.0))) && all(lessThanEqual(vDestination, vec2(1.0))) && all(greaterThanEqual(vUV, vec2(0.0))) && all(lessThanEqual(vUV, vec2(1.0)));
+}
+`;
+const SPRITE_FS = `#version 300 es
+${SPRITE_SAMPLE}
 void main() {
-  bool inside = all(greaterThanEqual(vDestination, vec2(0.0))) && all(lessThanEqual(vDestination, vec2(1.0))) && all(greaterThanEqual(vUV, vec2(0.0))) && all(lessThanEqual(vUV, vec2(1.0)));
-  outColor = inside ? texture(uImage, vUV) * vAlpha : vec4(0.0);
+  outColor = insideSprite() ? texture(uImage, vUV) * vAlpha : vec4(0.0);
+}
+`;
+const PEN_FS = `#version 300 es
+${SPRITE_SAMPLE}
+uniform vec4 uInk, uWash;
+void main() {
+  vec2 coverage = insideSprite() ? texture(uImage, vUV).rg : vec2(0.0);
+  vec2 weight = coverage * vec2(uInk.a, uWash.a) * vAlpha;
+  outColor = vec4(uInk.rgb * weight.x + uWash.rgb * weight.y, weight.x + weight.y);
+}
+`;
+const CONTOUR_FS = `#version 300 es
+${SPRITE_SAMPLE}
+uniform vec4 uContourTint;
+void main() {
+  vec2 coverage = insideSprite() ? texture(uImage, vUV).rg : vec2(0.0);
+  float thin = coverage.r * uContourTint.a * ${CONTOUR_THIN_OPACITY};
+  float index = coverage.g * uContourTint.a;
+  float alpha = (index + thin * (1.0 - index)) * vAlpha;
+  outColor = vec4(uContourTint.rgb * alpha, alpha);
 }
 `;
 // A baked prefix: uBox is the texture's rectangle in recorded pixels, uMatrix the replay matrix of its band.
@@ -242,5 +269,14 @@ in vec2 vUV;
 out vec4 outColor;
 void main() { outColor = texture(uImage, vUV); }
 `;
-export type ProgramKind = 'fan' | 'cover' | 'stroke' | 'sprite' | 'clear' | 'baked';
-export const SHADERS: Record<ProgramKind, readonly [string, string]> = { fan: [FAN_VS, EMPTY_FS], cover: [COVER_VS, COVER_FS], stroke: [STROKE_VS, STROKE_FS], sprite: [SPRITE_VS, SPRITE_FS], clear: [COVER_VS, EMPTY_FS], baked: [BAKED_VS, BAKED_FS] };
+export type ProgramKind = 'fan' | 'cover' | 'stroke' | 'sprite' | 'pen' | 'contour' | 'clear' | 'baked';
+export const SHADERS: Record<ProgramKind, readonly [string, string]> = {
+  fan: [FAN_VS, EMPTY_FS],
+  cover: [COVER_VS, COVER_FS],
+  stroke: [STROKE_VS, STROKE_FS],
+  sprite: [SPRITE_VS, SPRITE_FS],
+  pen: [SPRITE_VS, PEN_FS],
+  contour: [SPRITE_VS, CONTOUR_FS],
+  clear: [COVER_VS, EMPTY_FS],
+  baked: [BAKED_VS, BAKED_FS],
+};

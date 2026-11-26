@@ -80,8 +80,9 @@ class EditorElement {
 
 function setup() {
   const mutations: (() => void)[] = [],
-    events = new EventTarget();
-  vi.stubGlobal('document', { createElement: () => new EditorElement(), createElementNS: () => new EditorElement() });
+    events = new EventTarget(),
+    dialogs = new EditorElement();
+  vi.stubGlobal('document', { createElement: () => new EditorElement(), createElementNS: () => new EditorElement(), querySelector: (selector: string) => (selector === 'dialog[open]' ? (dialogs.querySelector('[open]') ?? null) : null) });
   vi.stubGlobal('window', events);
   vi.stubGlobal(
     'CustomEvent',
@@ -163,6 +164,7 @@ function setup() {
     rows,
     world,
     events,
+    dialogs,
     editor,
     start,
     pick,
@@ -198,7 +200,7 @@ describe('town position selection', () => {
     expect(s.apply).not.toHaveBeenCalled();
   });
 
-  it('keeps the map-picked row and handle highlighted after pointerup and a list refresh; Esc clears both', () => {
+  it('keeps selection after a list refresh and clears it on Escape when no dialog is open', () => {
     const s = setup();
     s.start();
     s.pick();
@@ -208,6 +210,13 @@ describe('town position selection', () => {
     const replacement = s.row('main');
     s.mutations.forEach(notify => notify());
     expect(replacement.getAttribute('aria-pressed')).toBe('true');
+    const dialog = new EditorElement();
+    dialog.setAttribute('open', '');
+    s.dialogs.append(dialog);
+    s.events.dispatchEvent(Object.assign(new Event('keydown'), { key: 'Escape' }));
+    expect(replacement.getAttribute('aria-pressed')).toBe('true');
+    expect(s.handle('main').dataset.selected).toBe('true');
+    dialog.removeAttribute('open');
     s.events.dispatchEvent(Object.assign(new Event('keydown'), { key: 'Escape' }));
     expect(replacement.getAttribute('aria-pressed')).toBe('false');
     s.start();

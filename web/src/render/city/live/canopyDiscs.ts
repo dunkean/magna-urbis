@@ -4,6 +4,7 @@
  * Owns its program and its buffers; built and driven by townLayer.ts (program link and uploads from `work`, one draw
  * per pass in a frame). Which discs a crown is and which passes paint them are the look's (render/city/canopyLook.ts).
  */
+import { InstanceRanges } from './instanceRanges';
 import type { LiveFrame, LiveLayerStats } from '../../live/contract';
 import type { CityCanopy } from '../../cityGrove';
 import { canopyDiscs, canopyPasses, type CanopyDiscSet } from '../canopyLook';
@@ -48,7 +49,7 @@ function premul(css: string, alpha = 1): [number, number, number, number] {
 export class CanopyDiscs {
   private program: Program | undefined;
   private pending: PendingProgram | undefined;
-  private sets: Record<CanopyDiscSet, { vbo: WebGLBuffer; vao: WebGLVertexArrayObject; count: number }> | undefined;
+  private sets?: Record<CanopyDiscSet, InstanceRanges>;
   /** The canopies the discs were built from (identity per town). */
   private source: readonly CityCanopy[] | undefined;
   private size = 0;
@@ -70,28 +71,23 @@ export class CanopyDiscs {
   }
   /** Uploads the discs when the towns' canopies changed; true when it did. */
   set(list: readonly CityCanopy[]): boolean {
-    const gl = this.gl;
-    if (this.source && this.source.length === list.length && this.source.every((c, i) => c === list[i])) return false;
-    this.deleteSets();
+    if (this.source === list) return false;
+    const old = new Set(this.source),
+      next = new Set(list);
     this.source = list;
-    if (!list.some(c => c.trees.length || c.dwellings.length)) return true;
-    const discs = canopyDiscs(list),
-      sets = {} as NonNullable<CanopyDiscs['sets']>;
-    for (const name of Object.keys(discs) as CanopyDiscSet[]) {
-      const data = new Float32Array(discs[name]),
-        vbo = gl.createBuffer()!,
-        vao = gl.createVertexArray()!;
-      gl.bindVertexArray(vao);
-      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(0);
-      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-      gl.vertexAttribDivisor(0, 1);
-      sets[name] = { vbo, vao, count: data.length / 3 };
-      this.size += data.byteLength;
+    if (old.size === next.size && [...next].every(c => old.has(c))) return false;
+    if (this.sets) for (const c of old) if (!next.has(c)) for (const set of Object.values(this.sets)) set.replace(c, []);
+    for (const c of next)
+      if (!old.has(c) && (c.trees.length || c.dwellings.length)) {
+        const discs = canopyDiscs([c]);
+        const sets = (this.sets ??= {} as Record<CanopyDiscSet, InstanceRanges>);
+        for (const name of Object.keys(discs) as CanopyDiscSet[]) (sets[name] ??= new InstanceRanges(this.gl, 3)).replace(c, discs[name]);
+      }
+    this.size = 0;
+    for (const set of Object.values(this.sets ?? {})) {
+      set.flush();
+      this.size += set.bytes;
     }
-    gl.bindVertexArray(null);
-    this.sets = sets;
     return true;
   }
   /** The look's passes over the discs. Translucent passes cover each sample once (stencil), as one Canvas fill of
@@ -125,11 +121,7 @@ export class CanopyDiscs {
     gl.bindVertexArray(null);
   }
   private deleteSets(): void {
-    if (this.sets)
-      for (const p of Object.values(this.sets)) {
-        this.gl.deleteBuffer(p.vbo);
-        this.gl.deleteVertexArray(p.vao);
-      }
+    if (this.sets) for (const p of Object.values(this.sets)) p.dispose();
     this.sets = undefined;
     this.size = 0;
   }

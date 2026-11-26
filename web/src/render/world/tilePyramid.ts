@@ -95,6 +95,16 @@ export class TilePyramid {
     this.generation++;
     this.revision++;
   }
+  /** Invalidate only current squares whose paint bounds meet the changed regions. */
+  staleWhere(changed: (tier: number, x: number, y: number) => boolean): void {
+    let any = false;
+    for (const tile of this.tiles.values())
+      if (tile.generation === this.generation && changed(tile.tier, tile.ix, tile.iy)) {
+        tile.generation = -1;
+        any = true;
+      }
+    if (any) this.revision++;
+  }
   /** A product made per scale arrived: the tiles painted without it are stale, the others stay. */
   staleProvisional(): void {
     let any = false;

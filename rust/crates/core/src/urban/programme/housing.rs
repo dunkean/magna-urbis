@@ -287,6 +287,9 @@ pub(super) fn assign(
         let base_slot = usize::from(commercial);
         // Pure per parcel (the gate activity tests the circuits for each): in parallel.
         if base_cache[base_slot].is_none() { base_cache[base_slot] = Some(crate::urban::par::map(parcels, |pi, p| {
+                // Neither the shop ranking nor the dwelling heap can take a kept lot
+                // or a site already allocated in an earlier band.
+                if locked[pi] || assignments[pi].is_some() { return 0.0; }
                 let front = p.access.as_ref().map_or(0.0, |a| a.front_length);
                 let quarter = districts.of(p).map_or(0.0, |d| {
                     if commercial && (d.role == "market" || d.role.starts_with("craft:")) {

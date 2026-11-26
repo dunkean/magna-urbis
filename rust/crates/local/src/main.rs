@@ -783,6 +783,7 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
             .map_or(urban::Point { x: 0.0, y: 0.0 }, |layout| layout.center);
         // Requests are reduced to display rows as they are generated: the whole
         // town's request trees are never held at once.
+        let blocks = input.get("blocks").map(value).transpose()?;
         let body = terrain.urban_building_site_display(
             seed,
             snapshot.layouts,
@@ -790,6 +791,7 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
             culture,
             origin,
             version,
+            blocks.as_ref(),
         )?;
         return Ok(Reply {
             kind: "application/octet-stream",

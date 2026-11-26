@@ -11,7 +11,7 @@ import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import { displayWorld } from '../render/displayWorld';
 import { liveDevicePixelRatio } from '../render/displayQuality';
 import type { World } from '../gen/types';
-import type { V2Settings, V2Progress, V2TownStage } from './contracts';
+import type { V2Settings, V2Progress, V2TownStage, V2WorkerResponse } from './contracts';
 import type { ResourcePayload } from '../../../rust/bridge/resources';
 import type { DisplayOpts, RResponse } from '../ui/protocol';
 import { generationWorldInput } from './workerWorld';
@@ -125,10 +125,12 @@ export class StudioClient {
     this.viewer = createViewer({ canvas, container, minimap, onError, onView });
     this.attachEngine();
   }
-  /** A result with the objects of the shown world (terrain) and, after a local edit, of its base kept where unchanged. */
-  private interned(pending: NonNullable<StudioClient['pending']>, packed: World): World {
-    const world = unpackWorldPartitions(unpackWorldLanduse(packed));
-    return pending.local ? internLocalEdit(pending.local.base, world, pending.local.key) : internTerrain(this.world, world);
+  private interned(pending: NonNullable<StudioClient['pending']>, message: Extract<V2WorkerResponse, { type: 'result' | 'local-result' }>): World {
+    if (message.type === 'local-result') {
+      if (pending.local?.key !== message.delta.key) throw new Error('Local edit result does not match its requested town.');
+      return internLocalEdit(pending.local.base, message.delta);
+    }
+    return internTerrain(this.world, unpackWorldPartitions(unpackWorldLanduse(message.world)));
   }
   private attachEngine(): void {
     this.engine.onmessage = ({ data: m }) => {
@@ -146,7 +148,7 @@ export class StudioClient {
           if (m.progress.detail) markNativeUnavailable(m.progress.detail);
           if (this.runtimePreference) this.recordRuntime(browserRuntimeSettings(this.runtimePreference));
         } else (this.pending!.progress ?? this.onProgress)(m.progress);
-      } else if (m.type === 'result' && m.heavy) {
+      } else if ((m.type === 'result' || m.type === 'local-result') && m.heavy) {
         // A heavy town: free the worker's copy (its whole heap) before materialising the page's, then unpack.
         const p = this.pending!;
         this.pending = null;
@@ -157,17 +159,22 @@ export class StudioClient {
         );
         setTimeout(() => {
           try {
-            p.resolve(this.interned(p, m.world));
+            p.resolve(this.interned(p, m));
           } catch (error) {
             p.reject(error instanceof Error ? error : new Error(String(error)));
           }
         }, HEAVY_RELEASE_MS);
-      } else if (m.type === 'result') {
+      } else if (m.type === 'result' || m.type === 'local-result') {
         const p = this.pending!;
         this.pending = null;
-        const world = this.interned(p, m.world);
-        this.retained = { id: m.id, world };
-        p.resolve(world);
+        try {
+          const world = this.interned(p, m);
+          this.retained = { id: m.id, world };
+          p.resolve(world);
+        } catch (error) {
+          this.retained = undefined;
+          p.reject(error instanceof Error ? error : new Error(String(error)));
+        }
       } else if (m.type === 'error') {
         const p = this.pending!;
         this.pending = null;

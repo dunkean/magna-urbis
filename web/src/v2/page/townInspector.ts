@@ -25,6 +25,7 @@ import { resetUrbanChildren } from '../generationEdits';
 import { $, esc, options, wallStyles } from './dom';
 import { populationFormat } from './places';
 import { appendRemoveCustomSettlement } from './settlementAdd';
+import { editWall, editRemovedWalls } from './wallEditor';
 
 export function createTownInspector(state: PageState, actions: PageActions) {
   /** A new draw of every stage of one town. */
@@ -251,6 +252,7 @@ export function createTownInspector(state: PageState, actions: PageActions) {
       }
     }
     const localOverrides = state.settings.urban?.local?.[key];
+    editRemovedWalls($('#inspector'), state, actions, key);
     const deletedEntries = [
       ...Object.entries(localOverrides?.layout?.overrides?.quarters ?? {})
         .filter(([, v]) => v?.deleted)
@@ -322,5 +324,5 @@ export function createTownInspector(state: PageState, actions: PageActions) {
       state.client.viewer.setView({ cx: seat.x, cy: seat.y, scale: Math.min(3, Math.min($('#map').clientHeight, $('#map').clientWidth) / Math.max(600, s.radius * 3)), pitch: current.eye === undefined ? current.pitch : 1, yaw: current.yaw });
     }
   }
-  return { showInspector, rerollTown };
+  return { showInspector, rerollTown, editWall: (town: string, index: number) => editWall(state, actions, town, index) };
 }

@@ -103,3 +103,25 @@ fn housing_relaxation_relaxes_only_land_the_strict_gates_cannot_house() {
     // Without a capacity plan the strict gates stay.
     assert_eq!(housing_relaxation(&[0.3, 0.6, 1.0, 1.0], |_| None), 0.0);
 }
+
+#[test]
+fn disputed_survey_weights_whole_blocks_and_reads_their_steep_and_wet_rims() {
+    use super::super::{growth::Taken, lattice::Grid};
+
+    let mut height = [0.0; 32 * 32];
+    let mut water = [0; 32 * 32];
+    // A short rise between a corner and a side midpoint of the middle block.
+    height[8 * 32 + 13] = 0.75;
+    // The right block has a dry centre and a flooded eastern edge.
+    water[10 * 32 + 20] = 2;
+    let surface = Surface { width: 32.0, n: 32, height: &height, water: &water, geometry: None, interpolation: Default::default() };
+    let gate = terrain::Gate { strict: 0.25, limit: 0.25, reach: 2.4 };
+    let taken = Taken {
+        grid: Grid { x0: 8.5, y0: 8.5, step: 2.0, nx: 6, ny: 2 },
+        cells: vec![0, 6, 2, 3, 8, 9, 4, 10],
+    };
+    let points = terrain::tally(surface, taken.cells.iter().map(|&i| taken.grid.point(i)), gate).unwrap();
+    assert!(!points.refused());
+    // Two cells in the flat block, four in the steep one, two at the bank.
+    assert_eq!(super::block_shares(&taken, gate, surface), [0.25, 0.75]);
+}

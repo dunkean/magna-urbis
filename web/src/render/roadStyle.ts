@@ -15,6 +15,10 @@ import { URBAN_SNOW, mapGroundSnow, mapLandSnow, mapLandSnowGrid, mapLandSnowKey
 import { RecordingContext } from './gpu/recorder';
 import { ROAD_GRID as GRID, roadTerrain } from './roadTerrain';
 import type { RoadPavement } from './roadPavement';
+import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
+import { occupationPatch, occupationWorldRects } from '../ui/terrain/gl/forest';
+import { RegionalRevision } from '../ui/terrain/revision';
+import type { Rect4 } from './view';
 
 export type RoadRank = 'major' | 'minor' | 'street' | 'lane' | 'track' | 'path';
 export type Rgb = readonly [number, number, number];
@@ -674,17 +678,51 @@ interface CanopyRaster {
   n: number;
   rgba: Uint8Array;
 }
-let canopyField: CanopyRaster | undefined,
-  canopyOccupation: CanopyRaster | undefined,
-  canopyRevision = 0;
-export function setRoadCanopy(field: CanopyRaster | undefined, occupation: CanopyRaster | undefined): void {
+type CanopyOccupation = CanopyRaster & Partial<Pick<ForestOccupation, 'key' | 'dirty'>>;
+let canopyField: CanopyRaster | undefined, canopyOccupation: CanopyOccupation | undefined;
+const canopyRevision = new RegionalRevision();
+/** The old mask of the most recent local change, for comparing the actual strokes of candidate ways. */
+let previousCanopy: { since: number; occupation: CanopyOccupation } | undefined;
+const blocksCanopy = (rgba: Uint8Array, i: number): boolean => !!rgba[i + 3] && rgba[i] > 128 && rgba[i + 2] !== 12;
+export function setRoadCanopy(field: CanopyRaster | undefined, occupation: CanopyOccupation | undefined): void {
   if (field === canopyField && occupation === canopyOccupation) return;
+  const beforeRevision = canopyRevision.value();
+  if (field !== canopyField) canopyRevision.bump();
+  else if (field && occupation && canopyOccupation) {
+    const patch = occupationPatch(canopyOccupation, occupation);
+    if (!patch) canopyRevision.bump();
+    else {
+      const before = canopyOccupation.rgba,
+        after = occupation.rgba;
+      const changed = patch.flatMap(r => {
+        let x0 = r.x + r.width,
+          y0 = r.y + r.height,
+          x1 = r.x,
+          y1 = r.y;
+        for (let y = r.y; y < r.y + r.height; y++)
+          for (let x = r.x; x < r.x + r.width; x++) {
+            const at = (y * occupation.n + x) * 4;
+            if (blocksCanopy(before, at) === blocksCanopy(after, at)) continue;
+            x0 = Math.min(x0, x);
+            y0 = Math.min(y0, y);
+            x1 = Math.max(x1, x + 1);
+            y1 = Math.max(y1, y + 1);
+          }
+        return x0 < x1 ? [{ x: x0, y: y0, width: x1 - x0, height: y1 - y0 }] : [];
+      });
+      if (changed.length) {
+        previousCanopy = { since: beforeRevision, occupation: canopyOccupation };
+        canopyRevision.bump(occupationWorldRects(occupation, changed, 0));
+      }
+    }
+  } else if (field) canopyRevision.bump();
   canopyField = field;
   canopyOccupation = occupation;
-  canopyRevision++;
+  if (previousCanopy && previousCanopy.since + 1 !== canopyRevision.value()) previousCanopy = undefined;
 }
-/** Changes whenever the canopy changes: part of every cache key of a split road list. */
-export const roadCanopyRevision = (): number => (canopyField ? canopyRevision : 0);
+export const hasRoadCanopy = (): boolean => !!canopyField;
+export const roadCanopyRevision = (): number => canopyRevision.value();
+export const roadCanopyChanges = (since: number): readonly Rect4[] | undefined => canopyRevision.changesSince(since);
 const texel = (r: CanopyRaster, x: number, y: number): number => {
   const i = Math.floor(((x - r.x) / r.width) * r.n),
     j = Math.floor(((y - r.y) / r.width) * r.n);
@@ -692,12 +730,12 @@ const texel = (r: CanopyRaster, x: number, y: number): number => {
 };
 /** Closed canopy share over a point, 0 open to 1 closed: open land of the occupation (fields, meadows, clearings,
  * towns) carries none; a covered way (class 12) keeps the woods it runs through. */
-function canopyAt(x: number, y: number): number {
+function canopyAt(x: number, y: number, occupation: CanopyOccupation | undefined): number {
   if (!canopyField) return 0;
   const f = texel(canopyField, x, y);
   if (f < 0) return 0;
-  const o = canopyOccupation ? texel(canopyOccupation, x, y) : -1;
-  if (o >= 0 && canopyOccupation!.rgba[o + 3] && canopyOccupation!.rgba[o] > 128 && canopyOccupation!.rgba[o + 2] !== 12) return 0;
+  const o = occupation ? texel(occupation, x, y) : -1;
+  if (o >= 0 && blocksCanopy(occupation!.rgba, o)) return 0;
   // Read the continuous control field like the 3D canopy, instead of stepping between its coarse texels.
   const gx = ((x - canopyField.x) / canopyField.width) * canopyField.n - 0.5,
     gy = ((y - canopyField.y) / canopyField.width) * canopyField.n - 0.5;
@@ -715,10 +753,12 @@ export const CANOPY_LEVELS = 4;
 /** A continuous trace in canopy gaps; made roads lose only a little contrast at their cleared edges. */
 export const roadCanopyOpacity = (rank: RoadRank, canopy: number): number => 1 - (rank === 'path' || rank === 'track' || rank === 'lane' ? 0.58 : 0.25) * canopy;
 const CANOPY_STEP = 14;
+/** The affected sample's own run and the neighbouring samples that smooth it. */
+export const ROAD_CANOPY_REACH = 2 * CANOPY_STEP;
 type Pt = { x: number; y: number };
 /** A way cut into runs of one canopy level, sampled every ~14 m and smoothed so a level holds for at least a few tens of
  * metres; consecutive runs share their end point, so the way stays continuous. One run when no canopy is set. */
-export function canopyRuns(pts: readonly Pt[]): { level: number; pts: Pt[] }[] {
+export function canopyRuns(pts: readonly Pt[], occupation = canopyOccupation): { level: number; pts: Pt[] }[] {
   if (!canopyField || pts.length < 2) return [{ level: 0, pts: pts as Pt[] }];
   const at: Pt[] = [pts[0]],
     value: number[] = [];
@@ -730,7 +770,7 @@ export function canopyRuns(pts: readonly Pt[]): { level: number; pts: Pt[] }[] {
       const t0 = (k - 1) / n,
         t = k / n,
         m = (t0 + t) / 2;
-      value.push(canopyAt(a.x + (b.x - a.x) * m, a.y + (b.y - a.y) * m));
+      value.push(canopyAt(a.x + (b.x - a.x) * m, a.y + (b.y - a.y) * m, occupation));
       at.push(k === n ? b : { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
     }
   }
@@ -743,6 +783,20 @@ export function canopyRuns(pts: readonly Pt[]): { level: number; pts: Pt[] }[] {
     else out.push({ level: level[k], pts: [at[k], at[k + 1]] });
   }
   return out;
+}
+/** The actual quantized strokes changed. Older revisions still use their conservative dirty boxes. */
+export function roadCanopyLineChanged(pts: readonly Pt[], since: number): boolean {
+  if (previousCanopy?.since !== since) return true;
+  const before = canopyRuns(pts, previousCanopy.occupation),
+    after = canopyRuns(pts);
+  return (
+    before.length !== after.length ||
+    before.some((run, i) => {
+      const a = run.pts.at(-1)!,
+        b = after[i].pts.at(-1)!;
+      return run.level !== after[i].level || a.x !== b.x || a.y !== b.y;
+    })
+  );
 }
 /** One paved regional road class: verge, clean-edged bed, then markings and wear once they resolve. */
 function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0, metres = width): void {

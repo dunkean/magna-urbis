@@ -11,7 +11,7 @@
  */
 import { selectLod, lineWidth, BAND_MIN_EDGE, type Lod } from '../lod';
 import { viewRect, type Rect4, type View } from '../view';
-import { RecordingContext } from '../gpu/recorder';
+import { RecordingContext, setMapInk, type MapInk } from '../gpu/recorder';
 import { CRISP_MARK } from '../gpu/contract';
 import type { LineLayer, PolyLayer } from '../scene';
 import { growRect, linePath, polyPath } from './geometry';
@@ -19,6 +19,7 @@ import type { CartographyContext, DrawMode } from './context';
 import type { CanvasLike, FrameStats } from './contract';
 import type { FrameBase, VectorFrame } from './frame';
 import { layerTilesFitView } from './woods';
+import type { LandRecording } from './landRecording';
 import { landPainters, paintContours, paintLandMask, paintLandUseSteps } from './landuse';
 import { paintFieldNetwork } from './fields';
 import { paintTextureLayerSteps } from './symbols';
@@ -37,7 +38,7 @@ export function drawVector(c: CartographyContext, view: View, target: CanvasLike
 }
 
 /** Same calls and draw order as a synchronous vector draw, with boundaries for the drape's idle slices. */
-export function* drawVectorSteps(c: CartographyContext, view: View, target: CanvasLike = c.canvas, mode: DrawMode = 'all', fullRect?: Rect4): Generator<void, FrameStats> {
+export function* drawVectorSteps(c: CartographyContext, view: View, target: CanvasLike = c.canvas, mode: DrawMode = 'all', fullRect?: Rect4, retainedLand?: LandRecording): Generator<void, FrameStats> {
   c.syncPalette();
   const { deps, pal, S, now, cache, furrowCache, brushes } = c;
   const t0 = now();
@@ -122,7 +123,8 @@ export function* drawVectorSteps(c: CartographyContext, view: View, target: Canv
     yield;
     paintContours(c, f);
     yield;
-    yield* paintLandUseSteps(c, f);
+    if (retainedLand) yield* retainedLand.paint(c, f);
+    else yield* paintLandUseSteps(c, f);
     yield;
     paintLandMask(c, f);
     paintFieldNetwork(c, f);
@@ -253,19 +255,19 @@ function frameBase(c: CartographyContext, ctx: CanvasRenderingContext2D, view: V
     }
     return out;
   };
-  const fillPolys = (name: string, color: string, alpha = 1, rule: CanvasFillRule = 'evenodd'): PolyLayer | undefined => {
+  const fillPolys = (name: string, color: MapInk, alpha = 1, rule: CanvasFillRule = 'evenodd'): PolyLayer | undefined => {
     const l = polyL(name);
     if (!l) return undefined;
-    ctx.fillStyle = color;
+    setMapInk(ctx, 'fillStyle', color);
     ctx.globalAlpha = alpha;
     for (const p of polyPaths(l)) ctx.fill(p, rule);
     ctx.globalAlpha = 1;
     return l;
   };
-  const strokePolys = (name: string, color: string, width: number, alpha = 1, dash: number[] = []): void => {
+  const strokePolys = (name: string, color: MapInk, width: number, alpha = 1, dash: number[] = []): void => {
     const l = polyL(name);
     if (!l) return;
-    ctx.strokeStyle = color;
+    setMapInk(ctx, 'strokeStyle', color);
     ctx.lineWidth = width;
     ctx.globalAlpha = alpha;
     ctx.setLineDash(dash);
@@ -273,8 +275,8 @@ function frameBase(c: CartographyContext, ctx: CanvasRenderingContext2D, view: V
     ctx.globalAlpha = 1;
     ctx.setLineDash([]);
   };
-  const strokeLines = (ls: LineLayer[], color: string, widthOf: (l: LineLayer) => number, alpha = 1, dash: number[] = [], cap: CanvasLineCap = 'round'): void => {
-    ctx.strokeStyle = color;
+  const strokeLines = (ls: LineLayer[], color: MapInk, widthOf: (l: LineLayer) => number, alpha = 1, dash: number[] = [], cap: CanvasLineCap = 'round'): void => {
+    setMapInk(ctx, 'strokeStyle', color);
     ctx.globalAlpha = alpha;
     ctx.setLineDash(dash);
     ctx.lineCap = cap;

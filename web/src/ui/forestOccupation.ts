@@ -274,12 +274,38 @@ function regionWindows(rects: readonly OccupationRect[], x: number, y: number, c
     return [{ ci0, ci1, cj0, cj1, oi, oj, side }];
   });
 }
-/** Copies the changed texels of a window raster into the whole one. */
-function pasteWindow(rgba: Uint8Array, n: number, sub: Uint8Array, w: ReturnType<typeof regionWindows>[number]): void {
-  for (let j = w.cj0; j <= w.cj1; j++) rgba.set(sub.subarray(((j - w.oj) * w.side + w.ci0 - w.oi) * 4, ((j - w.oj) * w.side + w.ci1 - w.oi + 1) * 4), (j * n + w.ci0) * 4);
+/** Keep the previous pixels and key if a regional pass produced the same bytes. */
+function patchOccupationWindows(previous: ForestOccupation, windows: ReturnType<typeof regionWindows>, raster: (w: ReturnType<typeof regionWindows>[number]) => Uint8Array): Pick<ForestOccupation, 'rgba' | 'key' | 'dirty'> {
+  const n = previous.n,
+    rects: NonNullable<ForestOccupation['dirty']>['rects'][number][] = [];
+  let rgba = previous.rgba;
+  let words = new Uint32Array(rgba.buffer, rgba.byteOffset, rgba.byteLength / 4);
+  for (const w of windows) {
+    const sub = raster(w),
+      samples = new Uint32Array(sub.buffer, sub.byteOffset, sub.byteLength / 4);
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    for (let j = w.cj0; j <= w.cj1; j++)
+      for (let i = w.ci0; i <= w.ci1; i++) {
+        const at = j * n + i,
+          word = samples[(j - w.oj) * w.side + i - w.oi];
+        if (words[at] === word) continue;
+        if (rgba === previous.rgba) {
+          rgba = rgba.slice();
+          words = new Uint32Array(rgba.buffer);
+        }
+        words[at] = word;
+        minX = Math.min(minX, i);
+        maxX = Math.max(maxX, i);
+        minY = Math.min(minY, j);
+        maxY = Math.max(maxY, j);
+      }
+    if (minX <= maxX) rects.push({ x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 });
+  }
+  return { rgba, key: rects.length ? `regional-occ:${productRevision(rgba)}` : previous.key, dirty: { base: previous.key, rects } };
 }
-/** The texels a regional pass pasted, against the occupation it started from (ForestOccupation.dirty). */
-const windowsDirty = (previous: ForestOccupation, windows: ReturnType<typeof regionWindows>): ForestOccupation['dirty'] => ({ base: previous.key, rects: windows.map(w => ({ x: w.ci0, y: w.cj0, width: w.ci1 - w.ci0 + 1, height: w.cj1 - w.cj0 + 1 })) });
 const grownRects = (rects: readonly OccupationRect[], d: number): OccupationRect[] => rects.map(r => ({ x0: r.x0 - d, y0: r.y0 - d, x1: r.x1 + d, y1: r.y1 + d }));
 
 /** `previous` (a merge of an earlier source and its shapes) merged again only inside `rects`, from `source` and `shapes`
@@ -290,10 +316,9 @@ export function withOccupationShapesRegion(previous: ForestOccupation, source: F
     if (x !== previous.x || y !== previous.y || n !== previous.n || n * cell !== previous.width) return undefined;
     // A changed source texel moves the distances RANGE texels around and is read bilinearly; a shape clears RANGE cells around it.
     const reach = (RANGE + 2) * Math.max(cell, source ? source.width / source.n : 0),
-      rgba = previous.rgba.slice(),
       windows = regionWindows(grownRects(rects, reach), x, y, cell, n, 1);
-    for (const w of windows) pasteWindow(rgba, n, mergeTexels(source, shapes, x + w.oi * cell, y + w.oj * cell, cell, w.side), w);
-    return { ...mergedOccupation(source, x, y, cell, n, rgba), dirty: windowsDirty(previous, windows) };
+    const patch = patchOccupationWindows(previous, windows, w => mergeTexels(source, shapes, x + w.oi * cell, y + w.oj * cell, cell, w.side));
+    return { ...previous, ...patch, detail: source?.detail, ways: source?.ways, clearings: source?.clearings };
   });
 }
 
@@ -315,11 +340,10 @@ export function forestOccupationRegion(previous: ForestOccupation, landuse: Land
     const plan = occupationPlan(landuse, maxN, minCell, corridors, clearings);
     if (!plan || plan.x !== previous.x || plan.y !== previous.y || plan.n !== previous.n || plan.n * plan.cell !== previous.width) return undefined;
     const { x, y, cell, n } = plan,
-      rgba = previous.rgba.slice(),
       // A changed texel moves the distances RANGE texels around; the distance transform reads REACH texels beyond.
       windows = regionWindows(grownRects(rects, (RANGE + 1) * cell), x, y, cell, n, REACH + 2);
-    for (const w of windows) pasteWindow(rgba, n, occupationTexels(plan, x + w.oi * cell, y + w.oj * cell, w.side), w);
-    return { ...occupationResult(plan, rgba), dirty: windowsDirty(previous, windows) };
+    const patch = patchOccupationWindows(previous, windows, w => occupationTexels(plan, x + w.oi * cell, y + w.oj * cell, w.side));
+    return { ...previous, ...patch, clearings: plan.clearings };
   });
 }
 interface OccupationPlan {
@@ -513,7 +537,12 @@ function clipSegment(ax: number, ay: number, bx: number, by: number, size: numbe
     } else if (p < 0) t0 = Math.max(t0, q / p);
     else t1 = Math.min(t1, q / p);
   }
-  return t0 <= t1 ? [{ x: ax + t0 * dx, y: ay + t0 * dy }, { x: ax + t1 * dx, y: ay + t1 * dy }] : undefined;
+  return t0 <= t1
+    ? [
+        { x: ax + t0 * dx, y: ay + t0 * dy },
+        { x: ax + t1 * dx, y: ay + t1 * dy },
+      ]
+    : undefined;
 }
 
 /** Signed distance (texels, positive inside) of each texel centre to the union of the corridor capsules, with the

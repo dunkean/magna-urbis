@@ -8,7 +8,7 @@
  */
 import type { CityLayers, CityPalette } from '../model/contract';
 import type { Point } from '../../../../../rust/bridge/urban';
-import type { CityBuildings, CityLod } from '../model/contract';
+import type { CityLod } from '../model/contract';
 import { visibleFillRanges, visibleRanges } from '../../cityGlBuild';
 import { rgba01, type CityGlDraws } from './styleTables';
 import { ENCLOSURE_MID_WIDTH, enclosureFade, enclosureJambRank } from '../planLook';
@@ -58,7 +58,7 @@ export interface GpuTown {
   water: { vao: WebGLVertexArrayObject; count: number } | undefined;
   wallGl: CityGlWalls;
   origin: Point;
-  buildings: CityBuildings | undefined;
+  snowAltitude?: number;
   /** First street stroke that is a crossing. */ streetCrossings: number;
   /** The street strokes are the road surface (square covered ends), not round-capped strokes. */ streetSurface: boolean;
   albedoTex: WebGLTexture | undefined;
@@ -77,7 +77,7 @@ interface TownFrameStyle {
 }
 /** Draws the town of `o` at level `lod`; counts its draws in `frame`. */
 export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod, style: TownFrameStyle, frame: CityGlFrame): void {
-  const { gl, fillP, strokeP, casingP, surfaceP, discP, pavedP, tfillP, texturedP, waterP, plan, built, streets, walls, selection, yards, towers, water, wallGl, origin, buildings, streetCrossings, streetSurface, albedoTex, towerColors } = town,
+  const { gl, fillP, strokeP, casingP, surfaceP, discP, pavedP, tfillP, texturedP, waterP, plan, built, streets, walls, selection, yards, towers, water, wallGl, origin, snowAltitude, streetCrossings, streetSurface, albedoTex, towerColors } = town,
     mpp = o.metresPerPixel;
   // Without the live look the frame is the plan path of the look (render/city/planPath.ts).
   const planPath: PlanPath | undefined = o.live ? undefined : { painted: style.painted };
@@ -447,7 +447,7 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
     }
     if (pans) {
       // Massing shadows: each piece's outline swept by its own height (cityMassing.ts).
-      gl.uniform4fv(fillP.u.uTint, castShadowTint(palette, planPath, buildings?.items[0]?.snowAltitude));
+      gl.uniform4fv(fillP.u.uTint, castShadowTint(palette, planPath, snowAltitude));
       // Live look: each sample shaded once, as the Canvas fills one path per building (its pieces' shadows overlap).
       if (o.live) {
         gl.enable(gl.STENCIL_TEST);

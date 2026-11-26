@@ -109,16 +109,19 @@ pub(in crate::urban) fn cut_parcels(seed: &str, input: &Layout, config: &ParcelC
     let key_seed = format!("{seed}\u{1}settlement:{}", layout.key);
     // One lap per call, each with its own duration (`URBAN_PROFILE`).
     let mut laps = Lap::new("parcels");
-    let mut baseline = None;
-    if input.structure.as_ref().is_some_and(|s| s.quarter_baseline.is_some())
+    let (mut baseline, mut partition) = if input.structure.as_ref().is_some_and(|s| s.quarter_baseline.is_some())
         && let Some((original, original_cfg)) = edits::quarter_baseline::restore(input, source_config)
     {
+        // The two plans share most of their block cuts. The exact cut key
+        // includes frontage and morphology, and replays block/street indices.
+        let _cuts = super::super::probe_cache::Scope::open();
         let prepared = edits::blocks::prepare(&original, &original_cfg);
         let original = prepared.layout.into_owned();
         let lots = parcels::generate(&key_seed, &original, &prepared.config, &morph)?;
-        baseline = Some((original, lots));
-    }
-    let mut partition = parcels::generate(&key_seed, layout, config, &morph)?;
+        (Some((original, lots)), parcels::generate(&key_seed, layout, config, &morph)?)
+    } else {
+        (None, parcels::generate(&key_seed, layout, config, &morph)?)
+    };
     laps.lap("generate");
     let kept = allocate_cadastre(layout, &mut partition, baseline.as_mut());
     laps.lap("allocate.1");

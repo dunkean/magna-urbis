@@ -57,7 +57,7 @@ fn road(points: &[(f64, f64)], rank: usize, role: &str) -> Street {
     Street { path: points.iter().map(|&(x, y)| pt(x, y)).collect(), widths: vec![6.0; points.len()], rank, role: role.into() }
 }
 fn circuit(squared: bool, improvisation: f64) -> Circuit<'static> {
-    Circuit { pop: 10_000, purpose: "", kind: "wall", curtain_width: 3.0, moat: 0.0, grade: 0.12, squared, streets_turn: true, key: "gates", improvisation }
+    Circuit { pop: 10_000, gates: None, purpose: "", kind: "wall", curtain_width: 3.0, moat: 0.0, grade: 0.12, squared, streets_turn: true, key: "gates", improvisation }
 }
 /// The town of the tests: a square circuit of 800 m centred on (1000, 1000).
 fn town() -> Shape {
