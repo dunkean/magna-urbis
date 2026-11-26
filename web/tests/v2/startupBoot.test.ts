@@ -93,12 +93,16 @@ it('keeps the existing restoration path and restores the saved viewport when opt
   expect(random).not.toHaveBeenCalled();
 });
 
-it('resumes a map left recently on a handheld device without the opt-in', async () => {
+it('offers a map left recently on a handheld device without the opt-in, and rebuilds it only on request', async () => {
   hooks.handheld = true;
   const saved = { settings: defaultSettings(), mods: [], view: { cx: 200, cy: 300, scale: 2 }, savedAt: Date.now() - 60_000 };
   const { actions, viewer } = await boot(false, saved);
-  await vi.waitFor(() => expect(viewer.setView).toHaveBeenCalledWith(saved.view));
+  const { acceptResume, resumeOffered } = await import('../../src/v2/resumeOffer');
+  await vi.waitFor(() => expect(resumeOffered()).toBe(true));
   expect(hooks.load).toHaveBeenCalledWith({ settings: saved.settings, mods: saved.mods });
+  expect(actions.generate).not.toHaveBeenCalled();
+  acceptResume();
+  await vi.waitFor(() => expect(viewer.setView).toHaveBeenCalledWith(saved.view));
   expect(actions.generate).toHaveBeenCalledWith('all');
 });
 

@@ -3,6 +3,7 @@
  * queue that builds the small places while the user does not touch the map. The queue is mounted by main.ts after
  * the recipe tracking; its gesture listeners capture every pointer, wheel and key event of the window.
  */
+import { handheldDevice } from '../../../../rust/bridge/deviceClass';
 import type { PageActions, PageState } from './contract';
 import { setText } from '../i18n';
 import { settlementDisplayName } from '../mapPresentation';
@@ -199,8 +200,14 @@ export function mountBackgroundPlaces(state: PageState, actions: PageActions): v
     },
     idle: async () => {
       for (;;) {
-        // Nobody gestures in a hidden tab, and Chrome throttles its idle callbacks: the next batch starts at once.
-        if (!state.busy && document.hidden) return;
+        // Nobody gestures in a hidden tab, and Chrome throttles its idle callbacks: the next batch starts at once. A
+        // handheld waits to be shown again: hidden there means the screen is off or another app is in front, and the
+        // work would meet the wake of the device.
+        if (!state.busy && document.hidden) {
+          if (!handheldDevice()) return;
+          await new Promise<void>(resolve => document.addEventListener('visibilitychange', () => resolve(), { once: true }));
+          continue;
+        }
         const quiet = performance.now() - state.lastGesture;
         if (state.busy || quiet < GESTURE_QUIET_MS) {
           await new Promise(resolve => setTimeout(resolve, state.busy ? 250 : GESTURE_QUIET_MS - quiet));

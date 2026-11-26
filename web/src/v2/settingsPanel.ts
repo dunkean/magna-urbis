@@ -12,6 +12,7 @@ import { getDistanceUnit, setDistanceUnit, onUnitsChange, type DistanceUnit } fr
 import { reloadPreviousMapAtStartup, setReloadPreviousMapAtStartup } from './startup';
 import { machineDecision, onMachineDecision, performancePreference, type PerformanceLevel, type PerformancePreference } from './machineTier';
 import { choosePerformance } from './machineView';
+import { journalText } from './deviceJournal';
 import { handheldDevice } from '../../../rust/bridge/deviceClass';
 
 export type ThreadsMode = 'auto' | 'on' | 'off' | 'pool';
@@ -45,7 +46,7 @@ const T = {
     'When off, startup proposes a new biome, relief and coastline. Opened projects and shared links keep their own landscape.',
     'Désactivé, le démarrage propose un nouveau biome, relief et littoral. Les projets ouverts et les liens partagés gardent leur paysage.',
   ),
-  resumeHelp: copy('On phones and tablets, a map left less than 30 minutes ago is resumed automatically.', 'Sur téléphone et tablette, une carte quittée depuis moins de 30 minutes est reprise automatiquement.'),
+  resumeHelp: copy('On phones and tablets, a map left less than 30 minutes ago can be resumed in one tap at the next opening.', 'Sur téléphone et tablette, une carte quittée depuis moins de 30 minutes peut être reprise d’un geste à l’ouverture suivante.'),
   units: copy('Units', 'Unités'),
   metric: copy('Metric (m / km)', 'Métrique (m / km)'),
   imperial: copy('Imperial (ft / mi)', 'Impérial (ft / mi)'),
@@ -54,6 +55,9 @@ const T = {
   economy: copy('Economy', 'Économie'),
   balanced: copy('Balanced', 'Équilibré'),
   high: copy('High', 'Élevé'),
+  journal: copy('Copy the device journal', 'Copier le journal de l’appareil'),
+  journalHelp: copy('What this page did on this device lately (graphics contexts, performance level, errors), for a bug report. No map content.', 'Ce que cette page a fait récemment sur cet appareil (contextes graphiques, niveau de performance, erreurs), pour un rapport de bogue. Aucun contenu de carte.'),
+  journalCopied: copy('Journal copied.', 'Journal copié.'),
   performanceHelp: copy('Higher levels draw sharper and richer maps; lower levels keep navigation fluid.', 'Les niveaux élevés dessinent des cartes plus nettes et plus riches ; les niveaux bas gardent une navigation fluide.'),
   browser: copy('Compute in this browser', 'Calcul dans ce navigateur'),
   local: copy('Local services', 'Services locaux'),
@@ -339,6 +343,31 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
     levelHelp.className = 'hint';
     setText(levelHelp, T.performanceHelp);
     host.append(levelHelp);
+    // A phone has no console: its journal is copied from here, or selected in the box when the clipboard is refused.
+    const journal = document.createElement('button'),
+      journalHelp = document.createElement('p'),
+      journalBox = document.createElement('textarea');
+    journal.type = 'button';
+    journal.className = 'quiet small';
+    setText(journal, T.journal);
+    journalHelp.className = 'hint';
+    setText(journalHelp, T.journalHelp);
+    journalBox.readOnly = true;
+    journalBox.hidden = true;
+    journalBox.rows = 8;
+    journalBox.style.width = '100%';
+    journal.onclick = async () => {
+      const text = journalText();
+      try {
+        await navigator.clipboard.writeText(text);
+        setText(journalHelp, T.journalCopied);
+      } catch {
+        journalBox.value = text;
+        journalBox.hidden = false;
+        journalBox.select();
+      }
+    };
+    host.append(journal, journalHelp, journalBox);
     const startup = document.createElement('label'),
       reloadMap = document.createElement('input'),
       startupLabel = document.createElement('span');

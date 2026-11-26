@@ -2,9 +2,11 @@
  * Four levels; `tier` is their coarse view for 3D availability, tree distance and volume buildings.
  * ?machine=capable|slow|veryslow forces detection for tests, but never overrides a saved recipe, project, city code or explicit style selection.
  * Missing optional hints are neutral. No benchmark or GPU work is added to the startup critical path.
- * Desktop Auto reads hardware hints and one navigation sample. Handheld Auto starts from its learned level, or from its
- * GPU family, and moves by measured navigation windows within what that family may try: on a phone a level that is too
- * heavy does not show as slow frames but as a lost GPU context, so it is not found by trying.
+ * Desktop Auto reads hardware hints and one navigation sample. Handheld Auto takes its level once, at startup, from
+ * what earlier visits learned or from its GPU family, and keeps it for the session: a change of level swaps the style
+ * and re-sizes every canvas, work a phone must only do at the user's request. Its navigation windows and a lost GPU
+ * context only set the level of the next visit. On a phone a level that is too heavy does not show as slow frames but
+ * as a lost GPU context, so it is not found by trying.
  */
 import type { PresetId } from '../render/composition';
 import { SOFTWARE_GL } from '../render/softwareGl';
@@ -74,12 +76,13 @@ const rank = (level: PerformanceLevel): number => PERFORMANCE_LEVELS.indexOf(lev
 export const levelTier = (level: PerformanceLevel): MachineTier => (level === 'minimal' ? 'veryslow' : level === 'high' ? 'capable' : 'slow');
 const tierLevel = (tier: MachineTier): PerformanceLevel => (tier === 'veryslow' ? 'minimal' : tier === 'slow' ? 'economy' : 'high');
 export const forcedMachineTier = (value: string | null): MachineTier | undefined => (value === 'capable' || value === 'slow' || value === 'veryslow' ? value : undefined);
-/** Limits no preference lifts: the live compositor cannot run. */
-function hardLimit(s: MachineSignals): MachineReason | undefined {
+/** Limits no preference lifts: the live compositor cannot run. On a handheld a compositor refused at run time is a
+ * moment of GPU trouble (the view tries it again, composedView.ts), not a capability: the map stays on its fallback view. */
+function hardLimit(s: MachineSignals, handheld = false): MachineReason | undefined {
   const renderer = `${s.renderer ?? ''} ${s.adapter?.name ?? ''}`;
   if (SOFTWARE_GL.test(renderer) || /\bwarp\b/i.test(renderer)) return 'software';
   if (!s.webgl2) return 'webgl';
-  if (s.compositor === false) return 'compositor';
+  if (s.compositor === false && !handheld) return 'compositor';
   return undefined;
 }
 /** Desktop Auto: hardware hints and the one-shot navigation sample. */
@@ -119,8 +122,6 @@ export function handheldWindowStep(state: LearnedPerformance, meanMs: number, fi
   if (meanMs <= FAST_FRAME_MS && !first && up && rank(up) <= rank(state.ceiling) && (up !== 'high' || memory === undefined || memory >= HIGH_MEMORY_GB)) return { level: up, ceiling: state.ceiling };
   return state;
 }
-/** The display probe saw long navigation tasks: one step down, never below Economy. */
-export const handheldStruggleStep = (state: LearnedPerformance): LearnedPerformance => handheldWindowStep(state, SLOW_FRAME_MS, true);
 export interface PerformanceContext {
   preference: PerformancePreference;
   handheld: boolean;
@@ -131,7 +132,7 @@ export interface PerformanceContext {
 export function decidePerformance(s: MachineSignals, c: PerformanceContext): MachineDecision {
   const made = (level: PerformanceLevel, reason: MachineReason): MachineDecision => ({ tier: levelTier(level), level, reason, handheld: c.handheld });
   if (c.force) return made(tierLevel(c.force), 'forced');
-  const limit = hardLimit(s);
+  const limit = hardLimit(s, c.handheld);
   if (limit) return made('minimal', limit);
   if (c.preference !== 'auto') return made(c.preference, 'preference');
   if (!c.handheld) {
@@ -178,17 +179,20 @@ let sampleUntil = 0,
   sampleStart = 0,
   windows = 0,
   slowWindow = false;
-let compositor: boolean | undefined,
-  compositorProbes = 0,
-  compositorTimer: ReturnType<typeof setTimeout> | undefined;
+let compositor: boolean | undefined;
 /** The map lost its GPU context in this session: its level is already set for the next visit. */
 let gpuLost = false;
+/** `learned` follows the measurements for the next visit; `sessionLearned` is what this session started from. */
 let preference = readPreference(),
   handheld = false,
-  learned: LearnedPerformance | undefined;
+  learned: LearnedPerformance | undefined,
+  sessionLearned: LearnedPerformance | undefined;
 const listeners = new Set<(decision: MachineDecision) => void>();
 export const machineDecision = (): MachineDecision => ({ ...decision });
 export const machineStyleProtected = (): boolean => protectedStyle;
+/** The hints the decision was made from, for the device journal. */
+export const machineSummary = (): string =>
+  signals ? `${signals.renderer || 'no WebGL2'}${signals.adapter?.name ? ` · WebGPU ${signals.adapter.name.trim()}` : ''}${compositor === false ? ' · compositor refused' : ''} · preference ${preference}` : 'not inspected';
 export const performancePreference = (): PerformancePreference => preference;
 /** Guards only the preset swap of the untouched default recipe; levels still follow the machine. */
 export function protectMachineStyle(): void {
@@ -206,16 +210,16 @@ function publish(next: MachineDecision): void {
   decision = next;
   for (const listener of listeners) listener(next);
 }
-const decide = (): MachineDecision => decidePerformance({ ...signals!, compositor }, { preference, handheld, learned, force });
+const decide = (): MachineDecision => decidePerformance({ ...signals!, compositor }, { preference, handheld, learned: sessionLearned, force });
 function refresh(): void {
   if (signals) publish(decide());
 }
-/** Choosing Auto again forgets what this handheld learned, so it measures afresh. */
+/** The user's choice applies at once. Choosing Auto again forgets what this handheld learned, so it measures afresh. */
 export function setPerformancePreference(next: PerformancePreference): void {
   preference = next;
   store(PERFORMANCE_STORAGE_KEY, next);
   if (next === 'auto') {
-    learned = undefined;
+    learned = sessionLearned = undefined;
     windows = 0;
     slowWindow = false;
     samples = [];
@@ -247,37 +251,19 @@ function probeWebgl2(): { webgl2: boolean; renderer: string } {
   gl?.getExtension('WEBGL_lose_context')?.loseContext();
   return { webgl2: !!gl, renderer };
 }
-/** Waits before a handheld asks again whether a refused compositor can start. */
-const COMPOSITOR_PROBES_MS = [8000, 20000, 45000];
-/** On a handheld a refusal is often a moment of GPU trouble (a restarting GPU process refuses new contexts), not a
- * missing capability: ask again a few times, further apart, and lift the verdict once a hardware context starts. */
-function probeCompositor(): void {
-  if (!handheld || compositor !== false || compositorTimer !== undefined || compositorProbes >= COMPOSITOR_PROBES_MS.length) return;
-  compositorTimer = setTimeout(() => {
-    compositorTimer = undefined;
-    if (compositor !== false) return;
-    const probe = probeWebgl2();
-    if (!probe.webgl2 || SOFTWARE_GL.test(probe.renderer)) return probeCompositor();
-    compositor = undefined;
-    refresh();
-  }, COMPOSITOR_PROBES_MS[compositorProbes++]);
-}
 /** Compositor failures are capabilities, independent of an explicit style. Defer changes until its draw returns. */
 export function reportMachineCompositor(available: boolean): void {
   if (compositor === available) return;
   compositor = available;
-  if (!available) probeCompositor();
   queueMicrotask(refresh);
 }
-/** A handheld level change from a measurement; published after the compositor frame that measured it has returned.
- * Only frame windows are saved for later visits: a struggle is session-only. */
-function learn(step: (state: LearnedPerformance) => LearnedPerformance, persist: boolean): void {
+/** What a handheld measured, saved for its next visit: this session keeps its level. */
+function learn(step: (state: LearnedPerformance) => LearnedPerformance): void {
   const current: LearnedPerformance = learned ?? handheldStart(signals!),
     next = step(current);
   if (next === current) return;
   learned = next;
-  if (persist) store(PERFORMANCE_AUTO_KEY, JSON.stringify(next));
-  queueMicrotask(refresh);
+  store(PERFORMANCE_AUTO_KEY, JSON.stringify(next));
 }
 /** Handheld: windows of twenty frames within ten seconds, each one a decision, at most HANDHELD_WINDOWS per session. */
 function sampleHandheld(ms: number): void {
@@ -298,7 +284,7 @@ function sampleHandheld(ms: number): void {
     confirmed = slowWindow;
   slowWindow = slow && !confirmed;
   if (slow && !confirmed) return;
-  learn(state => handheldWindowStep(state, mean, first, signals!.memory), true);
+  learn(state => handheldWindowStep(state, mean, first, signals!.memory));
 }
 /** Called by consecutive moving live-compositor frames. Desktop samples only the first ten seconds, once. */
 export function reportMachineFrame(ms: number): void {
@@ -313,13 +299,6 @@ export function reportMachineFrame(ms: number): void {
     // Style changes may dispose this compositor: publish only after its frame has returned.
     queueMicrotask(refresh);
   }
-}
-/** The display probe saw navigation struggle: a handheld in Auto steps down for this session, never below Economy.
- * Long tasks before the first measured window (shader compilation, first tile bakes) are warm-up, and later ones never
- * become a lasting verdict. */
-export function reportMachineStruggle(): void {
-  if (!signals || force || !handheld || preference !== 'auto' || gpuLost || windows === 0) return;
-  learn(handheldStruggleStep, false);
 }
 /** The map lost its GPU context for lack of resources (glContextRecovery.ts): the level is too heavy for this handheld.
  * The next visit starts at Economy in Auto, whatever level was chosen. Nothing changes in this session: the renderer has
@@ -337,7 +316,7 @@ export function reportMachineGpuLoss(): void {
 export async function inspectMachine(): Promise<MachineDecision> {
   force = forcedMachineTier(new URLSearchParams(location.search).get('machine'));
   handheld = handheldDevice();
-  learned = handheld ? readLearned() : undefined;
+  learned = sessionLearned = handheld ? readLearned() : undefined;
   signals = { ...probeWebgl2(), cores: navigator.hardwareConcurrency, memory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory };
   let timer: number | undefined;
   try {

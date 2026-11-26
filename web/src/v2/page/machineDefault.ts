@@ -4,14 +4,14 @@
  */
 import type { PageState, PageActions } from './contract';
 import type { V2Settings } from '../contracts';
-import { machineStyleProtected, protectMachineStyle, onMachineDecision, reportMachineGpuLoss, reportMachineStruggle, claimPerformancePreference, machineDefaultPreset, type MachineDecision } from '../machineTier';
+import { machineStyleProtected, protectMachineStyle, onMachineDecision, reportMachineGpuLoss, claimPerformancePreference, machineDefaultPreset, type MachineDecision } from '../machineTier';
 import { MAP_GPU_FAILED_EVENT, MAP_GPU_LIGHTER_EVENT } from '../../ui/glContextRecovery';
 import { choosePerformance, performanceKnobs } from '../machineView';
 import { showMachineNotice } from '../machineNotice';
 import { currentComposition } from '../renderControls';
 import { defaultSettings } from '../settings';
 import { presetComposition, type CompositionRecipe, type PresetId } from '../../render/composition';
-import { onDisplayStruggle, setDisplayAppearanceQuality, setDisplayPixelRatioCap, setDisplayQualityPolicy } from '../../render/displayQuality';
+import { setDisplayAppearanceQuality, setDisplayPixelRatioCap, setDisplayQualityPolicy } from '../../render/displayQuality';
 
 /** Mounted before the machine inspection publishes, on every start including links and tests. */
 export function mountPerformancePolicy(): void {
@@ -21,7 +21,6 @@ export function mountPerformancePolicy(): void {
     // The viewer re-sizes its canvases, at the new ratio, on a window resize.
     if (setDisplayPixelRatioCap(knobs.pixelRatioCap)) window.dispatchEvent(new Event('resize'));
   });
-  onDisplayStruggle(reportMachineStruggle);
   for (const type of [MAP_GPU_LIGHTER_EVENT, MAP_GPU_FAILED_EVENT]) window.addEventListener(type, reportMachineGpuLoss);
 }
 

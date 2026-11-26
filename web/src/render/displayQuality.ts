@@ -5,16 +5,15 @@
  * Roof-coloured town footprints (tilted boxes), no texture/grain or modelled trees; text keeps its full settings.
  * Half-density ground tiers, no finer-tier prefetch and no MSAA keep fill rate and retained work bounded.
  * Recipes retain their full choices so switching quality and exporting never destroys style customizations.
- * The page's performance level may set a policy: Auto then resolves to it, the static hints and the runtime probe no
- * longer demote, and a probe that would have demoted notifies `onDisplayStruggle` instead.
+ * The page's performance level may set a policy: Auto then resolves to it, and neither the static hints nor the
+ * runtime probe demote.
  */
 export const DISPLAY_QUALITIES = ['auto', 'full', 'light'] as const;
 export type DisplayQuality = (typeof DISPLAY_QUALITIES)[number];
 export type ResolvedDisplayQuality = Exclude<DisplayQuality, 'auto'>;
 export const DISPLAY_QUALITY_STORAGE_KEY = 'magna-urbis-display-quality';
 type Change = { quality: ResolvedDisplayQuality; reason: 'auto' | 'preference' | 'appearance' };
-const listeners = new Set<(change: Change) => void>(),
-  struggleListeners = new Set<() => void>();
+const listeners = new Set<(change: Change) => void>();
 const valid = (value: unknown): value is DisplayQuality => DISPLAY_QUALITIES.includes(value as DisplayQuality);
 let stored: string | null = null;
 try {
@@ -53,18 +52,14 @@ export const getDisplayQuality = (): ResolvedDisplayQuality => {
   const choice = getDisplayQualityPreference();
   return choice !== 'auto' ? choice : (policy ?? (demoted ? 'light' : 'full'));
 };
-/** The probe measures while Auto decides: under a policy it reports struggles instead of latching a demotion. */
-const probing = (): boolean => getDisplayQualityPreference() === 'auto' && (policy !== undefined || !demoted);
+/** The probe measures while the hints decide Auto: a policy decides in their place. */
+const probing = (): boolean => getDisplayQualityPreference() === 'auto' && policy === undefined && !demoted;
 /** Quality chosen by the page's performance level; undefined restores the hint/probe automatic quality. */
 export function setDisplayQualityPolicy(quality: ResolvedDisplayQuality | undefined): void {
   if (policy === quality) return;
   const before = getDisplayQuality();
   policy = quality;
   if (getDisplayQuality() !== before) emit('auto');
-}
-export function onDisplayStruggle(listener: () => void): () => void {
-  struggleListeners.add(listener);
-  return () => struggleListeners.delete(listener);
 }
 /** Device pixel ratio of the live display canvases, capped by the performance level. Captures and exports pass their own ratio. */
 export const liveDevicePixelRatio = (): number => Math.min(((typeof window === 'undefined' ? globalThis : window) as { devicePixelRatio?: number }).devicePixelRatio || 1, pixelRatioCap);
@@ -101,14 +96,7 @@ function stopProbe(): void {
   probeFrame = undefined;
 }
 function stepDown(): void {
-  if (policy !== undefined) {
-    if (getDisplayQualityPreference() !== 'auto') return;
-    // The page's level owns the response; the probe keeps measuring until its window ends.
-    longTasks = slowFrames = frameCount = 0;
-    for (const listener of struggleListeners) listener();
-    return;
-  }
-  if (demoted || appearanceQuality === 'light' || getDisplayQualityPreference() !== 'auto') return;
+  if (policy !== undefined || demoted || appearanceQuality === 'light' || getDisplayQualityPreference() !== 'auto') return;
   demoted = true;
   try {
     globalThis.sessionStorage?.setItem(`${DISPLAY_QUALITY_STORAGE_KEY}-demoted`, '1');

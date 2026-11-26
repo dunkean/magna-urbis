@@ -7,12 +7,14 @@
  */
 import { registerMessages, setText, translate } from '../i18n';
 import { $ } from './dom';
+import { acceptResume, onResumeOffer, resumeOffered, withdrawResume } from '../resumeOffer';
 import '../phoneLayout.css';
 
 /** A phone in portrait or landscape (and narrow windows). phoneLayout.css repeats this condition. */
 export const COMPACT_QUERY = '(max-width: 720px), (pointer: coarse) and (max-height: 500px)';
 
 registerMessages({
+  'Resume my last map': { en: 'Resume my last map', fr: 'Reprendre ma dernière carte' },
   'Generate a map': { en: 'Generate a map', fr: 'Générer une carte' },
   'Settings…': { en: 'Settings…', fr: 'Réglages…' },
   Display: { en: 'Display', fr: 'Affichage' },
@@ -99,7 +101,8 @@ export function mountPhoneLayout(): void {
   firstRun.hidden = true;
   const generate = button('phone-generate', 'primary', 'Generate a map'),
     settings = button('phone-settings', '', 'Settings…');
-  generate.onclick = () => $<HTMLButtonElement>('#run-chain').click();
+  // The same button resumes the map left recently when the page offers it (resumeOffer.ts).
+  generate.onclick = () => (resumeOffered() ? acceptResume() : $<HTMLButtonElement>('#run-chain').click());
   settings.onclick = () => setSheet(true);
   firstRun.append(generate, settings);
   mapArea.append(firstRun);
@@ -201,8 +204,13 @@ export function mountPhoneLayout(): void {
   }
 
   function syncFirstRun(): void {
-    firstRun.hidden = !compact || emptyMap.hidden || app.getAttribute('aria-busy') === 'true';
+    const busy = app.getAttribute('aria-busy') === 'true';
+    // Another run than the offered one makes another map: the offer ends.
+    if (busy) withdrawResume();
+    setText(generate, resumeOffered() ? 'Resume my last map' : 'Generate a map');
+    firstRun.hidden = !compact || emptyMap.hidden || busy;
   }
+  onResumeOffer(syncFirstRun);
 
   function reconcile(records: MutationRecord[]): void {
     syncFirstRun();

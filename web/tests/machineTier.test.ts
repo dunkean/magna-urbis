@@ -1,7 +1,7 @@
 /** Pure machine policy checks: optional hints are neutral, combined constraints demote, hard limits beat preferences,
  * and the handheld ladder moves by measured windows. */
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { decideMachineTier, decidePerformance, forcedMachineTier, machineDefaultPreset, handheldStart, handheldStruggleStep, handheldWindowStep, type LearnedPerformance } from '../src/v2/machineTier';
+import { decideMachineTier, decidePerformance, forcedMachineTier, machineDefaultPreset, handheldStart, handheldWindowStep, type LearnedPerformance } from '../src/v2/machineTier';
 import { machineViewDefaults, performanceKnobs } from '../src/v2/machineView';
 import { TREE_DISTANCE_MIN, TREE_DISTANCE_DEFAULT } from '../src/ui/terrain3dTrees';
 import { VIEW_DEPTH_DEFAULT } from '../src/render/world/viewDepth';
@@ -69,7 +69,8 @@ describe('machine defaults', () => {
   });
   it('lets hard limits beat an explicit preference, which otherwise wins over measurements', () => {
     for (const handheld of [false, true]) {
-      expect(decidePerformance({ webgl2: true, compositor: false }, { preference: 'high', handheld })).toMatchObject({ level: 'minimal', tier: 'veryslow', reason: 'compositor' });
+      // A compositor refused at run time is a verdict on a desktop only: a handheld keeps its level and its fallback view.
+      expect(decidePerformance({ webgl2: true, compositor: false }, { preference: 'high', handheld })).toMatchObject(handheld ? { level: 'high', reason: 'preference' } : { level: 'minimal', tier: 'veryslow', reason: 'compositor' });
       expect(decidePerformance({ webgl2: false }, { preference: 'balanced', handheld })).toMatchObject({ level: 'minimal', reason: 'webgl' });
       expect(decidePerformance({ webgl2: true, renderer: 'SwiftShader' }, { preference: 'economy', handheld })).toMatchObject({ level: 'minimal', reason: 'software' });
       expect(decidePerformance({ webgl2: true, frameMs: 90 }, { preference: 'balanced', handheld, learned: { level: 'economy', ceiling: 'economy' } })).toEqual({ tier: 'slow', level: 'balanced', reason: 'preference', handheld });
@@ -109,8 +110,6 @@ describe('machine defaults', () => {
     expect(handheldWindowStep(at('minimal', 'balanced'), 15, false)).toEqual(at('economy', 'balanced'));
     expect(handheldWindowStep(at('balanced'), 15, false, 4)).toEqual(at('balanced'));
     expect(handheldWindowStep(at('balanced'), 15, false, 8)).toEqual(at('high'));
-    expect(handheldStruggleStep(at('high'))).toEqual(at('balanced', 'balanced'));
-    expect(handheldStruggleStep(economy)).toBe(economy);
   });
   it('swaps an untouched recipe to Minimal, or to the fast Satellite/Parchment at Economy', () => {
     expect(machineDefaultPreset('high', 'satellite')).toBe('satellite');
@@ -170,24 +169,27 @@ describe('machine defaults', () => {
     expect(storage.values.has('magna-urbis-performance-learned')).toBe(false);
     expect(policy.machineDecision()).toMatchObject({ level: 'balanced', reason: 'normal' });
   });
-  it('learns from handheld windows and struggles, even with a protected style', async () => {
+  it('keeps a handheld at its level for the session and saves what its windows measured for the next visit', async () => {
     const storage = memoryStorage();
     const policy = await page('?device=handheld', storage);
-    policy.protectMachineStyle();
+    const listener = vi.fn();
+    policy.onMachineDecision(listener);
     // One slow window can be a burst of tile bakes: the demotion takes two in a row.
     for (let i = 0; i < 20; i++) policy.reportMachineFrame(40);
-    await Promise.resolve();
-    expect(policy.machineDecision().level).toBe('balanced');
+    expect(storage.values.has('magna-urbis-performance-learned')).toBe(false);
     for (let i = 0; i < 20; i++) policy.reportMachineFrame(40);
     await Promise.resolve();
-    expect(policy.machineDecision()).toMatchObject({ level: 'economy', tier: 'slow', reason: 'frames' });
     expect(JSON.parse(storage.values.get('magna-urbis-performance-learned')!)).toEqual({ level: 'economy', ceiling: 'economy' });
-    for (let i = 0; i < 20; i++) policy.reportMachineFrame(10);
+    expect(policy.machineDecision().level).toBe('balanced');
+    expect(listener).not.toHaveBeenCalled();
+    const next = await page('?device=handheld', storage);
+    expect(next.machineDecision()).toMatchObject({ level: 'economy', tier: 'slow', reason: 'frames' });
+  });
+  it('keeps a handheld off Minimal when its compositor is refused at run time', async () => {
+    const policy = await page('?device=handheld');
+    policy.reportMachineCompositor(false);
     await Promise.resolve();
-    expect(policy.machineDecision().level).toBe('economy');
-    policy.reportMachineStruggle();
-    await Promise.resolve();
-    expect(policy.machineDecision().level).toBe('economy');
+    expect(policy.machineDecision()).toMatchObject({ level: 'balanced', reason: 'normal' });
   });
   it('steps a handheld down for good when the map loses its GPU context', async () => {
     const storage = memoryStorage();
@@ -203,19 +205,5 @@ describe('machine defaults', () => {
     expect(JSON.parse(storage.values.get('magna-urbis-performance-learned')!).graphics).toBe(true);
     const next = await page('?device=handheld', storage);
     expect(next.machineDecision()).toMatchObject({ level: 'economy', reason: 'graphics' });
-  });
-  it('keeps a struggle for the session only', async () => {
-    const storage = memoryStorage();
-    const policy = await page('?device=handheld', storage);
-    expect(policy.machineDecision().level).toBe('balanced');
-    // Before the first measured window a struggle is warm-up.
-    policy.reportMachineStruggle();
-    await Promise.resolve();
-    expect(policy.machineDecision().level).toBe('balanced');
-    for (let i = 0; i < 20; i++) policy.reportMachineFrame(25);
-    policy.reportMachineStruggle();
-    await Promise.resolve();
-    expect(policy.machineDecision()).toMatchObject({ level: 'economy', reason: 'frames' });
-    expect(storage.values.has('magna-urbis-performance-learned')).toBe(false);
   });
 });

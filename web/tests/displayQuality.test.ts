@@ -22,11 +22,9 @@ describe('display quality policy', () => {
     expect(q.getDisplayQuality()).toBe('full');
   });
 
-  it('ignores GPU names and reports a struggle instead of demoting under a policy', async () => {
+  it('ignores GPU names and slow frames under a policy', async () => {
     vi.stubGlobal('document', { hidden: false });
     const q = await quality();
-    const struggle = vi.fn();
-    q.onDisplayStruggle(struggle);
     q.setDisplayQualityPolicy('full');
     q.initializeDisplayQuality();
     q.reportDisplayRenderer('Mali-G78');
@@ -35,7 +33,6 @@ describe('display quality policy', () => {
       q.noteDisplayNavigation(t);
       q.noteDisplayFrame(t);
     }
-    expect(struggle).toHaveBeenCalledOnce();
     expect(q.getDisplayQuality()).toBe('full');
   });
 

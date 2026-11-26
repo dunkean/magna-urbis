@@ -211,7 +211,7 @@ The Apple Silicon DMG is signed ad hoc and distributed without Apple notarizatio
 - Towns on steep sites generate faster when a spring lies far from their streets: the paths tried for its water building are searched together instead of one after the other, with the same result.
 
 - Phones and tablets no longer get stuck in the Minimal style: a temporary loss of the graphics context is no longer treated as a missing graphics card. Maps saved in Minimal or in a fast style by that fault return to their full style.
-- Settings offers a Performance choice: Auto, Economy, Balanced or High. On phones and tablets, Auto starts at Balanced on flagship graphics chips and at Economy on the others, then follows the measured navigation speed. A notice explains any step down.
+- Settings offers a Performance choice: Auto, Economy, Balanced or High. On phones and tablets, Auto starts at Balanced on flagship graphics chips and at Economy on the others, and keeps that level for the visit: what it measures only sets the level of the next visit.
 - On phones and tablets the live map is drawn at up to twice the CSS resolution (1.5× in Economy) instead of the screen's full pixel density, and generation runs fewer threads and workers to stay within the tab's memory. The same settings and share codes give the same map on every device.
 - On a phone or tablet, the terrain controls warn when a map is likely to exceed the device's memory.
 - On phones, the Workshop opens as a bottom sheet (a side panel in landscape). It closes when a generation starts or when the map is touched, and opens on the town that was tapped. An empty map offers a Generate a map button.
@@ -220,8 +220,9 @@ The Apple Silicon DMG is signed ad hoc and distributed without Apple notarizatio
 - The advice to use Chrome or Edge is no longer shown on iPhone and iPad, where it could not help.
 - In the tilted view, twisting two fingers turns the map, together with pinch and pan. On phones and tablets, free flight has on-screen up and down buttons.
 - With a finger, the map editors pick roads, outlines and towns within a wider radius. Moving a town no longer blocks panning and pinching. Settlement placement and outline cuts have a Cancel button, and editor hints describe touch actions.
-- On phones and tablets, a map left less than 30 minutes ago is resumed automatically after the browser discarded the tab. The Reload previous map preference still decides when it has been set.
-- When a phone or tablet runs out of graphics resources, the map keeps its lighter view and the next visit starts at Economy. If the graphics compositor fails to start, it is tried again a few times and 3D returns with it; the 3D button explains why it cannot tilt the map instead of staying greyed or doing nothing.
+- On phones and tablets, a map left less than 30 minutes ago can be resumed in one tap after the browser discarded the tab: its settings come back and the map is rebuilt on request. The Reload previous map preference still decides when it has been set. Nothing is generated while the page is hidden.
+- When a phone or tablet runs out of graphics resources, the map keeps its lighter view and the next visit starts at Economy. If the graphics compositor fails to start, the map stays on its 2D view while the compositor is tried again a few times; the 3D button explains why it cannot tilt the map instead of staying greyed or doing nothing.
+- Settings › Performance can copy a device journal (graphics contexts, performance level, errors) for a bug report.
 
 - Selection edits keep names elsewhere on the map and transfer only changed town data, reducing the work after each edit.
 

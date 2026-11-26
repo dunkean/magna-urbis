@@ -60,6 +60,7 @@ import { mountPageDisposal } from './page/disposal';
 import { mountPreferences } from './page/preferences';
 import { mountPageBoot } from './page/bootstrap';
 import { mountPhoneLayout } from './page/phoneLayout';
+import { startJournal } from './deviceJournal';
 
 const state = createPageState();
 const actions = createPageActions(state);
@@ -90,6 +91,7 @@ mountExports(state, actions);
 mountPageDisposal(state, actions);
 // Mounted after every form it syncs; it also runs initializeLanguage once every language listener exists.
 mountPreferences(state, actions);
+startJournal(String(import.meta.env.VITE_BUILD_COMMIT ?? 'local'));
 // After the workbench layout (mounted with the preferences) built the toolbar row and moved the inspector.
 mountPhoneLayout();
 await mountPageBoot(state, actions);

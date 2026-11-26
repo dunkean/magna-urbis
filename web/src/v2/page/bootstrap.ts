@@ -11,9 +11,13 @@ import { inspectMachine, releaseMachineStyle } from '../machineTier';
 import { mountMachineDefault, mountPerformancePolicy, persistedSettings, repairMachinePreset } from './machineDefault';
 import { reloadPreviousMapAtStartup, startupPlan } from '../startup';
 import { handheldDevice } from '../../../../rust/bridge/deviceClass';
+import { note } from '../deviceJournal';
+import { acceptResume, offerResume } from '../resumeOffer';
+import { COMPACT_QUERY } from './phoneLayout';
 
-const RESUMING = 'Resuming your last map…';
-registerMessages({ [RESUMING]: { en: RESUMING, fr: 'Reprise de votre dernière carte…' } });
+const RESUME_OFFER = 'Your last map can be rebuilt.',
+  RESUME = 'Resume';
+registerMessages({ [RESUME_OFFER]: { en: RESUME_OFFER, fr: 'Votre dernière carte peut être reconstruite.' }, [RESUME]: { en: RESUME, fr: 'Reprendre' } });
 
 export async function mountPageBoot(state: PageState, actions: PageActions): Promise<void> {
   setText($('#build-info'), `${import.meta.env.VITE_BUILD_DATE ?? 'dev'} · ${import.meta.env.VITE_BUILD_COMMIT ?? 'local'}`);
@@ -57,6 +61,7 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
     const previous = explicit ? undefined : await takeAutosave();
     const plan = startupPlan(state.settings, previous, { explicit, restore: reloadPreviousMapAtStartup(), handheld: handheldDevice(), now: Date.now() });
     const saved = plan.mode === 'restore' ? plan.saved : undefined;
+    note('startup', `${plan.mode}${previous ? ` · autosave ${previous.savedAt ? Math.round((Date.now() - previous.savedAt) / 1000) + ' s old' : 'undated'}${previous.view ? ' with a map' : ''}` : ''}`);
     // Until the restored map is drawn, the autosave keeps its view: a tab discarded again meanwhile still resumes it.
     let restoringView = saved?.view;
     if (plan.mode === 'fresh') {
@@ -84,20 +89,28 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
     if (!new URLSearchParams(location.hash.slice(1)).has('city')) mountMachineDefault(state, actions, machine);
     if (saved) {
       actions.setBusy(false);
-      // The automatic resume of a phone was not asked for: say what the page is doing.
-      if (reloadPreviousMapAtStartup() === undefined) actions.toast(RESUMING);
       startAutosave(); // Save edits and pagehide even while the restored generation is still running.
-      await actions.generate('all');
-      restoringView = undefined;
-      try {
-        if (saved.view) state.client.viewer.setView(saved.view as never);
-      } catch {
-        /* The viewport is optional. */
-      }
-      try {
-        if (saved.ui?.tab) actions.selectTab(saved.ui.tab);
-      } catch {
-        /* View state is optional. */
+      const rebuild = async (): Promise<void> => {
+        note('resume', 'rebuild');
+        await actions.generate('all');
+        restoringView = undefined;
+        try {
+          if (saved.view) state.client.viewer.setView(saved.view as never);
+        } catch {
+          /* The viewport is optional. */
+        }
+        try {
+          if (saved.ui?.tab) actions.selectTab(saved.ui.tab);
+        } catch {
+          /* View state is optional. */
+        }
+      };
+      // The stored preference rebuilds at once. A handheld without it restored the recipe only: the generation waits
+      // for the user's tap (resumeOffer.ts; the phone layout shows it on the empty map).
+      if (reloadPreviousMapAtStartup() !== undefined) await rebuild();
+      else {
+        offerResume(() => void rebuild());
+        if (!matchMedia(COMPACT_QUERY).matches) actions.toast(RESUME_OFFER, false, { label: RESUME, run: acceptResume });
       }
     }
     if (!saved) startAutosave();
