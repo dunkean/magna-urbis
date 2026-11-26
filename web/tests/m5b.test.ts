@@ -17,9 +17,10 @@ const STYLES = Object.keys(PALETTES) as MapStyle[];
 const HEX = /^#[0-9a-f]{6}$/i;
 
 describe('style tokens', () => {
-  it('has the nine styles, each with a label and font stack', () => {
-    expect([...STYLES].sort()).toEqual(['atlas', 'blueprint', 'cadastre', 'engraving', 'illuminated', 'night', 'parchment', 'topographic', 'watabou']);
-    expect(STYLE_LIST.length).toBe(9);
+  it('lists every supported style with a label and font stack', () => {
+    const expected = ['atlas', 'blueprint', 'cadastre', 'engraving', 'illuminated', 'minimal', 'night', 'parchment', 'topographic', 'watabou', 'white'];
+    expect([...STYLES].sort()).toEqual(expected);
+    expect(STYLE_LIST.map(s => s.id).sort()).toEqual(expected);
     for (const s of STYLES) {
       expect(isMapStyle(s)).toBe(true);
       expect(PALETTES[s].label.length).toBeGreaterThan(2);
@@ -29,12 +30,15 @@ describe('style tokens', () => {
     }
     expect(isMapStyle('nope')).toBe(false);
   });
-  it('every style defines every token (same key set as parchment) with valid colours', () => {
+  it('every style supplies the common tokens with valid colours and typed optional overrides', () => {
     const ref = PALETTES.parchment;
     const keysOf = (o: object): string[] => Object.keys(o).sort();
     for (const s of STYLES) {
       const p = PALETTES[s];
-      expect(keysOf(p)).toEqual(keysOf(ref));
+      const { forestTint, contourThinW, furlongAlpha, waterAboveLand, ...common } = p;
+      expect(keysOf(common)).toEqual(keysOf(ref));
+      for (const value of [forestTint, contourThinW, furlongAlpha]) if (value !== undefined) expect(Number.isFinite(value)).toBe(true);
+      if (waterAboveLand !== undefined) expect(typeof waterAboveLand).toBe('boolean');
       for (const g of ['urban', 'lab', 'cart', 'land', 'tex'] as const) expect(keysOf(p[g])).toEqual(keysOf(ref[g]));
       for (const k of ['paper', 'ink', 'inkSoft', 'seaFill', 'waterEdge', 'roadFill', 'roadEdge', 'treeFill', 'treeInk'] as const) expect(p[k]).toMatch(HEX);
       for (const k of ['street', 'yard', 'mass', 'massEdge', 'wall', 'wallFill', 'landmark', 'landmarkEdge', 'place', 'garden'] as const) expect(p.urban[k]).toMatch(HEX);
