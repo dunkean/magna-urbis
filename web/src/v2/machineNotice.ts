@@ -27,8 +27,8 @@ export function showMachineNotice(choice: MachineDecision, full: () => void): ()
     close = document.createElement('button');
   banner.id = 'machine-notice';
   banner.setAttribute('role', 'status');
-  // Narrow screens (workbench.css, max-width 720px) fix the Workshop button 16px above the bottom left: stay above it and wrap.
-  const narrow = typeof matchMedia === 'function' && matchMedia('(max-width: 720px)').matches;
+  // The compact layout (page/phoneLayout.ts COMPACT_QUERY) fixes the Workshop button 12px above the bottom left: stay above it and wrap.
+  const narrow = typeof matchMedia === 'function' && matchMedia('(max-width: 720px), (pointer: coarse) and (max-height: 500px)').matches;
   banner.style.cssText = `position:fixed;bottom:${narrow ? 'calc(64px + env(safe-area-inset-bottom, 0px))' : '42px'};left:50%;transform:translateX(-50%);z-index:1000;box-sizing:border-box;width:max-content;max-width:calc(100vw - ${narrow ? 24 : 40}px);padding:8px 12px;border:1px solid #c4bcac;border-radius:6px;background:#f4f1ea;color:#4c493f;font:12px/1.4 system-ui;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center`;
   text.style.cssText = 'flex:1 1 220px;min-width:0';
   restore.type = close.type = 'button';

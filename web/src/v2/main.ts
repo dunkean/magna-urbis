@@ -36,6 +36,8 @@ import './page/entitySheet';
 import './viewLoadingIndicator';
 import './autosave';
 import './settingsReset';
+import './touch.css'; // control sizes on coarse pointers, after every sheet whose sizes it raises
+import './page/phoneLayout'; // last: its compact rules win at equal specificity
 
 import { createPageState } from './page/state';
 import { createPageActions } from './page/actions';
@@ -57,6 +59,7 @@ import { mountExports } from './page/exports';
 import { mountPageDisposal } from './page/disposal';
 import { mountPreferences } from './page/preferences';
 import { mountPageBoot } from './page/bootstrap';
+import { mountPhoneLayout } from './page/phoneLayout';
 
 const state = createPageState();
 const actions = createPageActions(state);
@@ -87,4 +90,6 @@ mountExports(state, actions);
 mountPageDisposal(state, actions);
 // Mounted after every form it syncs; it also runs initializeLanguage once every language listener exists.
 mountPreferences(state, actions);
+// After the workbench layout (mounted with the preferences) built the toolbar row and moved the inspector.
+mountPhoneLayout();
 await mountPageBoot(state, actions);

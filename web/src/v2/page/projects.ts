@@ -69,6 +69,35 @@ registerMessages({
   },
 });
 
+/** A dialog's own close control: its `[data-close]` buttons or the × ending its head. */
+const DIALOG_CLOSE = '[data-close], .dialog-head > button:last-child, :scope > header > button:last-child';
+/**
+ * Touch has no Escape key: a tap on the backdrop of a modal dialog clicks its close control, so the dialog's own close
+ * logic runs. A dialog without one (a blocking choice) stays open. Touch events only: mouse and pen keep today's
+ * behaviour. The touchend is cancelled so its compatibility click does not land on what lay under the dialog.
+ */
+function closeDialogsOnBackdropTap(): void {
+  let pressed: HTMLDialogElement | undefined;
+  const backdrop = (target: EventTarget | null, touch: Touch | undefined): HTMLDialogElement | undefined => {
+    if (!touch || !(target instanceof HTMLDialogElement) || !target.open) return undefined;
+    const box = target.getBoundingClientRect();
+    return touch.clientX < box.left || touch.clientX > box.right || touch.clientY < box.top || touch.clientY > box.bottom ? target : undefined;
+  };
+  document.addEventListener('touchstart', event => (pressed = event.touches.length === 1 ? backdrop(event.target, event.changedTouches[0]) : undefined), { capture: true, passive: true });
+  document.addEventListener(
+    'touchend',
+    event => {
+      const dialog = backdrop(event.target, event.changedTouches[0]),
+        close = dialog && dialog === pressed ? dialog.querySelector<HTMLElement>(DIALOG_CLOSE) : null;
+      pressed = undefined;
+      if (!close) return;
+      event.preventDefault();
+      close.click();
+    },
+    { capture: true, passive: false },
+  );
+}
+
 export function mountProjectFiles(state: PageState, actions: PageActions): void {
   insertHTML($('#import-dialog'), 'afterend', '<dialog id="osm-dialog" aria-labelledby="osm-title"></dialog>');
   insertHTML($('.map-bottom'), 'beforeend', `<div id="map-attribution" hidden>${osmCredits}</div>`);
@@ -85,6 +114,7 @@ export function mountProjectFiles(state: PageState, actions: PageActions): void 
         $<HTMLDialogElement>(`#${b.dataset.close}`).close();
       }),
   );
+  closeDialogsOnBackdropTap();
 
   $('#import-open').onclick = () => actions.dialog('#import-dialog');
 

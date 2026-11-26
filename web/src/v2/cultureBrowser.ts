@@ -1,5 +1,6 @@
 import { CULTURE_LABELS, cultureEra } from '../gen/options';
 import { registerMessages, setText, translate } from './i18n';
+import { handheldDevice } from '../../../rust/bridge/deviceClass';
 import './cultureBrowser.css';
 
 export const CULTURE_GROUPS = ['Medieval cultures', 'Ancient cultures', 'Fantasy cultures', 'Modern cultures', 'Futuristic cultures'] as const;
@@ -27,6 +28,7 @@ export function cultureGroup(id: string): (typeof CULTURE_GROUPS)[number] | unde
 /** Read the live options, including inheritance and environment restrictions. The original
  * select owns values, disabled state and change handlers in every form, including new inspectors. */
 export function installCultureBrowser(root: HTMLElement, followEnvironment?: { source: HTMLSelectElement; get(): boolean; set(enabled: boolean): void }): void {
+  const handheld = handheldDevice();
   const dialog = document.createElement('dialog');
   dialog.className = 'culture-browser';
   const header = document.createElement('header'),
@@ -105,14 +107,16 @@ export function installCultureBrowser(root: HTMLElement, followEnvironment?: { s
     (select.closest('[popover]') ?? document.body).append(dialog);
     render();
     dialog.showModal();
-    search.focus();
+    // On a handheld the focused search field would pop the keyboard over the list; the close button takes the focus.
+    if (!handheld) search.focus();
   }
   const eligible = (target: EventTarget | null): target is HTMLSelectElement => {
     if (!(target instanceof HTMLSelectElement) || target.disabled || target.size > 1) return false;
     const count = Array.from(target.options).filter(o => cultures.has(o.value)).length;
     return count > 5 || (count > 0 && (target.dataset.option === 'culture' || target.id === 'local-culture' || /(^|\.)(culture|mixCulture|buildingCulture)$/i.test(target.dataset.settingPath ?? '')));
   };
-  root.addEventListener('mousedown', event => {
+  // A tap is a click: opening on the emulated mousedown would let the native picker open as well.
+  root.addEventListener(handheld ? 'click' : 'mousedown', event => {
     if (event.button === 0 && eligible(event.target)) {
       event.preventDefault();
       open(event.target);

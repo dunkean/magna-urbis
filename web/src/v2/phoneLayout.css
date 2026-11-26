@@ -1,0 +1,450 @@
+/* Compact (phone) layout: one 44px header row, one 48px toolbar row, the map, and sheets over it. The condition is
+   page/phoneLayout.ts COMPACT_QUERY; every rule stays inside it so wider windows keep the desktop layout. Ids carry the
+   specificity needed over the desktop rules of workbench.css and workbenchLayout.css. */
+@media (max-width: 720px), (pointer: coarse) and (max-height: 500px) {
+  /* A downward pan must not reload the page and lose the map. */
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+
+  /* Header: brand, share code, New, Open, language, settings, "⋯"; the rest waits in the menu (phoneLayout.ts). */
+  #app > .app-header.app-header {
+    height: calc(44px + env(safe-area-inset-top));
+    min-height: 0;
+    padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  #app .app-header .brand-icon {
+    display: block;
+    width: 26px;
+    height: 26px;
+  }
+  #app .app-header .brand,
+  #app .app-header > :is(#project-links-open, #desktop-download, .version),
+  #app .project-actions > :is(#save-map, #city-code-open, #osm-open, #export-open),
+  #app .header-tools > :is(.edition, #changelog-open, .illustration-trigger),
+  #app .city-code-chip > :is(#city-code-current, #city-code-chip-debug),
+  #app .app-header #hardware-caption {
+    display: none;
+  }
+  #app .app-header :is(.project-actions, .header-tools) {
+    flex: none;
+    gap: 4px;
+    margin: 0;
+  }
+  #app .app-header .project-actions {
+    margin-inline-start: auto;
+  }
+  #app .app-header :is(.project-actions, .header-tools) > button,
+  #app .app-header .city-code-chip > button {
+    min-height: 36px;
+    padding: 6px 9px;
+    font-size: 13px;
+  }
+  #app .app-header #language-select {
+    width: 72px;
+  }
+  #app .app-header #phone-more {
+    font-size: 20px;
+    line-height: 1;
+    padding: 4px 10px;
+  }
+  #phone-header-menu:popover-open {
+    position: fixed;
+    inset: calc(46px + env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) auto auto;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    min-width: 210px;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 60px - env(safe-area-inset-top));
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 8px;
+    background: #25271f;
+    color: var(--ink);
+    border: 1px solid #dcb86f55;
+    border-radius: 10px;
+    box-shadow: 0 16px 40px #0007;
+  }
+  #app #phone-header-menu > :is(button, a) {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    min-height: 40px;
+    padding: 8px 12px;
+    font-size: 14px;
+    text-align: start;
+    white-space: nowrap;
+  }
+  #app #phone-header-menu > a {
+    color: var(--gold);
+    text-decoration: none;
+  }
+  /* Icon-only header buttons say what they do in the menu. */
+  #app #phone-header-menu > :is(#changelog-open, #city-code-chip-debug)::after {
+    content: attr(aria-label);
+  }
+
+  /* Toolbar: the style select, the padlock, 3D and Display; the other controls wait in the Display panel. */
+  #app .workbench-bar .view-strip {
+    height: 48px;
+    min-height: 48px;
+    padding: 4px max(8px, env(safe-area-inset-right)) 4px max(8px, env(safe-area-inset-left));
+    flex-wrap: nowrap;
+  }
+  #app .view-strip > .toolbar-row {
+    gap: 6px;
+    overflow: visible;
+  }
+  #app .view-strip > .toolbar-row > :not(.style-control, #phone-display-open) {
+    display: none;
+  }
+  #app .view-strip > .toolbar-row > .style-control {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    gap: 6px;
+    padding: 0;
+  }
+  #app .toolbar-row > .style-control > #map-style {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
+  #app .toolbar-row > .style-control > #render-status {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    margin: 0;
+    padding: 4px 7px;
+    border-radius: 6px;
+    background: #25271f;
+    z-index: 1;
+  }
+  #app .toolbar-row > #phone-display-open {
+    flex: none;
+    padding: 7px 12px;
+    font-size: 13px;
+    color: var(--gold);
+    border-color: #dcb86f66;
+  }
+  #app #phone-display:popover-open {
+    position: fixed;
+    inset: auto 0 0 0;
+    width: auto;
+    max-width: none;
+    max-height: 50dvh;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0 0 env(safe-area-inset-bottom);
+    background: #25271f;
+    color: var(--ink);
+    border: 1px solid #dcb86f55;
+    border-bottom: 0;
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -12px 40px #0007;
+  }
+  #app #phone-display > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px max(14px, env(safe-area-inset-right)) 6px max(14px, env(safe-area-inset-left));
+    border-bottom: 1px solid var(--line);
+  }
+  #app #phone-display > header h2 {
+    margin: 0;
+    font:
+      16px Georgia,
+      serif;
+    color: var(--gold);
+  }
+  #app #phone-display > .phone-display-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px 16px;
+    padding: 12px max(14px, env(safe-area-inset-right)) 16px max(14px, env(safe-area-inset-left));
+    overflow: auto;
+    overscroll-behavior: contain;
+    white-space: normal;
+  }
+  #app .phone-display-body #scene-controls {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    gap: 12px 16px;
+    padding: 0;
+    border: 0;
+  }
+  #app .phone-display-body :is(.stage-quick, .town-layers, .city3d-bar:not([hidden])) {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+  #app .phone-display-body > #map-advanced-open {
+    margin-inline-start: 0;
+  }
+
+  /* Workshop: a bottom sheet over the map, its tab strip as header row beside the close button. */
+  #app > .workspace {
+    display: block;
+    position: relative;
+  }
+  #app > .workspace > .map-area {
+    height: 100%;
+  }
+  #app > .workspace > #sidebar.sidebar {
+    position: fixed;
+    inset: auto 0 0 0;
+    width: auto;
+    height: 62dvh;
+    max-height: calc(100dvh - 92px - env(safe-area-inset-top));
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: env(safe-area-inset-bottom);
+    border: 1px solid #dcb86f44;
+    border-bottom: 0;
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -12px 40px #0006;
+    overscroll-behavior: contain;
+    transform: none;
+    transition: transform 0.2s;
+  }
+  #app > .workspace > #sidebar.sidebar.mobile-closed {
+    transform: translateY(calc(100% + 24px));
+    box-shadow: none;
+  }
+  #app #sidebar > #workshop-close {
+    position: absolute;
+    top: 6px;
+    inset-inline-end: 6px;
+    z-index: 2;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    font-size: 22px;
+    line-height: 1;
+  }
+  #app #sidebar .chain-families {
+    padding: 8px 8px 0;
+    padding-inline-end: 52px;
+    border-radius: 14px 14px 0 0;
+  }
+  #app #sidebar .chain-families::before {
+    top: 21px;
+  }
+  #app #sidebar .chain-family-tab {
+    padding-bottom: 8px;
+  }
+  #app #sidebar .chain-family-tab .v2-icon {
+    width: 26px;
+    height: 26px;
+  }
+  #app #sidebar .chain-scroll {
+    overscroll-behavior: contain;
+  }
+  #app > #mobile-toggle.mobile-toggle {
+    display: block;
+    position: fixed;
+    top: auto;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    left: calc(12px + env(safe-area-inset-left));
+    z-index: 22;
+    padding: 10px 16px;
+    font-size: 14px;
+    border-radius: 22px;
+    box-shadow: 0 4px 18px #0006;
+  }
+  #app:has(#sidebar:not(.mobile-closed), #entity-sheet:not([hidden])) > #mobile-toggle {
+    visibility: hidden;
+  }
+
+  /* Map overlays, one zone each: zoom and compass top right, places chip top left, scale above the Workshop button,
+     progress above the bottom controls, entity sheet at the bottom. */
+  #app .map-area .map-tools {
+    top: 8px;
+    left: auto;
+    right: max(8px, env(safe-area-inset-right));
+  }
+  #app .map-area .map-compass {
+    top: 168px;
+    right: calc(14px + env(safe-area-inset-right));
+  }
+  #app .map-area .map-bottom {
+    left: max(12px, env(safe-area-inset-left));
+    right: auto;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+  #app .map-area #minimap {
+    display: none;
+  }
+  #app .map-area .mini-card {
+    padding: 6px 10px;
+  }
+  #app[aria-busy='true'] .map-area .map-bottom {
+    visibility: hidden;
+  }
+  #app .map-area > .progress-card {
+    left: 12px;
+    right: 12px;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+    width: auto;
+    min-width: 0;
+    max-width: 480px;
+    margin-inline: auto;
+    padding: 12px 14px;
+    transform: none;
+  }
+  #app > .toast.toast {
+    top: auto;
+    bottom: calc(128px + env(safe-area-inset-bottom));
+    max-width: calc(100vw - 24px);
+  }
+  #app .map-area > #places-panel {
+    inset: 8px auto auto max(8px, env(safe-area-inset-left));
+    width: auto;
+    max-width: calc(100% - 72px);
+    max-height: calc(100% - 132px - env(safe-area-inset-bottom));
+  }
+  #app .map-area > #places-panel[data-phone-open='true'] {
+    width: min(320px, calc(100% - 72px));
+  }
+  #app #places-panel:not([data-phone-open='true']) > :not(header, .inspector-mode),
+  #app #places-panel:not([data-phone-open='true']) > header > :not(h2, .count-badge) {
+    display: none;
+  }
+  #app #places-panel > header {
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+  #app #places-panel > .inspector-mode {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+  #app .map-area > #entity-sheet.entity-sheet {
+    inset: auto 0 0 0;
+    width: auto;
+    max-width: none;
+    max-height: 45dvh;
+    padding: 14px max(16px, env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    border-radius: 14px 14px 0 0;
+    z-index: 21;
+    overscroll-behavior: contain;
+  }
+  #app #entity-sheet .entity-sheet-close {
+    width: 40px;
+    height: 40px;
+    font-size: 22px;
+  }
+  #app .map-area > .empty-map {
+    inset: 0 0 50% 0;
+    align-content: end;
+  }
+  #app .map-area > .empty-map .serif {
+    font-size: 30px;
+  }
+  #app .map-area > .phone-first-run {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    top: 52%;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  #app .phone-first-run > button {
+    min-width: min(260px, 100%);
+    padding: 12px 18px;
+    font-size: 15px;
+  }
+
+  /* Advanced panels cover the screen; their header carries Close. */
+  #app .workbench-advanced {
+    top: calc(8px + env(safe-area-inset-top));
+    left: max(8px, env(safe-area-inset-left));
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overscroll-behavior: contain;
+  }
+}
+/* The desktop app link is for Windows and Linux computers, not for a phone. */
+@media (pointer: coarse) and (max-width: 720px), (pointer: coarse) and (max-height: 500px) {
+  #app #phone-header-menu > #desktop-download {
+    display: none;
+  }
+}
+/* Brand name where the header has room. */
+@media (min-width: 520px) and (max-width: 720px) and (min-height: 501px) {
+  #app .app-header .brand {
+    display: block;
+  }
+}
+/* Landscape phone: header and toolbar share one row; the Workshop is a right-hand panel. */
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 720px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  #app {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  #app > .app-header.app-header {
+    grid-column: 1;
+    grid-row: 1;
+    max-width: 55vw;
+    padding-inline-end: 6px;
+  }
+  #app > .workbench-bar {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+  }
+  #app > .workspace {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  #app .workbench-bar .view-strip {
+    height: calc(44px + env(safe-area-inset-top));
+    min-height: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: 0;
+  }
+  #app > .workspace > #sidebar.sidebar {
+    inset: calc(44px + env(safe-area-inset-top)) 0 0 auto;
+    width: 46vw;
+    height: auto;
+    max-height: none;
+    padding-inline-end: env(safe-area-inset-right);
+    border-bottom: 1px solid #dcb86f44;
+    border-radius: 14px 0 0 0;
+  }
+  #app > .workspace > #sidebar.sidebar.mobile-closed {
+    transform: translateX(calc(100% + 24px));
+  }
+  #app .map-area .map-compass {
+    display: none;
+  }
+  #app .map-area > #entity-sheet.entity-sheet {
+    right: auto;
+    width: min(440px, 100%);
+    max-height: 70dvh;
+    border-radius: 0 14px 0 0;
+  }
+  #app #phone-display:popover-open {
+    left: auto;
+    width: min(520px, 100vw);
+    border-radius: 14px 0 0 0;
+  }
+}

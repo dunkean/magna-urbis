@@ -1,0 +1,178 @@
+/*
+ * Control sizes for a finger. Only coarse pointers (phones, tablets): the desktop never matches. Where panels sit is
+ * phoneLayout.css; this sheet only makes the controls large enough to tap and stops iOS from zooming on focus.
+ * Hit areas grow with a transparent pseudo-element where growing the control itself would swell every compact row.
+ */
+@media (pointer: coarse) {
+  /* iOS zooms the page when a text field under 16px takes the focus: a floor that every panel's own size must yield to. */
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  select {
+    min-height: 40px;
+  }
+
+  /* Buttons and tabs: a 40 x 40 hit area around any smaller button, without moving anything. The two excluded kinds
+     draw their icon in ::before. */
+  :where(button:not(.urban-field-reset, [data-editor-icon])) {
+    position: relative;
+  }
+  :where(button:not(.urban-field-reset, [data-editor-icon]))::before {
+    content: '';
+    position: absolute;
+    inset: min(0px, calc(50% - 20px));
+  }
+
+  /* Checkboxes and radios at 20px; their row answers a tap 40px tall. The hit area stays beneath the row's own
+     controls (isolation + z-index), so a "?" or a reset button in the row keeps its taps. */
+  input[type='checkbox'],
+  input[type='radio'] {
+    min-width: 20px;
+    min-height: 20px;
+  }
+  :where(label:has(> input[type='checkbox'], > input[type='radio'])) {
+    position: relative;
+    isolation: isolate;
+  }
+  :where(label:has(> input[type='checkbox'], > input[type='radio']))::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: min(0px, calc(50% - 20px)) 0;
+  }
+
+  /* Sliders: a 28px tall input to grab, a 22px thumb. */
+  input[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 28px;
+    margin: 0;
+    background: transparent;
+  }
+  input[type='range']::-webkit-slider-runnable-track {
+    height: 4px;
+    border: 0;
+    border-radius: 2px;
+    background: #dcb86f66;
+  }
+  input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    width: 22px;
+    height: 22px;
+    margin-top: -9px;
+    border: 2px solid #25261f;
+    border-radius: 50%;
+    background: var(--gold);
+  }
+  input[type='range']::-moz-range-track {
+    height: 4px;
+    border: 0;
+    border-radius: 2px;
+    background: #dcb86f66;
+  }
+  input[type='range']::-moz-range-thumb {
+    box-sizing: border-box;
+    width: 22px;
+    height: 22px;
+    border: 2px solid #25261f;
+    border-radius: 50%;
+    background: var(--gold);
+  }
+  input[type='range']:disabled {
+    opacity: 0.4;
+  }
+  /* The season slider of the toolbar has its own thin look (workbenchLayout.css): same selectors, a larger thumb and row. */
+  #app .toolbar-row #scene-controls .scene-season {
+    grid-template-rows: 20px 24px;
+    gap: 0;
+  }
+  #app .toolbar-row #scene-controls .scene-season input {
+    height: 24px;
+    min-height: 24px;
+  }
+  #app #scene-season::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+    margin-top: -10px;
+  }
+  #app #scene-season::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* Map zoom and fit. */
+  .map-tools button {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Dialogs fit a 360 x 640 screen and scroll inside; the × of their head is a 40px target. */
+  dialog {
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 24px);
+    padding: 18px 16px max(18px, env(safe-area-inset-bottom));
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  dialog .dialog-head button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  /* Help of a tooltip field (parameterForm.ts): a "?" at the end of the caption shows it inline. */
+  .parameter-help-toggle {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: none;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1;
+  }
+  .parameter-help-toggle[aria-expanded='true'] {
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+  /* In the grid rows (caption | control), the "?" shares the caption's cell, at its end; the panels' rules send other
+     buttons of a field to a full row, hence the !important. */
+  .parameter-field > .parameter-help-toggle {
+    grid-column: 1 !important;
+    grid-row: 1;
+    justify-self: end;
+    align-self: center;
+    vertical-align: middle;
+    margin-inline-start: 4px;
+  }
+  .parameter-field:has(> .parameter-help-toggle) > .parameter-caption {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  /* Grid rows only (stageChain.css): keep the caption's text clear of the "?" that overlays its cell. */
+  :is(.stage-body, .family-general, .family-method) .parameter-field:has(> .parameter-help-toggle) > .parameter-caption,
+  .parameter-field:has(> .parameter-slider):has(> .parameter-help-toggle) > .parameter-caption {
+    padding-inline-end: 30px;
+  }
+  /* The toolbar's quick fields hide every help line: no "?" there. */
+  #app .toolbar-row .stage-quick .parameter-help-toggle {
+    display: none;
+  }
+
+  /* Rows another rule forces back to static: positioned again, without offsets, or their hit area would fill the whole
+     panel and take its taps. */
+  #app #places-panel > .inspector-mode,
+  .workbench-bar .header-menu .inspector-mode {
+    position: relative;
+    inset: auto;
+  }
+
+  /* A finger has no resting cursor to read coordinates under. */
+  #cursor-readout {
+    display: none;
+  }
+}

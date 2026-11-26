@@ -832,11 +832,6 @@
     grid-template-columns: 22px minmax(0, 1fr) 22px auto 64px;
   }
 }
-@media (max-width: 720px) {
-  .stage-chain .chain-families {
-    padding-top: 46px;
-  }
-}
 
 /* Segmented controls */
 .source-switch {
@@ -1080,19 +1075,6 @@
   }
   .map-area:has(.places-panel:not([hidden])) .map-topbar {
     right: 280px;
-  }
-}
-@media (max-width: 720px) {
-  .places-panel {
-    left: 12px;
-    right: 12px;
-    width: auto;
-    top: auto;
-    bottom: 12px;
-    max-height: 45%;
-  }
-  .map-area:has(.places-panel:not([hidden])) .map-topbar {
-    right: 22px;
   }
 }
 

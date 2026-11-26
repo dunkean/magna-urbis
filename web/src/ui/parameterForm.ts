@@ -1,4 +1,5 @@
-import { bindTree, setText, setDynamicText, translate, onLanguageChange, getLanguage } from '../v2/i18n';
+import { bindTree, setText, setDynamicText, translate, onLanguageChange, getLanguage, registerMessages } from '../v2/i18n';
+import { handheldDevice } from '../../../rust/bridge/deviceClass';
 import { convertUnits, displayUnit, getDistanceUnit, onUnitsChange, unitInputNumber, type PhysicalUnit } from '../v2/units';
 import { mountCityPatternChoices } from '../v2/cityPatternChoices';
 import { levelStep, snapParameter } from '../v2/cityCodeFormat';
@@ -70,6 +71,29 @@ function fieldHelp(field: ParameterField): string {
   const source = physicalUnit(field),
     text = translate(field.help ?? '');
   return source ? text.replaceAll('{unit}', displayUnit(source, getDistanceUnit())) : text;
+}
+registerMessages({ 'Show help': { en: 'Show help', fr: 'Afficher l’aide' } });
+/** Touch has no hover: a tooltip-only description gets a "?" button that shows it inline under the field. */
+function mountHelpToggle(label: HTMLLabelElement, caption: HTMLElement, input: HTMLElement, help: HTMLElement): () => void {
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'parameter-help-toggle';
+  toggle.textContent = '?';
+  toggle.dataset.l10nKeep = '';
+  toggle.setAttribute('aria-controls', help.id);
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-label', translate('Show help'));
+  toggle.setAttribute('data-i18n-aria-label', 'Show help');
+  // A button is labelable: without `for`, the first one in the label would become its control instead of the input.
+  label.htmlFor = input.id;
+  caption.after(toggle);
+  const onToggle = (event: Event) => {
+    event.preventDefault();
+    help.hidden = !help.hidden;
+    toggle.setAttribute('aria-expanded', String(!help.hidden));
+  };
+  toggle.addEventListener('click', onToggle);
+  return () => toggle.removeEventListener('click', onToggle);
 }
 
 /** Shared scalar editor. It never rebuilds controls when values or language change. */
@@ -177,6 +201,7 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
       setText(help, field.help);
       input.setAttribute('aria-describedby', help.id);
       label.append(help);
+      if (field.helpDisplay === 'tooltip' && handheldDevice()) cleanups.push(mountHelpToggle(label, caption, input, help));
       // The caption is the requested hover target; inputs also expose the description on focus/hover.
       for (const target of [caption, input, slider])
         if (target) {

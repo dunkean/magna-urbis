@@ -15,6 +15,7 @@ import { mountDesktopReleaseLink, mountDesktopUpdates } from '../desktopUpdates'
 import { mountChangelog } from '../changelog';
 import { mountV2Illustration } from '../illustration';
 import { $, esc } from './dom';
+import { handheldDevice } from '../../../../rust/bridge/deviceClass';
 
 /** Engine capabilities as the client and the failure messages see them. */
 function runtimeCapabilities() {
@@ -142,6 +143,8 @@ export function mountRuntimeSettings(state: PageState, actions: PageActions): vo
     $('label[for="rust-server"]').hidden = true;
     $('#rust-server').parentElement!.querySelector<HTMLElement>('p.hint')!.hidden = true;
   }
+  // A phone or tablet runs neither local service: the whole section (Python/CUDA address included) is desktop-only.
+  if (handheldDevice()) $('#rust-server').closest('details')!.hidden = true;
 
   state.client.runtimeCapabilities = runtimeCapabilities;
 

@@ -713,61 +713,9 @@ dialog.workbench-illustration header [data-generate] {
   }
 }
 @media (max-width: 720px) {
-  #app > .app-header {
-    padding: 8px 12px;
-    gap: 8px;
-    min-height: 57px;
-    flex-wrap: wrap;
-  }
-  .app-header .brand-icon {
-    width: 28px;
-    height: 28px;
-  }
-  .app-header .brand h1 {
-    font-size: 13px;
-  }
-  .app-header .brand p {
-    display: none;
-  }
-  .project-actions {
-    gap: 3px;
-    margin-inline-start: auto;
-  }
-  .project-actions button,
-  .app-header .header-tools button {
-    padding: 6px 8px;
-    font-size: 10px;
-  }
-  .app-header .header-tools {
-    gap: 5px;
-    margin: 0;
-  }
-  .app-header #hardware-caption {
-    display: none;
-  }
   .app-header .header-tools .v2-icon {
     width: 16px;
     height: 16px;
-  }
-  .view-strip {
-    padding: 8px 12px;
-    gap: 9px;
-    display: flex;
-  }
-  .view-strip .style-control {
-    width: 100%;
-    display: flex;
-    gap: 7px;
-    min-height: 0;
-  }
-  .view-strip .style-control .strip-label {
-    display: block;
-    font-size: 9px;
-  }
-  .view-strip .style-control select {
-    width: auto;
-    max-width: none;
-    flex: 1;
   }
   .scene-controls {
     border: 0;
@@ -777,75 +725,17 @@ dialog.workbench-illustration header [data-generate] {
     flex: none;
     justify-content: space-between;
   }
-  .workbench-bar .header-menu {
-    padding: 6px 12px;
-    gap: 5px;
-  }
-  .workbench-bar .header-menu > .strip-label {
-    display: none;
-  }
-  .workbench-bar .header-menu button {
-    font-size: 10px;
-    padding: 6px 8px;
-  }
-  .workbench-bar .header-menu .inspector-mode {
-    font-size: 10px;
-  }
-  .workbench-bar #inspect-target {
-    width: 75px !important;
-  }
   .tool-spacer {
     display: none;
   }
-  #app > .workspace {
-    display: block;
-  }
-  .workspace > .sidebar {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: min(360px, 92vw);
-    z-index: 20;
-  }
-  .workspace {
-    position: relative;
-  }
-  .workspace > .map-area {
-    height: 100%;
-  }
-  #app > .mobile-toggle {
-    position: fixed;
-    top: auto;
-    bottom: 16px;
-    left: 12px;
-    z-index: 22;
-    font-size: 12px;
-    padding: 10px 14px;
-  }
-  .map-area .map-tools {
-    top: 14px;
-    left: 12px;
-  }
   .map-area .map-hint {
     display: none;
-  }
-  .map-area .editor-dock {
-    top: 12px;
-    bottom: 12px;
-    inset-inline-end: 12px;
-    width: calc(100% - 72px);
   }
   .editor-dock #editor-content {
     padding: 13px;
   }
   .editor-dock > header {
     padding: 13px;
-  }
-  .map-area .places-panel {
-    top: 14px;
-    right: 12px;
-    max-height: calc(100% - 115px);
-    width: calc(100% - 72px);
   }
   #hardware-dialog {
     padding: 18px;
@@ -875,12 +765,6 @@ dialog.workbench-illustration header [data-generate] {
   }
 }
 @media (max-width: 420px) {
-  .app-header .brand-icon {
-    display: none;
-  }
-  .app-header .header-tools .illustration-trigger {
-    font-size: 10px;
-  }
   .scene-controls {
     gap: 5px;
   }
