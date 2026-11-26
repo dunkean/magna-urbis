@@ -1,5 +1,7 @@
 import type { NameDisplayLanguage, NameMeaning } from './types';
+import { communityText } from '../../locales';
 
+/** Columns of the authored rows; community locales (de, it, pl, ko) are read from `src/locales/*.json`. */
 const LANGUAGES: NameDisplayLanguage[] = ['en', 'fr', 'ja', 'ar', 'es', 'pt', 'zh', 'ru'];
 /** Authored semantic messages; proper names never go through word replacement. */
 const rows: Record<string, string[]> = {
@@ -28,7 +30,8 @@ const rows: Record<string, string[]> = {
   butcher: ['Butchers', 'les Bouchers', '肉屋', 'الجزارين', 'Carniceros', 'Açougueiros', '屠夫', 'Мясники'],
 };
 export function conceptText(concept: string, language: NameDisplayLanguage): string {
-  return rows[concept]?.[LANGUAGES.indexOf(language)] ?? concept;
+  const row = rows[concept];
+  return (row && communityText(language, 'names', 'rows', concept)) ?? row?.[LANGUAGES.indexOf(language)] ?? row?.[0] ?? concept;
 }
 export function descriptiveText(meaning: NameMeaning | undefined, language: NameDisplayLanguage): string | undefined {
   return meaning && (meaning.concept === 'old-town' || meaning.concept.startsWith('street-') || meaning.concept.startsWith('square-')) ? conceptText(meaning.concept, language) : undefined;
@@ -93,5 +96,6 @@ export function roleNoun(role: string): string {
   return 'building';
 }
 export function roleText(role: string, language: NameDisplayLanguage): string | undefined {
-  return roleRows[roleNoun(role)]?.[LANGUAGES.indexOf(language)];
+  const noun = roleNoun(role), row = roleRows[noun];
+  return (row && communityText(language, 'names', 'roleRows', noun)) ?? row?.[LANGUAGES.indexOf(language)] ?? row?.[0];
 }

@@ -202,9 +202,12 @@ describe('Namebench pipeline integration', () => {
     expect(w.names!.entries.find(e => e.kind === 'castle')?.reference?.culture).toBe('swahili-stone-town');
   });
 
-  it('localizes an annotated generic in eight languages without altering the cultural proper name', () => {
+  it('localizes an annotated generic in every map language without altering the cultural proper name', () => {
     const parts: NameParts = { proper: 'TsingTao', cultural: 'TsingTao Jiang', kind: 'river', opaque: false };
-    const expected = { fr: 'Fleuve TsingTao', en: 'TsingTao River', ja: 'TsingTao川', ar: 'نهر \u2068TsingTao\u2069', es: 'Río TsingTao', pt: 'Rio TsingTao', zh: 'TsingTao河', ru: 'Река «TsingTao»' };
+    const expected: Record<NameDisplayLanguage, string> = {
+      fr: 'Fleuve TsingTao', en: 'TsingTao River', ja: 'TsingTao川', ar: 'نهر \u2068TsingTao\u2069', es: 'Río TsingTao', pt: 'Rio TsingTao', zh: 'TsingTao河', ru: 'Река «TsingTao»',
+      de: 'Fluss TsingTao', it: 'Fiume TsingTao', pl: 'Rzeka TsingTao', ko: 'TsingTao강',
+    };
     for (const language of Object.keys(expected) as NameDisplayLanguage[]) {
       expect(presentName(parts, { mode: 'localized', language })).toBe(expected[language]);
       expect(presentName({ ...parts, opaque: true }, { mode: 'localized', language })).toBe('TsingTao Jiang');

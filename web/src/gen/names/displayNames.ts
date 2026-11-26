@@ -2,10 +2,12 @@ import type { NameParts, NamePresentation, NameDisplayLanguage } from './types';
 import { frenchDe } from './syntax';
 import { conceptText, descriptiveText, roleText } from './meanings';
 import { latinReading } from './writing';
+import { communityText, isCommunityLocale } from '../../locales';
 
 type FeatureKind = Exclude<NameParts['kind'], 'town' | 'village' | 'farm' | 'building'> | 'farm';
 type WorshipKind = Exclude<NonNullable<NameParts['generic']>, 'tower'>;
-const TERMS: Record<NameDisplayLanguage, Record<FeatureKind, string>> = {
+type AuthoredLanguage = Exclude<NameDisplayLanguage, 'de' | 'it' | 'pl' | 'ko'>;
+const TERMS: Record<AuthoredLanguage, Record<FeatureKind, string>> = {
   fr: { quarter: 'Quartier', street: 'Rue', road: 'Route', square: 'Place', church: 'Sanctuaire', castle: 'Château', gate: 'Porte', river: 'Fleuve', lake: 'Lac', sea: 'Mer', forest: 'Forêt', hill: 'Mont', farm: 'Ferme', bridge: 'Pont', region: 'Région' },
   en: { quarter: 'Quarter', street: 'Street', road: 'Road', square: 'Square', church: 'Sanctuary', castle: 'Castle', gate: 'Gate', river: 'River', lake: 'Lake', sea: 'Sea', forest: 'Forest', hill: 'Hill', farm: 'Farm', bridge: 'Bridge', region: 'Region' },
   ja: { quarter: '地区', street: '通り', road: '街道', square: '広場', church: '聖所', castle: '城', gate: '門', river: '川', lake: '湖', sea: '海', forest: '森', hill: '山', farm: '農場', bridge: '橋', region: '地方' },
@@ -16,7 +18,7 @@ const TERMS: Record<NameDisplayLanguage, Record<FeatureKind, string>> = {
   ru: { quarter: 'Квартал', street: 'Улица', road: 'Дорога', square: 'Площадь', church: 'Святилище', castle: 'Замок', gate: 'Ворота', river: 'Река', lake: 'Озеро', sea: 'Море', forest: 'Лес', hill: 'Холм', farm: 'Ферма', bridge: 'Мост', region: 'Область' },
 };
 
-const WORSHIP: Record<NameDisplayLanguage, Record<WorshipKind, string>> = {
+const WORSHIP: Record<AuthoredLanguage, Record<WorshipKind, string>> = {
   fr: { mosque: 'Mosquée', temple: 'Temple', church: 'Église', cathedral: 'Cathédrale', monastery: 'Monastère', shrine: 'Sanctuaire' },
   en: { mosque: 'Mosque', temple: 'Temple', church: 'Church', cathedral: 'Cathedral', monastery: 'Monastery', shrine: 'Shrine' },
   ja: { mosque: 'モスク', temple: '寺院', church: '教会', cathedral: '大聖堂', monastery: '修道院', shrine: '聖所' },
@@ -27,7 +29,16 @@ const WORSHIP: Record<NameDisplayLanguage, Record<WorshipKind, string>> = {
   ru: { mosque: 'Мечеть', temple: 'Храм', church: 'Церковь', cathedral: 'Собор', monastery: 'Монастырь', shrine: 'Святилище' },
 };
 
-const TOWER: Record<NameDisplayLanguage, string> = { en: 'Tower', fr: 'Tour', es: 'Torre', pt: 'Torre', zh: '塔', ar: 'برج', ru: 'Башня', ja: '塔' };
+const TOWER: Record<AuthoredLanguage, string> = { en: 'Tower', fr: 'Tour', es: 'Torre', pt: 'Torre', zh: '塔', ar: 'برج', ru: 'Башня', ja: '塔' };
+
+/** Generic noun for a feature: authored tables, or the community locale JSON (English fallback). */
+function genericTerm(parts: NameParts, language: NameDisplayLanguage): string {
+  if (isCommunityLocale(language)) {
+    const [table, key] = parts.generic === 'tower' ? ['tower', 'tower'] : parts.generic ? ['worship', parts.generic] : parts.kind === 'building' ? ['roleRows', 'building'] : ['terms', parts.kind as string];
+    return communityText(language, 'names', table, key) ?? genericTerm(parts, 'en');
+  }
+  return parts.generic === 'tower' ? TOWER[language] : parts.generic ? WORSHIP[language][parts.generic] : parts.kind === 'building' ? roleText('building', language)! : TERMS[language][parts.kind as FeatureKind];
+}
 
 /** Translate only a typed generic; the proper name and its canonical cultural form are retained. */
 export function presentName(parts: NameParts, presentation: NamePresentation = {}): string {
@@ -48,14 +59,18 @@ export function presentName(parts: NameParts, presentation: NamePresentation = {
     const gate = presentName({ ...parts, kind: 'gate', meaning: undefined }, presentation);
     return presentName({ ...parts, proper: gate, kind: 'street', meaning: undefined }, presentation);
   }
-  const term = (parts.role ? roleText(parts.role, language) : undefined) ?? (parts.generic === 'tower' ? TOWER[language] : parts.generic ? WORSHIP[language][parts.generic] : parts.kind === 'building' ? roleText('building', language)! : TERMS[language][parts.kind]);
+  const term = (parts.role ? roleText(parts.role, language) : undefined) ?? genericTerm(parts, language);
   const proper = parts.meaning && ['craft', 'direction'].includes(parts.meaning.concept) ? conceptText(parts.meaning.qualifier!, language) : presentation.script === 'latin' ? (parts.latin ?? latinReading(parts.proper) ?? parts.proper) : parts.proper;
   if (!proper) return term;
-  if (language === 'ja' || language === 'zh') return proper + term;
+  // Korean place names also attach the generic directly (한강, 광화문광장).
+  if (language === 'ja' || language === 'zh' || language === 'ko') return proper + term;
   if (language === 'ar') return `${term} \u2068${proper}\u2069`;
   if (language === 'en') return `${proper} ${term}`;
   // Keep the proper name unchanged: inflecting arbitrary cultural names would be unreliable.
   if (language === 'ru') return `${term} «${proper}»`;
+  // German compounds a proper name with a hyphen (Aubeville-Straße); other generics precede the name (Burg Aubeville).
+  if (language === 'de') return ['street', 'road', 'square', 'quarter', 'gate', 'bridge', 'farm'].includes(parts.kind) && !parts.generic ? `${proper}-${term}` : `${term} ${proper}`;
+  if (language === 'it' && (parts.generic === 'tower' || ['castle', 'forest', 'farm', 'bridge', 'region'].includes(parts.kind))) return `${term} di ${proper}`;
   if ((language === 'es' || language === 'pt') && (parts.generic === 'tower' || ['road', 'street', 'castle', 'gate', 'forest', 'farm', 'bridge', 'square', 'quarter', 'church', 'region'].includes(parts.kind))) return `${term} de ${proper}`;
   if (language === 'fr' && (parts.generic === 'tower' || ['road', 'street', 'castle', 'gate', 'forest', 'farm', 'bridge'].includes(parts.kind))) return `${term} ${frenchDe(proper)}`;
   return `${term} ${proper}`;

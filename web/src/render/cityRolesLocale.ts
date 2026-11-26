@@ -3,9 +3,11 @@
  * come from the engine's `services.json` (see `cityRoles.ts`), so the building table carries the other languages only.
  * The locale is the page's `<html lang>` (the V2 and the benches set it); render code never imports the V2 i18n. */
 import services from '../../../rust/crates/core/src/urban/services.json';
+import { COMMUNITY_LOCALES, communityText, isCommunityLocale } from '../locales';
 
-export type RoleLocale = 'en' | 'fr' | 'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja';
-export const ROLE_LOCALES: readonly RoleLocale[] = ['en', 'fr', 'es', 'pt', 'zh', 'ar', 'ru', 'ja'];
+/** Locales with a column in the tables below, then the community locales read from `src/locales/*.json`. */
+export type RoleLocale = 'en' | 'fr' | 'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja' | 'de' | 'it' | 'pl' | 'ko';
+export const ROLE_LOCALES: readonly RoleLocale[] = ['en', 'fr', 'es', 'pt', 'zh', 'ar', 'ru', 'ja', ...COMMUNITY_LOCALES];
 /** Locale of role labels: the page's UI language (`<html lang>`), English by default. */
 export function uiRoleLocale(): RoleLocale {
   if (typeof document === 'undefined') return 'en';
@@ -17,7 +19,8 @@ export function uiRoleLocale(): RoleLocale {
 type Row = readonly [string, string, string, string, string, string, string, string];
 /** [en, es, pt, zh, ar, ru, ja] (French comes from the engine). */
 type RoleRow = readonly [string, string, string, string, string, string, string];
-const pick = (row: Row, locale: RoleLocale): string => row[ROLE_LOCALES.indexOf(locale)] ?? row[0];
+const pick = (row: Row, locale: RoleLocale, table?: string): string =>
+  (isCommunityLocale(locale) ? (table && communityText(locale, 'roles', table, row[0])) || row[0] : row[ROLE_LOCALES.indexOf(locale)]) ?? row[0];
 const index = (rows: readonly Row[]): Map<string, Row> => new Map(rows.map(r => [r[0], r]));
 
 // ---------------------------------------------------------------- buildings (English → es, pt, zh, ar, ru, ja)
@@ -315,6 +318,7 @@ const BUILDINGS: readonly RoleRow[] = [
 const BUILDING_INDEX = new Map(BUILDINGS.map(r => [r[0], r]));
 /** English building name in `locale` (French is handled by `cityRoles.ts`); English when untranslated. */
 export function translateRole(english: string, locale: RoleLocale): string {
+  if (isCommunityLocale(locale)) return communityText(locale, 'roles', 'bld', english) ?? english;
   const i = ROLE_LOCALES.indexOf(locale) - 1; // en = -1, fr = 0 (not in this table), es = 1 …
   if (i < 1) return english;
   return BUILDING_INDEX.get(english)?.[i] ?? english;
@@ -326,6 +330,7 @@ const STATES: Record<string, readonly [string, string, string, string, string, s
   '.abandoned': [' (abandonado)', ' (abandonado)', '（已废弃）', ' (مهجور)', ' (заброшено)', '（放棄）'],
 };
 export function translateState(suffix: string, locale: RoleLocale): string | undefined {
+  if (isCommunityLocale(locale)) return communityText(locale, 'roles', 'state', suffix);
   const i = ROLE_LOCALES.indexOf(locale) - 2;
   return i < 0 ? undefined : STATES[suffix]?.[i];
 }
@@ -353,7 +358,7 @@ export const DISTRICT_NAMES_EN: Record<string, string> = {
 /** Name of a district role id (`craft`, `port`…) in `locale`; undefined for an unknown id. */
 export function districtName(id: string, locale: RoleLocale): string | undefined {
   const row = DISTRICTS.get(id); if (!row) return undefined;
-  return locale === 'en' ? DISTRICT_NAMES_EN[id] : pick(row, locale);
+  return locale === 'en' ? DISTRICT_NAMES_EN[id] : pick(row, locale, 'districts');
 }
 const FAMILIES = index([
   ['worship', 'Culte', 'Culto', 'Culto', '礼拜', 'العبادة', 'Культовые здания', '宗教施設'],
@@ -368,7 +373,7 @@ const FAMILY_EN: Record<string, string> = { worship: 'Worship', commerce: 'Trade
 /** Name of a building family (`worship`, `dwelling`…) in `locale`. */
 export function buildingFamilyName(id: string, locale: RoleLocale): string {
   const row = FAMILIES.get(id); if (!row) return id;
-  return locale === 'en' ? FAMILY_EN[id] ?? id : pick(row, locale);
+  return locale === 'en' ? FAMILY_EN[id] ?? id : pick(row, locale, 'families');
 }
 const SPECIALITIES = index([
   ['tanners', 'tanneurs', 'curtidores', 'curtidores', '制革匠', 'دباغون', 'кожевники', '皮なめし職人'],
@@ -389,7 +394,7 @@ const SPECIALITIES = index([
 /** Speciality of a district (`craft:tanners` → `tanners`) in `locale`; the English id with spaces when untranslated. */
 export function specialityName(id: string, locale: RoleLocale): string {
   const row = SPECIALITIES.get(id), fallback = id.replace(/[-_]/g, ' ');
-  return row && locale !== 'en' ? pick(row, locale) : fallback;
+  return row && locale !== 'en' ? pick(row, locale, 'specialities') : fallback;
 }
 /** Generic French district role label → role key, from `services.json`.
  * Named districts and labels in a culture's own language pass through unchanged. */
@@ -431,7 +436,7 @@ const STREET_EN: Record<string, string> = { street: 'street', lane: 'lane', main
 export function streetName(role: string, locale: RoleLocale): string {
   const row = STREETS.get(role);
   if (!row) return role.replace(/[-_]/g, ' ');
-  return locale === 'en' ? STREET_EN[role] : pick(row, locale);
+  return locale === 'en' ? STREET_EN[role] : pick(row, locale, 'streets');
 }
 const FUNCTIONS = index([
   ['domestic', 'habitat', 'vivienda', 'habitação', '住宅', 'سكن', 'жильё', '住居'],
@@ -448,7 +453,7 @@ const FUNCTION_EN: Record<string, string> = { domestic: 'housing', mixed: 'mixed
 export function functionName(fn: string, locale: RoleLocale): string {
   const row = FUNCTIONS.get(fn);
   if (!row) return fn;
-  return locale === 'en' ? FUNCTION_EN[fn] : pick(row, locale);
+  return locale === 'en' ? FUNCTION_EN[fn] : pick(row, locale, 'functions');
 }
 /** Short captions and fallbacks, keyed by their English text. */
 const TEXTS = index([
@@ -465,5 +470,5 @@ const TEXTS = index([
 /** Caption or fallback keyed by its English text, in `locale` (default: the UI language). */
 export function roleText(english: string, locale: RoleLocale = uiRoleLocale()): string {
   const row = TEXTS.get(english);
-  return row ? pick(row, locale) : english;
+  return row ? pick(row, locale, 'texts') : english;
 }

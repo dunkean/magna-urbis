@@ -14,10 +14,12 @@ describe('city help localization', () => {
     const placeholders = (value: string) => (value.match(/\{[a-zA-Z][a-zA-Z0-9_]*\}/g) ?? []).sort();
     for (const row of urbanHelpMessages) {
       for (const [index, { code }] of LANGUAGES.entries()) {
-        expect(row[index], `${code}: ${row[0]}`).toBeTruthy();
-        expect(translate(row[0], code), `${code}: ${row[0]}`).toBe(row[index]);
-        expect(placeholders(row[index]), `${code}: ${row[0]}`).toEqual(placeholders(row[0]));
-        if (code !== 'en') expect(row[index], `${code}: ${row[0]}`).not.toBe(row[0]);
+        // Authored columns cover the first eight languages; community locales come from src/locales/*.json.
+        const expected = index < row.length ? row[index] : translate(row[0], code);
+        expect(expected, `${code}: ${row[0]}`).toBeTruthy();
+        expect(translate(row[0], code), `${code}: ${row[0]}`).toBe(expected);
+        expect(placeholders(expected), `${code}: ${row[0]}`).toEqual(placeholders(row[0]));
+        if (code !== 'en') expect(expected, `${code}: ${row[0]}`).not.toBe(row[0]);
       }
     }
   });
@@ -33,8 +35,10 @@ describe('city help localization', () => {
   it('localizes urban composition progress from both source languages', () => {
     const row = urbanHelpMessages.find(([en]) => en === 'Rust · urban composition…')!;
     for (const [index, { code }] of LANGUAGES.entries()) {
-      expect(translateRuntimeMessage(row[0], code)).toBe(row[index]);
-      expect(translateRuntimeMessage(row[1], code)).toBe(row[index]);
+      const expected = index < row.length ? row[index] : translate(row[0], code);
+      if (code !== 'en') expect(expected).not.toBe(row[0]);
+      expect(translateRuntimeMessage(row[0], code)).toBe(expected);
+      expect(translateRuntimeMessage(row[1], code)).toBe(expected);
     }
     const bridge = readFileSync(new URL('../../src/v2/rustUrban.ts', import.meta.url), 'utf8');
     expect(bridge).toContain("report('urban-layout', `Rust · urban composition… (${place.name ?? key})`, 0)");
