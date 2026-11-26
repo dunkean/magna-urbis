@@ -78,7 +78,9 @@ try {
     };
     try {
       await page.goto(`${base}?lang=${lang}`, { waitUntil: 'load' });
-      await page.waitForFunction(() => !document.getElementById('boot-splash') && !!document.querySelector('#run-chain'), null, { timeout: 120000 });
+      // A published site reloads once on the first visit (its service worker installs cross-origin isolation): wait again.
+      const ready = () => page.waitForFunction(() => !document.getElementById('boot-splash') && !!document.querySelector('#run-chain'), null, { timeout: 120000 });
+      await ready().catch(() => page.waitForLoadState('load').then(ready));
       await page.waitForTimeout(2500);
       await shot('01-first-load');
       if (profile.phone) {
