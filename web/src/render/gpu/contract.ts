@@ -32,6 +32,8 @@ export interface ContourTint {
   rgba: Rgba;
 }
 export const CONTOUR_THIN_OPACITY = 0.7;
+/** Finished contourRaster canvases are immutable, with blue zero and alpha one at every texel. */
+export const opaqueContourPlates = new WeakSet<ImageSource | ImageData>();
 
 /** One named ink of a retained recording. Its buffer survives a season change. */
 export class ColorSlot {

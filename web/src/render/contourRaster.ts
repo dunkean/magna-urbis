@@ -1,5 +1,5 @@
 /** Fixed-definition, unpigmented contour coverage. Paths remain canonical for vector exports. */
-import { CONTOUR_THIN_OPACITY, type ContourTint } from './gpu/contract';
+import { CONTOUR_THIN_OPACITY, opaqueContourPlates, type ContourTint } from './gpu/contract';
 import { parseColor, RecordingContext } from './gpu/recorder';
 import type { Palette } from './styles';
 import { countWork } from './workCount';
@@ -39,6 +39,7 @@ export function contourRaster(terrain: { width: number }, paths: Paths, palette:
   ctx.strokeStyle = '#00ff00';
   ctx.lineWidth = index / density;
   if (paths.index) ctx.stroke(new Path2D(paths.index));
+  opaqueContourPlates.add(canvas);
   const plate = { canvas, worldSize, metresPerTexel: 1 / density };
   plates.set(terrain, { plate, paths, thin, index });
   countWork('contour.bake');

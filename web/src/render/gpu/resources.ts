@@ -6,7 +6,7 @@
  * `counting`: set by the live rasterizer while a frame replays; everything created or uploaded then is counted in
  * `late` (it should have been made by `warm` or `prepare`, in the layer's `work`).
  */
-import { GpuRasterError, SPRITE_STRIDE, type ImageSource, type Mat, type PathGeometry, type RecordedPath, type SpriteOp, type StrokeOp } from './contract';
+import { GpuRasterError, opaqueContourPlates, SPRITE_STRIDE, type ImageSource, type Mat, type PathGeometry, type RecordedPath, type SpriteOp, type StrokeOp } from './contract';
 import { fillFans, strokeSegments, type StrokeGeometry } from './tessellate';
 import { tolerance } from './transforms';
 
@@ -237,8 +237,10 @@ export class GpuResources {
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      // RG8 samples as (r, g, 0, 1), exactly the producer's pixels even for ordinary drawImage and patterns.
+      const coverage = opaqueContourPlates.has(source);
       try {
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source as TexImageSource);
+        gl.texImage2D(gl.TEXTURE_2D, 0, coverage ? gl.RG8 : gl.RGBA, coverage ? gl.RG : gl.RGBA, gl.UNSIGNED_BYTE, source as TexImageSource);
       } catch (error) {
         gl.deleteTexture(texture);
         throw error;
@@ -246,7 +248,7 @@ export class GpuResources {
       // Patterns and sprites are often drawn far smaller than their texels (hatches at 14 px per metre, crown atlases):
       // mipmaps keep them from shimmering, like the Canvas high-quality drawImage.
       gl.generateMipmap(gl.TEXTURE_2D);
-      t = { texture, width, height, bytes: Math.ceil((width * height * 4 * 4) / 3), used: this.epoch };
+      t = { texture, width, height, bytes: Math.ceil((width * height * (coverage ? 2 : 4) * 4) / 3), used: this.epoch };
       this.textures.set(source, t);
       this.textureBytes += t.bytes;
       this.evictTextures();
