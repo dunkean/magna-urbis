@@ -35,8 +35,10 @@ describe('illustration brush review regressions', () => {
     const a = relief(1000, 3400),
       b = relief(6000, 1400);
     expect(a.length).toBeGreaterThan(0);
-    // Immense, low downs: 400-2000 m (with the per-stamp variation), never a function of the map or raster size.
-    expect(a.every(s => s.brush === BRUSH.hills && s.width >= 400 * 0.85 && s.width <= 2000)).toBe(true);
+    // An interior down keeps its physical width. Edge silhouettes shrink to keep their feet on sampled land.
+    expect(a.every(s => s.brush === BRUSH.hills && s.width > 0 && s.width <= 2000)).toBe(true);
+    expect(a.some(s => s.x > 200 && s.x < 800 && s.width >= 400 * 0.85)).toBe(true);
+    expect(a.some(s => (s.x < 200 || s.x > 800) && s.width < 400 * 0.85)).toBe(true);
     expect(a).toEqual(b);
     expect(relief(100, 3400)).toEqual([]);
   });

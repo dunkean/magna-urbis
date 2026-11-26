@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Fantasy maps keep brush marks in the same positions where detailed views overlap.
 - Town streets render again on WebGL2 devices that enforce reserved shader names.
 - The live map keeps its cartographic overlay when town buildings first appear.
 - Selecting a map feature keeps its outline aligned as you move or tilt the camera and lets the page rest when the view is still.

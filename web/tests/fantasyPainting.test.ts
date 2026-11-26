@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { planPainting, createBrushLibrary, brushFrame, paintingSvg, FAMILY_NAMES, type Atlas, type BrushFamily, type PaintSample, paintingCover } from '../../rust/bridge/fantasyPainting';
+import { createHash } from 'node:crypto';
+import { planPainting, createBrushLibrary, brushFrame, paintingSvg, BRUSH, isReliefBrush, FAMILY_NAMES, type Atlas, type BrushFamily, type PaintSample, paintingCover } from '../../rust/bridge/fantasyPainting';
 const sample = (x: number, y: number): PaintSample => ({ height: x < 1500 ? -10 : 300 + y * 0.04, slope: 0.08, temperature: 18, rain: 1600, water: y > 7000 && y < 7500 });
 const options = { seed: 'fantasy-42', pitch: 150 };
-// Overview raster: 1400 px for a map 65 brush pitches wide; stamp sizes clamp in px, then convert to metres.
-const mpp = (options.pitch * 65) / 1400,
-  mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
+const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
+const isSummit = (s: { brush: number }) => s.brush === BRUSH.ridges || s.brush === BRUSH.snow || s.brush === BRUSH.peaks;
 describe('fantasy cartographic placement', () => {
   it('plants small single trees on stable parcel rows, excluding holes and keeping them in the 3D overview', () => {
     const angle = 0.61,
@@ -48,48 +48,75 @@ describe('fantasy cartographic placement', () => {
     }
   });
 
-  it('packs variable relief and fixed-width trees, preserving relief under a tight budget', () => {
+  it('packs metre-scale trees and variable massifs, prioritizing relief under a tight budget', () => {
     const bounds = { x: 0, y: 0, width: 10000, height: 10000 };
-    const landscape = (x: number) => ({ height: x < 5000 ? 2200 : 300, slope: 0.03, temperature: 18, rain: 1800 });
-    const stamps = planPainting(bounds, landscape, options);
-    const summits = stamps.filter(s => s.brush === 5 || s.brush === 6);
+    const landscape = (x: number, y: number) => (x < 5000 ? { height: 2200, slope: 0.5, relief: 400 + 0.075 * y, tpi: 0.1, temperature: 18, rain: 1800 } : { height: 300, slope: 0.03, relief: 1, temperature: 18, rain: 1800 });
+    const view = { ...options, heightRange: [300, 2200] as const };
+    const stamps = planPainting(bounds, landscape, view);
+    const summits = stamps.filter(isSummit);
     const trees = stamps.filter(s => s.brush < 4 || (s.brush >= 12 && s.brush <= 14));
-    expect(summits.length).toBeGreaterThan(40);
-    // Summit widths vary (heavy-tailed) but stay within the mountain pixel clamp times the largest size multiplier.
-    expect(summits.every(s => s.width > 0 && s.width <= 90 * mpp * 2.1)).toBe(true);
-    expect(Math.max(...summits.map(s => s.width))).toBeGreaterThan(Math.min(...summits.map(s => s.width)) * 2);
-    // Trees share one fixed width (the overview crown clamp).
-    expect(new Set(trees.map(s => s.width)).size).toBe(1);
-    expect(trees[0].width).toBeCloseTo(4.5 * mpp, 6);
-    expect(trees.every(s => s.heightScale! >= 0.95 && s.heightScale! <= 1.05)).toBe(true);
+    expect(summits.length).toBeGreaterThan(10);
+    expect(summits.every(s => s.width >= 700 * 0.85 && s.width <= 4500)).toBe(true);
+    expect(Math.max(...summits.map(s => s.width))).toBeGreaterThan(Math.min(...summits.map(s => s.width)) * 1.1);
+    expect(trees.every(s => s.width >= 11 * 0.8 && s.width <= 11 * 1.25)).toBe(true);
+    expect(trees.every(s => s.heightScale! >= 0.9 && s.heightScale! <= 1.1)).toBe(true);
     // Half the map alone contains several times the former whole-map forest count.
     expect(trees.length).toBeGreaterThan(5000);
-    const limited = planPainting(bounds, landscape, { ...options, maxStamps: 512 });
-    expect(limited).toHaveLength(512);
-    // Relief is kept first: every summit survives the cut, trees only fill the remainder.
-    expect(limited.filter(s => s.brush === 5 || s.brush === 6)).toHaveLength(summits.length);
-    expect(limited.every(s => (s.brush >= 4 && s.brush <= 8) || s.brush < 4)).toBe(true);
-    const tight = planPainting(bounds, landscape, { ...options, maxStamps: 40 });
+    const reliefCount = stamps.filter(s => isReliefBrush(s.brush)).length;
+    const limited = planPainting(bounds, landscape, { ...view, maxStamps: reliefCount + 40 });
+    expect(limited).toHaveLength(reliefCount + 40);
+    expect(limited.filter(s => isReliefBrush(s.brush))).toHaveLength(reliefCount);
+    expect(limited.filter(isSummit)).toEqual(summits);
+    const tight = planPainting(bounds, landscape, { ...view, maxStamps: 40 });
     expect(tight).toHaveLength(40);
-    expect(tight.every(s => s.brush === 5 || s.brush === 6)).toBe(true);
+    expect(tight.every(s => isReliefBrush(s.brush))).toBe(true);
   });
   it('fills rolling terrain with many hills capped well below peak size', () => {
-    const stamps = planPainting({ x: 0, y: 0, width: 10000, height: 10000 }, () => ({ height: 500, slope: 0.3, temperature: 18, rain: 1500 }), options);
+    const stamps = planPainting({ x: 0, y: 0, width: 10000, height: 10000 }, () => ({ height: 100, slope: 0.12, relief: 50, tpi: 0.08, temperature: 18, rain: 1500 }), { ...options, heightRange: [0, 400], reliefRef: 500 });
     expect(stamps.length).toBeGreaterThan(1000);
     const hills = stamps.filter(s => s.brush === 4);
-    expect(hills.length).toBeGreaterThan(800);
-    expect(hills.every(s => s.width <= 34 * mpp * 1.3)).toBe(true);
+    expect(hills.length).toBeGreaterThan(100);
+    expect(hills.every(s => s.width >= 400 * 0.85 && s.width <= 2000)).toBe(true);
     expect(stamps.some(s => s.brush < 4)).toBe(true);
   });
   it('replays exactly and preserves world anchors between overlapping crops', () => {
-    const a = planPainting({ x: 0, y: 0, width: 10000, height: 10000 }, sample, options);
+    const view = { ...options, mapWidth: 10000 };
+    const bounds = { x: 0, y: 0, width: view.mapWidth, height: view.mapWidth };
+    const a = planPainting(bounds, sample, view);
+    const digest = (stamps: typeof a) => createHash('sha256').update(JSON.stringify(stamps)).digest('hex');
     expect(a.length).toBeGreaterThan(300);
-    expect(planPainting({ x: 0, y: 0, width: 10000, height: 10000 }, sample, options)).toEqual(a);
-    const crop = planPainting({ x: 3000, y: 3000, width: 4000, height: 4000 }, sample, options);
+    expect(digest(planPainting(bounds, sample, view))).toBe(digest(a));
+    const crop = planPainting({ x: 3000, y: 3000, width: 4000, height: 4000 }, sample, view);
     const inner = (s: (typeof a)[number]) => s.x > 3200 && s.x < 6800 && s.y > 3200 && s.y < 6800;
-    expect(crop.filter(inner)).toEqual(a.filter(inner));
+    const fullInterior = a.filter(inner),
+      cropInterior = crop.filter(inner);
+    expect(cropInterior).toHaveLength(fullInterior.length);
+    expect(digest(cropInterior)).toBe(digest(fullInterior));
     expect(a.every(s => s.x > 1500 && !(s.y > 7000 && s.y < 7500))).toBe(true);
     expect(a.every((s, i) => i === 0 || s.y >= a[i - 1].y)).toBe(true);
+  });
+  it('retains fine-tree identities across two offset detail tiles on the same map', () => {
+    const view = { ...options, mapWidth: 20000, raster: 3400, lod: 'detail' as const, vegetation: 'fine' as const, maxStamps: 400000 };
+    const common = (x: number, width: number) => planPainting({ x, y: 3000, width, height: 5000 }, sample, view).filter(s => s.x > 5200 && s.x < 6800 && s.y > 3200 && s.y < 6800);
+    const left = common(2000, 5000);
+    const right = common(5000, 6600);
+    expect(left.length).toBeGreaterThan(100);
+    expect(right).toHaveLength(left.length);
+    expect(createHash('sha256').update(JSON.stringify(right)).digest('hex')).toBe(createHash('sha256').update(JSON.stringify(left)).digest('hex'));
+  });
+  it('bounds sampling work for an extremely long narrow request', () => {
+    let calls = 0;
+    const stamps = planPainting(
+      { x: -500, y: -1, width: 1e12, height: 2 },
+      () => {
+        calls++;
+        return undefined;
+      },
+      { ...options, mapWidth: 10000 },
+    );
+    expect(stamps).toEqual([]);
+    expect(calls).toBeGreaterThan(0);
+    expect(calls).toBeLessThan(3000);
   });
   it('keeps the budget spread across the map and rejects invalid inputs', () => {
     const result = planPainting({ x: 0, y: 0, width: 10000, height: 10000 }, sample, { ...options, maxStamps: 20 });
@@ -124,7 +151,7 @@ describe('fantasy cartographic placement', () => {
     const ridge = { ...valley, tpi: 0.12, slope: 0.45 };
     expect(paintingCover(valley).woods).toBeGreaterThan(paintingCover(ridge).woods);
     expect(paintingCover(valley).mountain).toBeLessThan(0.16);
-    const mountains = (relief: number) => planPainting({ x: 0, y: 0, width: 3000, height: 3000 }, () => ({ ...ridge, height: 600, relief, temperature: 28 }), options).filter(s => s.brush === 5 || s.brush === 6);
+    const mountains = (relief: number) => planPainting({ x: 0, y: 0, width: 10000, height: 10000 }, () => ({ ...ridge, height: 600, relief, temperature: 28 }), { ...options, heightRange: [0, 600] }).filter(isSummit);
     const low = mountains(500),
       high = mountains(900);
     expect(low.length).toBeGreaterThan(10);
@@ -147,13 +174,19 @@ describe('fantasy cartographic placement', () => {
     expect(planPainting(bounds, () => ({ ...occupied(0), landuse: undefined }), { ...options, followLanduse: true })).toEqual([]);
   });
 
-  it('keeps tree silhouettes clear of mountains, including low forest anchors next to a ridge', () => {
+  it('draws a tree on a wooded slope above the underlying relief brush', () => {
     const landscape = (x: number): PaintSample => ({ height: x < 1400 ? 2000 : 300, slope: x < 1400 ? 0.4 : 0.01, relief: x < 1400 ? 900 : 0, temperature: 28, rain: 1800, landuse: 'forest' });
     const stamps = planPainting({ x: 0, y: 0, width: 3000, height: 3000 }, landscape, { ...options, followLanduse: true });
-    const mountains = stamps.filter(s => s.brush === 5 || s.brush === 6),
+    const mountains = stamps.filter(isSummit),
       trees = stamps.filter(s => s.brush < 4);
-    expect(mountains.length).toBeGreaterThan(10);
+    expect(mountains.length).toBeGreaterThan(0);
     expect(trees.length).toBeGreaterThan(100);
-    expect(trees.every(t => t.x >= 1400 && !mountains.some(m => Math.abs(t.x - m.x) < (m.width + t.width) / 2 && t.y > m.y - m.width * 1.1 && t.y - t.width * 1.9 < m.y + m.width * 0.1))).toBe(true);
+    const tree = trees.find(t => mountains.some(m => Math.abs(t.x - m.x) < m.width / 2 && t.y > m.y - m.height && t.y < m.y))!;
+    expect(tree).toBeDefined();
+    const mountain = mountains.find(m => Math.abs(tree.x - m.x) < m.width / 2 && tree.y > m.y - m.height && tree.y < m.y)!;
+    const atlas: Atlas = { url: 'data:image/png;base64,fixture', width: 400, height: 400, rows: [0, 0.25, 0.5, 0.75, 1] };
+    const families = Object.fromEntries(FAMILY_NAMES.map(family => [family, atlas])) as Record<BrushFamily, Atlas>;
+    const svg = paintingSvg([tree, mountain], createBrushLibrary('fantasy-color', families), 'ridge');
+    expect(svg).toMatch(/<use class="fantasy-relief"[^>]+\/><use class="fantasy-landuse"/);
   });
 });

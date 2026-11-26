@@ -11,7 +11,7 @@ const rectangle = (a: number, b: number): Shape => ({
   ],
   holes: [],
 });
-const layout = (allocated: Shape[], quarters: Shape[] = allocated): Layout => ({ key: 'main', quarters: quarters.map(shape => ({ shape })), structure: { allocated }, streets: [] }) as unknown as Layout;
+const layout = (allocated: Shape[], quarters: Shape[] = allocated): Layout => ({ key: 'main', quarters: quarters.map(shape => ({ shape })), structure: { allocated }, streets: [], blocks: [] }) as unknown as Layout;
 
 describe('Shared urban painting mask', () => {
   it('indexes smooth boundaries without replacing them with occupied raster cells', () => {

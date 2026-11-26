@@ -268,9 +268,15 @@ interface Candidate {
   r: number;
   prio: number;
 }
+/** Stable spacing for a whole map or holding; oversized requests also stay within the candidate budget. */
+function paintingStride(referenceWidth: number, step: number, x0: number, x1: number, y0: number, y1: number): number {
+  const referenceCells = Math.ceil(referenceWidth / step) + 2;
+  return Math.max(1, Math.ceil(Math.max(referenceCells, x1 - x0 + 1, y1 - y0 + 1) / Math.sqrt(420000)));
+}
+
 /** Regular fruit trees, independent of the wild vegetation's Poisson sampling and LOD.
  * Keep the entire silhouette inside the holding, including holes, before drawing it over the wash. */
-function orchardTrees(bounds: PaintBounds, sample: (x: number, y: number) => PaintSample | undefined, options: PaintOptions): Stamp[] {
+function orchardTrees(bounds: PaintBounds, sample: (x: number, y: number) => PaintSample | undefined, options: PaintOptions, mapWidth: number): Stamp[] {
   const result: Stamp[] = [],
     seed = paintSeed(options.seed) ^ 11731,
     step = 9;
@@ -305,11 +311,19 @@ function orchardTrees(bounds: PaintBounds, sample: (x: number, y: number) => Pai
       y0 = bounds.y - pad,
       x1 = bounds.x + bounds.width + pad,
       y1 = bounds.y + bounds.height + pad;
+    let referenceWidth = mapWidth + 2 * pad;
     if (parcel) {
-      x0 = Math.max(x0, Math.min(...parcel.poly.map(p => p.x)));
-      x1 = Math.min(x1, Math.max(...parcel.poly.map(p => p.x)));
-      y0 = Math.max(y0, Math.min(...parcel.poly.map(p => p.y)));
-      y1 = Math.min(y1, Math.max(...parcel.poly.map(p => p.y)));
+      const xs = parcel.poly.map(p => p.x),
+        ys = parcel.poly.map(p => p.y);
+      const left = Math.min(...xs),
+        right = Math.max(...xs),
+        bottom = Math.min(...ys),
+        top = Math.max(...ys);
+      referenceWidth = Math.hypot(right - left, top - bottom);
+      x0 = Math.max(x0, left);
+      x1 = Math.min(x1, right);
+      y0 = Math.max(y0, bottom);
+      y1 = Math.min(y1, top);
     }
     if (x1 < x0 || y1 < y0) continue;
     const corners = [
@@ -321,8 +335,14 @@ function orchardTrees(bounds: PaintBounds, sample: (x: number, y: number) => Pai
     const us = corners.map(([x, y]) => x * c + y * s),
       vs = corners.map(([x, y]) => -x * s + y * c);
     const rings = parcel ? [parcel.poly, ...(parcel.holes ?? [])] : [];
-    for (let j = Math.floor(Math.min(...vs) / step); j <= Math.ceil(Math.max(...vs) / step); j++) {
-      for (let i = Math.floor(Math.min(...us) / step); i <= Math.ceil(Math.max(...us) / step); i++) {
+    const i0 = Math.floor(Math.min(...us) / step),
+      i1 = Math.ceil(Math.max(...us) / step);
+    const j0 = Math.floor(Math.min(...vs) / step),
+      j1 = Math.ceil(Math.max(...vs) / step);
+    const stride = paintingStride(referenceWidth, step, i0, i1, j0, j1);
+    if (![i0, i1, j0, j1, stride].every(Number.isSafeInteger)) continue;
+    for (let j = Math.ceil(j0 / stride) * stride; j <= j1; j += stride) {
+      for (let i = Math.ceil(i0 / stride) * stride; i <= i1; i += stride) {
         const u = (i + 0.5) * step + (hash(i, j, seed) - 0.5) * 0.6,
           v = (j + 0.5) * step + (hash(i, j, seed ^ 71) - 0.5) * 0.6;
         const x = u * c - v * s,
@@ -447,7 +467,9 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
       x1 = Math.ceil((bounds.x + bounds.width + pad) / step);
     const y0 = Math.floor((bounds.y - pad) / step),
       y1 = Math.ceil((bounds.y + bounds.height + pad) / step);
-    const stride = Math.max(1, Math.ceil(Math.sqrt(((x1 - x0 + 1) * (y1 - y0 + 1)) / 420000)));
+    // Anchor the sampling lattice to this map and pass. Cropping the same view must keep
+    // the same candidate cells. Also bound callers requesting more than a whole map.
+    const stride = paintingStride(mapWidth + 2 * pad, step, x0, x1, y0, y1);
     if (![x0, x1, y0, y1, stride].every(Number.isSafeInteger)) return [];
     const candidates: Candidate[] = [];
     // Align coarse safety sampling to the world, including when cropping.
@@ -690,7 +712,7 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
     for (const { stamp } of suppress(candidates)) result.push(stamp);
   }
   // Orchard rows are retained even in the overview/3D scene; fine tiles never duplicate them.
-  if (mode !== 'fine' && !options.forestsOnly) for (const stamp of orchardTrees(bounds, sample, options)) result.push(stamp);
+  if (mode !== 'fine' && !options.forestsOnly) for (const stamp of orchardTrees(bounds, sample, options, mapWidth)) result.push(stamp);
   result.sort((a, b) => a.y - b.y || a.x - b.x);
   if (result.length > budget) {
     const relief = result.filter(s => isReliefBrush(s.brush)),
