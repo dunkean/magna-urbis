@@ -24,6 +24,7 @@ vi.mock('../../rust/pkg/wasm/magna_urbis_wasm.js', () => ({
   },
 }));
 import { createUrbanEngine } from '../../rust/bridge/urban';
+import * as cache from '../../rust/bridge/urbanResultCache';
 
 // An empty but valid WASM module: `compileWasm` checks `ok` and compiles what it downloads.
 const emptyWasm = () => ({ ok: true, status: 200, headers: new Headers(), arrayBuffer: async () => new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]).buffer });
@@ -126,5 +127,38 @@ describe('urban worker retained quarter boundary', () => {
     expect((await engine.run({ id: 12, kind: 'parcels', seed: '42', layouts: [layout] })).error).toContain('terrain');
     expect(native.parcels).not.toHaveBeenCalled();
     expect((await engine.run({ id: 13, kind: 'quarters', seed: '42', raster: raster() })).layouts).toEqual([layout]);
+  });
+
+  it('rejects a queued edit tied to a failed raster and keeps a newer cache-hit raster for its first miss', async () => {
+    const engine = await setup();
+    const keys = vi.spyOn(cache, 'urbanCacheKey').mockImplementation(async request => String(request.id));
+    const release = new Map<string, (value?: unknown) => void>();
+    const reads = vi.spyOn(cache, 'readUrbanCache').mockImplementation(key => {
+      if (key === '14' || key === '15') return new Promise(resolve => release.set(key, resolve));
+      return Promise.resolve(key === '16' ? { layoutsJson: JSON.stringify([layout]) } : undefined);
+    });
+    const replacement = () => ({ ...raster(), geometry: { land: [], water: [], rivers: [] } }) as SettlementRaster;
+    try {
+      const bad = engine.run({ id: 14, kind: 'quarters', seed: 'bad', raster: replacement() });
+      await vi.waitFor(() => expect(release.has('14')).toBe(true));
+      const queued = engine.run({ id: 15, kind: 'parcels', seed: 'bad', layouts: [layout] });
+      await vi.waitFor(() => expect(release.has('15')).toBe(true));
+      const latest = await engine.run({ id: 16, kind: 'quarters', seed: 'good', raster: replacement() });
+      expect(latest.layouts).toEqual([layout]);
+      expect(native.geometry).not.toHaveBeenCalled();
+      native.geometry.mockImplementationOnce(() => { throw new Error('invalid geography'); });
+      release.get('14')!();
+      expect((await bad).error).toContain('invalid geography');
+      release.get('15')!({ partitions: [] });
+      expect((await queued).error).toContain('raster_missing');
+      expect(native.parcels).not.toHaveBeenCalled();
+      const next = await engine.run({ id: 17, kind: 'parcels', seed: 'good', layouts: [layout] });
+      expect(next.partitions).toEqual([]);
+      expect(native.geometry).toHaveBeenCalledTimes(2);
+      expect(native.parcels).toHaveBeenCalledOnce();
+    } finally {
+      reads.mockRestore();
+      keys.mockRestore();
+    }
   });
 });

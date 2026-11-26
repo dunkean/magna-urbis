@@ -536,7 +536,7 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     return digest;
   };
   // Cache hits skip the raster upload; build the terrain lazily on the first miss.
-  let pendingRaster: SettlementRaster | undefined, terrainRaster: SettlementRaster | undefined;
+  let pendingRaster: { raster: SettlementRaster; rejected?: boolean } | undefined, terrainRaster: SettlementRaster | undefined;
   const rasterDigests = new WeakMap<SettlementRaster, Promise<string>>();
   const native = nativeRasterClient();
   type Requests = import('./urbanArchitecture').PlacementRequest[];
@@ -833,7 +833,19 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     if (layouts.length) layoutSources.set(layouts[0], layouts);
   };
   const runCached = async (request: UrbanRequest): Promise<UrbanResponse> => {
-    const raster = (pendingRaster = request.raster ?? pendingRaster);
+    if (request.raster && request.raster !== pendingRaster?.raster) pendingRaster = { raster: request.raster };
+    const selection = pendingRaster, raster = selection?.raster;
+    const runSelected = async (input: UrbanRequest, keepLayouts = false): Promise<UrbanResponse> => {
+      // A queued implicit request can finish a cache lookup after its raster upload failed.
+      if (!request.raster && selection?.rejected) return { id: request.id, error: '[raster_missing] Generate the terrain before the quarters.' };
+      const response = await runWasm(input, keepLayouts);
+      if (response.error && input.raster && selection && (!terrain || terrainRaster !== input.raster)) {
+        selection.rejected = true;
+        // A later explicit request may already have selected another terrain.
+        if (pendingRaster === selection) pendingRaster = terrain && terrainRaster ? { raster: terrainRaster } : undefined;
+      }
+      return response;
+    };
     let key: string | undefined;
     // The normal town chain retains its building sites with the snapshot.
     if (raster && request.kind !== 'buildingSites') {
@@ -841,7 +853,7 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
         let layoutsDigest: string | undefined;
         if (request.kind !== 'quarters' && !request.layouts && request.layoutsId !== undefined) {
           const held = retainedLayouts;
-          if (held?.id !== request.layoutsId) return runWasm(request);
+          if (held?.id !== request.layoutsId) return runSelected(request);
           layoutsDigest = await (textDigest(held.items) ?? (held.digest ??= sha256([held.json ?? JSON.stringify(nativeLayouts(held.items))])));
         }
         // Keep the upload flag in the key. The raster bytes are covered by the terrain digest.
@@ -867,20 +879,20 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     if (key) {
       try {
         const hit = await readUrbanCache<CachedUrbanResult>(key);
-        if (request.kind === 'quarters' && hit?.layoutsJson !== undefined) {
+        if (!selection?.rejected && request.kind === 'quarters' && hit?.layoutsJson !== undefined) {
           const layouts = parsed<Layout[]>(hit.layoutsJson);
           const json = resident ? hit.layoutsJson : JSON.stringify(nativeLayouts(layouts));
           rememberLayouts(layouts);
           retainedLayouts = { id: request.id, items: layouts, json };
           return { id: request.id, layouts, ms: 0 };
         }
-        if (hit?.partitions || hit?.partitionsPack) return { id: request.id, ...hit, ms: 0 };
+        if (!selection?.rejected && (hit?.partitions || hit?.partitionsPack)) return { id: request.id, ...hit, ms: 0 };
       } catch {
         /* cache is optional */
       }
     }
     const lazy = !request.raster && !!raster && terrainRaster !== raster;
-    const response = await runWasm(lazy ? { ...request, raster } : request, lazy && request.kind !== 'quarters');
+    const response = await runSelected(lazy ? { ...request, raster } : request, lazy && request.kind !== 'quarters');
     if (!response.error) {
       const { layouts, partitions, partitionsPack: pack } = response;
       if (layouts) {
@@ -904,7 +916,8 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       terrain = undefined;
       retainedLayouts = undefined;
       retainedPartitions = undefined;
-      pendingRaster = terrainRaster = undefined;
+      pendingRaster = undefined;
+      terrainRaster = undefined;
       await native.release(runtime);
     },
     run(request, hooks) {
