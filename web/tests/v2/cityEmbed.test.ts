@@ -75,6 +75,12 @@ describe('city iframe contract', () => {
     expect(new URLSearchParams(new URL(cityEmbedEditorUrl(url)).hash.slice(1)).get('city')).toBe(JSON.stringify(data));
   });
 
+  it('stops large previews at city blocks from 10,000 inhabitants', () => {
+    const hints = read(new URL('https://example.org/embed.html?preview=1&seed=42'));
+    expect(cityEmbedSettings({ ...hints, population: 9999 }, false).urban?.through).toBe('buildings');
+    expect(cityEmbedSettings({ ...hints, population: 10000 }, false).urban?.through).toBe('layout');
+  });
+
   it('shows invalid payload errors rather than generating an unrelated default city', () => {
     expect(() => read(new URL('https://example.org/embed.html#burg=bad'))).toThrow('Invalid city payload.');
     expect(() => read(new URL('https://example.org/embed.html?preview=1'))).toThrow('No city data');

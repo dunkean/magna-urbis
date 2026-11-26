@@ -7,7 +7,7 @@ import { mountCityEmbedNavigation } from './cityEmbedNavigation';
 import { MinimalCanvasRenderer } from './minimalCanvas';
 import { preferredLanguage } from './languages';
 import { cityEmbedText, localizeCityEmbed, cityEmbedSummary } from './cityEmbedMessages';
-import { unpackMinimalFeatures, type CityDetailStyle, type CityPreviewResult, type DetailedCityResult, type CityPreviewMode, type CityPreviewResponse, type CityPreviewRequest } from './cityPreviewMap';
+import { cityEmbedBlocksOnly, unpackMinimalFeatures, type CityDetailStyle, type CityPreviewResult, type DetailedCityResult, type CityPreviewMode, type CityPreviewResponse, type CityPreviewRequest } from './cityPreviewMap';
 import type { Rect4 } from '../render/view';
 
 const language = preferredLanguage(location.search);
@@ -18,6 +18,19 @@ localizeCityEmbed(document.body, language);
 
 const root = document.documentElement;
 const status = document.getElementById('status')!;
+const progressLabel = document.getElementById('progress-label')!;
+const bar = document.querySelector<HTMLProgressElement>('#city-progress')!;
+
+function showProgress(label: string, step?: number): void {
+  status.hidden = bar.hidden = false;
+  const text = translate(label);
+  if (progressLabel.textContent !== text) progressLabel.textContent = text;
+  if (step === undefined) bar.removeAttribute('value');
+  else bar.value = step;
+}
+
+// Milestones of this town, not a time estimate. Repeated worker substeps stay in the same phase.
+const generationSteps: Record<string, [number, string]> = { 'terrain-cache': [1, 'Preparing terrain…'], sites: [2, 'Laying out roads…'], town: [3, 'Laying out city blocks…'], 'urban-parcels': [4, 'Dividing plots…'], 'urban-building-sites': [5, 'Placing buildings…'] };
 const host = document.getElementById('map')!;
 let worker: Worker | undefined;
 const detailedButton = document.querySelector<HTMLButtonElement>('#detailed')!;
@@ -41,6 +54,7 @@ function fail(error: unknown): void {
   pendingRenderer = undefined;
   if (disposed) return;
   if (root.dataset.state === 'ready') {
+    status.hidden = true;
     root.dataset.detail = 'unavailable';
     detailedButton.hidden = false;
     detailedButton.disabled = false;
@@ -52,7 +66,9 @@ function fail(error: unknown): void {
     return;
   }
   root.dataset.state = 'error';
-  status.textContent = translate(error instanceof Error ? error.message : String(error));
+  status.hidden = false;
+  bar.hidden = true;
+  progressLabel.textContent = translate(error instanceof Error ? error.message : String(error));
 }
 
 const afterPaint = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -73,6 +89,11 @@ function start(): void {
   name.hidden = !name.textContent;
   const controls = document.getElementById('demo-controls')!;
   const demo = window.parent === window || current.searchParams.get('demo') === '1';
+  const blocksOnly = cityEmbedBlocksOnly(hints.population);
+  if (blocksOnly) {
+    document.querySelector('#caption small')!.textContent = translate('City blocks');
+    detailedButton.hidden = true;
+  }
   const detailLabel = demo ? translate('Improve map') : 'detailed';
   controls.hidden = !demo;
   if (demo) {
@@ -81,7 +102,8 @@ function start(): void {
     detailedButton.textContent = detailLabel;
     mountCityEmbedPopulation(current, hints.population ?? 2500);
     document.getElementById('randomize')!.onclick = () => location.assign(randomCityEmbedUrl(current).href);
-    document.getElementById('demo-params')!.textContent = cityEmbedSummary(hints, current.searchParams.get('cultureBase'), language);
+    const summary = cityEmbedSummary(hints, current.searchParams.get('cultureBase'), language);
+    document.getElementById('demo-params')!.textContent = blocksOnly ? summary + ' · ' + translate('City blocks') : summary;
   }
 
   // Local profiling uses the same V2 native engine as the studio and the benches.
@@ -119,6 +141,7 @@ function start(): void {
     bounds = area;
   };
   const showCompactMap = async (data: CityPreviewResult) => {
+    showProgress('Drawing the map…', 6);
     const { map } = data;
     const next = new MinimalCanvasRenderer(scheduleDraw);
     pendingRenderer = next;
@@ -134,10 +157,10 @@ function start(): void {
     if (disposed) return;
     root.dataset.state = 'ready';
     root.dataset.readyMs = String(Math.round(performance.now()));
-    root.dataset.detail = 'idle';
+    root.dataset.detail = blocksOnly ? 'blocks' : 'idle';
     status.hidden = true;
-    detailedButton.disabled = false;
-    document.querySelectorAll<HTMLButtonElement>('#map-navigation button').forEach(button => {
+    detailedButton.disabled = blocksOnly;
+    document.querySelectorAll<HTMLButtonElement>('#map-navigation button:not(#detailed)').forEach(button => {
       button.disabled = false;
     });
   };
@@ -148,6 +171,7 @@ function start(): void {
     const style = styleSelect.value as CityDetailStyle;
     styleSelect.disabled = true;
     root.dataset.detail = 'loading';
+    showProgress(style === 'satellite-light' ? 'Rendering fast satellite…' : 'Rendering painted satellite…');
     await detail.setStyle(style);
     if (disposed) return;
     if (renderer !== detail.renderer) install(detail.renderer, area);
@@ -155,6 +179,7 @@ function start(): void {
     await detail.renderer.settled();
     await afterPaint();
     if (disposed) return;
+    status.hidden = true;
     root.dataset.detail = 'ready';
     root.dataset.detailStyle = style;
     root.dataset.detailMs = String(Math.round(performance.now()));
@@ -166,6 +191,7 @@ function start(): void {
     if (transferFocus) styleSelect.focus();
   };
   const showDetailed = async (data: DetailedCityResult) => {
+    showProgress('Drawing the map…', 6);
     const { detailedCityMap } = await detailModule!;
     if (disposed) return;
     detail = detailedCityMap(data, scheduleDraw);
@@ -186,7 +212,10 @@ function start(): void {
       active.onmessageerror = stopped;
       active.onmessage = ({ data }: MessageEvent<CityPreviewResponse>) => {
         if (disposed || worker !== active) return;
-        if (data.type === 'error') fail(new Error(data.error));
+        if (data.type === 'progress') {
+          const milestone = generationSteps[data.progress.stage];
+          if (milestone && milestone[0] > bar.value) showProgress(milestone[1], milestone[0]);
+        } else if (data.type === 'error') fail(new Error(data.error));
         else if (data.type === 'city-preview') {
           stopWorker();
           if (data.mode === 'compact') {
@@ -202,6 +231,7 @@ function start(): void {
   };
   detailedButton.onclick = () => {
     if (detailedButton.disabled || disposed) return;
+    showProgress('Generating the detailed map');
     detailedButton.disabled = true;
     detailedButton.setAttribute('aria-busy', 'true');
     detailedButton.textContent = translate('detailing…');

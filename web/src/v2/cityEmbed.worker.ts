@@ -19,7 +19,7 @@ scope.onmessage = async ({ data: { hints, local, mode } }: MessageEvent<CityPrev
   const send = (message: CityPreviewResponse, transfer: Transferable[] = []) => scope.postMessage(message, transfer);
   try {
     let settings = cityEmbedSettings(hints, local);
-    const detailed = mode === 'detailed';
+    const detailed = mode === 'detailed' && settings.urban?.through !== 'layout';
     const progress: ProgressCallback = value => send({ type: 'progress', progress: value });
     const stage = <T>(run: (effective: V2Settings) => Promise<T>) =>
       retryNativeStage(
@@ -32,7 +32,7 @@ scope.onmessage = async ({ data: { hints, local, mode } }: MessageEvent<CityPrev
       );
     const terrain = await stage(effective => generateTerrain(effective, progress, undefined, undefined, undefined, { prepareDisplay: false, includeLandCover: detailed }));
     const region = await stage(effective => planRegion(terrain, effective, progress, true));
-    const world = await stage(effective => generateTowns(region, effective, progress, undefined, undefined, false, detailed));
+    const world = await stage(effective => generateTowns(region, effective, progress, undefined, effective.urban?.through, false, detailed));
     const cities = nativeCitiesOf(world),
       cityByKey = nativeCityRecords(world) ?? {};
     const buildings = cities.reduce((sum, city) => sum + (city.scene?.buildings.length ?? 0), 0);

@@ -81,8 +81,10 @@ try {
         this.addEventListener('message', ({ data }) => {
           if (data.type === 'progress') (window.__townProgress ??= []).push([data.progress.stage, Math.round(performance.now())]);
           if (data.type === 'city-preview') {
-            if (data.mode === 'compact') window.__townResult = data.town;
-            else if (data.mode === 'detailed') {
+            if (data.mode === 'compact') {
+              window.__townResult = data.town;
+              window.__townLayers = data.map.geometry.layers;
+            } else if (data.mode === 'detailed') {
               window.__townDetailed = data.town;
               window.__detailedGenerations = (window.__detailedGenerations ?? 0) + 1;
             }
@@ -104,7 +106,16 @@ try {
   page.on('response', response => {
     if (response.status() >= 400) result.missing.push(response.url());
   });
-  async function preview(name, source) {
+  async function assertCenteredProgress(frame) {
+    const bar = frame.getByRole('progressbar');
+    await bar.waitFor();
+    const centered = await frame.locator('#status').evaluate(el => {
+      const rect = el.getBoundingClientRect();
+      return Math.abs(rect.left + rect.width / 2 - innerWidth / 2) < 1 && Math.abs(rect.top + rect.height / 2 - innerHeight / 2) < 1;
+    });
+    assert.ok(centered, 'Progress must be centered within this viewport.');
+  }
+  async function preview(name, source, blocksOnly = false) {
     const firstAsset = servedAssets.length;
     const requests = [];
     const responses = [];
@@ -120,7 +131,7 @@ try {
     assert.equal(await frame.evaluate(() => crossOriginIsolated), false);
     assert.equal(await frame.locator('#status').isVisible(), false);
     assert.equal(await frame.locator('#demo-controls').isVisible(), false);
-    assert.equal(await root.getAttribute('data-detail'), 'idle', 'The richer generation must be opt-in.');
+    assert.equal(await root.getAttribute('data-detail'), blocksOnly ? 'blocks' : 'idle', 'The richer generation must be opt-in.');
     const timing = await root.evaluate(el => ({ firstMs: Number(el.dataset.readyMs), runtime: el.dataset.runtime, cached: el.dataset.previewCache === 'hit', threads: Number(el.dataset.wasmThreads) || undefined }));
     if (runtime === 'local') assert.equal(timing.runtime, 'native');
     const { generated, image } = await frame.evaluate(() => ({ generated: window.__townResult, image: window.__townFirstImage }));
@@ -129,7 +140,12 @@ try {
     if (timing.cached) assert.equal(generated, undefined, 'A cached vector map draws without a generation worker.');
     assert.ok(image, 'A completed first canvas paint must precede the context view.');
     await writeFile(resolve(artifacts, name + '-first.png'), Buffer.from(image, 'base64'));
-    assert.ok(town?.layouts && town.buildings > 0, 'The map must come from the Rust settlement and contain actual building footprints.');
+    if (blocksOnly) {
+      assert.ok(town.layouts && town.streets);
+      assert.equal(town.buildings, 0);
+      assert.ok(await frame.evaluate(() => window.__townLayers.includes('block') && !window.__townLayers.includes('building') && !window.__townProgress.some(([stage]) => ['urban-parcels', 'urban-building-sites', 'urban-buildings'].includes(stage))));
+      assert.equal(await frame.locator('#detailed').isVisible(), false);
+    } else assert.ok(town?.layouts && town.buildings > 0, 'The map must come from the Rust settlement and contain actual building footprints.');
     const pixels = await frame.locator('#map canvas').evaluate(canvas => {
       const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
       const colors = new Set();
@@ -189,6 +205,7 @@ try {
   await repeat.frame.locator('html[data-detail="loading"]').waitFor();
   assert.equal(await repeat.frame.locator('#map canvas').evaluate(canvas => canvas.toDataURL()), compactMap, 'Keep the compact map while Detailed runs.');
   assert.equal(await repeat.frame.locator('#detailed').isDisabled(), true);
+  await assertCenteredProgress(repeat.frame);
   await repeat.frame.locator('html[data-detail="ready"]').waitFor({ timeout: 120000 });
   assert.equal(workers.has(detailWorker), false, 'Release the detailed generation worker.');
   const detailTown = await repeat.frame.evaluate(() => window.__townDetailed);
@@ -242,6 +259,7 @@ try {
   await capture(page, 'town-satellite-fast');
   const switchStart = performance.now();
   await repeat.frame.locator('#detail-style').selectOption('satellite-2');
+  await assertCenteredProgress(repeat.frame);
   await repeat.frame.locator('html[data-detail-style="satellite-2"][data-detail="ready"]').waitFor({ timeout: 120000 });
   result.switchMs = Math.round(performance.now() - switchStart);
   result.satelliteChangedFraction = (await compareMapPixels(fastSatellite, await mapPixels())).changed;
@@ -304,7 +322,7 @@ try {
   };
   const rich = new URL(base + 'embed.html?preview=1&lang=fr&profile=' + runtime);
   rich.hash = new URLSearchParams({ burg: JSON.stringify(data) }).toString();
-  const port = await preview('port-rich', rich.href);
+  const port = await preview('port-rich', rich.href, true);
   assert.equal(await port.frame.locator('#open').innerText(), 'Ouvrir dans Magna Urbis ↗');
 
   // Verify the iframe can open the actual studio, preserving its source data and locale.
@@ -334,6 +352,7 @@ try {
   await page.goto(framed(cancelled.href));
   const worker = await startedWorker;
   assert.equal(workers.size, 1);
+  await assertCenteredProgress(page.frameLocator('iframe'));
   await Promise.all([new Promise(done => worker.once('close', done)), page.locator('iframe').evaluate(iframe => iframe.remove())]);
   assert.equal(workers.size, 0);
 
@@ -342,6 +361,12 @@ try {
   await page.goto(framed(base + 'embed.html?preview=1#burg=bad'));
   await page.frameLocator('iframe').locator('html[data-state="error"]').waitFor();
   assert.equal(workers.size, 0);
+  const heldDemo = new URL(cancelled);
+  heldDemo.searchParams.set('demo', '1');
+  heldDemo.searchParams.set('lang', 'fr');
+  await page.goto(heldDemo.href);
+  await assertCenteredProgress(page);
+  assert.equal(await page.locator('#progress-label').textContent(), 'Génération de la ville…');
   await page.goto(flatUrl + '&demo=1&lang=fr');
   await page.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
   assert.equal(await page.locator('#randomize').isVisible(), true);

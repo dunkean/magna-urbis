@@ -7,6 +7,8 @@ import type { WasmThreadsInfo } from '../../../rust/bridge/wasmThreads';
 import type { World } from '../gen/types';
 import type { V2Settings, V2Progress } from './contracts';
 
+export const cityEmbedBlocksOnly = (population = 2500): boolean => population >= 10000;
+
 export type CityPreviewMode = 'compact' | 'detailed';
 export interface CityPreviewRequest {
   hints: ExternalCityHints;
