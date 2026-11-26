@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { defineConfig, normalizePath, type Plugin } from 'vite';
+import { defineConfig, normalizePath, type Connect, type Plugin } from 'vite';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { cp, mkdir, rename } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -60,13 +60,22 @@ function wasmReload(): Plugin {
 }
 
 function v2Resources(): Plugin {
+  // Isolated local hosts need explicit permission to embed the preview across sites.
+  const embedPolicy: Connect.NextHandleFunction = (req, res, next) => {
+    if (new URL(req.url ?? '/', 'http://localhost').pathname.endsWith('/embed.html')) res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  };
   const sources = [
     { prefix: '/scientific/', directory: resolve(root, 'docs/scientific') },
     { prefix: '/neural/', directory: resolve(root, 'rust/pkg/neural-web') },
   ];
   return {
     name: 'v2-resources',
+    configurePreviewServer(server) {
+      server.middlewares.use(embedPolicy);
+    },
     configureServer(server) {
+      server.middlewares.use(embedPolicy);
       server.middlewares.use((req, res, next) => {
         const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
         if (pathname === '/' || pathname === '/index.html') {

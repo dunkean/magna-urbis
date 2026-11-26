@@ -9,7 +9,7 @@ import type { V2Settings, V2Progress } from './contracts';
 
 export const cityEmbedBlocksOnly = (population = 2500): boolean => population >= 10000;
 
-export type CityPreviewMode = 'compact' | 'detailed';
+export type CityPreviewMode = 'compact' | 'detailed' | 'houses';
 export interface CityPreviewRequest {
   hints: ExternalCityHints;
   local: boolean;
@@ -30,7 +30,7 @@ export interface CityPreviewResult {
   town: { buildings: number; layouts: number; streets: number };
   map: CityPreviewMap;
 }
-export type DetailedCityResult = Omit<CityPreviewResult, 'mode' | 'map'> & { mode: 'detailed'; world: World; settings: V2Settings; bounds: Rect4 };
+export type DetailedCityResult = Omit<CityPreviewResult, 'mode' | 'map'> & { mode: 'detailed' | 'houses'; world: World; settings: V2Settings; bounds: Rect4 };
 export type CityDetailStyle = 'satellite-light' | 'satellite-2';
 export type CityPreviewResponse = { type: 'progress'; progress: V2Progress } | CityPreviewResult | DetailedCityResult | { type: 'error'; error: string };
 

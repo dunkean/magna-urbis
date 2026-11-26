@@ -19,7 +19,8 @@ scope.onmessage = async ({ data: { hints, local, mode } }: MessageEvent<CityPrev
   const send = (message: CityPreviewResponse, transfer: Transferable[] = []) => scope.postMessage(message, transfer);
   try {
     let settings = cityEmbedSettings(hints, local);
-    const detailed = mode === 'detailed' && settings.urban?.through !== 'layout';
+    const detailed = mode !== 'compact' && settings.urban?.through !== 'layout';
+    if (detailed && mode === 'houses') settings.urban = { ...settings.urban, architecture: 'detailed' };
     const progress: ProgressCallback = value => send({ type: 'progress', progress: value });
     const stage = <T>(run: (effective: V2Settings) => Promise<T>) =>
       retryNativeStage(
@@ -44,7 +45,7 @@ scope.onmessage = async ({ data: { hints, local, mode } }: MessageEvent<CityPrev
     if (detailed) {
       const cover = packWorldLanduse(world);
       const packed = packWorldPartitions(cover.world);
-      send({ ...common, mode: 'detailed', world: packed.world, bounds, settings }, [...cover.transfer, ...packed.transfer]);
+      send({ ...common, mode, world: packed.world, bounds, settings }, [...cover.transfer, ...packed.transfer]);
       return;
     }
     const recipe = settings.appearance!.composition!;

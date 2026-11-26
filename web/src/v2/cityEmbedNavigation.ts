@@ -107,5 +107,15 @@ export function mountCityEmbedNavigation(host: HTMLElement, draw: () => void, en
     { signal },
   );
   changed();
-  return { zoom, reset, view: (base: View): View => ({ cx: base.cx + camera.cx / base.scale, cy: base.cy + camera.cy / base.scale, scale: base.scale * camera.scale }), dispose: () => controller.abort() };
+  return {
+    zoom,
+    reset,
+    camera: () => ({ ...camera }),
+    restore: (saved: View) => {
+      camera = { ...saved };
+      changed();
+    },
+    view: (base: View): View => ({ cx: base.cx + camera.cx / base.scale, cy: base.cy + camera.cy / base.scale, scale: base.scale * camera.scale }),
+    dispose: () => controller.abort(),
+  };
 }

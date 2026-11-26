@@ -201,6 +201,18 @@ export class MapView implements AppearanceListener, ViewStatus {
   contentChanged(ran: readonly string[], before: { resolved?: ResolvedAppearance; native?: TerrainData }): void {
     this.composed.contentChanged(ran, before);
   }
+  /** Flatten the currently presented map layers, redrawing non-preserved GPU buffers in this task. */
+  snapshot(): HTMLCanvasElement | undefined {
+    const sources = this.current()?.frozenSources();
+    if (!sources?.length) return undefined;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(...sources.map(source => source.width));
+    canvas.height = Math.max(...sources.map(source => source.height));
+    if (!canvas.width || !canvas.height) return undefined;
+    const context = canvas.getContext('2d')!;
+    for (const source of sources) if (source.width && source.height) context.drawImage(source, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
   /** Copies of the canvases on screen in one element above them; the canvases are hidden until `thaw`. */
   private freeze(sources: readonly HTMLCanvasElement[]): HTMLDivElement {
     const frozen = document.createElement('div');

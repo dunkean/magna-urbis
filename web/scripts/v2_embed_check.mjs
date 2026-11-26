@@ -35,7 +35,8 @@ const assets = createServer(async (request, response) => {
     const body = gzip && !compressed.has(path) ? gzipSync(bytes) : bytes;
     if (gzip) compressed.set(path, body);
     if (addedLatency > 0) await new Promise(done => setTimeout(done, addedLatency));
-    response.writeHead(200, { 'Content-Type': mime[ext] ?? 'application/octet-stream', 'Cache-Control': 'public, max-age=3600', 'Content-Length': body.length, Vary: 'Accept-Encoding', ...(gzip ? { 'Content-Encoding': 'gzip' } : {}) });
+    const embedPolicy = url.pathname.endsWith('/embed.html') ? { 'Cross-Origin-Resource-Policy': 'cross-origin' } : {};
+    response.writeHead(200, { 'Content-Type': mime[ext] ?? 'application/octet-stream', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'credentialless', ...embedPolicy, 'Cache-Control': 'public, max-age=3600', 'Content-Length': body.length, Vary: 'Accept-Encoding', ...(gzip ? { 'Content-Encoding': 'gzip' } : {}) });
     servedAssets.push({ url: url.pathname, bytes: body.length });
     response.end(body);
   } catch {
@@ -78,6 +79,7 @@ try {
     window.Worker = class extends NativeWorker {
       constructor(...args) {
         super(...args);
+        if (args[1]?.name?.startsWith('magna-city-')) window.__cityGenerations = (window.__cityGenerations ?? 0) + 1;
         this.addEventListener('message', ({ data }) => {
           if (data.type === 'progress') (window.__townProgress ??= []).push([data.progress.stage, Math.round(performance.now())]);
           if (data.type === 'city-preview') {
@@ -87,6 +89,8 @@ try {
             } else if (data.mode === 'detailed') {
               window.__townDetailed = data.town;
               window.__detailedGenerations = (window.__detailedGenerations ?? 0) + 1;
+            } else if (data.mode === 'houses') {
+              window.__houseScene = Object.values(data.world.debug.v2RustCities)[0].scene?.generator_version;
             }
           }
         });
@@ -262,10 +266,41 @@ try {
   await assertCenteredProgress(repeat.frame);
   await repeat.frame.locator('html[data-detail-style="satellite-2"][data-detail="ready"]').waitFor({ timeout: 120000 });
   result.switchMs = Math.round(performance.now() - switchStart);
-  result.satelliteChangedFraction = (await compareMapPixels(fastSatellite, await mapPixels())).changed;
+  const paintedPixels = await mapPixels();
+  result.satelliteChangedFraction = (await compareMapPixels(fastSatellite, paintedPixels)).changed;
   assert.ok(result.satelliteChangedFraction > 0.2, 'Painted satellite must visibly repaint the town.');
   assert.equal(await repeat.frame.evaluate(() => window.__detailedGenerations), 1);
   await capture(page, 'town-painted-satellite');
+  const housesStart = performance.now();
+  await repeat.frame.locator('#houses').click();
+  await repeat.frame.locator('html[data-tier="houses"][data-detail="ready"]').waitFor({ timeout: 150000 });
+  assert.match(await repeat.frame.evaluate(() => window.__houseScene), /architectural|houses/);
+  result.housesMs = Math.round(performance.now() - housesStart);
+  result.housesChangedFraction = (await compareMapPixels(paintedPixels, await mapPixels())).changed;
+  assert.ok(result.housesChangedFraction > 0.01, 'Architectural roofs should visibly change the painted view.');
+  await capture(page, 'town-houses');
+  if (runtime === 'web') {
+    await repeat.frame.locator('html[data-saved="yes"]').waitFor({ timeout: 15000 });
+    await repeat.frame.locator('#zoom-in').click();
+    await repeat.frame.locator('#save-view').click();
+    await repeat.frame.locator('html[data-saved="yes"]').waitFor({ timeout: 30000 });
+    const before = await mapPixels();
+    await page.reload();
+    await page.frameLocator('iframe').locator('html[data-preview-cache="render"]').waitFor({ timeout: 15000 });
+    const reopened = page.frames().find(frame => frame.url().startsWith(base));
+    await reopened.locator('html[data-preview-cache="render"][data-tier="houses"]').waitFor({ timeout: 15000 });
+    assert.equal(await reopened.evaluate(() => window.__townResult || window.__houseScene), undefined);
+    assert.equal(await reopened.evaluate(() => window.__cityGenerations ?? 0), 0);
+    assert.equal(await reopened.locator('#map').getAttribute('data-zoom'), '1.5');
+    // The reopened bitmap must actually contain the same rendered roofs and ground.
+    repeat.frame = reopened;
+    assert.ok((await compareMapPixels(before, await mapPixels())).changed < 0.02);
+    result.houseReopenMs = Number(await reopened.locator('html').getAttribute('data-ready-ms'));
+    await reopened.locator('#zoom-in').click();
+    await reopened.locator('html[data-detail-ms][data-detail="ready"][data-saved="yes"]').waitFor({ timeout: 120000 });
+    assert.equal(await reopened.evaluate(() => window.__houseScene), undefined, 'Navigation must restore the cached world.');
+    await reopened.locator('#fit-view').click();
+  }
 
   await repeat.frame.locator('#zoom-in').click();
   assert.equal(await repeat.frame.locator('#map').getAttribute('data-zoom'), '1.5');
@@ -365,17 +400,26 @@ try {
   heldDemo.searchParams.set('demo', '1');
   heldDemo.searchParams.set('lang', 'fr');
   await page.goto(heldDemo.href);
-  await assertCenteredProgress(page);
-  assert.equal(await page.locator('#progress-label').textContent(), 'Génération de la ville…');
+  const demoFrame = page.frameLocator('#test-frame');
+  await assertCenteredProgress(demoFrame);
+  assert.equal(await demoFrame.locator('#progress-label').textContent(), 'Génération de la ville…');
   await page.goto(flatUrl + '&demo=1&lang=fr');
-  await page.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
+  await demoFrame.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
   assert.equal(await page.locator('#randomize').isVisible(), true);
-  assert.equal(await page.locator('#demo-controls').getByRole('button', { name: 'Améliorer la vue' }).isEnabled(), true);
+  assert.equal(await demoFrame.locator('#detailed').isEnabled(), true);
   assert.equal(await page.locator('#preview-population').inputValue(), '2500');
+  assert.notEqual(await demoFrame.locator('html').evaluate(() => location.origin), new URL(page.url()).origin);
+  assert.equal(await demoFrame.locator('html').evaluate(() => crossOriginIsolated), false);
+  const size = () => page.locator('#test-frame').evaluate(f => [f.clientWidth, f.clientHeight]);
+  assert.deepEqual(await size(), [360, 300]);
+  await page.locator('#expand-preview').click();
+  assert.ok((await size())[0] > 360);
+  await page.locator('#expand-preview').click();
+  assert.deepEqual(await size(), [360, 300]);
   await page.locator('#preview-population').fill('1250');
   await page.getByRole('button', { name: 'Appliquer' }).click();
   await page.waitForURL(url => url.searchParams.get('population') === '1250');
-  await page.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
+  await demoFrame.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
   assert.equal(await page.locator('#preview-population').inputValue(), '1250');
   assert.equal(new URL(page.url()).searchParams.get('seed'), '12340007');
   await page.evaluate(() => {
@@ -383,21 +427,22 @@ try {
   });
   await page.locator('#randomize').click();
   await page.waitForURL(url => url.searchParams.get('cultureBase') === 'Chinese');
-  await page.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
+  await demoFrame.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
   assert.match(await page.locator('#demo-params').textContent(), /Chinese.*hab\./);
 
   const demoBurg = { format: 'fmg-burg-v1', i: 19, name: 'Demo Burg', population: 700, mfcgSeed: '12340019', river: false, coast: null };
   const richDemo = new URL(base + 'embed.html?preview=1&demo=1&lang=fr&profile=' + runtime);
   richDemo.hash = new URLSearchParams({ burg: JSON.stringify(demoBurg) }).toString();
   await page.goto(richDemo.href);
-  await page.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
+  await demoFrame.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
   assert.equal(await page.locator('#preview-population').inputValue(), '700');
   await page.evaluate(() => {
     window.__beforePopulationEdit = true;
   });
   await page.locator('#preview-population').fill('850');
   await page.locator('#preview-population').press('Enter');
-  await page.waitForFunction(() => !window.__beforePopulationEdit && document.documentElement.dataset.state === 'ready', undefined, { timeout: 30000 });
+  await page.waitForFunction(() => !window.__beforePopulationEdit);
+  await demoFrame.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
   const chosen = JSON.parse(new URLSearchParams(new URL(page.url()).hash.slice(1)).get('burg'));
   assert.deepEqual(chosen, { ...demoBurg, population: 850 });
   assert.equal(await page.locator('#preview-population').inputValue(), '850');

@@ -61,6 +61,30 @@
       #status[hidden] {
         display: none;
       }
+      #detail-actions {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        display: flex;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 3px;
+        max-width: 60%;
+      }
+      #detail-actions button, #expand-preview {
+        pointer-events: auto;
+        border: 1px solid #b9a58d;
+        border-radius: 4px;
+        padding: 5px;
+        color: inherit;
+        background: #fffaf0ed;
+        cursor: pointer;
+        font: 11px system-ui;
+      }
+      html.demo-host body { overflow: auto; box-sizing: border-box; padding: 18px; }
+      .demo-host #demo-controls { position: static; align-items: center; margin-bottom: 10px; }
+      #test-frame { display: block; box-sizing: content-box; width: min(360px, 60vw); height: min(320px, 60vh); border: 1px solid #b9a58d; }
+      #test-frame.expanded { width: calc(100% - 2px); height: 78vh; }
       #caption {
         position: absolute;
         top: 8px;
@@ -102,7 +126,10 @@
         padding: 6px;
         border-radius: 3px;
       }
-      @media (max-width: 340px) {
+      @media (max-width: 400px) {
+        #map-navigation { right: 6px; flex-wrap: wrap; }
+        #detail-style { max-width: calc(100vw - 20px); }
+        #caption { max-width: 38%; }
         #open {
           bottom: 44px;
         }
@@ -133,8 +160,7 @@
         color: #49372a;
         font: inherit;
       }
-      #randomize,
-      #demo-controls #detailed {
+      #randomize {
         pointer-events: auto;
         flex: none;
         border: 1px solid #b9a58d;
@@ -146,24 +172,11 @@
         cursor: pointer;
         box-shadow: 0 2px 6px #49372a18;
       }
-      #demo-controls #detailed {
-        background: #6e4c34;
-        color: #fffaf0;
-        border-color: #6e4c34;
-      }
-      #demo-controls #detailed:hover:not(:disabled) {
-        background: #583a28;
-      }
-      #demo-controls #detailed:disabled {
-        opacity: 0.6;
-        cursor: default;
-      }
       #randomize:hover {
         background: #f0e4d0;
         border-color: #725c47;
       }
-      #randomize:focus-visible,
-      #demo-controls #detailed:focus-visible {
+      #randomize:focus-visible {
         outline: 2px solid #725c47;
         outline-offset: 2px;
       }
@@ -263,6 +276,10 @@
         <button type="submit" data-embed-text>Apply</button>
       </form>
       <span id="demo-params"></span>
+    </div>
+    <div id="detail-actions">
+      <button id="houses" type="button" hidden data-embed-text>Architectural houses</button>
+      <button id="save-view" type="button" hidden data-embed-text>Save view</button>
     </div>
     <div id="map-navigation" aria-label="Navigation">
       <button id="zoom-in" type="button" disabled aria-label="Zoom in" title="Zoom in (+)">+</button>
