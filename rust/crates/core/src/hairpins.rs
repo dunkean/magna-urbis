@@ -28,7 +28,7 @@ const BOW: f64 = 9.0;
 const RUNG: f64 = 60.0;
 /// The rounded tooth of a mountain road: its largest radius (m), and the share of the half leg on each side of the tip
 /// it rounds.
-const TOOTH: f64 = 9.0;
+const TOOTH: f64 = 4.0;
 const TOOTH_LEG: f64 = 0.7;
 
 fn distance(a: Point, b: Point) -> f64 {
