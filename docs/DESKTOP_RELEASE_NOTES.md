@@ -3,6 +3,7 @@
 - Town streets render again on WebGL2 devices that enforce reserved shader names.
 - The live map keeps its cartographic overlay when town buildings first appear.
 - Selecting a map feature keeps its outline aligned as you move or tilt the camera and lets the page rest when the view is still.
+- House and parcel inspectors reopen faster after an edit.
 - City share codes carry drawn outlines and splits, custom names, pin text, and road and wall edits. Maps with nested edits preserve the contour precision needed to find the same lots and buildings when reopened.
 - Local building, parcel and block edits on saved landscapes reuse the ground already drawn in the top and tilted views.
 - Changing the Parchment map date reuses the summer relief, grass and reed marks, and overlay tiles whose colours stay the same.

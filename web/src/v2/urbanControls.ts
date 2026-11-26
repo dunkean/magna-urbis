@@ -532,9 +532,10 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
   };
   const own = () => urbanScopeValues(getSettings(), scopes()[0]),
     inherited = () => urbanInheritedValues(getSettings(), scopes()[0]);
-  let effectiveCache: Record<string, unknown>[] = [];
-  const values = () => (effectiveCache.length ? effectiveCache : scopes().map(s => urbanEffectiveValues(getSettings(), s)));
-  function resolvedChoice(path: string, raw: unknown, value = values()[0], target = scopes()[0]) {
+  // Each section syncs as it mounts. All its controls read the same settings snapshot.
+  const readScopes = () => scopes().map(s => memoEffectiveValues(getSettings(), s));
+  let values = readScopes();
+  function resolvedChoice(path: string, raw: unknown, value = values[0], target = scopes()[0]) {
     if (raw !== 'culture' && raw !== 'site') return undefined;
     const settings = getSettings(),
       defaults = target.kind === 'settlement' ? target.defaults : undefined;
@@ -561,16 +562,16 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     return resolved ? { value: resolved, label: urbanChoiceNames[resolved]?.[0] ?? urbanCatalogue.presets[resolved]?.label ?? urbanCatalogue.cultures[resolved]?.label ?? resolved } : undefined;
   }
   const isMixed = (path: string) => {
-    const all = values(),
-      targets = scopes();
+    if (values.length < 2) return false;
+    const targets = scopes();
     const key = (value: Record<string, unknown>, i: number) => {
       const raw = readSettingPath(value, path);
       return JSON.stringify([raw, resolvedChoice(path, raw, value, targets[i])?.value]);
     };
-    const first = key(all[0], 0);
-    return all.slice(1).some((value, i) => key(value, i + 1) !== first);
+    const first = key(values[0], 0);
+    return values.some((value, i) => i > 0 && key(value, i) !== first);
   };
-  const effective = (path: string) => (isMixed(path) ? undefined : readSettingPath(values()[0], path));
+  const effective = (path: string) => (isMixed(path) ? undefined : readSettingPath(values[0], path));
   const set = (path: string, value: unknown) => {
     for (const target of scopes()) {
       const baseline = readSettingPath(urbanInheritedValues(getSettings(), target), path);
@@ -739,7 +740,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
   if (extra('catalogue') && (global || scope.kind === 'building')) mountCatalogue();
   function sync(): void {
     root.inert = !!parts?.disabled?.();
-    effectiveCache = scopes().map(s => memoEffectiveValues(getSettings(), s));
+    values = readScopes();
     effects.forEach(effect => effect());
     forms.forEach(form => form.sync());
   }
