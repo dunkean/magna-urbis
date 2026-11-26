@@ -19,12 +19,12 @@ import { unreachableBuildings } from './accessCheck';
 // Regional roads and clustered siting determine the current lots and these seeded counts. Each case also
 // checks the actual compound output against the final huts; 53 historical cells preserve the original producer.
 const HUT_CASES = [
-  { seed: '1', count: 259 },
-  { seed: '2', count: 113 },
-  { seed: '3', count: 256 },
-  { seed: '4', count: 373 },
-  { seed: '5', count: 668 },
-  { seed: '6', count: 834 },
+  { seed: '1', population: 17298, count: 259 },
+  { seed: '2', population: 19701, count: 113 },
+  { seed: '3', population: 11171, count: 256 },
+  { seed: '4', population: 14594, count: 373 },
+  { seed: '5', population: 22354, count: 668 },
+  { seed: '6', population: 22276, count: 834 },
 ];
 
 const FADE = 0.9,
@@ -89,9 +89,9 @@ describe('density producer contracts survive late styling and edge fading', () =
       });
       let world: ReturnType<typeof generate>;
       try {
-        world = generate(makeOptions({ size: 'city', seed: fixture.seed }), stage => {
+        world = generate(makeOptions({ size: 'city', seed: fixture.seed, population: fixture.population }), stage => {
           if (stage === 'settlements') mainSettlement = false;
-        });
+        }, { lazy: true });
       } finally {
         spy.mockRestore();
       }
@@ -169,7 +169,7 @@ describe('density producer contracts survive late styling and edge fading', () =
     });
     let w: ReturnType<typeof generate>;
     try {
-      w = generate(makeOptions({ seed: '3', size: 'town' }), stage => {
+      w = generate(makeOptions({ seed: '3', size: 'town', population: 2236 }), stage => {
         if (stage === 'settlements') mainSettlement = false;
       });
     } finally {
@@ -178,7 +178,8 @@ describe('density producer contracts survive late styling and edge fading', () =
     const u = w.urban!;
     expect(owners).toBeDefined();
     expect(owners!.after, 'density repair preserves its complete incoming block and plot ownership').toBe(owners!.before);
-    expect(createHash('sha256').update(JSON.stringify(u)).digest('hex')).toBe('ee56c57829fb44b15a02bdaa4c4215ce2e6419a8280591efc747fabcac4eb58f');
+    // The original geometry now carries 45 street keys, 30 quarter keys and the generated castle name.
+    expect(createHash('sha256').update(JSON.stringify(u)).digest('hex')).toBe('151e37f6813cd08562ca97242f00cb6e0a5291f2cbd0ab5baac1fd1cbfca21f8');
     const middle = coverage(w).byPhase.get(2)!;
     expect(middle.zone).toBe('middle');
     // The current road and port programme defines this final denominator and its 166 residential plots.
