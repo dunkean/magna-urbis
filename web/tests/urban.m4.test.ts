@@ -16,9 +16,11 @@ interface Case {
   rejectedPort?: boolean;
 }
 const CASES: Case[] = [
-  { name: 'city on a river', o: { seed: '2', size: 'city' }, expect: ['castle', 'cathedral-close', 'palace', 'monastery', 'watermill', 'windmill', 'tannery', 'shanty'], rejectedPort: true },
+  { name: 'city on a river with the original rejected shore', o: { seed: '2', size: 'city', population: 19701 }, expect: ['castle', 'cathedral-close', 'palace', 'monastery', 'watermill', 'windmill', 'tannery', 'shanty'], rejectedPort: true },
+  { name: 'city on a river at the default population', o: { seed: '2', size: 'city' }, expect: ['castle', 'cathedral-close', 'palace', 'monastery', 'watermill', 'windmill', 'tannery', 'shanty'] },
   { name: 'harbour town', o: { seed: '3', size: 'town', coast: 'S', siteType: 'harbor' }, expect: ['castle'] },
-  { name: 'coastal city', o: { seed: '5', size: 'city', coast: 'E', siteType: 'harbor' }, expect: ['castle', 'harbour', 'shipyard', 'cathedral-close'] },
+  { name: 'coastal city with the original shipyard', o: { seed: '5', size: 'city', population: 22354, coast: 'E', siteType: 'harbor' }, expect: ['castle', 'harbour', 'shipyard', 'cathedral-close'] },
+  { name: 'coastal city at the default population', o: { seed: '5', size: 'city', coast: 'E', siteType: 'harbor' }, expect: ['castle', 'harbour', 'cathedral-close'] },
   { name: 'city with suburbs and shanty towns', o: { seed: '1', size: 'city', suburbs: 'many', shantytowns: 'many' }, expect: ['absorbed-village', 'shanty'] },
   { name: 'medina', o: { seed: '2', size: 'city', culture: 'medina' }, expect: ['kasbah', 'madrasa', 'mellah', 'river-port'] },
   { name: 'roman-core town with arena', o: { seed: '4', size: 'town', culture: 'roman-core', arena: 'yes' }, expect: ['arena'] },
