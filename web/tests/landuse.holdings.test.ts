@@ -16,14 +16,18 @@ const ctx = (seed: string) => {
   const rng = new Rng(seed);
   return { dirAt: (x: number, y: number) => 0.9 * Math.sin((x - 450) / 150) + 0.6 * Math.sin((y - 450) / 200), slopeAt: () => 0, closeAt: () => false, noise: new Noise2D(rng.fork('noise')), rng, regular: true };
 };
-const corners = (p: Polygon) =>
+const corners = (p: Polygon, minimumTurn: number) =>
   p.filter((b, i) => {
     const a = p[(i + p.length - 1) % p.length],
       c = p[(i + 1) % p.length];
-    return Math.abs((b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)) > 1e-6;
+    const dx = b.x - a.x,
+      dy = b.y - a.y,
+      ex = c.x - b.x,
+      ey = c.y - b.y;
+    return Math.abs(Math.atan2(dx * ey - dy * ex, dx * ex + dy * ey)) > minimumTurn;
   }).length;
 describe('compact agricultural holdings', () => {
-  it('uses quadrilaterals on flat ground despite a varying direction field and shares minor boundaries without paths', () => {
+  it('keeps four-sided agricultural holdings on flat ground while their shared boundaries bend', () => {
     const result = net();
     partitionRegion(box(0, 0, 900), [], ctx('flat-holdings'), result);
     expect(result.furlongs.length).toBeGreaterThan(20);
@@ -35,15 +39,23 @@ describe('compact agricultural holdings', () => {
         w = b.maxX - b.minX,
         h = b.maxY - b.minY;
       total += a;
-      if (corners(f.outer) === 4) quadrilaterals += a;
+      // Count turns over 45 degrees as corners. The gently bending shared sides add samples.
+      if (corners(f.outer, Math.PI / 4) === 4) quadrilaterals += a;
       expect(Math.min(w, h)).toBeGreaterThanOrEqual(18 - 1e-6);
       expect(Math.max(w, h) / Math.min(w, h)).toBeLessThan(3.3);
       expect(f.strips).toBeUndefined();
     }
     expect(quadrilaterals / total).toBeGreaterThan(0.95);
-    expect(total).toBeCloseTo(810000, 3);
+    expect(result.furlongs.some(f => corners(f.outer, 1e-6) > 4)).toBe(true);
     expect(result.headlands).toHaveLength(0);
     expect(result.ways.length).toBeLessThanOrEqual(2);
+    expect(total).toBeCloseTo(810000, 3);
+  });
+  it('uses straight quadrilaterals for compact plots below the agricultural size range', () => {
+    const result = net();
+    partitionRegion(box(0, 0, 900), [], { ...ctx('flat-holdings'), minArea: 200 }, result);
+    expect(result.furlongs.length).toBeGreaterThan(20);
+    expect(result.furlongs.every(f => corners(f.outer, 1e-6) === 4)).toBe(true);
   });
   it('keeps thin leftovers as grassy margins rather than ribbon-shaped fields', () => {
     const result = net();
@@ -59,7 +71,7 @@ describe('compact agricultural holdings', () => {
     partitionRegion(outer, [hole], { ...ctx('hole'), dirAt: () => 0 }, result);
     const all = [...result.furlongs.map(f => ({ outer: f.outer, holes: f.holes })), ...(result.margins ?? [])];
     expect(mpArea(intersectionS(all, hole))).toBeLessThan(0.001);
-    expect(mpArea(all)).toBeCloseTo(mpArea(unionS(all)), 3);
-    expect(mpArea(all)).toBeCloseTo(810000 - 65 * 85, 3);
+    expect.soft(mpArea(all)).toBeCloseTo(mpArea(unionS(all)), 3);
+    expect.soft(mpArea(all)).toBeCloseTo(810000 - 65 * 85, 3);
   });
 });
