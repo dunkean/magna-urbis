@@ -110,6 +110,15 @@
       #demo-controls[hidden] {
         display: none;
       }
+      #detail-style {
+        pointer-events: auto;
+        align-self: stretch;
+        border: 1px solid #b9a58d;
+        border-radius: 4px;
+        background: #fffaf0;
+        color: #49372a;
+        font: inherit;
+      }
       #randomize,
       #demo-controls #detailed {
         pointer-events: auto;
@@ -243,6 +252,10 @@
       <button id="zoom-out" type="button" disabled aria-label="Zoom out" title="Zoom out (−)">−</button>
       <button id="fit-view" type="button" disabled aria-label="Recenter city" title="Recenter city (0)">⌖</button>
       <button id="detailed" type="button" disabled data-embed-text aria-live="polite" title="Generate a detailed map">detailed</button>
+      <select id="detail-style" aria-label="Detailed map style" hidden>
+        <option value="parchment" data-embed-text>Parchment</option>
+        <option value="satellite-2" data-embed-text>Painted satellite</option>
+      </select>
     </div>
     <a id="open" target="_blank" data-embed-text rel="noopener">Open in Magna Urbis ↗</a>
     <script type="module" src="../v2/cityEmbed.ts"></script>

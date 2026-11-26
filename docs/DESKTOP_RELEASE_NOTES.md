@@ -1,6 +1,6 @@
 ## Alpha 0.3.11
 
-- The Azgaar FMG iframe draws a fitted 2D view of the generated town. Use Detailed to add plots, quarter boundaries and terrain or open the full editor. The test page puts Improve map next to Population. Reopened browser previews reuse the original map geometry.
+- The Azgaar FMG iframe draws a fitted 2D view of the generated town. Detailed opens the Parchment map and lets you switch to Painted satellite at the same zoom. The test page puts Improve map next to Population. Reopened browser previews reuse the original map geometry.
 - The Minimal map can show parcel boundaries when that layer is enabled.
 
 - Town streets render again on WebGL2 devices that enforce reserved shader names.

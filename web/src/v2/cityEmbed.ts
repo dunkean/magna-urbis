@@ -1,4 +1,4 @@
-/** FMG displays a real V2 town through the shared Minimal Canvas renderer. */
+/** FMG displays a real V2 town with a compact plan and optional studio looks. */
 import CityWorker from './cityEmbed.worker?worker';
 import { cityEmbedEditorUrl, cityEmbedHints, cityEmbedSource, cityEmbedView } from './cityEmbedInput';
 import { compactPreviewKey, readCompactPreview, saveCompactPreview } from './cityEmbedCache';
@@ -7,7 +7,7 @@ import { mountCityEmbedNavigation } from './cityEmbedNavigation';
 import { MinimalCanvasRenderer } from './minimalCanvas';
 import { preferredLanguage } from './languages';
 import { cityEmbedText, localizeCityEmbed, cityEmbedSummary } from './cityEmbedMessages';
-import { unpackMinimalFeatures, type CityPreviewMode, type CityPreviewResponse, type CityPreviewRequest } from './cityPreviewMap';
+import { unpackMinimalFeatures, type CityDetailStyle, type CityPreviewResult, type DetailedCityResult, type CityPreviewMode, type CityPreviewResponse, type CityPreviewRequest } from './cityPreviewMap';
 import type { Rect4 } from '../render/view';
 
 const language = preferredLanguage(location.search);
@@ -21,8 +21,10 @@ const status = document.getElementById('status')!;
 const host = document.getElementById('map')!;
 let worker: Worker | undefined;
 const detailedButton = document.querySelector<HTMLButtonElement>('#detailed')!;
-let renderer: MinimalCanvasRenderer | undefined;
-let pendingRenderer: MinimalCanvasRenderer | undefined;
+const styleSelect = document.querySelector<HTMLSelectElement>('#detail-style')!;
+type MapRenderer = Pick<MinimalCanvasRenderer, 'element' | 'drawLive' | 'dispose'>;
+let renderer: MapRenderer | undefined;
+let pendingRenderer: MapRenderer | undefined;
 let navigation: ReturnType<typeof mountCityEmbedNavigation> | undefined;
 let resize: ResizeObserver | undefined;
 let drawFrame = 0;
@@ -40,10 +42,13 @@ function fail(error: unknown): void {
   if (disposed) return;
   if (root.dataset.state === 'ready') {
     root.dataset.detail = 'unavailable';
+    detailedButton.hidden = false;
     detailedButton.disabled = false;
+    styleSelect.disabled = false;
     detailedButton.textContent = translate('retry detail');
     detailedButton.title = translate('Detailed map unavailable. Try again.');
     detailedButton.removeAttribute('aria-busy');
+    console.error(error);
     return;
   }
   root.dataset.state = 'error';
@@ -72,6 +77,7 @@ function start(): void {
   controls.hidden = !demo;
   if (demo) {
     controls.insertBefore(detailedButton, document.getElementById('demo-params'));
+    detailedButton.after(styleSelect);
     detailedButton.textContent = detailLabel;
     mountCityEmbedPopulation(current, hints.population ?? 2500);
     document.getElementById('randomize')!.onclick = () => location.assign(randomCityEmbedUrl(current).href);
@@ -103,21 +109,22 @@ function start(): void {
   document.getElementById('fit-view')!.onclick = () => navigation!.reset();
   resize = new ResizeObserver(scheduleDraw);
   resize.observe(host);
-  const show = async (data: Extract<CityPreviewResponse, { type: 'city-preview' }>) => {
-    const { map, mode } = data;
-    const next = new MinimalCanvasRenderer(scheduleDraw);
-    pendingRenderer = next;
-    const height = map.height;
-    await next.setContent({ key: mode, terrainKey: 1, size: map.size, features: unpackMinimalFeatures(map.geometry), places: [], height: height ? () => height : undefined }, map.recipe, map.plan, { terrain: mode === 'detailed', landuse: mode === 'detailed', labels: false });
-    if (disposed) return;
-    // Paint offscreen first. Throughout generation, panning and resizing still use the live compact map.
-    const { width, height: h } = host.getBoundingClientRect();
-    if (width > 0 && h > 0) next.drawLive(navigation!.view(cityEmbedView(map.bounds, width, h)), width, h, window.devicePixelRatio || 1);
+  const install = (next: MapRenderer, area: Rect4) => {
+    const { width, height } = host.getBoundingClientRect();
+    if (width && height) next.drawLive(navigation!.view(cityEmbedView(area, width, height)), width, height, window.devicePixelRatio || 1);
     host.append(next.element);
     renderer?.dispose();
     renderer = next;
     pendingRenderer = undefined;
-    bounds = map.bounds;
+    bounds = area;
+  };
+  const showCompactMap = async (data: CityPreviewResult) => {
+    const { map } = data;
+    const next = new MinimalCanvasRenderer(scheduleDraw);
+    pendingRenderer = next;
+    await next.setContent({ key: 'compact', terrainKey: 1, size: map.size, features: unpackMinimalFeatures(map.geometry), places: [] }, map.recipe, map.plan, { terrain: false, landuse: false, labels: false });
+    if (disposed) return;
+    install(next, map.bounds);
     root.dataset.runtime = data.runtime;
     if (data.wasm) {
       root.dataset.wasmMode = data.wasm.mode;
@@ -125,22 +132,48 @@ function start(): void {
     }
     await afterPaint();
     if (disposed) return;
-    if (mode === 'compact') {
-      root.dataset.state = 'ready';
-      root.dataset.readyMs = String(Math.round(performance.now()));
-      root.dataset.detail = 'idle';
-      status.hidden = true;
-      detailedButton.disabled = false;
-      document.querySelectorAll<HTMLButtonElement>('#map-navigation button').forEach(button => {
-        button.disabled = false;
-      });
-    } else {
-      root.dataset.detail = 'ready';
-      root.dataset.detailMs = String(Math.round(performance.now()));
-      detailedButton.removeAttribute('aria-busy');
-      detailedButton.textContent = demo ? translate('Detailed view') : detailLabel;
-      detailedButton.title = translate('Detailed map shown');
-    }
+    root.dataset.state = 'ready';
+    root.dataset.readyMs = String(Math.round(performance.now()));
+    root.dataset.detail = 'idle';
+    status.hidden = true;
+    detailedButton.disabled = false;
+    document.querySelectorAll<HTMLButtonElement>('#map-navigation button').forEach(button => {
+      button.disabled = false;
+    });
+  };
+  let detailModule: Promise<typeof import('./cityEmbedDetail')> | undefined;
+  let detail: ReturnType<typeof import('./cityEmbedDetail').detailedCityMap> | undefined;
+  const paintStyle = async (area: Rect4) => {
+    if (!detail || disposed) return;
+    const style = styleSelect.value as CityDetailStyle;
+    styleSelect.disabled = true;
+    root.dataset.detail = 'loading';
+    await detail.setStyle(style);
+    if (disposed) return;
+    if (renderer !== detail.renderer) install(detail.renderer, area);
+    else draw();
+    await detail.renderer.settled();
+    await afterPaint();
+    if (disposed) return;
+    root.dataset.detail = 'ready';
+    root.dataset.detailStyle = style;
+    root.dataset.detailMs = String(Math.round(performance.now()));
+    detailedButton.removeAttribute('aria-busy');
+    const transferFocus = document.activeElement === detailedButton;
+    detailedButton.hidden = true;
+    styleSelect.hidden = false;
+    styleSelect.disabled = false;
+    if (transferFocus) styleSelect.focus();
+  };
+  const showDetailed = async (data: DetailedCityResult) => {
+    const { detailedCityMap } = await detailModule!;
+    if (disposed) return;
+    detail = detailedCityMap(data, scheduleDraw);
+    pendingRenderer = detail.renderer;
+    await paintStyle(data.bounds);
+  };
+  styleSelect.onchange = () => {
+    if (bounds) void paintStyle(bounds).catch(fail);
   };
   const generate = (mode: CityPreviewMode) => {
     try {
@@ -156,8 +189,10 @@ function start(): void {
         if (data.type === 'error') fail(new Error(data.error));
         else if (data.type === 'city-preview') {
           stopWorker();
-          if (mode === 'compact' && previewKey && data.runtime === 'wasm') saveCompactPreview(previewKey, data);
-          void show(data).catch(fail);
+          if (data.mode === 'compact') {
+            if (previewKey && data.runtime === 'wasm') saveCompactPreview(previewKey, data);
+            void showCompactMap(data).catch(fail);
+          } else void showDetailed(data).catch(fail);
         }
       };
       active.postMessage({ hints, local, mode } satisfies CityPreviewRequest);
@@ -172,7 +207,13 @@ function start(): void {
     detailedButton.textContent = translate('detailing…');
     detailedButton.title = translate('Generating the detailed map');
     root.dataset.detail = 'loading';
-    generate('detailed');
+    if (detail && renderer === detail.renderer && bounds) void paintStyle(bounds).catch(fail);
+    else {
+      // Fetch the studio renderer and its render kernels while the generation worker builds the town.
+      detailModule = import('./cityEmbedDetail');
+      void detailModule.catch(fail);
+      generate('detailed');
+    }
   };
   const showCompact = async () => {
     // A loopback engine can be rebuilt independently of the web app.
@@ -183,7 +224,7 @@ function start(): void {
         if (disposed) return;
         if (stable) {
           root.dataset.previewCache = 'hit';
-          await show(stable);
+          await showCompactMap(stable);
           return;
         }
       } catch {

@@ -1,10 +1,11 @@
 /** Display geometry that a one-shot embed worker transfers to the shared Minimal painter. */
-import type { MinimalFeature, MinimalHeight, MinimalPoint } from '../render/minimalMap';
+import type { MinimalFeature, MinimalPoint } from '../render/minimalMap';
 import type { Rect4 } from '../render/view';
 import type { CompositionRecipe, TownPlan } from '../render/composition';
 import type { ExternalCityHints } from './externalCity/types';
 import type { WasmThreadsInfo } from '../../../rust/bridge/wasmThreads';
-import type { V2Progress } from './contracts';
+import type { World } from '../gen/types';
+import type { V2Settings, V2Progress } from './contracts';
 
 export type CityPreviewMode = 'compact' | 'detailed';
 export interface CityPreviewRequest {
@@ -16,19 +17,20 @@ export interface CityPreviewMap {
   size: number;
   bounds: Rect4;
   geometry: PackedFeatures;
-  height?: MinimalHeight;
   recipe: CompositionRecipe;
   plan: TownPlan;
 }
 export interface CityPreviewResult {
   type: 'city-preview';
-  mode: CityPreviewMode;
+  mode: 'compact';
   runtime: 'native' | 'wasm';
   wasm?: WasmThreadsInfo;
   town: { buildings: number; layouts: number; streets: number };
   map: CityPreviewMap;
 }
-export type CityPreviewResponse = { type: 'progress'; progress: V2Progress } | CityPreviewResult | { type: 'error'; error: string };
+export type DetailedCityResult = Omit<CityPreviewResult, 'mode' | 'map'> & { mode: 'detailed'; world: World; settings: V2Settings; bounds: Rect4 };
+export type CityDetailStyle = 'parchment' | 'satellite-2';
+export type CityPreviewResponse = { type: 'progress'; progress: V2Progress } | CityPreviewResult | DetailedCityResult | { type: 'error'; error: string };
 
 interface PackedFeatures {
   layers: string[];

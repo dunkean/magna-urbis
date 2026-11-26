@@ -1,12 +1,14 @@
 /// <reference lib="webworker" />
-/** One complete procedural V2 generation, publishing only the vectors the iframe can draw. */
+/** The compact plan transfers drawing vectors. Detailed transfers the retained products for both studio looks. */
 import { generateTerrain, generateTowns, namesRenamedAfterActions, planRegion } from './engine';
 import { cityEmbedBounds, cityEmbedSettings } from './cityEmbedGeneration';
-import { nativeCityRecords, nativeCitiesOf, nativeTerrainOf } from './nativeProducts';
+import { nativeCityRecords, nativeCitiesOf } from './nativeProducts';
 import { retryNativeStage } from './runtimeChoices';
 import { townPlanOf } from '../render/composition';
 import { minimalFeatures } from './minimalFeatures';
 import { packMinimalFeatures, type CityPreviewRequest, type CityPreviewResponse } from './cityPreviewMap';
+import { packWorldPartitions } from './urbanPack';
+import { packWorldLanduse } from './landusePack';
 import { wasmThreadsInfo } from '../../../rust/bridge/wasmThreads';
 import type { V2Settings, ProgressCallback } from './contracts';
 
@@ -36,32 +38,19 @@ scope.onmessage = async ({ data: { hints, local, mode } }: MessageEvent<CityPrev
     const buildings = cities.reduce((sum, city) => sum + (city.scene?.buildings.length ?? 0), 0);
     const layouts = cities.flatMap(city => city.layouts);
     if (!layouts.length) throw new Error('The city map could not be drawn.');
-    const recipe = settings.appearance!.composition!;
-    if (detailed) {
-      recipe.landuse.rural = 'subtle';
-      recipe.buildings.parcels = recipe.buildings.districts = true;
-      recipe.effects.relief = true;
-    }
-    const plan = townPlanOf(recipe);
-    // Natural terrain cover may already exist before rural generation; the compact view draws neither.
-    const shown = detailed ? world : { ...world, landuse: undefined };
-    const geometry = packMinimalFeatures([...minimalFeatures(shown, { cities, cityByKey }, plan.parcels)]);
-    const native = detailed ? nativeTerrainOf(world) : undefined;
-    const height = native && { data: native.height, n: native.resolution, width: native.width, maxHeight: native.maxHeight };
-    const transfer: Transferable[] = [geometry.rings.buffer, geometry.coords.buffer];
-    if (height && height.data.buffer instanceof ArrayBuffer) transfer.push(height.data.buffer);
     const runtime = world.stats['v2.urbanBackend'] === 'rust-native-cpu' ? 'native' : 'wasm';
-    send(
-      {
-        type: 'city-preview',
-        mode,
-        runtime,
-        wasm: runtime === 'wasm' ? wasmThreadsInfo() : undefined,
-        town: { buildings, layouts: layouts.length, streets: layouts.reduce((sum, layout) => sum + layout.streets.length, 0) },
-        map: { bounds: cityEmbedBounds(world), size: world.mapSize, recipe, plan, geometry, height },
-      },
-      transfer,
-    );
+    const common = { type: 'city-preview', runtime, wasm: runtime === 'wasm' ? wasmThreadsInfo() : undefined, town: { buildings, layouts: layouts.length, streets: layouts.reduce((sum, layout) => sum + layout.streets.length, 0) } } as const;
+    const bounds = cityEmbedBounds(world);
+    if (detailed) {
+      const cover = packWorldLanduse(world);
+      const packed = packWorldPartitions(cover.world);
+      send({ ...common, mode: 'detailed', world: packed.world, bounds, settings }, [...cover.transfer, ...packed.transfer]);
+      return;
+    }
+    const recipe = settings.appearance!.composition!;
+    const plan = townPlanOf(recipe);
+    const geometry = packMinimalFeatures([...minimalFeatures({ ...world, landuse: undefined }, { cities, cityByKey }, plan.parcels)]);
+    send({ ...common, mode: 'compact', map: { bounds, size: world.mapSize, recipe, plan, geometry } }, [geometry.rings.buffer, geometry.coords.buffer]);
   } catch (error) {
     send({ type: 'error', error: error instanceof Error ? error.message : String(error) });
   }

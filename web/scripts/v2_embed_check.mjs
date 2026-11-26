@@ -84,7 +84,7 @@ try {
             if (data.mode === 'compact') window.__townResult = data.town;
             else if (data.mode === 'detailed') {
               window.__townDetailed = data.town;
-              window.__detailedLayers = data.map.geometry.layers;
+              window.__detailedGenerations = (window.__detailedGenerations ?? 0) + 1;
             }
           }
         });
@@ -181,6 +181,7 @@ try {
   );
   assert.ok(drawingDelta < 0.25, 'The reopened burg must keep the same proportions and visual detail.');
   const compactMap = await repeat.frame.locator('#map canvas').evaluate(canvas => canvas.toDataURL());
+  const compactPixels = await page.screenshot({ clip: { x: 30, y: 70, width: 380, height: 180 } });
   const detailStart = performance.now();
   const detailStarted = page.waitForEvent('worker');
   await repeat.frame.locator('#detailed').click();
@@ -193,11 +194,53 @@ try {
   const detailTown = await repeat.frame.evaluate(() => window.__townDetailed);
   assert.ok(detailTown?.buildings > 0, 'Detailed must return real Rust building footprints.');
   assert.deepEqual(detailTown, result.cases[1].town, 'The two V2 passes must retain the same streets and buildings.');
-  const detailedLayers = await repeat.frame.evaluate(() => window.__detailedLayers);
-  assert.ok(detailedLayers.includes('parcel') && detailedLayers.includes('quarter'), 'Detailed must carry the cadastral and quarter outlines.');
+  assert.equal(await repeat.frame.locator('#detail-style').inputValue(), 'parchment');
   result.detailedMs = Math.round(performance.now() - detailStart);
-  assert.notEqual(await repeat.frame.locator('#map canvas').evaluate(canvas => canvas.toDataURL()), compactMap, 'Detailed must update the rendered map.');
+  result.detailPasses = await repeat.frame.evaluate(() =>
+    Object.fromEntries(
+      performance
+        .getEntriesByType('measure')
+        .filter(m => m.name.startsWith('v2pass:'))
+        .map(m => [m.name, Math.round(m.duration)]),
+    ),
+  );
+  // Compare the composited map between the toolbars. A control, an extra outline or a cleared canvas
+  // cannot satisfy the requirement for a visibly different cartographic style.
+  const mapPixels = () => page.screenshot({ clip: { x: 30, y: 70, width: 380, height: 180 } });
+  async function changedFraction(first, second) {
+    return repeat.frame.evaluate(
+      async encoded => {
+        const pixels = await Promise.all(
+          encoded.map(async data => {
+            const image = new Image();
+            image.src = 'data:image/png;base64,' + data;
+            await image.decode();
+            const canvas = Object.assign(document.createElement('canvas'), { width: image.width, height: image.height });
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+            return ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          }),
+        );
+        const [a, b] = pixels;
+        let changed = 0;
+        for (let i = 0; i < a.length; i += 4) if (Math.max(...[0, 1, 2].map(c => Math.abs(a[i + c] - b[i + c]))) >= 16) changed++;
+        return changed / (a.length / 4);
+      },
+      [first, second].map(buffer => buffer.toString('base64')),
+    );
+  }
+  const parchment = await mapPixels();
+  result.parchmentChangedFraction = await changedFraction(compactPixels, parchment);
+  assert.ok(result.parchmentChangedFraction > 0.2, 'Parchment must visibly repaint the town.');
   await capture(page, 'town-detailed');
+  const switchStart = performance.now();
+  await repeat.frame.locator('#detail-style').selectOption('satellite-2');
+  await repeat.frame.locator('html[data-detail-style="satellite-2"][data-detail="ready"]').waitFor({ timeout: 120000 });
+  result.switchMs = Math.round(performance.now() - switchStart);
+  result.satelliteChangedFraction = await changedFraction(parchment, await mapPixels());
+  assert.ok(result.satelliteChangedFraction > 0.2, 'Painted satellite must visibly repaint the town.');
+  assert.equal(await repeat.frame.evaluate(() => window.__detailedGenerations), 1);
+  await capture(page, 'town-painted-satellite');
 
   await repeat.frame.locator('#zoom-in').click();
   assert.equal(await repeat.frame.locator('#map').getAttribute('data-zoom'), '1.5');
@@ -217,9 +260,10 @@ try {
   async function backingAspect(width, height) {
     await repeat.frame.waitForFunction(
       ([w, h]) => {
-        const canvas = document.querySelector('#map canvas');
-        const rect = canvas?.getBoundingClientRect();
-        return rect?.width === w && rect.height === h && Math.abs(canvas.width / canvas.height - w / h) < 0.005;
+        return [...document.querySelectorAll('#map canvas')].some(canvas => {
+          const rect = canvas.getBoundingClientRect();
+          return rect.width === w && rect.height === h && Math.abs(canvas.width / canvas.height - w / h) < 0.005;
+        });
       },
       [width, height],
     );
