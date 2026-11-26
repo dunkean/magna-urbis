@@ -66,9 +66,11 @@ struct SitePrep {
     shore: f64,
 }
 impl SitePrep {
-    fn new(s: &SettlementSpec, cfg: &Config) -> Self {
+    /// `terraced`: the place counts its slopes as terraces (`Fields::terrace_sat`) whatever its
+    /// size; a hamlet or a village always does.
+    fn new(s: &SettlementSpec, cfg: &Config, terraced: bool) -> Self {
         Self {
-            terraces: (15..1000).contains(&s.population),
+            terraces: terraced || (15..1000).contains(&s.population),
             shore: site_weight(s, cfg, "harbor").clamp(0.0, 2.0),
             mountain: s
                 .site_prefs
@@ -522,7 +524,7 @@ fn cave_room(
         .chain(CAVE_STEPS.into_iter().filter(|&p| p < s.population));
     for pop in steps {
         let spec = SettlementSpec { population: pop, ..s.clone() };
-        let prep = SitePrep::new(&spec, cfg);
+        let prep = SitePrep::new(&spec, cfg, false);
         let ext = extent_radius(pop);
         let frame = 0.8 * ext + 40.0;
         let grade = raw_grade_limit(&spec, &prep);
@@ -825,10 +827,12 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
     let budget = cfg.mode == "auto" && cfg.distribution == "classes";
     let n = f.r.n;
     let stride = ((40.0_f64.max(1.5 * f.cell) / f.cell).round() as usize).max(1);
+    // Invariant: a drawn place stands in the main network (`Fields::reached`): never in an
+    // Underdark chamber sealed in the rock.
     let candidates: Vec<_> = (0..n)
         .step_by(stride)
         .flat_map(|y| (0..n).step_by(stride).map(move |x| y * n + x))
-        .filter(|&i| f.r.water[i] == 0)
+        .filter(|&i| f.r.water[i] == 0 && f.reached(i))
         .collect();
     let land = LandMasses::of(f);
     let mut remaining = cfg.main.population;
@@ -849,11 +853,11 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
         }
         let requested = s.population;
         let explicit = s.site_type != "auto";
-        let prep = SitePrep::new(&s, cfg);
         let mut chosen: Option<(usize, Point)> = None;
         let mut reference: Option<(f64, u32)> = None;
         let mut lowered = None;
         let mut site_dropped = false;
+        let mut terraced = false;
         if let Some(p) = s.position {
             let i = f.index(p);
             // Keep an explicitly chosen dry point exactly, wherever it is (also against another
@@ -865,27 +869,36 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
             }
         } else {
             // Attempts: the requested size (with its explicit site type first), then smaller and
-            // smaller. The Underdark keeps its own lowering (`cave_room`).
+            // smaller. Invariant: slope turns into terraces before it lowers a place. Each town
+            // size is tried on ordinary ground, then with its slopes counted as terraces (as the
+            // urban stage relaxes its house slope gates, `urban::pipeline::ladders::relax_slopes`),
+            // and only then shrunk; a hamlet or a village always counts its terraces. Flat ground
+            // still wins when it holds the place. The Underdark keeps its own lowering (`cave_room`).
             let mut attempts = vec![];
-            if explicit {
-                attempts.push((requested, true));
-            }
-            attempts.push((requested, false));
-            if f.cave.is_none() {
-                let mut pop = requested;
-                while let Some(smaller) = shrink(pop) {
-                    attempts.push((smaller, false));
-                    pop = smaller;
+            let mut pop = requested;
+            loop {
+                for terraces in [false, true] {
+                    if terraces && (pop < 1000 || f.cave.is_some()) {
+                        continue;
+                    }
+                    if explicit && pop == requested {
+                        attempts.push((pop, true, terraces));
+                    }
+                    attempts.push((pop, false, terraces));
+                }
+                match shrink(pop) {
+                    Some(smaller) if f.cave.is_none() => pop = smaller,
+                    _ => break,
                 }
             }
             let mut draw = root.fork(&format!("settlement:{}", s.key)).fork("placement");
-            for (pop, require_site) in attempts {
+            for (pop, require_site, terraces) in attempts {
                 let spec = SettlementSpec { population: pop, ..s.clone() };
                 let band = band_of(pop);
-                let key = format!("{band}|{}|{:?}", s.culture, s.site_prefs);
+                let key = format!("{band}|{terraces}|{}|{:?}", s.culture, s.site_prefs);
                 let layer: &[Option<f32>] = statics.entry(key).or_insert_with(|| {
                     let rep = SettlementSpec { population: BAND_REPS[band], ..s.clone() };
-                    let rep_prep = SitePrep::new(&rep, cfg);
+                    let rep_prep = SitePrep::new(&rep, cfg, terraces);
                     crate::urban::par::map(&candidates, |_, &i| {
                         let (scores, valid) = score(f, i, &rep, &rep_prep, cfg, &noise, &land);
                         valid.then_some(scores.total as f32)
@@ -908,7 +921,7 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                     {
                         return None;
                     }
-                    let room = if (15..1000).contains(&pop) { site_room_on(f, i, pop, need, true) }
+                    let room = if terraces || (15..1000).contains(&pop) { site_room_on(f, i, pop, need, true) }
                         else { site_room(f, i, pop, need) };
                     if room < need {
                         return None;
@@ -942,6 +955,7 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                         lowered = Some(pop);
                     }
                     site_dropped = explicit && !require_site;
+                    terraced = terraces;
                     break;
                 }
             }
@@ -973,6 +987,7 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
             out.warnings.push(warnings::map_population_reduced(&s.key, requested, pop));
         }
         s.population = pop;
+        let prep = SitePrep::new(&s, cfg, terraced);
         let ext = extent_radius(pop);
         if s.position.is_none() && !forced {
             let mut jr = root.fork(&format!("settlement:{}", s.key)).fork("jitter");
@@ -981,7 +996,8 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                 y: p.y + jr.range(-0.3, 0.3) * f.cell * stride as f64,
             };
             let j = f.index(jitter);
-            if land.admits(f, j, &s, index)
+            if f.reached(j)
+                && land.admits(f, j, &s, index)
                 && score(f, j, &s, &prep, cfg, &noise, &land).1
                 && out.settlements.iter().all(|o| jitter.distance(o.center) >= extent_gap(pop, o.spec.population))
             {
@@ -1198,6 +1214,37 @@ mod tests {
         assert!(out.warnings.iter().any(|w| w.ends_with("no harbor — unsuitable shore")));
     }
 
+    /// A coast that is one steep flank (grade 0.3, 8 km, the sea east of 6 km): no ordinary
+    /// ground anywhere. A harbour town of 5,000 keeps its size on terraces instead of being
+    /// lowered to the first village size that counts its terraces.
+    #[test]
+    fn a_town_on_a_steep_coast_keeps_its_size_on_terraces() {
+        let (n, width) = (64, 8000.0);
+        let cell = width / n as f64;
+        let mut height = vec![-5.0f32; n * n];
+        let mut water = vec![1u8; n * n];
+        let level = vec![0.0f32; n * n];
+        for i in 0..n * n {
+            let x = (i % n) as f64 * cell + 0.5 * cell;
+            if x < 6000.0 {
+                (height[i], water[i]) = ((3.0 + 0.3 * (6000.0 - x)) as f32, 0);
+            }
+        }
+        let rivers = vec![0.0f32; n * n];
+        let ids = vec![-1i32; n * n];
+        let f = Fields::new(Raster { width, n, height: &height, water: &water, water_level: &level, river_width: &rivers, river_ids: &ids });
+        let spec = SettlementSpec { key: "main".into(), population: 5000, site_type: "harbor".into(), ..Default::default() };
+        let need = site_need(&spec);
+        let cfg = Config { mode: "list".into(), list: vec![spec], edge_margin: 0.0, ..Default::default() };
+        let out = place("steep-coast", &f, &cfg);
+        assert_eq!(out.settlements.len(), 1, "{:?}", out.warnings);
+        let town = &out.settlements[0];
+        assert_eq!(town.spec.population, 5000, "slope turns into terraces before it lowers the town: {:?}", out.warnings);
+        let i = f.index(town.center);
+        assert!(site_room(&f, i, 5000, need) < need, "no ordinary ground holds the town");
+        assert!(site_room_on(&f, i, 5000, need, true) >= need, "its terraces do");
+    }
+
     #[test]
     fn harbour_town_without_water_in_reach_loses_its_site_with_a_warning() {
         let f = flat(40, 4000.0, 50.0);
@@ -1253,6 +1300,34 @@ mod tests {
             .any(|s| (s.center.x - (cx + 0.5) * 50.0).hypot(s.center.y - 32.5 * 50.0) <= 425.0);
         assert!(chamber(12.0) && chamber(52.0), "both chambers used");
         assert!(out.warnings.iter().any(|w| w.ends_with(" — no cave floor")));
+    }
+
+    /// The two joined chambers and a third one as large sealed in the rock south of them (no
+    /// gallery joins it): a dense request fills the joined pair and leaves the sealed one empty.
+    #[test]
+    fn underdark_sealed_chamber_stays_empty() {
+        let n = 64;
+        let (mut height, mut water) = two_chambers();
+        for y in 0..n {
+            for x in 0..n {
+                if ((x as f64 - 32.0).powi(2) + (y as f64 - 52.0).powi(2)).sqrt() <= 8.0 {
+                    (height[y * n + x], water[y * n + x]) = (10.0, 0);
+                }
+            }
+        }
+        let rivers = vec![0.0f32; n * n];
+        let ids = vec![-1i32; n * n];
+        let level: Vec<f32> = height.iter().zip(&water).map(|(&h, &w)| if w == 2 { h - 1000.0 } else { h }).collect();
+        let f = Fields::new(Raster { width: 3200.0, n, height: &height, water: &water, water_level: &level, river_width: &rivers, river_ids: &ids });
+        assert!(f.reached(32 * n + 12) && !f.reached(52 * n + 32), "the sealed chamber is its own component");
+        let mut list = vec![SettlementSpec { key: "main".into(), population: 3000, ..Default::default() }];
+        list.extend((1..120).map(|k| SettlementSpec { key: format!("place-{k}"), population: 300, ..Default::default() }));
+        let cfg = Config { mode: "list".into(), list, edge_margin: 0.0, ..Default::default() };
+        let out = place("cave-sealed", &f, &cfg);
+        assert!(out.settlements.len() > 2, "{} placed", out.settlements.len());
+        for s in &out.settlements {
+            assert!(f.reached(f.index(s.center)), "{} in a sealed chamber at {:?}", s.spec.key, s.center);
+        }
     }
 
     /// An archipelago: four islands (250 m radius, 6 m high) in the sea, and a lagoon of water

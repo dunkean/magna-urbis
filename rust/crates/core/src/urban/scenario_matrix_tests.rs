@@ -90,25 +90,45 @@ fn an_activity_intent_far_from_any_road_still_builds() {
     }
 }
 
+/// Every row of the v7 utility sheet (each activity template, then each isolated
+/// building intent), requested alone as the V2 does (the site fixed where it was
+/// placed, the sheet's layout options, the programme applied again after the
+/// cadastre), builds its structure: its role is allocated and at least one of
+/// its buildings is sent with a preview and a massing form.
 #[test]
 fn every_utility_sheet_row_builds_its_yard() {
     let n = 128;
-    let water = vec![0u8; n * n];
+    let (water, level) = (vec![0u8; n * n], vec![0.0_f32; n * n]);
     // Flat ground, then a 13 % slope (the shot map's 7.4 degrees): a site stands where its resource is.
     let mut failures = vec![];
     for grade in [0.0_f32, 0.13] {
     let height: Vec<f32> = (0..n * n).map(|k| grade * 9000.0 / n as f32 * (k % n) as f32).collect();
     let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water, interpolation: Default::default(),};
-    for (template, culture) in [("river_watermill", "european-organic"), ("windmill_site", "flemish-cloth-town"), ("stone_quarry", "italian-comune"), ("hardrock_mine", "dwarven"), ("smelter_cluster", "barbarian-norse"), ("coastal_fishing", "norse-ringfort"), ("detached_fishing_camp", "pnw-plank-village"), ("forest_logging", "slavic-gord"), ("saltworks", "venetian-lagoon"), ("caravan_waystation", "ksar-oasis"), ("monastic_farm", "european-organic"), ("pottery_cluster", "mesopotamian"), ("rice_terraces", "javanese-courts"), ("andean_storeway", "inca"), ("road_waystation", "hanseatic"), ("small_farm", "european-organic"), ("small_farm", "yoruba"), ("country_chapel", "european-organic"), ("country_temple", "japanese-jokamachi"), ("roadside_shrine", "chinese"), ("rural_monastery", "tibetan-monastery"), ("country_temple", "medina")] {
+    for (intent, template, culture) in [("river_watermill", "european-organic"), ("windmill_site", "flemish-cloth-town"), ("stone_quarry", "italian-comune"), ("hardrock_mine", "dwarven"), ("smelter_cluster", "barbarian-norse"), ("coastal_fishing", "norse-ringfort"), ("detached_fishing_camp", "pnw-plank-village"), ("forest_logging", "slavic-gord"), ("saltworks", "venetian-lagoon"), ("caravan_waystation", "ksar-oasis"), ("monastic_farm", "european-organic"), ("pottery_cluster", "mesopotamian"), ("rice_terraces", "javanese-courts"), ("andean_storeway", "inca"), ("road_waystation", "hanseatic"), ("small_farm", "european-organic"), ("small_farm", "yoruba"), ("country_chapel", "european-organic"), ("country_temple", "japanese-jokamachi"), ("roadside_shrine", "chinese"), ("rural_monastery", "tibetan-monastery"), ("country_temple", "medina"), ("lime_works", "european-organic"), ("glassworks", "rynek-town"), ("hammer_forge", "hanseatic"), ("paper_mill_site", "italian-comune"), ("tide_mill_site", "flemish-cloth-town"), ("tithe_grange", "european-organic"), ("kiln_croft", "chinese"), ("coast_beacon", "barbarian-norse"), ("signal_station", "roman-core"), ("ancient_stones", "barbarian-celtic"), ("barrow_field", "norse-ringfort"), ("hermit_retreat", "byzantine-greek"), ("pilgrim_chapel_site", "european-organic"), ("holy_spring", "celtic-oppidum"), ("lone_tomb", "persian"), ("sacred_grove_site", "japanese-jokamachi"), ("wayside_calvary", "european-organic"), ("wayside_well", "medina"), ("upland_fulling", "european-organic"), ("cemetery_chapel_site", "italian-comune")].map(|(template, culture)| ("activity", template, culture))
+        .into_iter().chain([("isolated-farm", "", "european-organic"), ("isolated-mill", "", "european-organic"), ("isolated-inn", "", "european-organic"),
+            ("isolated-tower", "", "italian-comune"), ("isolated-shrine", "", "japanese-jokamachi"), ("roadside-temple", "", "chinese")]) {
         let mut cfg = LayoutConfig::default();
-        cfg.programme.intent = "activity".into();
+        cfg.programme.intent = intent.into();
         cfg.programme.template = template.into();
+        cfg.fixed_sites.insert("row".into());
+        (cfg.street_frontage, cfg.align_enclosed_grid, cfg.hide_unused_quarters, cfg.natural_camp_approaches) = (true, true, true, true);
+        (cfg.organic_branch_variation, cfg.ribbon_width_variation) = (0.5, 0.5);
         let site = Site { key: "row".into(), name: String::new(), population: 500, culture: culture.into(), center: Point { x: 4500.0, y: 4560.0 }, radius: 300.0, neighbours: Vec::new() };
         let road = Street { path: vec![Point { x: 300.0, y: 4500.0 }, Point { x: 8700.0, y: 4300.0 }], widths: vec![6.0, 6.0], rank: 0, role: "regional".into() };
         let layouts = generate_quarters("row", &[site], &cfg, surface, &[road]).expect("plan");
         let partitions = generate_parcels("row", &layouts, &ParcelConfig::default()).expect("parcels");
-        let ok = built_roles(&partitions[0]).iter().any(|r| r == "craft.activity");
-        if !ok || layouts[0].archetype != "single" { failures.push(format!("{template}/{culture}@{grade}: {} {:?}", layouts[0].archetype, partitions[0].programme.as_ref().unwrap().demands.iter().map(|d| d.reasons.clone()).collect::<Vec<_>>())); }
+        let partitions = super::super::programme::reallocate(&layouts, &partitions).expect("programme");
+        let requests = super::super::building_sites::requests("row", &layouts, &partitions, surface, &level, None).expect("building sites");
+        let role = super::super::roles::isolated(intent).expect("isolated intent").role.as_str();
+        let built = requests.iter().filter(|r| r["programme"]["role"].as_str().is_some_and(|x| x.starts_with(role))
+            && (intent != "activity" || r["programme"]["activity"]["template"] == template)
+            && r["preview"].as_array().is_some_and(|p| !p.is_empty())
+            && r["programme"]["massing"].as_array().is_some_and(|m| !m.is_empty() && m.iter().all(|piece| !piece.is_null()))).count();
+        let allocated = built_roles(&partitions[0]).iter().any(|r| r.starts_with(role));
+        let archetype = if intent == "isolated-farm" { "farmstead" } else { "single" };
+        if !allocated || built == 0 || layouts[0].archetype != archetype {
+            failures.push(format!("{intent} {template}/{culture}@{grade}: {} allocated {allocated}, {built} built sites, {:?}", layouts[0].archetype, partitions[0].programme.as_ref().unwrap().demands.iter().map(|d| d.reasons.clone()).collect::<Vec<_>>()));
+        }
     }
     }
     assert!(failures.is_empty(), "{failures:#?}");

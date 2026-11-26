@@ -26,7 +26,7 @@ fn spline_ground_patch_exports_sampled_metres_not_control_values() {
     controls[18 * 64 + 18] = 100.0;
     let water = vec![0; 16 * 16];
     let surface = Surface { geometry: None, width: 64.0, n: 16, height: &controls, water: &water,
-        interpolation: super::super::HeightInterpolation::BSpline { floor: 0.0 } };
+        interpolation: super::super::HeightInterpolation::BSpline { floor: 0.0, shore: false } };
     let shape = super::super::Shape { outer: vec![Point { x: 20.0, y: 20.0 }, Point { x: 22.0, y: 20.0 },
         Point { x: 22.0, y: 22.0 }, Point { x: 20.0, y: 22.0 }], holes: vec![] };
     let patch = ground_patch(surface, &shape);
@@ -393,17 +393,23 @@ fn fringe_home_request_keeps_preview_area_and_single_storey_massing_together() {
     let context = super::super::house_mix::HomeContext {
         zone:"faubourg", district:"elite", wealth:0.9, pressure:0.85, distance:1.0, outside:false, farm:false, low_rural:true,
     };
-    let seed = (0..100).map(|k| format!("houses2-request-{k}")).find(|s|
-        context.area_scale(&format!("{s}/démo-a/lot-0")) < 1.0).unwrap();
-    let site_seed = format!("{seed}/démo-a/lot-0");
     let parcel = &partitions[0].parcels[0];
     let (zone, morph) = super::super::culture::parcel_morph(layout, &partitions[0], "european-organic", 0).unwrap();
     let mapping = super::super::culture::parcel_mapping(layout, parcel, "european-organic", "domestic").unwrap();
-    let (original, _) = super::super::parcels::occupation_preview(parcel, &super::super::parcels::Occupancy {
+    let preview_of = |site_seed: &str| super::super::parcels::occupation_preview(parcel, &super::super::parcels::Occupancy {
         morph:&morph, zone, function:"domestic", role:"dwelling", landmark:false,
-        party_walls:mapping.admissibility.party_walls, wealth:0.9, seed:&site_seed,
+        party_walls:mapping.admissibility.party_walls, wealth:0.9, seed:site_seed,
         pack:&mapping.architecture_pack, court_lot:false, court_kept:None,
-    });
+    }).0;
+    // A home that shrinks at the fringe, on a lot whose row draws no closed
+    // back court: a row's court is rebuilt without it (`occupation_preview_resolved`),
+    // another footprint than the one this test scales.
+    let seed = (0..100).map(|k| format!("houses2-request-{k}")).find(|s| {
+        let site_seed = format!("{s}/démo-a/lot-0");
+        context.area_scale(&site_seed) < 1.0 && preview_of(&site_seed).iter().all(|(p, _)| p.holes.is_empty())
+    }).unwrap();
+    let site_seed = format!("{seed}/démo-a/lot-0");
+    let original = preview_of(&site_seed);
     let heights = vec![20.; 16*16]; let water = vec![0; heights.len()];
     let surface = Surface { geometry:None, width:512., n:16, height:&heights, water:&water, interpolation: Default::default(),};
     let index = BuildingSiteIndex::prepare(&layouts, &partitions, &[0]).unwrap();

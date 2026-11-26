@@ -179,7 +179,11 @@ pub(super) fn pocket_land(chain: &[Point]) -> Shape {
 /// A pocket cut never creates an empty corner across a river.
 fn dry_pocket(chain: &[Point], surface: Surface<'_>) -> bool {
     let land = pocket_land(chain);
-    g::area(&land) - area(&g::dry_clip(&surface, &land)) < 1.0
+    // A pocket of a bank is mostly a bay of open water or plain ground: read without the overlay
+    // of the pocket on the whole water, which only a pocket along a shore still needs.
+    let wet = g::wet_reading(&surface, &land, 1.0)
+        .unwrap_or_else(|| g::area(&land) - area(&g::dry_clip(&surface, &land)));
+    wet < 1.0
 }
 fn fill_pockets(shape: &Shape, limits: PocketLimits, max_span: f64, fits: &dyn Fn(&[Point]) -> bool) -> Shape {
     if !g::simple(shape) { return shape.clone(); }

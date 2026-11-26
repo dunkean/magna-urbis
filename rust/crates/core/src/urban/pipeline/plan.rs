@@ -99,10 +99,15 @@ fn quarter_pass(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Res
 }
 
 /// The quarters of the pass: a small kind's own plan (`kinds::lay_out`), else
-/// the quarter grammar (`quarters::generate`).
+/// the quarter grammar (`quarters::generate`). A user-fixed site takes the quarter
+/// grammar, which keeps its exact centre, except where the small plan is the place
+/// itself: a camp laid round its centre, and a single structure
+/// (`Town::single_structure`); under the quarter grammar an activity reserves no
+/// block and an isolated building no plot of its own, and both stand empty.
 fn lay_quarters(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Result<Layout, String> {
     let town = at.town;
-    let small = (at.kind.small() && (!town.fixed || at.kind.centred()) && config.footprint.mechanism != "legacy")
+    let own_plan = !town.fixed || at.kind.centred() || town.single_structure();
+    let small = (at.kind.small() && own_plan && config.footprint.mechanism != "legacy")
         .then(|| kinds::lay_out(&town.key_seed, site, config, at.kind, &at.morph, town.surface, town.roads))
         .flatten();
     match small {

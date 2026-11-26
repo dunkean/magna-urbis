@@ -149,7 +149,8 @@ pub(super) fn place(settlements: &[Settlement], r: &ResourceFields, f: &Fields) 
     for a in &r.anchors {
         let p = Point { x: a.x, y: a.y };
         let edge = |s: &Settlement| p.distance(s.center) - s.radius;
-        if settlements.iter().any(|s| edge(s) < 120.0) {
+        // No yard in an Underdark chamber sealed in the rock (`Fields::reached`).
+        if !f.reached(f.index(p)) || settlements.iter().any(|s| edge(s) < 120.0) {
             continue;
         }
         let Some((parent, d)) = settlements

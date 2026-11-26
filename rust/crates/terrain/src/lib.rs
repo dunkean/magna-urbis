@@ -12,6 +12,7 @@ mod hydrology;
 pub mod noise;
 mod priority_flood;
 mod rng;
+pub mod shore_detail;
 mod terrain_par;
 mod terrain_zones;
 pub mod underdark;

@@ -24,7 +24,7 @@ fn composition_reroll_with_street_salts_completes() {
         .map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
     let geography = Geography::new(f.geometry, f.width).unwrap();
     let surface = Surface { geometry: Some(&geography), width: f.width, n: f.n,
-        height: &height, water: &bytes[split..], interpolation: HeightInterpolation::BSpline { floor: f.floor } };
+        height: &height, water: &bytes[split..], interpolation: HeightInterpolation::BSpline { floor: f.floor, shore: false } };
     let layouts = generate_quarters(&f.seed, &f.sites, &f.layout_config, surface, &f.roads).unwrap();
     assert_eq!(layouts.len(), 1);
     let layout = &layouts[0];

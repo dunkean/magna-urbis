@@ -1161,10 +1161,12 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
               hydrologyKey = inputKey;
             }
             const climate = climateOf(settings);
-            const vectorKey = JSON.stringify([routingConfig, climate.temperature, climate.precipitation]);
+            // Sea mouths end on the drawn coast: the display field's cell carries its shore detail (displayField below).
+            const shoreCell = settings.underdark || settings.relief === 'cavern' ? 0 : settings.width / reliefMeta().source_resolution();
+            const vectorKey = JSON.stringify([routingConfig, climate.temperature, climate.precipitation, shoreCell]);
             if (!hydrology || hydrologyVectorKey !== vectorKey) {
               progress?.('Rust hydrology · rivers, lakes and erosion…', { stage: 'terrain-water' });
-              hydrology = preparedHydrology.generate(routingConfig, climate);
+              hydrology = preparedHydrology.generate(routingConfig, climate, shoreCell);
               hydrologyVectorKey = vectorKey;
             }
           } catch (error) {

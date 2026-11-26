@@ -62,6 +62,13 @@ pub(super) fn dry_clip(surface: &Surface<'_>, s: &Shape) -> Vec<Shape> {
         .collect()
 }
 
+/// The water in the simple shape `s` (m²) against `limit`, where the vector geography tells it
+/// without an overlay (`Geography::wet_reading`): a value on the same side of `limit` as `area(s)`
+/// less the areas of `dry_clip(s)`, which the caller computes on `None`.
+pub(super) fn wet_reading(surface: &Surface<'_>, s: &Shape, limit: f64) -> Option<f64> {
+    surface.geometry?.wet_reading(s, surface.width, limit)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

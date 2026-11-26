@@ -80,7 +80,7 @@ fn finish(r:&PlacementRequest,occupied:&Surface,old:PlanBuilding)->(PlanBuilding
     };
     let mut new=match visual_with_front_access_prepared(r,&prepared,pose,&neighbors,true,false,Some(front),true){
         Ok(v)=>v,
-        Err(reason)=>{#[cfg(test)]diagnostics::result(&reason);return(old,false);}
+        Err(_reason)=>{#[cfg(test)]diagnostics::result(&_reason);return(old,false);}
     };
     let source_exact=new.resolved.unpack().and_then(|mut actual|{
         actual.entrance=None;

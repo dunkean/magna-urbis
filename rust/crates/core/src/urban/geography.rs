@@ -36,6 +36,54 @@ pub struct Geography {
     fine: f64,
     side: usize,
 }
+/// Clearance (m) of a cell `wet_reading` tells free of a shore or of the outline it reads: more
+/// than an overlay moves a vertex (its integer grid, or the 1 cm grid of its last retry).
+const READ_MARGIN: f64 = 0.05;
+/// Flags of those cells: a land or water edge passes within the margin, the outline does.
+const SHORE: u8 = 1;
+const OUTLINE: u8 = 2;
+/// Side (m) of those cells: 1 m, 2 m from a box of 512 m, then a 512th of the box.
+fn read_cell(side: f64) -> f64 {
+    (side / 256.0).clamp(1.0, 2.0).max(side / 512.0)
+}
+fn ring_sides(ring: &[Point]) -> impl Iterator<Item = (Point, Point)> + '_ {
+    ring.iter().copied().zip(ring.iter().copied().cycle().skip(1))
+}
+/// The cells (side `r`, from cell (`i0`, `j0`)) over the box of the shape `wet_reading` reads.
+struct ReadCells {
+    r: f64,
+    i0: i64,
+    j0: i64,
+    nx: usize,
+    ny: usize,
+    flags: Vec<u8>,
+}
+impl ReadCells {
+    /// Flag every cell the segment passes within `READ_MARGIN` of: row by row, the cells over the
+    /// part of the segment in the row widened by the margin. Whether a cell of the box was flagged.
+    fn mark(&mut self, a: Point, b: Point, flag: u8) -> bool {
+        let (r, m) = (self.r, READ_MARGIN);
+        let low = (((a.y.min(b.y) - m) / r).floor() as i64 - self.j0).max(0);
+        let high = (((a.y.max(b.y) + m) / r).floor() as i64 - self.j0).min(self.ny as i64 - 1);
+        let mut any = false;
+        for j in low..=high {
+            let (y0, y1) = ((self.j0 + j) as f64 * r - m, (self.j0 + j + 1) as f64 * r + m);
+            let (xa, xb) = if a.y == b.y {
+                (a.x, b.x)
+            } else {
+                let at = |y: f64| a.x + (b.x - a.x) * ((y - a.y) / (b.y - a.y)).clamp(0.0, 1.0);
+                (at(y0), at(y1))
+            };
+            let first = (((xa.min(xb) - m) / r).floor() as i64 - self.i0).max(0);
+            let last = (((xa.max(xb) + m) / r).floor() as i64 - self.i0).min(self.nx as i64 - 1);
+            for i in first..=last {
+                self.flags[j as usize * self.nx + i as usize] |= flag;
+                any = true;
+            }
+        }
+        any
+    }
+}
 fn even_odd(rings: Vec<Vec<Point>>) -> Vec<Shape> {
     let mut land = geo::MultiPolygon(vec![]);
     for outer in rings.into_iter().filter(|r| r.len() >= 3) {
@@ -322,6 +370,97 @@ impl Geography {
                 .collect();
         }
         land
+    }
+    /// The water in the simple `shape` (m²), as `area(shape)` less the areas of its `dry_clip`
+    /// reads it against `limit`, where no overlay is needed to tell: a value on the same side of
+    /// `limit` as that difference. It is that very value where the whole shape is water, 0 where
+    /// all of it is dry land and the grid of the overlays cannot make up `limit`, and otherwise
+    /// the whole cells of open water inside the shape once they exceed `limit` by more than any
+    /// overlay tolerance. `None` when only the overlay can tell (a shore runs through the shape
+    /// with too little open water inside it) or the shape leaves the map (`width`).
+    ///
+    /// A cell no land or water edge comes within `READ_MARGIN` of lies wholly on one side, so its
+    /// centre tells for all of it; a cell the outline does not come within the margin of, with
+    /// its centre inside, lies wholly inside the shape. The overlays keep every vertex within a
+    /// grid unit of its place (1 cm on their last retry): they give no dry land in such a cell of
+    /// water, and they return a shape no shore touches as it is, less what their grid takes.
+    pub(super) fn wet_reading(&self, shape: &Shape, width: f64, limit: f64) -> Option<f64> {
+        let bb = g::bbox(shape);
+        if shape.outer.len() < 3 || !(bb.0 >= 0.0 && bb.1 >= 0.0 && bb.2 <= width && bb.3 <= width) {
+            return None;
+        }
+        let r = read_cell((bb.2 - bb.0).max(bb.3 - bb.1));
+        let m = READ_MARGIN;
+        let (i0, j0) = (((bb.0 - m) / r).floor() as i64, ((bb.1 - m) / r).floor() as i64);
+        let nx = (((bb.2 + m) / r).floor() as i64 - i0 + 1) as usize;
+        let ny = (((bb.3 + m) / r).floor() as i64 - j0 + 1) as usize;
+        let mut cells = ReadCells { r, i0, j0, nx, ny, flags: vec![0; nx * ny] };
+        // An edge within the margin of the box is in a bin the widened box meets.
+        let mut shore = false;
+        for y in ((bb.1 - m) / self.cell).floor() as i64..=((bb.3 + m) / self.cell).floor() as i64 {
+            for x in ((bb.0 - m) / self.cell).floor() as i64..=((bb.2 + m) / self.cell).floor() as i64 {
+                for &i in self.bins.get(&(x, y)).into_iter().flatten() {
+                    shore |= cells.mark(self.edges[i].0, self.edges[i].1, SHORE);
+                }
+            }
+        }
+        let rings = || std::iter::once(&shape.outer).chain(&shape.holes);
+        let mut perimeter = 0.0;
+        for (a, b) in rings().flat_map(|ring| ring_sides(ring)) {
+            perimeter += (a.x - b.x).hypot(a.y - b.y);
+            if shore {
+                cells.mark(a, b, OUTLINE);
+            }
+        }
+        // No shore in a cell the shape touches: its outline cells, then those inside it.
+        let mut clear = !cells.flags.iter().any(|&f| f == SHORE | OUTLINE);
+        if shore {
+            // Open water that the last retry of an overlay (1 cm grid) could not bring under `limit`.
+            let enough = limit + 0.02 * perimeter + 0.5;
+            let (mut open, mut crossings) = (0.0, Vec::new());
+            for j in 0..ny {
+                let y = ((j0 + j as i64) as f64 + 0.5) * r;
+                crossings.clear();
+                for (a, b) in rings().flat_map(|ring| ring_sides(ring)) {
+                    if (a.y > y) != (b.y > y) {
+                        crossings.push((b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x);
+                    }
+                }
+                crossings.sort_by(f64::total_cmp);
+                for span in crossings.chunks_exact(2) {
+                    let first = ((span[0] / r - 0.5).ceil() as i64 - i0).max(0);
+                    let last = ((span[1] / r - 0.5).floor() as i64 - i0).min(nx as i64 - 1);
+                    // No shore parts a run of free cells: one answer for all of them.
+                    let mut run = None;
+                    for i in first..=last {
+                        let flag = cells.flags[j * nx + i as usize];
+                        if flag & SHORE != 0 {
+                            clear = false;
+                            run = None;
+                        } else if flag & OUTLINE == 0
+                            && *run.get_or_insert_with(|| self.wet(Point { x: ((i0 + i) as f64 + 0.5) * r, y }))
+                        {
+                            open += r * r;
+                            if open > enough {
+                                return Some(open);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !clear {
+            return None;
+        }
+        // No shore in the shape or within the margin of it: all of it lies on one side. In water
+        // its clip is empty; on land it comes back through one overlay with the map, one with the
+        // land and one per water shape near, each within a grid unit (under 2^-26 of the extent).
+        if self.wet(shape.outer[0]) {
+            return Some(g::area(shape));
+        }
+        let trips = (2 + self.water_near(bb).len()) as f64;
+        let unit = width.max(self.cell * 64.0) / (1u64 << 26) as f64;
+        (perimeter * unit * trips + 0.02 < limit).then_some(0.0)
     }
 }
 
@@ -1000,5 +1139,60 @@ mod tests {
             y: 500.0
         }));
         assert!(stilt_ground(&site, "european-organic", surface).is_none());
+    }
+    /// A U-shaped channel with an island. Where `wet_reading` answers, it answers what the clip
+    /// tells against the limit (in open water, on plain land, across a shore with open water
+    /// inside); a shape along a shore, or within the margin of one, is left to the clip.
+    #[test]
+    fn wet_reading_agrees_with_the_clip_on_a_channel_with_an_island() {
+        let p = |x: f64, y: f64| Point { x, y };
+        let channel = vec![
+            p(100.0, 100.0), p(700.0, 100.0), p(700.0, 600.0), p(600.0, 600.0),
+            p(600.0, 200.0), p(200.0, 200.0), p(200.0, 600.0), p(100.0, 600.0),
+        ];
+        let island = g::rectangle(380.0, 130.0, 420.0, 170.0).outer;
+        let geometry = Geography::new(
+            VectorGeography {
+                springs: vec![],
+                land: vec![g::rectangle(0.0, 0.0, 800.0, 800.0).outer],
+                water: vec![vec![channel, island]],
+            },
+            800.0,
+        )
+        .unwrap();
+        let h = vec![20.0; 16 * 16];
+        let water = vec![0; h.len()];
+        let surface = Surface {
+            geometry: Some(&geometry),
+            width: 800.0,
+            n: 16,
+            height: &h,
+            water: &water,
+            interpolation: Default::default(),
+        };
+        let clipped = |s: &Shape| g::area(s) - g::dry_clip(&surface, s).iter().map(g::area).sum::<f64>();
+        let read = |s: &Shape| g::wet_reading(&surface, s, 1.0);
+        // The reading expected: above the limit, under it, or none (left to the clip).
+        let pocket = Shape { outer: vec![p(60.0, 400.0), p(240.0, 370.0), p(240.0, 430.0)], holes: vec![] };
+        let cases = [
+            ("open water", g::rectangle(300.0, 120.0, 340.0, 160.0), Some(true)),
+            ("plain land", g::rectangle(350.0, 300.0, 450.0, 400.0), Some(false)),
+            ("the island", g::rectangle(390.0, 140.0, 410.0, 160.0), Some(false)),
+            ("across a shore", g::rectangle(150.0, 300.0, 250.0, 340.0), Some(true)),
+            ("round the island", g::rectangle(360.0, 110.0, 440.0, 190.0), Some(true)),
+            ("a pocket across the channel", pocket, Some(true)),
+            ("land within the margin of a shore", g::rectangle(200.02, 300.0, 260.0, 340.0), None),
+            ("a sliver of water along a shore", g::rectangle(199.5, 300.0, 260.0, 340.0), None),
+        ];
+        for (name, shape, expected) in &cases {
+            let (fast, slow) = (read(shape), clipped(shape));
+            assert_eq!(fast.map(|v| v >= 1.0), *expected, "{name}: {fast:?} against {slow}");
+            if let Some(v) = fast {
+                assert_eq!(v < 1.0, slow < 1.0, "{name}: {v} against {slow}");
+            }
+        }
+        // All water: the very value of the clip. The two shapes left to it differ by their sliver.
+        assert_eq!(read(&cases[0].1), Some(clipped(&cases[0].1)));
+        assert!(clipped(&cases[6].1) < 1.0 && clipped(&cases[7].1) > 1.0);
     }
 }

@@ -741,9 +741,11 @@ impl BuildingSiteIndex {
         // their outbuildings. A lone farm always keeps the core buildings of its
         // culture's farm type (barn, byre…) in that type's layout: the share then
         // only decides its ancillary ones.
-        // A lone farm whose lot the occupation could not cut still gets its farmhouse (its
-        // outbuildings follow below): a house of its culture's size in the lot, along its longest side.
-        if parts.is_empty() && role.starts_with("dwelling.farm") && !role.ends_with(".ruin") && super::super::roles::is_isolated(&pr.context.intent)
+        // A lone structure (farm, mill, inn, tower, shrine…: its intent's own role) whose lot the
+        // occupation could not cut still gets its building (a farm's outbuildings follow below):
+        // a body of its culture's house size in the lot, along its longest side.
+        if parts.is_empty() && !role.ends_with(".ruin")
+            && super::super::roles::isolated(&pr.context.intent).is_some_and(|rule| role.starts_with(rule.role.as_str()))
             && let Some(house) = lone_farmhouse(&lot, building_culture, &site_seed)
         {
             parts.push((house, "building"));

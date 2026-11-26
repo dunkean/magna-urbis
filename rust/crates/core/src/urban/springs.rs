@@ -3,7 +3,7 @@
 use super::{activities as act, geometry as g, *};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, sync::OnceLock};
+use std::{collections::BTreeMap, sync::{OnceLock, atomic::{AtomicUsize, Ordering::Relaxed}}};
 
 #[derive(Deserialize)]
 struct WaterType { label: String, min_population: u32 }
@@ -143,13 +143,50 @@ fn overlaps(a: &Shape, b: &Shape) -> bool {
 /// are cheap; a full route is not, and an unreachable source (steep bank, across a river) would
 /// otherwise route every offset x angle x street x archetype, minutes per town.
 const ROUTE_BUDGET: usize = 16;
+/// Trials routed together at most: each search holds its own lattice (up to 60 MB for a source
+/// far from the streets), and a browser never gives that memory back.
+const ROUND: usize = if cfg!(target_arch = "wasm32") { 2 } else { 8 };
+/// A dry, free placement waiting for its route from the door to a street, on its own lattice.
+struct Trial { shape: Shape, front: [Point; 2], door: Point, goal: Point, bounds: (f64, f64, f64, f64) }
+/// The first trial, in their order, whose route exists and passes through no enclosure wall or
+/// other source building, with that route: the answer of routing them one after the other.
+/// They are routed together, each on its own lattice as before; a trial placed after an accepted
+/// one gives up (`RoutePlanner::stop_when`), since its answer is not read. A source a kilometre
+/// from the streets otherwise routes its whole budget, one full lattice at a time.
+fn first_routed(layout: &Layout, surface: Surface<'_>, grade: f64, trials: &[Trial]) -> Option<(usize, Vec<Point>)> {
+    let accepted=AtomicUsize::new(usize::MAX);
+    let routes=super::par::map(trials,|i,trial| -> Option<Vec<Point>> {
+        if accepted.load(Relaxed)<i {return None;}
+        let mut planner=routing::RoutePlanner::bank(surface,trial.bounds);
+        planner.stop_when(&accepted,i);
+        let path=planner.route(trial.door,trial.goal,grade)?;
+        // No paths through an enclosure wall or another source building.
+        let mut obstacles=layout.enclosures.iter().flat_map(|e|&e.reserve)
+            .chain(sites(layout).iter().map(|s|&s.shape));
+        let corridor=g::ribbon(&path,&[rules().path_width_m]);
+        if obstacles.any(|s|corridor.iter().any(|p|overlaps(p,s))) {return None;}
+        accepted.fetch_min(i,Relaxed);
+        Some(path)
+    });
+    routes.into_iter().enumerate().find_map(|(i,path)|path.map(|path|(i,path)))
+}
 /// `forbidden`: what a site may not overlap near the sources (street ribbons,
 /// enclosure reserves, the sites already placed); `reserve` keeps it.
 fn find(layout: &Layout, forbidden: &[Shape], near: &mut Near<'_>, source: Point, archetype: &str, surface: Surface<'_>, cfg: &LayoutConfig, budget: &mut usize) -> Option<SpringSite> {
     let a=act::archetype(archetype)?;
     let look=act::data().looks.get(a.look.as_deref()?)?;
     let (w,d)=(look.footprint.w[0],look.footprint.d[0]);
-    for step in 0..=(rules().max_offset_m/4.).floor() as usize {
+    let grade=if cfg.allow_stairs {cfg.max_stair_grade} else {cfg.max_lane_grade};
+    let site=|trial: Trial, path: Vec<Point>| -> Option<SpringSite> {
+        Some(SpringSite {id:String::new(),source,archetype:archetype.into(),
+            label:rules().types.get(archetype)?.label.clone(),shape:trial.shape,front:trial.front,path})
+    };
+    // Placements are routed in rounds, in their order: the first alone (most sources take it),
+    // then as many together as there are threads, `ROUND` at most. Each one in a round has
+    // spent its search.
+    let mut round: Vec<Trial>=vec![];
+    let mut width=1;
+    'placements: for step in 0..=(rules().max_offset_m/4.).floor() as usize {
         let count=if step==0 {1} else {16};
         for i in 0..count {
             let angle=i as f64*std::f64::consts::TAU/count as f64;
@@ -164,21 +201,23 @@ fn find(layout: &Layout, forbidden: &[Shape], near: &mut Near<'_>, source: Point
                 let door=Point{x:(front[0].x+front[1].x)/2.,y:(front[0].y+front[1].y)/2.};
                 let pad=distance(door,goal).max(20.)*0.3+12.;
                 let bounds=(door.x.min(goal.x)-pad,door.y.min(goal.y)-pad,door.x.max(goal.x)+pad,door.y.max(goal.y)+pad);
-                let grade=if cfg.allow_stairs {cfg.max_stair_grade} else {cfg.max_lane_grade};
-                if *budget==0 {return None;}
+                // No search left for this placement: the round in hand holds the last ones.
+                if *budget==0 {break 'placements;}
                 *budget-=1;
-                let Some(path)=routing::RoutePlanner::bank(surface,bounds).route(door,goal,grade) else {continue;};
-                // No paths through an enclosure wall or another source building.
-                let obstacles=layout.enclosures.iter().flat_map(|e|&e.reserve)
-                    .chain(sites(layout).iter().map(|s|&s.shape));
-                let corridor=g::ribbon(&path,&[rules().path_width_m]);
-                if obstacles.into_iter().any(|s|corridor.iter().any(|p|overlaps(p,s))) {continue;}
-                return Some(SpringSite {id:String::new(),source,archetype:archetype.into(),
-                    label:rules().types.get(archetype)?.label.clone(),shape,front,path});
+                round.push(Trial{shape,front,door,goal,bounds});
+                if round.len()<width {continue;}
+                if let Some((k,path))=first_routed(layout,surface,grade,&round) {
+                    *budget+=round.len()-1-k;
+                    return site(round.swap_remove(k),path);
+                }
+                round.clear();
+                width=super::par::threads().min(ROUND);
             }
         }
     }
-    None
+    let (k,path)=first_routed(layout,surface,grade,&round)?;
+    *budget+=round.len()-1-k;
+    site(round.swap_remove(k),path)
 }
 
 /// Run after street trimming, before the authoritative programme is refreshed.
@@ -318,6 +357,46 @@ pub(super) fn request(water: &SpringSite, layout: &Layout, surface: Surface<'_>,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Trials routed together answer as trials routed one after the other: the first, in their
+    /// order, whose route exists and crosses no source building, with the route its own planner
+    /// gives; and a planner stopped by an earlier place gives up its search.
+    #[test]
+    fn trials_routed_together_take_the_first_free_route_in_order() {
+        let n=48;
+        let height=vec![0.0_f32;n*n];
+        // A channel open at the south end (rows 34 on): crossing it takes a lattice search.
+        let water:Vec<u8>=(0..n*n).map(|i|u8::from((22..26).contains(&(i%n)) && i/n<34)).collect();
+        let surface=Surface{geometry:None,width:96.,n,height:&height,water:&water,interpolation:Default::default()};
+        let mut layout:Layout=serde_json::from_value(json!({"key":"springs","culture":"european-organic",
+            "center":{"x":48.0,"y":48.0},"quarters":[],"streets":[],"blocks":[],"warnings":[]})).unwrap();
+        // A source building already placed on the straight line of the first trial.
+        let placed=g::rectangle(24.,82.,28.,90.);
+        layout.structure=Some(UrbanStructure{spring_sites:vec![SpringSite{id:"placed".into(),source:Point{x:26.,y:86.},
+            archetype:String::new(),label:String::new(),shape:placed.clone(),front:[placed.outer[0],placed.outer[1]],path:vec![]}],
+            ..Default::default()});
+        let bounds=(8.,8.,88.,88.);
+        let trial=|door:Point,goal:Point| Trial{shape:rectangle(door,Point{x:1.,y:0.},2.,2.),front:[door,door],door,goal,bounds};
+        let blocked=(Point{x:12.,y:86.},Point{x:40.,y:86.});
+        let (a,b)=(Point{x:24.,y:48.},Point{x:68.,y:48.});
+        let open=(Point{x:12.,y:20.},Point{x:40.,y:20.});
+        let grade=0.12;
+        let own=routing::RoutePlanner::bank(surface,bounds).route(a,b,grade).expect("a route round the channel");
+        assert!(own.len()>2,"the second trial takes a lattice search");
+        let trials=[trial(blocked.0,blocked.1),trial(a,b),trial(open.0,open.1),trial(a,b)];
+        assert_eq!(first_routed(&layout,surface,grade,&trials),Some((1,own.clone())));
+        assert_eq!(first_routed(&layout,surface,grade,&trials[..1]),None);
+        assert_eq!(first_routed(&layout,surface,grade,&trials[2..]).map(|(k,_)|k),Some(0));
+        // An earlier place accepted: the search gives up; none accepted below it: it runs to its end.
+        let first=AtomicUsize::new(0);
+        let mut stopped=routing::RoutePlanner::bank(surface,bounds);
+        stopped.stop_when(&first,1);
+        assert_eq!(stopped.route(a,b,grade),None);
+        let first=AtomicUsize::new(1);
+        let mut running=routing::RoutePlanner::bank(surface,bounds);
+        running.stop_when(&first,1);
+        assert_eq!(running.route(a,b,grade),Some(own));
+    }
 
     #[test]
     fn village_spring_has_a_cultural_water_building_and_public_path() {

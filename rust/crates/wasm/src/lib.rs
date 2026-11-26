@@ -120,6 +120,7 @@ impl HydrologyEngine {
         temperature: Option<f32>,
         precipitation: Option<f32>,
         coastal_streams: Option<f32>,
+        shore_cell: Option<f32>,
     ) -> Result<HydrologyOutput, JsValue> {
         let defaults = magna_urbis_core::HydrologyConfig::default();
         let cfg = magna_urbis_core::HydrologyConfig {
@@ -143,6 +144,7 @@ impl HydrologyEngine {
             temperature: temperature.unwrap_or(defaults.temperature),
             precipitation: precipitation.unwrap_or(defaults.precipitation),
             coastal_streams: coastal_streams.unwrap_or(defaults.coastal_streams),
+            shore_cell: shore_cell.unwrap_or(defaults.shore_cell),
         };
         let mut previous = performance_now();
         let mut stage_ms = Vec::new();

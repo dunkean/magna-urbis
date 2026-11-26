@@ -5,15 +5,17 @@ use super::*;
 /// A ruin keeps broken stretches of its walls and no roofed body: the walls
 /// of every piece break into stubs, corners and rubble (ruins.rs
 /// `broken_walls`, some walls fallen entirely). Abandoned buildings stay whole
-/// (their role suffix flags them).
-pub(super) fn ruined(o: &Occupancy, pieces: Vec<Piece>, rng: &mut Rng) -> Vec<Piece> {
+/// (their role suffix flags them). The breaks draw from the lot's own
+/// `occupation-ruin` stream, forked from its `seed`, whatever its form drew.
+pub(super) fn ruined(o: &Occupancy, pieces: Vec<Piece>, seed: &Rng) -> Vec<Piece> {
     if !o.role.ends_with(".ruin") {
         return pieces;
     }
+    let mut rng = seed.fork("occupation-ruin");
     let (mut out, mut budget) = (vec![], super::super::ruins::RUIN_BUDGET);
     for (outer, hole, _) in pieces {
         for r in std::iter::once(outer).chain(hole) {
-            super::super::ruins::broken_walls(&r, None, 0.3, (0.4, 1.0), rng, &mut budget, &mut out);
+            super::super::ruins::broken_walls(&r, None, 0.3, (0.4, 1.0), &mut rng, &mut budget, &mut out);
         }
     }
     out.into_iter().map(|(s, label)| (s.outer, None, label)).collect()

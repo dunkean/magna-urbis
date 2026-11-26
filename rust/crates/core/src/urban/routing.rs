@@ -443,6 +443,9 @@ pub(super) struct RoutePlanner<'a> {
     /// Answers given for (start, end, grade limit) without a corridor. A repeated query takes the
     /// same steps over edges the first one already cached, so it returns the same route.
     answers: HashMap<[u64; 5], Option<Vec<Point>>>,
+    /// Set on a planner that is one of several trials run together (`stop_when`): its search
+    /// gives up once the counter holds less than the trial's own place.
+    stop: Option<(&'a AtomicUsize, usize)>,
 }
 impl<'a> RoutePlanner<'a> {
     pub(super) fn new(surface: Surface<'a>, bounds: (f64, f64, f64, f64)) -> Self {
@@ -478,7 +481,16 @@ impl<'a> RoutePlanner<'a> {
             #[cfg(test)]
             plain: false,
             answers: HashMap::new(),
+            stop: None,
         }
+    }
+
+    /// For trials run together, of which the first accepted, in their order, is the only one
+    /// read: `first` holds the lowest place accepted so far, `own` is the place of this planner's
+    /// trial. Once a lower place is accepted the search gives up and answers no route, an answer
+    /// nobody reads. A planner without this runs every search to its end.
+    pub(super) fn stop_when(&mut self, first: &'a AtomicUsize, own: usize) {
+        self.stop = Some((first, own));
     }
 
     /// Narrow bank paths and quay access need a finer lattice than city blocks.
@@ -645,6 +657,8 @@ impl<'a> RoutePlanner<'a> {
             seen[cell] = 1; stack.push(cell);
         }
         while let Some(cell) = stack.pop() {
+            // A stopped trial has no answer to give: its search ends here.
+            if self.stop.is_some_and(|(first, own)| first.load(Relaxed) < own) { return false; }
             let (x, y) = ((cell % self.nx) as isize, (cell / self.nx) as isize);
             for (dir, &(dx, dy)) in DIRS.iter().enumerate() {
                 let (xx, yy) = (x + dx, y + dy);
@@ -861,6 +875,9 @@ impl<'a> RoutePlanner<'a> {
         }
         let mut best = (f64::INFINITY, NONE);
         while let Some(entry) = heap.pop() {
+            if self.stop.is_some_and(|(first, own)| first.load(Relaxed) < own) {
+                return None;
+            }
             if entry.estimate >= best.0 {
                 break;
             }

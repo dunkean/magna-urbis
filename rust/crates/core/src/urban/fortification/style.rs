@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 use serde_json::Value;
 use crate::rng::Rng;
 use crate::urban::{LayoutConfig, catalogue, warnings};
+use super::moat;
 
 pub(in super::super) const STYLES: [&str; 9] = [
     "palisade",
@@ -53,8 +54,12 @@ pub(in super::super) struct Style {
     pub ditch_width: [f64; 2],
     /// Ditch depth (m), for the 3D moat; 0: from its width (`build`).
     pub ditch_depth: f64,
-    /// Form of the ditch: an id of the `moats` table (`moat::spec`).
+    /// Form of the ditch: an id of the `moats` table (`moat::spec`), the one a circuit digs when none of
+    /// `moat_forms` suits its site.
     pub moat_form: String,
+    /// Forms of the culture and their weights (`moatForms`): a circuit draws one among those its site allows
+    /// (`moat::choose_moat`, the form's `needs`).
+    pub moat_forms: Vec<(String, u32)>,
     pub berm: f64,
     pub outworks: Vec<String>,
     pub outer_gap: [f64; 2],
@@ -72,6 +77,8 @@ pub(in super::super) struct Style {
     /// Underdark town: the circuit closes the passages into its chamber (`cave_circuits`); its rock runs
     /// are open passages of the curtain and it digs no wet moat.
     pub cave: bool,
+    /// Canal town (`lagoon::canal_town`): its canals feed a canal moat.
+    pub canals: bool,
 }
 
 pub(super) fn num(v: &Value, key: &str, default: f64) -> f64 {
@@ -92,6 +99,10 @@ fn pair(v: &Value, default: [f64; 2]) -> [f64; 2] {
 }
 pub(super) fn text(v: &Value, key: &str, default: &str) -> String {
     v[key].as_str().unwrap_or(default).to_string()
+}
+/// A `moatForms` list: `[{form, weight}]`.
+fn forms(v: &Value) -> Option<Vec<(String, u32)>> {
+    v.as_array().map(|a| a.iter().filter_map(|f| Some((f["form"].as_str()?.to_string(), f["weight"].as_u64().unwrap_or(1) as u32))).collect())
 }
 
 impl Style {
@@ -127,6 +138,7 @@ impl Style {
             ditch_width: pair(&v["ditchWidthM"], [0.0, 0.0]),
             ditch_depth: num(v, "ditchDepthM", 0.0),
             moat_form: text(v, "moatForm", "earth"),
+            moat_forms: forms(&v["moatForms"]).unwrap_or_default(),
             berm: num(v, "bermM", 2.0),
             outworks: v["outworks"]
                 .as_array()
@@ -148,6 +160,7 @@ impl Style {
             timber_culture: false,
             ditch_wetness: None,
             cave: false,
+            canals: false,
         })
     }
     pub(in super::super) fn options(&mut self, cfg: &LayoutConfig) {
@@ -169,6 +182,8 @@ impl Style {
             self.tower_height = self.tower_height.min(5.0);
         }
         self.ditch_wetness = cfg.ditch_wetness;
+        // The canal share asked for wins over the culture's (`lagoon::params`).
+        self.canals = cfg.lagoon_canals.map_or(self.canals, |v| v > 0.0);
         // « Moat »: by culture and site (empty), none, or one kind for the
         // whole circuit; a style without a ditch of its own digs a 6–10 m one.
         if matches!(cfg.moat.as_str(), "none" | "dry" | "wet") {
@@ -235,8 +250,13 @@ impl Style {
         if let Some(d) = o["ditchDepthM"].as_f64() {
             self.ditch_depth = d;
         }
+        // A single form named overrides the forms drawn from; a list replaces the list.
         if let Some(f) = o["moatForm"].as_str() {
             self.moat_form = f.into();
+            self.moat_forms.clear();
+        }
+        if let Some(f) = forms(&o["moatForms"]) {
+            self.moat_forms = f;
         }
         // A culture's own breadth of ditch (the broad moats of Angkor, of a Japanese castle town).
         if o["ditchWidthM"].is_array() || o["ditchWidthM"].is_number() {
@@ -254,6 +274,25 @@ impl Style {
         if let Some(a) = o["attached"].as_f64() {
             self.attached = a;
         }
+    }
+    /// Draw the ditch form among the culture's forms its site allows (`steep`: a hill circuit; the canals of a canal
+    /// town), by weight, on a fork of `rng` (the other draws stay those of a culture with one form).
+    pub(in super::super) fn draw_form(&mut self, rng: &Rng, steep: bool) {
+        let forms: Vec<(&'static str, u32)> = self.moat_forms.iter().map(|(f, w)| (moat::form_id(f), *w)).filter(|&(f, w)| w > 0 && moat::suits(moat::form(f), steep, self.canals)).collect();
+        let id = match forms.len() {
+            0 => return,
+            1 => forms[0].0,
+            _ => forms[rng.fork("moat-form").weighted_index(&forms.iter().map(|f| f.1).collect::<Vec<_>>()).unwrap_or(0)].0,
+        };
+        self.set_form(id);
+    }
+    /// Dig the ditch in form `id`: its breadth follows the form's `widthScale` (`styled` sized it for the former one).
+    pub(in super::super) fn set_form(&mut self, id: &str) {
+        let scale = |f: &str| num(&data()["moats"][f], "widthScale", 1.0).max(0.1);
+        let k = scale(id) / scale(&self.moat_form);
+        self.ditch_width = [self.ditch_width[0] * k, self.ditch_width[1] * k];
+        self.moat_form = id.into();
+        self.moat_forms.clear();
     }
     /// The style the older inner circuit keeps: one step down, no ditch, no outworks.
     pub(in super::super) fn inner(&self, culture: &str, pop: u32) -> Style {
@@ -320,6 +359,7 @@ pub(super) fn styled(id: &str, culture: &str, pop: u32) -> Style {
     for o in culture_override(culture) {
         s.apply(o);
     }
+    s.canals = c["render"]["canals"].is_object() && c["render"]["canals"]["share"].as_f64().is_none_or(|v| v > 0.0);
     if id == "wengcheng" {
         if pop < 10_000 {
             s.material = "rammed-earth".into();
@@ -446,6 +486,9 @@ pub(in super::super) fn resolve(kind: &str, i: &Inputs, rng: &Rng, warnings: &mu
     let mut s = styled(&id, i.culture, i.pop);
     s.hill = hill;
     s.forced = forced;
+    // The ditch form is drawn with the style, so everything that reads the moat width (gate budget, harbour fronts,
+    // the works) reads the width of the form the circuit digs.
+    s.draw_form(rng, i.relief > moat::HILL_RELIEF);
     s
 }
 fn family_of_kind(kind: &str) -> &'static str {

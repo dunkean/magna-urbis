@@ -156,7 +156,7 @@ pub(in super::super) fn build(
     e.gatehouses = gatehouses;
     e.bastions = bastions;
     e.outworks = outworks;
-    e.moat = moat::spec(&style.moat_form, &ditch, dams, "", surface);
+    e.moat = moat::spec(moat.form, &ditch, dams, "", surface);
     e.ditch = ditch;
     e.attached = attached;
     e.reserve = reserve;

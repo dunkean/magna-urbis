@@ -375,6 +375,7 @@ pub(super) fn fortify(
     // (`fortification::resolve`); the trace then follows the style.
     #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
+    let mut laps = crate::urban::profile::Lap::new("fortify");
     let base = Rng::new(&site.key).fork("fortification");
     let (relief, wet_share) = fortification::terrain(&walls, surface);
     let mut style = fortification::resolve(
@@ -431,8 +432,10 @@ pub(super) fn fortify(
     let walls = fortification::trace_enclosures(walls, &plan.quarters.iter()
         .map(|q| q.shape.clone()).collect::<Vec<_>>(), surface);
     let walls = walls.into_iter().map(|s| fortification::parameter_trace(s, surface, cfg, culture, style.curtain_width)).collect::<Vec<_>>();
+    laps.lap("trace");
     // The harbour of a walled port is decided before its walls, on the shore they reach.
     let yards = macroplan::harbour::town_port(&mut plan.quarters, &mut plan.streets, &walls, surface, cfg, site, culture, morph, harbour_inside(culture, cfg));
+    laps.lap("town_port");
     // Walls against water are decided here, on the trace, with the quays the plan already laid:
     // every circuit is a closed ring on dry land behind its wall walk, the harbour outside unless
     // it is asked inside. Nothing later opens the curtain for the water.
@@ -443,6 +446,7 @@ pub(super) fn fortify(
     }
     let dry = |walls: Vec<Shape>, width: f64| fortification::water_fronts(walls, &founding, &harbour, surface, width - fortification::ribbon_half(kind));
     let walls = dry(walls, style.curtain_width);
+    laps.lap("water_fronts");
     // Lopsided growth builds the second enclosure against the old one: the old
     // circuit stays whole and the extension shares a stretch of it.
     let trace = if style.hill { "hill" } else if square { "square" } else if style.id == "bastioned" { "bastioned" } else { "" };
@@ -489,6 +493,7 @@ pub(super) fn fortify(
     // Underdark: the chamber's rock is the enceinte; one circuit closes the passages into it (barrier
     // walls between the rock faces). A surface town keeps its circuits unchanged.
     let (walls, cave) = fortification::cave_circuits(walls, surface);
+    laps.lap("extension+castle");
     style.options(cfg);
     style.cave = cave;
     // The land gates of the town circuits are decided here, on the armature, while nothing stands
@@ -510,6 +515,7 @@ pub(super) fn fortify(
         decided.push(wall);
     }
     let walls = decided;
+    laps.lap("gates");
     let mut inner_style = style.inner(culture, site.population);
     inner_style.options(cfg);
     let data = culture_data(culture, site.population);
@@ -614,6 +620,7 @@ pub(super) fn fortify(
     if let Some(c) = &castle {
         partition(&mut plan.quarters, std::slice::from_ref(c));
     }
+    laps.lap("inner+fill");
     let first = plan.enclosures.len();
     let outer = walls.len();
     // Gate passages and causeways are cut at the width the street hierarchy
@@ -669,6 +676,7 @@ pub(super) fn fortify(
         fortification::divert(&enclosure, &kept, &shut, &mut plan.streets, surface, cfg.max_street_grade);
         plan.enclosures.push(enclosure);
     }
+    laps.lap("build");
     // The two attached circuits keep no ditch or outwork inside each other.
     if attached && outer >= 2 {
         let (a, b) = (closed_shape(&plan.enclosures[first]), closed_shape(&plan.enclosures[first + 1]));

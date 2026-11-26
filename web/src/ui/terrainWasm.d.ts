@@ -67,6 +67,7 @@ declare module '*magna_urbis_wasm.js' {
       temperature?: number,
       precipitation?: number,
       coastalStreams?: number,
+      shoreCell?: number,
     ): HydrologyOutput;
     free(): void;
   }

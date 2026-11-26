@@ -1,6 +1,8 @@
 //! The terrain a town is laid on: heights (bilinear or B-spline), the
 //! planning water grid and the vector geography, as `Surface`.
 use super::{Geography, Point, Shape, geometry};
+// The fractal shore detail of the drawn coast (terrain crate, mirrored by web/src/render/shoreDetail.ts).
+use crate::shore_detail;
 
 #[derive(Clone, Copy, Default)]
 pub enum HeightInterpolation {
@@ -8,7 +10,8 @@ pub enum HeightInterpolation {
     Bilinear,
     /// Explicit physical source using bilinear samples; coastal wet checks apply even at planning n.
     PhysicalBilinear,
-    BSpline { floor: f32 },
+    /// `shore`: the field has a sea (and no cave), so its height carries the fractal shore detail of the drawn coast.
+    BSpline { floor: f32, shore: bool },
 }
 
 #[derive(Clone, Copy)]
@@ -44,14 +47,16 @@ impl Surface<'_> {
         let height = self.raw_height_at(p);
         match self.interpolation {
             HeightInterpolation::Bilinear | HeightInterpolation::PhysicalBilinear => height,
-            HeightInterpolation::BSpline { floor } => height.max(floor as f64),
+            HeightInterpolation::BSpline { floor, .. } => height.max(floor as f64),
         }
     }
+    /// The ground as drawn: the B-spline with, on a coastal field, the fractal shore detail near its zero line, so the
+    /// town's ground meets the traced sea polygon (`wet`) and the 2D and 3D coast.
     pub fn raw_height_at(&self, p: Point) -> f64 {
         let n = self.height_resolution();
         let x = p.x / self.width * n as f64 - 0.5;
         let y = p.y / self.width * n as f64 - 0.5;
-        if let HeightInterpolation::BSpline { .. } = self.interpolation {
+        if let HeightInterpolation::BSpline { shore, .. } = self.interpolation {
             let x = x.clamp(-0.5, n as f64 - 0.5);
             let y = y.clamp(-0.5, n as f64 - 0.5);
             let (ix, iy) = (x.floor() as isize, y.floor() as isize);
@@ -71,7 +76,24 @@ impl Surface<'_> {
                     value += self.height[row * n + col] as f64 * weight_x * weight_y;
                 }
             }
-            return value;
+            if !shore {
+                return value;
+            }
+            // The gradient from the same sixteen controls; the offset is zero beyond 1.5 cells of the zero line.
+            let slopes = |t: f64| [-0.5 * (1.0 - t).powi(2), 1.5 * t * t - 2.0 * t, -1.5 * t * t + t + 0.5, 0.5 * t * t];
+            let (dx, dy) = (slopes(x - ix as f64), slopes(y - iy as f64));
+            let (mut sx, mut sy) = (0.0, 0.0);
+            for j in 0..4 {
+                let row = (iy + j as isize - 1).clamp(0, n as isize - 1) as usize;
+                for i in 0..4 {
+                    let col = (ix + i as isize - 1).clamp(0, n as isize - 1) as usize;
+                    let h = self.height[row * n + col] as f64;
+                    sx += h * dx[i] * wy[j];
+                    sy += h * wx[i] * dy[j];
+                }
+            }
+            let cell = self.width / n as f64;
+            return value + shore_detail::offset(p.x, p.y, value, sx.hypot(sy) / cell, cell);
         }
         let x = x.clamp(0.0, (n - 1) as f64);
         let y = y.clamp(0.0, (n - 1) as f64);
@@ -198,7 +220,7 @@ mod physical_surface_tests {
         for y in 0..64 { for x in 0..29 { height[y * 64 + x] = -5.0; } }
         for y in 30..34 { for x in 36..40 { height[y * 64 + x] = -5.0; } }
         let surface = Surface { geometry: None, width, n: 16, height: &height, water: &water,
-            interpolation: HeightInterpolation::BSpline { floor: 0.3 } };
+            interpolation: HeightInterpolation::BSpline { floor: 0.3, shore: false } };
         assert!(surface.wet(Point { x: 89_000.0, y: 100_000.0 }));
         assert!(!surface.wet(Point { x: 118_750.0, y: 100_000.0 }));
     }
@@ -224,7 +246,7 @@ mod physical_surface_tests {
         let height: Vec<f32> = (0..n * n).map(|i| 3.0 + (i % n) as f32 * 0.07 + (i / n) as f32 * 0.11).collect();
         let water = vec![0; 16 * 16];
         let surface = Surface { geometry: None, width, n: 16, height: &height, water: &water,
-            interpolation: HeightInterpolation::BSpline { floor: 0.3 } };
+            interpolation: HeightInterpolation::BSpline { floor: 0.3, shore: false } };
         for k in 0..100 {
             let gx = 3.5 + ((k * 811) % (n - 8)) as f64 + (k % 7) as f64 / 7.0;
             let gy = 3.5 + ((k * 613) % (n - 8)) as f64 + (k % 11) as f64 / 11.0;
@@ -234,9 +256,26 @@ mod physical_surface_tests {
         }
         let below = vec![-5.0; 16 * 16];
         let floor = Surface { geometry: None, width: 160.0, n: 16, height: &below, water: &water,
-            interpolation: HeightInterpolation::BSpline { floor: 0.3 } };
+            interpolation: HeightInterpolation::BSpline { floor: 0.3, shore: false } };
         assert_eq!(floor.height_at(Point { x: 80.0, y: 80.0 }), 0.3_f32 as f64);
         assert!(floor.raw_height_at(Point { x: 80.0, y: 80.0 }) < 0.0);
+    }
+
+    /// The town's coastal ground is the drawn one: the values of `shoreOffset` (web/src/render/shoreDetail.ts) on a
+    /// plane of slope 0.1 crossing sea level, and the plain spline a few cells inland or without a sea.
+    #[test]
+    fn coastal_spline_carries_the_shore_detail_of_the_drawn_coast() {
+        let (n, width) = (64, 1920.0);
+        let height: Vec<f32> = (0..n * n).map(|i| (0.1 * (((i % n) as f64 + 0.5) * 30.0 - 960.0)) as f32).collect();
+        let water = vec![0; 16 * 16];
+        let coast = Surface { geometry: None, width, n: 16, height: &height, water: &water,
+            interpolation: HeightInterpolation::BSpline { floor: 0.0, shore: true } };
+        for (x, y, drawn) in [(955.0, 700.0, -0.6588865110248115), (962.5, 1010.0, 0.1465371810229688), (940.0, 333.3, -1.9631985271900376), (1200.0, 900.0, 24.0)] {
+            let at = coast.raw_height_at(Point { x, y });
+            assert!((at - drawn).abs() < 1e-4, "({x}, {y}): {at} vs {drawn}");
+        }
+        let plain = Surface { interpolation: HeightInterpolation::BSpline { floor: 0.0, shore: false }, ..coast };
+        assert!((plain.raw_height_at(Point { x: 955.0, y: 700.0 }) + 0.5).abs() < 1e-4);
     }
 
     #[test]
@@ -252,7 +291,7 @@ mod physical_surface_tests {
         let generator = crate::TerrainGenerator::with_surface("spline-parity", width, &controls).unwrap();
         let water = vec![0; 16 * 16];
         let surface = Surface { geometry: None, width, n: 16, height: &controls, water: &water,
-            interpolation: HeightInterpolation::BSpline { floor: 0.0 } };
+            interpolation: HeightInterpolation::BSpline { floor: 0.0, shore: false } };
         for (ox, oy) in [(0.0, 0.0), (20_000.0, 18_000.0), (width - 64.0, width - 64.0)] {
             let sampled = generator.sample_region(ox, oy, 64.0, 64).unwrap();
             for row in [0, 5, 17, 31, 63] { for col in [0, 7, 23, 44, 63] {

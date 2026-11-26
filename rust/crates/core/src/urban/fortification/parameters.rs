@@ -412,6 +412,8 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
     let template=&old[0];
     let pop=layout.phases.iter().map(|p|p.population).sum::<f64>().max(1000.0) as u32;
     let mut style=styled(&template.style,&layout.culture,pop);style.options(cfg);
+    // The circuits keep the ditch form the town drew.
+    if let Some(m)=&template.moat {style.set_form(&m.form);}
     let predicted=Predicted {widths:[12.0,9.0,6.0,4.0,3.0],arterial:1,dwelling:[5.0,5.0]};
     layout.enclosures.retain(|e|!e.purpose.is_empty() && e.purpose!="port");
     for (i,(shape,purpose)) in traced.into_iter().enumerate() {

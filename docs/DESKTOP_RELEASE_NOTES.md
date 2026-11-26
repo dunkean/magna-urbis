@@ -193,6 +193,15 @@ The Apple Silicon DMG is signed ad hoc and distributed without Apple notarizatio
 - The Vector engine setting now warns, under the select, when a forced choice is wrong for the machine: GPU while the graphics card path is unavailable or software-only, or CPU while the graphics card works. Auto is recommended. The `?vector=` page address option is gone.
 - Parchment woods keep their whole tree symbols: crowns along a wood's edge or a river bank are no longer sliced by straight land-use edges or hidden under the river band.
 - Farmsteads in 2D show only what the farm holds and the 3D view raises: no culture fence round a farmyard the farm left open, pen fences drawn as the rail fences of the 3D view, and roof ridges taken from the raised buildings (no more ridge line across round, domed or flat farm roofs).
+- Towns on steep coasts and mountain islands keep their requested population and build on terraced slopes instead of shrinking to a village.
+- An activity site placed by hand (a watermill, a quarry, a pottery…) builds its mill, sheds or kilns and its other buildings again instead of standing empty. The same applies to a hand-placed isolated farm, mill, inn, tower or shrine.
+- Town moats follow their culture and site: Roman V-shaped and double ditches, rock-cut ditches round hill towns and dwarven holds, canal moats in canal towns. A wet moat with no river, sea or canal to feed it holds only a seasonal pool, so it shows dry, muddy, low or full water depending on climate and season.
+- Walled towns on estuaries, deltas and indented coasts trace their walls faster; the towns themselves are unchanged.
+- In the Underdark, chambers sealed in the rock stay empty: no town, hamlet, farm or yard lands where no gallery leads. Valley relief now has asymmetric sides: a steep cut bank outside each bend and a gentle slip-off slope inside, with the same average width.
+- The fine coastline now shapes everything at the shore: town ground, the 3D relief, the sea the towns plan with, and the sea's swell and surf follow the drawn shoreline instead of the coarser one beneath it.
+- River mouths now end exactly on the drawn coastline, without a strip of land or an overshoot into the sea.
+- In dry climates, a river flowing into a lake that has shrunk to its water budget now always ends in the lake's water, even when the deepest hole of the basin lies at the shrunk lake's edge.
+- Towns on steep sites generate faster when a spring lies far from their streets: the paths tried for its water building are searched together instead of one after the other, with the same result.
 
 - Phones and tablets no longer get stuck in the Minimal style: a temporary loss of the graphics context is no longer treated as a missing graphics card. Maps saved in Minimal or in a fast style by that fault return to their full style.
 - Settings offers a Performance choice: Auto, Economy, Balanced or High. On phones and tablets, Auto starts at Balanced and follows the measured navigation speed instead of the name of the graphics chip. A notice explains any step down and offers full quality.

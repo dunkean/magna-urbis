@@ -19,8 +19,12 @@ pub(super) fn hash01(key: &str) -> f64 {
     Rng::new(key).float()
 }
 
+/// Dry ground of the main network (`Fields::reached`: never a sealed Underdark chamber).
 pub(super) fn dry(f: &Fields, p: Point) -> bool {
-    p.x >= 0.0 && p.y >= 0.0 && p.x < f.r.width && p.y < f.r.width && f.r.water[f.index(p)] == 0
+    p.x >= 0.0 && p.y >= 0.0 && p.x < f.r.width && p.y < f.r.width && {
+        let i = f.index(p);
+        f.r.water[i] == 0 && f.reached(i)
+    }
 }
 
 /// Edge distance to the nearest settlement (index, m; negative inside).

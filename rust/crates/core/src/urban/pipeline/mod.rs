@@ -44,7 +44,8 @@ pub(super) struct Town<'a> {
     pub site: &'a Site,
     /// Every valid site of the call, for the slope wards' neighbour test.
     pub sites: &'a [Site],
-    /// A user-fixed site keeps its centre and its small kind's full plan.
+    /// A user-fixed site keeps its centre: the quarter grammar lays it, except a
+    /// camp and a single structure (`Town::single_structure`, `plan::lay_quarters`).
     pub fixed: bool,
     /// The user's configuration with the site archetype applied: the kind
     /// stamps and finishes read it (`kinds::stamp`, `kinds::finish`).
@@ -61,6 +62,17 @@ pub(super) struct Town<'a> {
     pub roads: &'a [Street],
     pub stilt: Option<&'a StiltGround>,
     pub neighbour_land: Option<neighbours::Mask>,
+}
+
+impl Town<'_> {
+    /// One structure standing as the whole place (an activity yard, an isolated
+    /// farm, mill, inn, tower, shrine or wayside temple: `services.json`
+    /// `isolated`). Its small kind's plot is the place itself, laid at the given
+    /// centre first (`kinds::homestead`): a fixed site keeps it too, since the
+    /// quarter grammar has no plot for it and leaves it without its building.
+    pub fn single_structure(&self) -> bool {
+        self.kind.small() && super::roles::is_isolated(&self.config.programme.intent)
+    }
 }
 
 /// The finished layout of one site; `sites` are every valid site of the call.

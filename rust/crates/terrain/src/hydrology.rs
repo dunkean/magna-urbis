@@ -88,6 +88,9 @@ pub struct HydrologyConfig {
     pub depression_policy: String,
     pub max_breach_depth: f32,
     pub max_breach_length: f32,
+    /// Cell of the display field (metres) whose drawn coastline carries the fractal shore detail (`shore_detail`):
+    /// sea mouths end on that refined line. 0: no shore detail (the spline's zero line).
+    pub shore_cell: f32,
 }
 
 impl Default for HydrologyConfig {
@@ -113,6 +116,7 @@ impl Default for HydrologyConfig {
             depression_policy: "auto".into(),
             max_breach_depth: 12.0,
             max_breach_length: 1000.0,
+            shore_cell: 0.0,
         }
     }
 }
@@ -153,6 +157,7 @@ impl HydrologyConfig {
             (self.max_lake_area, 0.0, 1.0),
             (self.max_breach_depth, 0.0, 200.0),
             (self.max_breach_length, 0.0, 100_000.0),
+            (self.shore_cell, 0.0, 100_000.0),
         ] {
             if !value.is_finite() || !(min..=max).contains(&value) {
                 return Err("Paramètre hydrologique hors limites.".into());
@@ -943,17 +948,6 @@ impl HydrologyEngine {
         }
         drop(cache);
         profile("depressions");
-        if !lakes.is_empty() {
-            // A closed lake drains to its lowest floor, its single sink.
-            for (pit, cells, _) in &closed_pits {
-                for &i in cells {
-                    drainage.receivers[i] = if i == *pit { OUT } else { *pit as u32 };
-                }
-            }
-            flats::aggregate_lakes(&mut drainage, &output.lake_labels, n, bank_budget)?;
-            rebuild_drainage(&mut drainage, &self.sea, cell)?;
-            update_lake_outlets(&mut output, &drainage, cell)?;
-        }
         for (i, depth) in output.lake_depth.iter_mut().enumerate() {
             if output.lake_labels[i] == 0 {
                 *depth = 0.0;
@@ -967,8 +961,23 @@ impl HydrologyEngine {
         let channel_ground = output.adjusted_height.clone();
         // Shores on the ground as drawn: lakes, and the filled dry surface around them.
         let labels = output.lake_labels.clone();
-        for lake in &lakes {
-            lake_rings(lake, &channel_ground, &labels, n, cell, &mut output);
+        let drawn_sinks: Vec<usize> = lakes
+            .iter()
+            .map(|lake| lake_rings(lake, &channel_ground, &labels, n, cell, &mut output))
+            .collect();
+        if !lakes.is_empty() {
+            // A closed lake drains to its single sink in its open water as
+            // drawn: its inlets end there, inside the shore, even when its
+            // lowest floor is a hole at the edge that the smoothed shore leaves dry.
+            for (pit, cells, _) in &closed_pits {
+                let sink = drawn_sinks[labels[*pit] as usize - 1];
+                for &i in cells {
+                    drainage.receivers[i] = if i == sink { OUT } else { sink as u32 };
+                }
+            }
+            flats::aggregate_lakes(&mut drainage, &output.lake_labels, n, bank_budget)?;
+            rebuild_drainage(&mut drainage, &self.sea, cell)?;
+            update_lake_outlets(&mut output, &drainage, cell)?;
         }
         profile("water-surfaces");
         let (main_source, external) = principal_source(
@@ -1538,7 +1547,9 @@ fn shore_field(
 
 /// Shore rings: the zero contour of the cubic B-spline of a lake's shore
 /// field (marching squares on a sub-cell grid). The renderer draws the same
-/// B-spline of the same field (`water_field`).
+/// B-spline of the same field (`water_field`). Returns the lake's sink as
+/// drawn: its lowest floor among the cells in open water (`LAKE_END_DEPTH`
+/// inside the shore), or its deepest drawn water when no cell is that deep.
 fn lake_rings(
     lake: &Lake,
     h: &[f32],
@@ -1546,7 +1557,7 @@ fn lake_rings(
     n: usize,
     cell: f32,
     out: &mut HydrologyOutput,
-) {
+) -> usize {
     let (fx0, fy0, fw, fh, field) = shore_field(lake, h, labels, n);
     for y in 0..fh {
         for x in 0..fw {
@@ -1587,6 +1598,23 @@ fn lake_rings(
             // Never exactly zero: contour vertices stay strictly between samples.
             let v = sample(origin.0 + x as f32 * step, origin.1 + y as f32 * step);
             values[y * w + x] = if v.abs() < 1e-5 { -1e-5 } else { v };
+        }
+    }
+    // The sink as drawn: the lowest floor in open water, else the deepest
+    // drawn water. A cell centre is the sample s/2 past its corner.
+    let mut sink = (usize::MAX, false, f32::NEG_INFINITY);
+    for y in 0..fh {
+        for x in 0..fw {
+            let i = (fy0 + y) * n + fx0 + x;
+            if labels[i] != lake.id {
+                continue;
+            }
+            let v = values[(y * s + s / 2) * w + x * s + s / 2];
+            let open = v >= LAKE_END_DEPTH;
+            let score = if open { -h[i] } else { v };
+            if (open, score) > (sink.1, sink.2) {
+                sink = (i, open, score);
+            }
         }
     }
     // Marching squares; an edge's crossing vertex is shared by both squares.
@@ -1670,6 +1698,7 @@ fn lake_rings(
         out.lake_offsets.push((out.lake_points.len() / 2) as u32);
         out.lake_ring_meta.extend([lake.id, (nesting % 2) as u32]);
     }
+    sink.0
 }
 fn inside(p: (f32, f32), ring: &[(f32, f32)]) -> bool {
     let mut odd = false;
@@ -2662,7 +2691,16 @@ fn vector_course(
                 z: 0.0,
             });
         }
-        let drawn = |p: RiverPoint| bspline_sample(h, n, cell, p.x, p.y);
+        // As drawn: on a coastal map the display coast carries the fractal shore detail (`shore_detail`, the page's
+        // `shoreOffset`), so the mouth ends on that refined line, never on the smoother spline under it.
+        let shore = f64::from(cfg.shore_cell);
+        let drawn = |p: RiverPoint| {
+            if shore > 0.0 {
+                crate::shore_detail::drawn_height(h, n, f64::from(cell), f64::from(p.x), f64::from(p.y), shore) as f32
+            } else {
+                bspline_sample(h, n, cell, p.x, p.y)
+            }
+        };
         // The planform may stop short of its sea cell: run on to it.
         if drawn(*points.last().unwrap()) > 0.0 && bspline_at_cell(h, n, c) <= 0.0 {
             let (x, y) = point(c, n, cell);
@@ -2702,6 +2740,28 @@ fn vector_course(
                 z: 0.0,
             };
             points.truncate(k + 1);
+        } else if shore > 0.0 && drawn(*points.last().unwrap()) > 0.0 {
+            // The refined shore lies seaward of the end: run on along the last direction to its zero, within the
+            // reach of the shore detail (a few tens of metres).
+            let (a, b) = (points[points.len() - 2], *points.last().unwrap());
+            let length = (b.x - a.x).hypot(b.y - a.y);
+            if length > 0.0 {
+                let (dx, dy) = ((b.x - a.x) / length, (b.y - a.y) / length);
+                let (step, reach) = (cfg.shore_cell * 0.25, cfg.shore_cell * (crate::shore_detail::REACH as f32 + 0.5));
+                let at = |s: f32| RiverPoint { x: b.x + dx * s, y: b.y + dy * s, ..b };
+                if let Some(wet) = (1..=(reach / step).ceil() as usize).map(|k| k as f32 * step).find(|&s| drawn(at(s)) <= 0.0) {
+                    let (mut lo, mut hi) = (wet - step, wet);
+                    for _ in 0..16 {
+                        let mid = 0.5 * (lo + hi);
+                        if drawn(at(mid)) > 0.0 {
+                            lo = mid;
+                        } else {
+                            hi = mid;
+                        }
+                    }
+                    points.push(RiverPoint { z: 0.0, ..at(hi) });
+                }
+            }
         }
         let last = points.len() - 1;
         if let Some(end) = geometry.cuts.last_mut() {

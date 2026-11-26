@@ -5,9 +5,6 @@ use serde_json::json;
 
 struct Observation {
     report:Value,
-    old:Vec<u8>,new:Vec<u8>,
-    old_events:Vec<Value>,new_events:Vec<Value>,
-    details:Vec<(String,bool,Value)>,
     failures:Vec<String>,
 }
 fn check(f:&mut Vec<String>,ok:bool,message:impl Into<String>){if !ok{f.push(message.into());}}
@@ -30,7 +27,7 @@ fn observe(bytes:&[u8],name:&str)->Result<Observation,String>{
     let (old,old_events,old_ops)=complete(bytes,false)?;
     let (new,new_events,ops)=complete(bytes,true)?;
     let old_bytes=serde_json::to_vec(&old).unwrap();let new_bytes=serde_json::to_vec(&new).unwrap();
-    let mut failures=vec![];let mut rows=vec![];let mut details=vec![];
+    let mut failures=vec![];let mut rows=vec![];
     check(&mut failures,digest(bytes)==meta["batches"][name]["requestSha256"],"original fixture identity");
     // NEVER change or bypass this old golden. Only the later phase is OFF.
     check(&mut failures,digest(&old_bytes)==meta["batches"][name]["expectedCandidateSha256"],"OLD Need golden changed with only prepose OFF");
@@ -50,7 +47,7 @@ fn observe(bytes:&[u8],name:&str)->Result<Observation,String>{
     }
     let old_by_id=old.buildings.iter().map(|b|(b.id.clone(),b)).collect::<BTreeMap<_,_>>();
     let mut changed=BTreeSet::new();
-    for (ordinal,b) in new.buildings.iter().enumerate(){
+    for b in &new.buildings{
         let Some(a)=old_by_id.get(&b.id)else{continue};
         if same(*a,b){continue;}
         changed.insert(b.id.clone());
@@ -109,7 +106,6 @@ fn observe(bytes:&[u8],name:&str)->Result<Observation,String>{
                         &&same(&architecture.units[0].transform,&b.transform)&&(!interiors||(!architecture.units[0].rooms.is_empty()&&!architecture.units[0].access.portals.is_empty()));
                     check(&mut failures,valid,format!("actual detail source/pose/interior {}",b.id));
                     realization.push(json!({"interiors":interiors,"ok":true,"exact":valid,"rooms":architecture.units[0].rooms.len(),"portals":architecture.units[0].access.portals.len()}));
-                    details.push((format!("changed-{ordinal:02}"),interiors,serde_json::to_value(detailed).unwrap()));
                 },Err(error)=>{failures.push(format!("actual detail {}/{}: {error}",b.id,interiors));realization.push(json!({"interiors":interiors,"ok":false,"error":error}));}
             }
         }
@@ -132,7 +128,7 @@ fn observe(bytes:&[u8],name:&str)->Result<Observation,String>{
     let report=json!({"batch":name,"request_sha256":digest(bytes),"old_need_golden_sha256":digest(&old_bytes),"default_final_sha256":digest(&new_bytes),
         "old_need_events_exact":same(&old_events,&new_events),"old_count":old.buildings.len(),"new_count":new.buildings.len(),"changed":rows,"operators":ops,"failures":failures,
         "qualification":"SAME original transported fixture/decoder, not substituted raw Core or dropped old neighbors. OLD Need/growth ON; only later prepose OFF/ON differs. Additional audit readmissions/detail work are test-only, outside captured runtime operator budgets. No production/global-prefix or capacity claim."});
-    Ok(Observation{report,old:old_bytes,new:new_bytes,old_events,new_events,details,failures})
+    Ok(Observation{report,failures})
 }
 fn assert_context(bytes:&[u8],name:&str){let proof=observe(bytes,name).unwrap();assert!(proof.failures.is_empty(),"{}",proof.report);}
 #[test]

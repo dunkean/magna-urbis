@@ -1,6 +1,17 @@
 //! Fixed geographic drainage corridors: erosion changes slopes, never their topology.
 use crate::{Noise, smooth};
 
+/// Half width of the trunk valley floor, and run of its sides, in motifs (symmetric means).
+const FLOOR: f64 = 0.065;
+const RUN: f64 = 0.32;
+/// Share of the mean floor, and of the mean run, a side gains on the inside of a full bend and
+/// loses on its outside.
+const LEAN_FLOOR: f64 = 0.85;
+const LEAN_RUN: f64 = 0.55;
+/// Half span (motifs) of the curvature reading, about the valley's half width, and its gain.
+const BEND_SPAN: f64 = 0.4;
+const BEND_GAIN: f64 = 3.0;
+
 pub(crate) struct Channels {
     motif: f64,
     phase: f64,
@@ -74,10 +85,57 @@ impl Channels {
         result
     }
     fn center(&self, along: f64, noise: &Noise, noise2: &Noise) -> f64 {
-        self.offset
-            + self.motif * 2.8 * noise.fbm(along / (self.motif * 12.0), self.phase, 2)
+        self.offset + self.meander(along, noise, noise2) + self.wiggle(along, noise)
+    }
+    /// The large meanders of the trunk axis, without its offset and its small wiggle.
+    fn meander(&self, along: f64, noise: &Noise, noise2: &Noise) -> f64 {
+        self.motif * 2.8 * noise.fbm(along / (self.motif * 12.0), self.phase, 2)
             + self.motif * 0.65 * noise2.fbm(along / (self.motif * 3.2), 7.1, 2)
-            + self.motif * 0.10 * noise.fbm(along / self.motif, 3.7, 2)
+    }
+    fn wiggle(&self, along: f64, noise: &Noise) -> f64 {
+        self.motif * 0.10 * noise.fbm(along / self.motif, 3.7, 2)
+    }
+    /// Turn of the trunk at `along`, -1 to 1, positive where the inside of its bend lies towards
+    /// growing `across`: the curvature of its large meanders over the valley's own scale.
+    fn turn(&self, along: f64, meander: f64, noise: &Noise, noise2: &Noise) -> f64 {
+        let h = self.motif * BEND_SPAN;
+        let ahead = self.meander(along + h, noise, noise2);
+        let behind = self.meander(along - h, noise, noise2);
+        let curvature = (ahead + behind - 2.0 * meander) / (h * h);
+        (BEND_GAIN * curvature * self.motif).tanh()
+    }
+    /// Lean of the trunk valley at `along`, -1 to 1, towards growing `across` where positive. A
+    /// bend holds the axis against its outside; elsewhere the axis wanders between the sides (a
+    /// seeded, low-frequency noise) with the room the bend leaves it.
+    fn lean(&self, along: f64, meander: f64, noise: &Noise, noise2: &Noise) -> f64 {
+        let turn = self.turn(along, meander, noise, noise2);
+        let wander = (0.9 * noise2.fbm(along / (self.motif * 5.0), 23.9, 2)).clamp(-0.6, 0.6);
+        turn + (1.0 - turn.abs()) * wander
+    }
+    /// The trunk cross-section `offset` metres from its axis (positive towards growing `across`):
+    /// zero over the floor, rising over the side to one. The two sides differ: the inside of a
+    /// bend has the wider floor and the gentle slip-off slope, the outside a narrow floor under a
+    /// steep cut bank. Their floors and runs keep the symmetric totals, so the valley keeps its
+    /// mean width, and the floor still holds the axis (no pit, no step).
+    fn trunk(
+        &self,
+        along: f64,
+        offset: f64,
+        meander: f64,
+        footprint: f64,
+        noise: &Noise,
+        noise2: &Noise,
+    ) -> f64 {
+        let (floor, run) = (self.motif * FLOOR, self.motif * RUN);
+        let distance = offset.abs();
+        // Beyond the widest side the upland is untouched: no lean is drawn there.
+        if distance >= floor * (1.0 + LEAN_FLOOR) + (run * (1.0 + LEAN_RUN)).max(footprint) {
+            return 1.0;
+        }
+        let toward = if offset < 0.0 { -1.0 } else { 1.0 };
+        let side = toward * self.lean(along, meander, noise, noise2);
+        let run = (run * (1.0 + LEAN_RUN * side)).max(footprint);
+        smooth((distance - floor * (1.0 + LEAN_FLOOR * side)) / run)
     }
 
     /// A normalized cross-section. Zero is the floor, one the surrounding upland.
@@ -85,15 +143,15 @@ impl Channels {
         &self,
         along: f64,
         across: f64,
-        narrow: bool,
         footprint: f64,
         noise: &Noise,
         noise2: &Noise,
     ) -> f64 {
-        let floor = self.motif * if narrow { 0.018 } else { 0.065 };
-        let slope = (self.motif * if narrow { 0.055 } else { 0.32 }).max(footprint);
-        let distance = (across - self.center(along, noise, noise2)).abs();
-        let mut wall = smooth((distance - floor) / slope);
+        let floor = self.motif * FLOOR;
+        let slope = (self.motif * RUN).max(footprint);
+        let meander = self.meander(along, noise, noise2);
+        let offset = across - (self.offset + meander + self.wiggle(along, noise));
+        let mut wall = self.trunk(along, offset, meander, footprint, noise, noise2);
         let spacing = self.motif * 2.6;
         // Tributaries join the same trunk on both banks and narrow toward their heads.
         // Looking up nearby confluences is bounded independently of map size.
@@ -137,5 +195,56 @@ impl Channels {
             }
         }
         wall
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rng::Rng;
+
+    /// Distances from the axis at which the trunk section reaches half height, `[below, above]`.
+    fn half_widths(c: &Channels, along: f64, noise: &Noise, noise2: &Noise) -> [f64; 2] {
+        let meander = c.meander(along, noise, noise2);
+        [-1.0, 1.0].map(|toward| {
+            let (mut lo, mut hi) = (0.0, 2.0 * c.motif);
+            for _ in 0..60 {
+                let mid = 0.5 * (lo + hi);
+                if c.trunk(along, toward * mid, meander, 0.0, noise, noise2) < 0.5 {
+                    lo = mid
+                } else {
+                    hi = mid
+                }
+            }
+            0.5 * (lo + hi)
+        })
+    }
+
+    /// On its sharpest bend the trunk valley is wider and gentler inside than outside; along the
+    /// whole course its two sides keep the symmetric total width, and the axis stays on the floor.
+    #[test]
+    fn trunk_valley_leans_into_its_bends_and_keeps_its_mean_width() {
+        let root = Rng::new("channels-test");
+        let (noise, noise2) = (Noise::new(root.fork("noise")), Noise::new(root.fork("noise2")));
+        let motif = 2400.0;
+        let c = Channels::new(motif, 0.37, 0.0, 120000.0, &noise, &noise2);
+        let symmetric = 2.0 * motif * (FLOOR + 0.5 * RUN);
+        let mut sharpest = (0.0_f64, 0.0_f64);
+        for k in -600..=600 {
+            let along = k as f64 * 100.0;
+            let [below, above] = half_widths(&c, along, &noise, &noise2);
+            assert!((below + above - symmetric).abs() < 1e-3, "width {} at {along}", below + above);
+            let meander = c.meander(along, &noise, &noise2);
+            assert_eq!(c.trunk(along, 0.0, meander, 0.0, &noise, &noise2), 0.0, "axis on the floor");
+            let turn = c.turn(along, meander, &noise, &noise2);
+            if turn.abs() > sharpest.1.abs() {
+                sharpest = (along, turn);
+            }
+        }
+        let (along, turn) = sharpest;
+        assert!(turn.abs() > 0.5, "no bend on the course: sharpest turn {turn:.2}");
+        let [below, above] = half_widths(&c, along, &noise, &noise2);
+        let (inside, outside) = if turn > 0.0 { (above, below) } else { (below, above) };
+        assert!(inside > 1.1 * outside, "bend at {along}: inside {inside:.0} m, outside {outside:.0} m");
     }
 }

@@ -207,6 +207,9 @@ pub(super) struct Cave {
     /// (`u32::MAX` on rock) and the dry floor of each component (m²).
     pub component: Vec<u32>,
     pub component_floor: Vec<f64>,
+    /// The main network: the component with the most dry floor. Every other component is a
+    /// chamber sealed in the rock, which no gallery reaches: it stays empty.
+    pub main: u32,
 }
 impl Cave {
     /// Dry floor (m²) of the cave system around cell `i`: its whole connected component.
@@ -226,6 +229,11 @@ impl Fields {
     /// Height above water as placement reads it: real water only in the Underdark.
     pub fn place_hab(&self, i: usize) -> f64 {
         self.cave.as_ref().map_or(self.hab[i], |c| c.hab[i])
+    }
+    /// Cell `i` lies in the walkable ground of the map's main network: everywhere off the
+    /// Underdark; there, in the main cave component only (never rock or a sealed chamber).
+    pub fn reached(&self, i: usize) -> bool {
+        self.cave.as_ref().is_none_or(|c| c.component[i] == c.main)
     }
     /// The cave rock as one even/odd ring group on the cell corners (rock masses with their
     /// chambers as holes), in metres, for the urban geometry: towns then clip to the open floor.
@@ -448,7 +456,10 @@ impl Fields {
                 }
                 component_floor.push(dry as f64 * cell * cell);
             }
-            Cave { floor, dw, hab, component, component_floor }
+            let main = (0..component_floor.len())
+                .max_by(|&a, &b| component_floor[a].total_cmp(&component_floor[b]).then_with(|| b.cmp(&a)))
+                .map_or(u32::MAX, |k| k as u32);
+            Cave { floor, dw, hab, component, component_floor, main }
         });
         let buildable_hab = cave.as_ref().map_or(&hab, |c| &c.hab);
         let island = islands(n, &r.water);

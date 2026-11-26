@@ -1154,7 +1154,6 @@ impl TerrainGenerator {
                     let wall = self.channels.wall(
                         along,
                         across,
-                        false,
                         footprint,
                         &self.noise,
                         &self.noise2,

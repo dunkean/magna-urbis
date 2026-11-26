@@ -4,6 +4,10 @@ use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
 fn town(culture: &str, population: u32, width: f64, slope: f64, island: Option<f64>) -> (Vec<Layout>, Vec<Partition>, Vec<Value>) {
+    town_with(culture, population, width, slope, island, "")
+}
+/// `town` with the « Moat » generation parameter (`LayoutConfig::moat`; empty: by culture and site).
+fn town_with(culture: &str, population: u32, width: f64, slope: f64, island: Option<f64>, moat: &str) -> (Vec<Layout>, Vec<Partition>, Vec<Value>) {
     let n = 64;
     let center = Point { x: width * 0.5, y: width * 0.5 };
     let height: Vec<f32> = (0..n*n).map(|i| (20.0 + slope * (i % n) as f64 * width / n as f64) as f32).collect();
@@ -16,6 +20,7 @@ fn town(culture: &str, population: u32, width: f64, slope: f64, island: Option<f
         neighbours: Vec::new(), };
     let mut cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
     cfg.align_enclosed_grid = true;
+    if !moat.is_empty() { cfg.moat = moat.into(); }
     let layouts = generate_quarters("magna-urbis-v2", &[site], &cfg, surface, &[]).unwrap();
     let parts = generate_parcels("magna-urbis-v2", &layouts, &ParcelConfig::default()).unwrap();
     let mut index = building_sites::BuildingSiteIndex::prepare(&layouts, &parts, &[0]).unwrap();
@@ -123,17 +128,22 @@ fn celtic_mu3_choices_keep_real_deficit_requests_compatible_with_allocations() {
     // 8000 inhabitants, 40 km. The neural raster is not embedded in the code;
     // this sloping raster exercises its native foothold/deficit transport.
     // Walled towns now fill their enclosure to the wall (round 22), so take the
-    // first slope of the ladder that still leaves architectural deficits to carry.
-    let pick = |slope: f64| {
-        let (_, parts, requests) = town("celtic-oppidum", 8000, 40_000.0, slope, None);
+    // first slope of the ladder that still leaves architectural deficits to carry. Which lots of the
+    // slope no house fits depends on the land the ditch and its bank take outside the curtain (the
+    // culture draws a double or a single ditch), so the ladder also runs without a moat and with a
+    // plain dry one: the deficit is the slope's, the moat only moves it.
+    let cases: Vec<(&str, f64)> = ["", "none", "dry"].into_iter()
+        .flat_map(|m| [0.04, 0.07, 0.1, 0.14, 0.18, 0.25, 0.32, 0.4].map(|s| (m, s))).collect();
+    let pick = |&(moat, slope): &(&str, f64)| {
+        let (_, parts, requests) = town_with("celtic-oppidum", 8000, 40_000.0, slope, None, moat);
         let opens: Vec<_> = requests.iter().filter(|r| r["function"] == "open_space"
             && r["programme"]["deficit"].is_object()).map(|r| json!({
                 "id": r["id"], "parcel_id": r["parcel_id"], "surface": r["cadastral"],
             })).collect();
         (parts, requests, opens)
     };
-    let (parts, requests, opens) = [0.04, 0.07, 0.1, 0.14, 0.25].into_iter().map(pick)
-        .find(|(_, _, opens)| !opens.is_empty()).unwrap_or_else(|| pick(0.04));
+    let (parts, requests, opens) = cases.iter().map(pick)
+        .find(|(_, _, opens)| !opens.is_empty()).unwrap_or_else(|| pick(&cases[0]));
     assert!(!opens.is_empty(), "Replay must exercise native architectural deficits");
     assert!(requests.iter().any(|r| r["function"] != "open_space"), "Replay keeps buildable town lots too");
     let scene: programme::BuiltScene = serde_json::from_value(json!({"buildings":[],"refusals":[],"open_spaces":opens})).unwrap();

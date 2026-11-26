@@ -207,8 +207,10 @@ export class PreparedHydrology {
     return new PreparedHydrology(engine, height, backend, reason, performance.now() - start, gpu);
   }
 
-  /** `climate`: the water budget's mean annual temperature at sea level (°C) and precipitation (mm). */
-  generate(settings: HydrologySettings, climate: { temperature: number; precipitation: number }): HydrologyData {
+  /** `climate`: the water budget's mean annual temperature at sea level (°C) and precipitation (mm). `shoreCell`: cell (m)
+   * of the display field whose drawn coast carries the fractal shore detail (render/shoreDetail.ts), so sea mouths end on
+   * it; 0 without one. */
+  generate(settings: HydrologySettings, climate: { temperature: number; precipitation: number }, shoreCell = 0): HydrologyData {
     const start = performance.now();
     const output = this.engine.generate(
       settings.main,
@@ -231,6 +233,7 @@ export class PreparedHydrology {
       climate.temperature,
       climate.precipitation,
       settings.coastalStreams,
+      shoreCell,
     );
     try {
       const stageTimes = output.stage_ms;

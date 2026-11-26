@@ -136,7 +136,7 @@ pub(in crate::urban) fn recipe_foundable(
     match surface.interpolation {
         super::super::HeightInterpolation::Bilinear => key.usize(0),
         super::super::HeightInterpolation::PhysicalBilinear => key.usize(1),
-        super::super::HeightInterpolation::BSpline { floor } => key.usize(2).f64(f64::from(floor)),
+        super::super::HeightInterpolation::BSpline { floor, shore } => key.usize(2).f64(f64::from(floor)).usize(usize::from(shore)),
     };
     let r = surface.height_resolution();
     let (x0, y0, x1, y1) = super::super::geometry::bbox(shape);

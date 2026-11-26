@@ -268,7 +268,10 @@ impl Terrain {
     pub fn set_physical_spline(&mut self, n: usize, height: Vec<f32>, floor: f32) -> Result<(), String> {
         if !floor.is_finite() { return Err("Invalid physical terrain floor".into()); }
         self.set_physical_height(n, height)?;
-        self.physical_interpolation = crate::urban::HeightInterpolation::BSpline { floor };
+        // The page traces its sea polygon with the shore detail on a field with a sea and no floor (no cave, no
+        // floored relief): the town's ground follows the same line (v2/terrainProjection.ts).
+        let shore = floor <= 0.0 && self.fields.cave.is_none() && self.fields.r.water.contains(&1);
+        self.physical_interpolation = crate::urban::HeightInterpolation::BSpline { floor, shore };
         Ok(())
     }
 

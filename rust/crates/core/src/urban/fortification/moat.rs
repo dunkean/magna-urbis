@@ -18,8 +18,41 @@ use super::style::{data, num};
 pub(super) struct Moat {
     pub(super) berm: f64,
     pub(super) dw: f64,
+    /// `wet` (fed by natural water or canals), `pool` (a wet moat without a source: rain water, by climate), `dry`.
     pub(super) ditch_kind: Option<&'static str>,
     pub(super) depth: f64,
+    /// Id of its row in the `moats` table.
+    pub(super) form: &'static str,
+}
+
+/// Relief of a hill circuit (`fortification::terrain`): a culture's rock-cut ditch needs it (`needs: steep`). The
+/// threshold of a hill town (`style::resolve`).
+pub(super) const HILL_RELIEF: f64 = 0.07;
+/// Mean relief under which a circuit beside water lies level enough to be flooded.
+const LEVEL_RELIEF: f64 = 0.05;
+
+/// The id of a row of the `moats` table as the table holds it; `earth` for an unknown id.
+pub(super) fn form_id(id: &str) -> &'static str {
+    data()["moats"].as_object().and_then(|m| m.get_key_value(id)).map_or("earth", |(k, _)| k.as_str())
+}
+/// Whether a form may be dug on a site (its `needs`: `steep`, a hill circuit; `canals`, a canal town).
+pub(super) fn suits(row: &serde_json::Value, steep: bool, canals: bool) -> bool {
+    match row["needs"].as_str() {
+        Some("steep") => steep,
+        Some("canals") => canals,
+        _ => true,
+    }
+}
+/// The supply of a ditch of a culture whose moat is wet: fed (`wet`) by a river, the sea or canals, else a `pool` of
+/// rain water. A form's `water` overrides the site: `never` (a rock-cut ditch on its hill) is dry, `fed` (a canal moat)
+/// is wet.
+pub(super) fn supply(kind: Option<&'static str>, culture_wet: bool, fed: bool, row: &serde_json::Value) -> Option<&'static str> {
+    let kind = if culture_wet { kind.map(|_| if fed { "wet" } else { "pool" }) } else { kind };
+    match row["water"].as_str() {
+        Some("never") => kind.map(|_| "dry"),
+        Some("fed") => kind.map(|_| "wet"),
+        _ => kind,
+    }
 }
 
 pub(super) fn choose_moat(ctx: &BuildContext<'_>, dr: &mut Rng, size: f64, dw: f64) -> Moat {
@@ -29,40 +62,32 @@ pub(super) fn choose_moat(ctx: &BuildContext<'_>, dr: &mut Rng, size: f64, dw: f
     // Decided before the faubourg fronts: a moated circuit keeps its moat
     // whole and has no lean-to outside (rule: the moat wins over the houses).
     let berm = style.berm * size;
+    // Each is read at most once (the level test of an `auto` ditch, the source of a culture's wet one).
+    let relief = || {
+        (0..n_seg).map(|i| dist(path[i], path[i + 1]) * segment_relief(path[i], path[i + 1], ns[i], surface)).sum::<f64>()
+            / (0..n_seg).map(|i| dist(path[i], path[i + 1])).sum::<f64>().max(1.0)
+    };
+    let near_water = || wet.iter().any(|&w| w) || (0..n_seg).any(|i| wet_outward(path[i], path[i + 1], ns[i], surface, face + berm + dw) > 0.0);
+    // The form was drawn with the style (`Style::draw_form`), which sized the ditch for it.
+    let id = form_id(&style.moat_form);
+    let row = form(id);
     let ditch_kind = match style.ditch.as_str() {
         "none" => None,
         _ if style.ditch_wetness.is_some() => Some("dry"),
         "wet" => Some("wet"),
         "dry" => dr.chance(style.ditch_p).then_some("dry"),
         _ if style.dry_ditches => Some("dry"),
-        _ => {
-            let near_water = wet.iter().any(|&w| w)
-                || (0..n_seg).any(|i| {
-                    wet_outward(path[i], path[i + 1], ns[i], surface, face + berm + dw) > 0.0
-                });
-            let level = (0..n_seg)
-                .map(|i| {
-                    dist(path[i], path[i + 1])
-                        * segment_relief(path[i], path[i + 1], ns[i], surface)
-                })
-                .sum::<f64>()
-                / (0..n_seg)
-                    .map(|i| dist(path[i], path[i + 1]))
-                    .sum::<f64>()
-                    .max(1.0)
-                < 0.05;
-            if near_water && level {
-                Some("wet")
-            } else {
-                dr.chance(style.ditch_p).then_some("dry")
-            }
-        }
+        _ if near_water() && relief() < LEVEL_RELIEF => Some("wet"),
+        _ => dr.chance(style.ditch_p).then_some("dry"),
     };
+    let ditch_kind = supply(ditch_kind, style.ditch == "wet" && style.ditch_wetness.is_none(), style.ditch == "wet" && near_water(), row);
     // Underdark: no water moat in a cave (a culture's dry ditch stays, across the passages).
-    let ditch_kind = if style.cave && ditch_kind == Some("wet") { None } else { ditch_kind };
-    // Depth of the ditch, lip to bottom: the style's, else its form's, else from its width.
-    let depth = if style.ditch_depth > 0.0 { style.ditch_depth } else { num(form(&style.moat_form), "depthM", (dw * 0.35).clamp(1.5, 4.0)) };
-    Moat { berm, dw, ditch_kind, depth }
+    let ditch_kind = if style.cave && matches!(ditch_kind, Some("wet" | "pool")) { None } else { ditch_kind };
+    // Depth of the ditch, lip to bottom: the style's, else drawn in its form's range, else from its width.
+    let lo = num(row, "depthM", (dw * 0.35).clamp(1.5, 4.0));
+    let hi = num(row, "depthMaxM", lo);
+    let depth = if style.ditch_depth > 0.0 { style.ditch_depth } else if hi > lo { dr.fork("moat-depth").range(lo, hi) } else { lo };
+    Moat { berm, dw, ditch_kind, depth, form: id }
 }
 
 /// Where the ground stops the ditch: one box per steep run and per run that faces natural water within
@@ -113,7 +138,7 @@ pub(super) fn dig_moat(
     rng: &Rng,
 ) -> Vec<Work> {
     let &BuildContext { style, path, poly, face, ns, inner_core, height, clear, street_lines, surface, .. } = ctx;
-    let Moat { berm, dw, ditch_kind, depth } = moat;
+    let Moat { berm, dw, ditch_kind, depth, .. } = moat;
     let Works { towers, gatehouses, bastion_union, outworks, extra_reserve, .. } = works;
     // --- ditch pieces (kind decided above).
     let mut ditch: Vec<Work> = vec![];
@@ -250,11 +275,15 @@ pub(super) fn dig_moat(
                 .min_by(|x, y| x.0.total_cmp(&y.0)) else { return false };
             salients.iter().any(|s| near_ring(c, s)) && !lands.iter().filter(|l| g::area(l) >= 0.25 * big).any(|l| near_ring(c, l))
         };
+        // A form that never holds water (a rock-cut ditch on its hill) stays dry at any wetness and per-piece draw.
+        let never = form(moat.form)["water"] == "never";
         ditch.extend(par::map(&band, |_, p| {
             g::dry_clip(&surface, p).into_iter()
                 .filter(|d| g::area(d) > 20.0 && off_gap(d) && !far_bank(d))
                 .map(|shape| Work {
-                    kind: if let Some(wetness) = style.ditch_wetness {
+                    kind: if never {
+                        "dry".into()
+                    } else if let Some(wetness) = style.ditch_wetness {
                         parameters::ditch_kind(&shape, surface, rng, wetness).into()
                     } else if style.dry_ditches && style.ditch == "auto" {
                         options::ditch_kind(&shape, surface, rng).into()
@@ -266,7 +295,7 @@ pub(super) fn dig_moat(
                 .collect::<Vec<_>>()
         }).into_iter().flatten());
         // The outer bank of the form (the spoil thrown up beyond the counterscarp) stands on reserved land.
-        let bank = form(&style.moat_form)["bankM"][0].as_f64().unwrap_or(0.0);
+        let bank = form(moat.form)["bankM"][0].as_f64().unwrap_or(0.0);
         if bank > 0.0 {
             let land: Vec<Shape> = buffer_all(&moat_core, berm + dw + bank)
                 .iter()

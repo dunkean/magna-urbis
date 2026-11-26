@@ -327,7 +327,7 @@ pub(super) fn citadel(
     rng: &Rng,
 ) {
     let &BuildContext { n_seg, ring, ns, poly, face, wet, clear, surface, streets, height, .. } = ctx;
-    let Moat { berm, dw, ditch_kind, depth } = moat;
+    let Moat { berm, dw, ditch_kind, depth, .. } = moat;
     if ctx.has("citadel") && rng.fork("citadel").chance(0.5) {
         let mut cr = rng.fork("citadel-size");
         let rc = cr.range(90.0, 120.0);

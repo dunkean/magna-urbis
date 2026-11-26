@@ -49,13 +49,27 @@ fn surface(uv: vec2<f32>) -> f32 {
   if(t==0.0){return a;}
   return a*(1.0-t)+at_level(uv,upper)*t;
 }
+// Mirrors Rust `channels.rs` (`meander`, `turn`, `lean`, `trunk`, `wall`).
+fn valley_meander(along: f32, motif: f32) -> f32 {
+  return motif*(2.8*fbm(vec2<f32>(along/(motif*12.0),branches[0].x),0u,2u,0.5,0.0)+0.65*fbm(vec2<f32>(along/(motif*3.2),7.1),1u,2u,0.5,0.0));
+}
+// The trunk valley leans into its bends: wider floor and gentler side inside, the symmetric totals kept.
+fn valley_trunk(along: f32, offset: f32, meander: f32, motif: f32, footprint: f32) -> f32 {
+  let floor_width=motif*0.065; let run=motif*0.32; let distance=abs(offset);
+  if(distance>=floor_width*1.85+max(run*1.55,footprint)){return 1.0;}
+  let h=motif*0.4;
+  let curvature=(valley_meander(along+h,motif)+valley_meander(along-h,motif)-2.0*meander)/(h*h);
+  let turn=tanh(clamp(3.0*curvature*motif,-9.0,9.0));
+  let wander=clamp(0.9*fbm(vec2<f32>(along/(motif*5.0),23.9),1u,2u,0.5,0.0),-0.6,0.6);
+  let side=select(1.0,-1.0,offset<0.0)*(turn+(1.0-abs(turn))*wander);
+  return smooth01((distance-floor_width*(1.0+0.85*side))/max(run*(1.0+0.55*side),footprint));
+}
 fn valley_wall(along: f32, across: f32, footprint: f32) -> f32 {
   let motif=p.values[0].y;
-  let center=branches[0].y+motif*(2.8*fbm(vec2<f32>(along/(motif*12.0),branches[0].x),0u,2u,0.5,0.0)
-    +0.65*fbm(vec2<f32>(along/(motif*3.2),7.1),1u,2u,0.5,0.0)
-    +0.10*fbm(vec2<f32>(along/motif,3.7),0u,2u,0.5,0.0));
+  let meander=valley_meander(along,motif);
+  let center=branches[0].y+meander+motif*0.10*fbm(vec2<f32>(along/motif,3.7),0u,2u,0.5,0.0);
   let floor_width=motif*0.065; let slope=max(motif*0.32,footprint);
-  var wall=smooth01((abs(across-center)-floor_width)/slope);
+  var wall=valley_trunk(along,across-center,meander,motif,footprint);
   let cell=i32(floor(along/(motif*2.6)));
   for(var index=cell-1;index<=cell+2;index++) {
     let slot=index-i32(branches[0].z);

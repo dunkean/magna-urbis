@@ -360,6 +360,54 @@ fn hydrology_invariants() {
     }
 }
 
+/// A dry budget closes a bowl's lake well below its spill, and the bowl's
+/// lowest floor is a hole on that shrunk lake's edge, where the smoothed
+/// shore leaves the water dry. The closed lake's sink, where its inlets end,
+/// still lies in its open water as drawn.
+#[test]
+fn closed_lake_sink_lies_in_its_drawn_water() {
+    let (width, n) = (6400.0_f32, 128);
+    let cell = width / n as f32;
+    let centre = point(64 * n + 64, n, cell);
+    let hole = 64 * n + 72;
+    let height: Vec<f32> = (0..n * n)
+        .map(|i| {
+            if i == hole {
+                return 5.0;
+            }
+            let (x, y) = point(i, n, cell);
+            10.0 + 0.01 * (x - centre.0).hypot(y - centre.1) + 0.0001 * x
+        })
+        .collect();
+    let engine = HydrologyEngine::new("sink", f64::from(width), n, &height, false).unwrap();
+    let cfg = HydrologyConfig {
+        main: "none".into(),
+        depression_policy: "fill".into(),
+        temperature: 18.0,
+        precipitation: 400.0,
+        ..HydrologyConfig::default()
+    };
+    let out = engine.generate(&cfg).unwrap();
+    let mut closed = 0;
+    for (k, _) in out.lake_closed.iter().enumerate().filter(|&(_, &c)| c == 1) {
+        let id = k as u32 + 1;
+        let sink = (0..n * n)
+            .find(|&i| out.lake_labels[i] == id && out.receivers[i] == OUT)
+            .expect("closed lake without a sink");
+        let depth = bspline_at_cell(&out.water_field, n, sink);
+        assert!(
+            depth >= LAKE_END_DEPTH,
+            "lake {id}: sink {sink} drawn {depth:.2} m deep"
+        );
+        assert!(
+            in_lake(&out, id, point(sink, n, cell)),
+            "lake {id}: sink {sink} outside its shore"
+        );
+        closed += 1;
+    }
+    assert!(closed > 0, "no closed lake in the bowl");
+}
+
 fn segments_cross(a: (f32, f32), b: (f32, f32), c: (f32, f32), d: (f32, f32)) -> bool {
     let orient = |p: (f32, f32), q: (f32, f32), r: (f32, f32)| {
         (q.0 - p.0) * (r.1 - p.1) - (q.1 - p.1) * (r.0 - p.0)
@@ -371,6 +419,32 @@ fn segments_cross(a: (f32, f32), b: (f32, f32), c: (f32, f32), d: (f32, f32)) ->
         orient(c, d, b),
     );
     o1 * o2 < 0.0 && o3 * o4 < 0.0
+}
+
+/// With the display coast's shore detail (`shore_cell`), every sea mouth ends on the refined drawn coast
+/// (`shore_detail::drawn_height`), not on the smoother spline under it.
+#[test]
+fn sea_mouths_end_on_the_refined_coast() {
+    let (seed, width, n) = ("a", 40_000.0, 256);
+    let mut terrain = TerrainGenerator::new(seed, width, "hills", 1.0, 8000.0).unwrap();
+    terrain.set_coast(4, "island").unwrap();
+    let height = terrain.sample_region(0.0, 0.0, width, n).unwrap().height;
+    let engine = HydrologyEngine::new(seed, width, n, &height, true).unwrap();
+    let cell = width as f32 / n as f32;
+    let out = engine.generate(&HydrologyConfig { shore_cell: cell, ..HydrologyConfig::default() }).unwrap();
+    let mut mouths = 0;
+    for r in 0..out.river_offsets.len() - 1 {
+        if out.river_meta[r * 6 + 4] & 4 == 0 {
+            continue;
+        }
+        let p = course(&out, r);
+        let m = p.len() / 4;
+        let (x, y) = (f64::from(p[(m - 1) * 4]), f64::from(p[(m - 1) * 4 + 1]));
+        let drawn = crate::shore_detail::drawn_height(&out.surface_height, out.resolution, f64::from(cell), x, y, f64::from(cell));
+        assert!(drawn <= 0.5, "river {r} reaches the sea {drawn:.2} m above the refined coast");
+        mouths += 1;
+    }
+    assert!(mouths > 0, "no sea mouth on the island");
 }
 
 /// Two rivers, a large one and a brook, run down a plane to the sea through

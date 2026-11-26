@@ -259,10 +259,11 @@ pub(in super::super) fn settle(layout: &mut Layout, surface: Surface<'_>) {
         e.ditch = continuous_moat(cut(std::mem::take(&mut e.ditch), 20.0), &dams, &e.path, surface);
         // A moat the town has grown round holds no water. Its wet pieces dry
         // together, when most of their area lies inside the built town.
-        let wet_area: f64 = e.ditch.iter().filter(|d| d.kind == "wet").map(|d| g::area(&d.shape)).sum();
-        let inside: f64 = e.ditch.iter().filter(|d| d.kind == "wet" && embedded(&d.shape, &e.path, &built)).map(|d| g::area(&d.shape)).sum();
+        let holds = |d: &Work| d.kind == "wet" || d.kind == "pool";
+        let wet_area: f64 = e.ditch.iter().filter(|d| holds(d)).map(|d| g::area(&d.shape)).sum();
+        let inside: f64 = e.ditch.iter().filter(|d| holds(d) && embedded(&d.shape, &e.path, &built)).map(|d| g::area(&d.shape)).sum();
         if wet_area > 0.0 && inside * 2.0 >= wet_area {
-            for d in e.ditch.iter_mut().filter(|d| d.kind == "wet") {
+            for d in e.ditch.iter_mut().filter(|d| holds(d)) {
                 d.kind = "dry".into();
             }
         }
