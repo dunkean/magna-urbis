@@ -154,13 +154,29 @@ pub(super) fn block_fork(label: &str, layout: &Layout, quarter: usize) -> String
         None => label.to_owned(),
     }
 }
+/// The edit without the fields only read after the plan (building culture,
+/// house settings, zone): those never change a street or a block, so the V2
+/// applies them to the quarter's lots and buildings on the retained plan.
+fn plan_fields(o: &QuarterOverride) -> QuarterOverride {
+    QuarterOverride {
+        building_culture: None,
+        house_config: None,
+        zone: None,
+        ..o.clone()
+    }
+}
+/// The edit changes the plan (streets, blocks, districts, reservations).
+pub(super) fn edits_plan(o: &QuarterOverride) -> bool {
+    !is_empty(&plan_fields(o))
+}
 /// A quarter keeps its own tissue (never borrows the donor's) only for a
-/// morphology or role edit; a salt or a shape must not change it.
+/// morphology or role edit; a salt or a shape must not change it, nor a
+/// field read after the plan (`plan_fields`).
 pub(super) fn keeps_own_tissue(cfg: &LayoutConfig, i: usize) -> bool {
     cfg.overrides
         .quarters
         .get(&i.to_string())
-        .is_some_and(|o| !is_empty(&without_structure(o)))
+        .is_some_and(|o| !is_empty(&plan_fields(&without_structure(o))))
 }
 /// The quarter was deleted by the user: it keeps its outline but owns no block.
 pub fn quarter_removed(layout: &Layout, i: usize) -> bool {

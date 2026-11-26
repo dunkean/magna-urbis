@@ -153,7 +153,7 @@ pub(super) fn port_quarters(layout: &mut Layout, env: &[BlockEnvironment], conta
     // `original`), so every plan can be computed first, in parallel, and the
     // plans applied in quarter order as before.
     let jobs: Vec<(usize, Vec<usize>)> = (0..original).filter_map(|qi| {
-        if layout.config.as_ref().is_some_and(|c| c.overrides.quarters.contains_key(&qi.to_string())) { return None; }
+        if layout.config.as_ref().and_then(|c| c.overrides.quarters.get(&qi.to_string())).is_some_and(crate::urban::edits::edits_plan) { return None; }
         let chosen: Vec<usize> = layout.blocks.iter().enumerate().filter(|(bi,b)|
             b.quarter == qi && (b.kind == "block" || reserved.contains(bi)) && contact[*bi] >= QUAY_FRONT
             && !env.get(*bi).is_some_and(|e| e.wet) && !protected.contains(bi)

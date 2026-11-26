@@ -152,6 +152,8 @@ function mergeLayouts(previous: Layout[], fresh: Layout[], blocks: TownBlocks): 
 
 function mergeProgramme(old: UrbanProgramme | undefined, now: UrbanProgramme | undefined, lots: Set<string>, blocks: Set<number> | undefined): UrbanProgramme | undefined {
   if (!old || !now || old === now) return now;
+  // A programme without allocations (an engine reply that only carries demands) has nothing to merge.
+  if (!old.allocations || !now.allocations) return now;
   const allocations = spliceByGroup(old.allocations, now.allocations, a => a.parcelId, id => lots.has(id), exact);
   const own = (block: number): boolean => !!blocks?.has(block);
   const adjacency = [...old.adjacency.filter(a => !lots.has(a.a) && !lots.has(a.b)), ...now.adjacency.filter(a => lots.has(a.a) || lots.has(a.b))];
