@@ -6,6 +6,7 @@ import './vectorWaterWasm'; // adopts the built single-thread WASM package (befo
 // The field is Rust (magna_urbis_terrain::forest), here through the WASM package of the web profile.
 const WEB = { profile: 'web', server: '' } as const;
 const build = (input: ForestFieldInput, settings: ForestSettings = DEFAULT_FOREST_SETTINGS) => buildForestField(input, settings, WEB);
+const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 describe('V2 clearing profile stays separate from Render3D', () => {
   const input: ForestFieldInput = { seed: 42, climate: [11, 1300], height: { x: 0, y: 0, width: 4000, n: 32, data: new Float32Array(32 * 32).fill(100) } };
@@ -19,29 +20,29 @@ describe('V2 clearing profile stays separate from Render3D', () => {
     return { cover: cover / (rgba.length / 4), empty: empty / (rgba.length / 4) };
   };
 
-  it('retains more wet natural canopy without changing legacy bytes or other channels', async () => {
+  it('retains more wet natural canopy while preserving historical cover and all other profile channels', async () => {
     const legacy = await build(input),
       progressive = await build({ ...input, clearingProfile: 'progressive' });
-    expect(createHash('sha256').update(legacy.rgba).digest('hex')).toBe('b6ea6f0b94281fa91d961fc32cd12e41171d3e0d988e6b9386b82c027b154dbc');
+    // The treeline climate update changed G/B. Render3D's cover channel still matches the original field.
+    expect(digest(legacy.rgba.filter((_, i) => i % 4 === 0))).toBe('d926754b60e2501a7e5850d83844266fac2d0b4014e12a6f8193aff36008c651');
+    expect(digest(legacy.rgba)).toBe('9e3f356047baf64ca8ba90724d93acbf36b992df2e17475bd8238f20698548a6');
     expect(progressive.key).not.toBe(legacy.key);
     expect(stats(progressive.rgba).cover).toBeGreaterThan(stats(legacy.rgba).cover);
     expect(stats(progressive.rgba).empty).toBeLessThan(stats(legacy.rgba).empty);
     let changedOther = 0;
     for (let i = 0; i < legacy.rgba.length; i++) if (i % 4 && progressive.rgba[i] !== legacy.rgba[i]) changedOther++;
     expect(changedOther).toBe(0);
-    expect((await build(input)).rgba).toEqual(legacy.rgba);
-    expect((await build({ ...input, clearingProfile: 'progressive' })).rgba).toEqual(progressive.rgba);
+    expect(digest((await build(input)).rgba)).toBe(digest(legacy.rgba));
+    expect(digest((await build({ ...input, clearingProfile: 'progressive' })).rgba)).toBe(digest(progressive.rgba));
   });
 
-  it('preserves historical zero-clearing bytes and sea exclusions with the separate optical base', async () => {
+  it('preserves historical zero-clearing cover and sea exclusions with the separate optical base', async () => {
     const settings = { ...DEFAULT_FOREST_SETTINGS, clearings: 0 };
     const optical = await build({ ...input, clearingProfile: 'progressive' }, settings);
-    expect(
-      createHash('sha256')
-        .update((await build(input, settings)).rgba)
-        .digest('hex'),
-    ).toBe('86250c13749d87b6bb473e9741de51820a8a45ae3a4101fc44f3a6811f5e6ce5');
-    expect((await build({ ...input, clearingProfile: 'progressive' }, settings)).rgba).toEqual(optical.rgba);
+    const legacy = (await build(input, settings)).rgba;
+    expect(digest(legacy.filter((_, i) => i % 4 === 0))).toBe('f760833fdfb486ca19d49b91d2c49b59542f36f4e26fa965a3e516e857282873');
+    expect(digest(legacy)).toBe('93eb02bb5ff1ad348c6bbb916e52879ad7c6b9498269fb37cc8dafad7cc2bbfd');
+    expect(digest((await build({ ...input, clearingProfile: 'progressive' }, settings)).rgba)).toBe(digest(optical.rgba));
     const sea = await build({ ...input, height: { ...input.height, data: new Float32Array(32 * 32).fill(-10) }, clearingProfile: 'progressive' });
     expect(stats(sea.rgba).cover).toBe(0);
   });
