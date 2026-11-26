@@ -64,6 +64,8 @@ export class Terrain3dGpu extends Terrain3d {
   private targets?: Targets;
   private blank!: GpuImage;
   private emptyUnfilterable!: GpuImage;
+  private ownerTexture?: GpuImage;
+  private treeOwners?: import('../terrain/trees').NearTrees['owners'];
   private brushes!: { image: GpuImage; full: boolean };
   private ring?: { layer: object; revision: number; image: GpuImage; x: number; y: number; width: number };
   private lastGroundPipelines = new Map<number, GPURenderPipeline>();
@@ -441,7 +443,17 @@ export class Terrain3dGpu extends Terrain3d {
     p.set('uHasLandDetail', detail ? 1 : 0);
     p.set('uLandDetailRect', detail?.data.x ?? 0, detail?.data.y ?? 0, detail?.data.width ?? 1);
     p.set('uLandDetailN', detail?.data.n ?? 1);
-    textures.uForestBrushAtlas = this.brushAtlas(!!settings?.forestBrushes);
+    const owners = trees.shown() ? trees.owners : undefined;
+    if (owners) {
+      if (this.treeOwners !== owners) {
+        this.ownerTexture?.texture.destroy();
+        const texture = device.createTexture({ size: [2 * owners.width, owners.height, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+        device.queue.writeTexture({ texture }, new Uint8Array(owners.data.buffer) as BufferSource, { bytesPerRow: owners.width * 8, rowsPerImage: owners.height }, [2 * owners.width, owners.height, 1]);
+        this.ownerTexture = { texture, view: texture.createView({ dimension: '2d-array' }) };
+        this.treeOwners = owners;
+      }
+      textures.uForestBrushAtlas = this.ownerTexture!.view;
+    } else textures.uForestBrushAtlas = this.brushAtlas(!!settings?.forestBrushes);
     if (pipeline) {
       pass.setPipeline(pipeline);
       for (const draw of draws) {
@@ -540,7 +552,7 @@ export class Terrain3dGpu extends Terrain3d {
     this.instances.dispose(texture => this.deleteTexture(texture));
     for (const texture of tiles.raised.values()) this.deleteTexture(texture);
     tiles.raised.clear();
-    for (const texture of [tiles.material, surface.macroTexture, cavern.texture, this.blank, this.emptyUnfilterable, this.brushes.image, this.ring?.image]) if (texture) this.deleteTexture(texture);
+    for (const texture of [tiles.material, surface.macroTexture, cavern.texture, this.blank, this.emptyUnfilterable, this.brushes.image, this.ownerTexture, this.ring?.image]) if (texture) this.deleteTexture(texture);
     this.fullIndices.buffer.destroy();
     for (const indices of this.patchIndexCache.values()) indices.buffer.destroy();
     this.patchIndexCache.clear();

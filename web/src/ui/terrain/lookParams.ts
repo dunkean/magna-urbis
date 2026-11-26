@@ -132,6 +132,7 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
   b.floats('uWaterSeason', 2, waterSeasonUniforms(look.v2Season, look.climateZone, look.v2Calendar));
   b.floats('uFreshWater', 4, lookFreshWater(look, water));
   b.floats('uWaterBed', 3, waterBed(look.climateZone));
+  b.vec4('uForestTrees', 0, 0, 0, look.treeOwners === 'stands' ? -1 : look.treeOwners ? -2 : 0);
   b.int('uGroundCapture', look.groundCapture ? 1 : 0);
   b.int('uNaturalWater', !light && look.waterLook === 'natural' ? 1 : 0);
   b.int('uNight', look.ambience === 'night' ? 1 : 0);

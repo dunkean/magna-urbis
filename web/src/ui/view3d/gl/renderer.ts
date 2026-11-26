@@ -39,6 +39,8 @@ export class GlTerrainRenderer {
   private clippedIndices = new Map<string, { buffer: WebGLBuffer; count: number }>();
   private empty!: WebGLTexture;
   private shoreRing?: { layer: object; revision: number; texture: WebGLTexture };
+  private treeOwners?: TerrainParts['trees']['owners'];
+  private ownerTexture?: WebGLTexture;
   private msaa?: Msaa;
   /** The drawing buffer refused the MSAA resolve (ANGLE Vulkan: alpha:false back buffer is not RGBA8): draw to it directly. */
   private msaaUnsupported = false;
@@ -57,6 +59,8 @@ export class GlTerrainRenderer {
   /** First steps of a new or restored context: limits, extensions and program caches. */
   restart(): void {
     const gl = this.gl;
+    this.ownerTexture = undefined;
+    this.treeOwners = undefined;
     this.msaa = undefined;
     this.context.maxFramebufferDimension = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE);
     this.instances.resetBillboards();
@@ -460,7 +464,20 @@ export class GlTerrainRenderer {
     bindLandDetail(gl, name => u(name), forest.landDetail, this.empty);
     gl.uniform1i(u('uPaperMap'), settings?.paperMap ? 1 : 0);
     gl.uniform4fv(u('uForestTrees'), trees.forestTreesUniform(frame));
-    bindForestBrushes(gl, name => u(name), !!settings?.forestBrushes, 5);
+    const owners = trees.shown() ? trees.owners : undefined;
+    if (owners) {
+      this.ownerTexture ??= gl.createTexture()!;
+      gl.activeTexture(gl.TEXTURE5);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.ownerTexture);
+      if (this.treeOwners !== owners) {
+        gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA8, 2 * owners.width, owners.height, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(owners.data.buffer));
+        this.treeOwners = owners;
+      }
+      gl.uniform1i(u('uForestBrushes'), 0);
+      gl.uniform1i(u('uForestBrushAtlas'), 5);
+    } else bindForestBrushes(gl, name => u(name), !!settings?.forestBrushes, 5);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(u('material'), 0);
     gl.uniform1i(u('previousMaterial'), 1);
@@ -499,6 +516,7 @@ export class GlTerrainRenderer {
     const gl = this.gl,
       { tiles, surface, cavern, forest } = this.parts;
     this.releaseMsaa();
+    this.gl.deleteTexture(this.ownerTexture ?? null);
     this.instances.dispose();
     for (const texture of tiles.raised.values()) this.deleteTexture(texture);
     tiles.raised.clear();

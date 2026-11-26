@@ -197,9 +197,9 @@ export class TerrainGl {
 
   /** Live ground tile (terrain/gl/worldTiles.ts). The canvas then holds the tile: the fallback presentation is
    * invalidated, and the fallback display redraws before it reads the canvas. */
-  renderWorldTile(box: Rect4, px: number): TexImageSource | undefined {
+  renderWorldTile(box: Rect4, px: number, treeOwners?: TerrainLook['treeOwners']): TexImageSource | undefined {
     if (this.disposed) return undefined;
-    return this.parts.tiles.render(this.look, box, px, look => this.lookLinked(look));
+    return this.parts.tiles.render(treeOwners && this.look ? { ...this.look, treeOwners } : this.look, box, px, look => this.lookLinked(look));
   }
   /** Changes whenever renderWorldTile would draw other pixels (inputs, a linked program, the style pixel ratio). */
   contentRevision(): number {

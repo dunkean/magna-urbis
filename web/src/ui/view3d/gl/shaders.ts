@@ -156,6 +156,7 @@ out vec4 color;
 ${mapWaterGlsl}
 ${RAISED_MATERIAL_GLSL}
 ${GROUND_COVER_WATER_GLSL}
+#define PERSPECTIVE_TREE_OWNERS
 ${FOREST_PRELUDE_GLSL}
 float forestWaterCoverage(vec2 p){
   if(surfaceGroundWaterCached&&all(equal(p,surfaceGroundWaterPoint)))return surfaceGroundWaterSample;

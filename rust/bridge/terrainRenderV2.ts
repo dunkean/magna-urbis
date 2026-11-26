@@ -170,7 +170,7 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
   v2WinterFresh=v2WinterFreeze(v2WinterClimate(s.x,0.));
   if(uForest==1){vec4 f=forestField(world,0.);e.woody=f.r;e.height=f.g*50.;e.needle=f.b;e.leaf=mix(e.leaf,1.,e.needle);}
   // The zone's calendar sets leaf fall: a temperature proxy leaves oaks in leaf through a mild winter.
-  if(v2Zoned())e.leaf=mix(v2SeasonLeaf(),1.,e.needle);
+  if(v2Zoned())e.leaf=mix(forestLeaf(v2SeasonLeaf()),1.,e.needle*(1.-v2SeasonClimate().z));
   v2ZoneWet=0.;v2ZoneBare=0.;if(v2Zoned())v2ZoneEnv(e,s,world,tpi,footprint);
   // Riparian fringe: the open ground along a bank is lusher and greener than the land behind it (reeds, sedge, wet
   // grass), the green ribbon of a river in a dry zone: full on gentle reaches, gone in gorges, on rock and under snow,
@@ -254,8 +254,8 @@ GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 li
   // actual resolved crowns below retains its original material, not this mean.
   // Crowns carry the calendar's snow load, the mean of the resolved crowns (forestSnowLoad): laden boughs, rimed limbs.
   float frost=e.snow*forestSnowLoad(e.needle);
-  vec3 meanClosed=closed;
-  if(uQuality==0)meanClosed=closed*mix(vec3(1.),v2CanopyMeanRatio(closed,e.needle,light,light2,strength),1.-e.snow*(1.-e.needle));
+  vec3 meanClosed=forestWoodMean(closed,e.leaf);
+  if(uQuality==0)meanClosed*=mix(vec3(1.),v2CanopyMeanRatio(closed,e.needle,light,light2,strength),1.-e.snow*(1.-e.needle));
   closed=mix(closed,vec3(.72,.79,.77),frost);
   meanClosed=mix(meanClosed,vec3(.72,.79,.77),frost);
   // Legacy sediment is composed after the unresolved canopy. Resolved crowns
@@ -306,7 +306,7 @@ GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 li
     v2MeanLitter.albedo=forestFloorAlbedo(forestFloor(opened,st,1.-groundSmooth(8.,16.,T+6.)));
     v2MeanLitter.occlusion*=.72;
     vec3 bareGuide=baseClosed*v2Canopy(canopyPhase)/max(v2Canopy(leafOn),vec3(.02));
-    vec3 crownBare=forestCrownColor(st,bareGuide,st.needle,vec2(0.),0.);
+    vec3 crownBare=forestWoodMean(forestCrownColor(st,bareGuide,st.needle,vec2(0.),0.),e.leaf);
     vec3 crownMean=crownBare*mix(vec3(1.),v2CanopyMeanRatio(crownBare,st.needle,light,light2,strength),1.-e.snow*(1.-st.needle));
     v2MeanCrown.albedo=groundToLinear(forestSnowed(crownMean,e.snow*forestSnowLoad(st.needle)));
     v2MeanCrown.normal=v2MacroNormal;v2MeanCrown.roughness=.9;v2MeanCrown.occlusion=1.;

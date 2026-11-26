@@ -1,17 +1,19 @@
 /** Modelled world trees in view-independent blocks. Every distance draws ranges of the same shuffled array.
  * Detail and thinning follow the projected size of a stand tree in CSS pixels. */
-import { buildNearTreesSteps, TREE_BLOCK, TREE_STRIDE, type TreeInputs } from '../../ui/terrain3dTrees';
+import { buildNearTreesSteps, TREE_STRIDE, type TreeInputs } from '../../ui/terrain3dTrees';
 import type { TreeBuildings } from './treesBuildings';
 import type { TreeSamples } from './treesContent';
 
 /** Side of a block of trees (m): a multiple of the builder's own block. About 600 trees in a dense stand. */
-export const TREES_BLOCK = 4 * TREE_BLOCK;
+import { TREE_VOLUME_BLOCK as TREES_BLOCK } from '../../../../rust/bridge/treeOwnership';
+export { TREES_BLOCK };
 /** Height of the tree a block's screen size is measured with (m): a typical stand tree. */
 export const TREE_SIZE_M = 15;
 /** A block has one stable instance order for all distances and detail levels. */
 export interface TreeBlock {
   data: Float32Array;
   count: number;
+  ids?: Uint32Array;
   samples: TreeSamples;
 }
 
@@ -21,8 +23,10 @@ export function* treeBlockSteps(inputs: TreeInputs, bx: number, by: number, buil
     minY = by * TREES_BLOCK;
   const water: number[] = [],
     height: number[] = [];
+  const emitted: number[] = [];
   const observed: TreeInputs = {
     ...inputs,
+    emittedId: id => emitted.push(id),
     water: (x, y) => {
       const value = inputs.water(x, y);
       water.push(x, y, value);
@@ -39,10 +43,12 @@ export function* treeBlockSteps(inputs: TreeInputs, bx: number, by: number, buil
   for (let i = 0; i < trees.length; i += TREE_STRIDE) {
     if (buildings && !buildings.keeps(trees[i], trees[i + 1], trees[i + 3])) continue;
     const to = count++ * TREE_STRIDE;
+    emitted[to / TREE_STRIDE] = emitted[i / TREE_STRIDE];
     if (to !== i) trees.copyWithin(to, i, i + TREE_STRIDE);
     trees[to] -= minX;
     trees[to + 1] -= minY;
   }
+  const ids = Uint32Array.from(emitted.slice(0, count));
   const data = trees.subarray(0, count * TREE_STRIDE);
   // Shuffle once. All levels and all density changes address ranges of this same array.
   let state = Math.imul(bx, 0x9e3779b1) ^ Math.imul(by, 0x85ebca77) ^ 0x2545f491 || 1;
@@ -51,13 +57,16 @@ export function* treeBlockSteps(inputs: TreeInputs, bx: number, by: number, buil
     state ^= state >>> 17;
     state ^= state << 5;
     const j = (state >>> 0) % (i + 1);
+    const id = ids[i];
+    ids[i] = ids[j];
+    ids[j] = id;
     for (let k = 0; k < TREE_STRIDE; k++) {
       const value = data[i * TREE_STRIDE + k];
       data[i * TREE_STRIDE + k] = data[j * TREE_STRIDE + k];
       data[j * TREE_STRIDE + k] = value;
     }
   }
-  return { data, count, samples: { water: Float64Array.from(water), height: Float64Array.from(height) } };
+  return { data, count, ids, samples: { water: Float64Array.from(water), height: Float64Array.from(height) } };
 }
 
 const transition = (pixels: number, start: number, end: number): number => {

@@ -1,10 +1,9 @@
+import { TREE_CELL_BLOCK, TREE_OWNER_GLSL } from '../../../rust/bridge/treeOwnership';
 import { BARE_LIMBS_GLSL } from '../../../rust/bridge/bareTree';
 /** Satellite 3D near trees: low-poly instanced trees standing on the crowns the ground shader paints
  * (rust/bridge/terrainForest.ts, forestCrown). The placement below is a CPU port of forestCrown on the same
- * hash, lattices, field, occupation, bank and beach rasters, so each tree stands on its painted crown; the
- * painted crown under a tree turns into its ground shade (uForestTrees in FOREST_PRELUDE_GLSL). Only crowns
- * within the render distance of the eye are built; trees grow out of their painted crown between 2/3 of it and it,
- * so the far view stays exactly the painted forest. Placement and radius follow the painted crown; height and crown
+ * hash, lattices, field and occupation. The ground keeps the painted crown until its matching instance is
+ * uploaded and within range. Instances take over at a stable, tree-specific distance. Height and crown
  * form follow the tree's social class in its stand and its biome (terrainForestStature.ts, treeForm), with rare giants. Colours follow the crown palette approximately (season,
  * autumn hues, leaf fall, snow load from a climate proxy): the painted crown keeps the exact Render colour. Display only. */
 import { ForestClearingRoom } from '../render/forestClearance';
@@ -56,7 +55,7 @@ export function treeLimits(distance: number): TreeLimits {
 /** Soft upper bound: ~x for small x, never above `cap` (natural variation survives, no pile of identical stands). */
 const softCap = (x: number, cap: number): number => cap * Math.tanh(x / cap);
 /** Side of the blocks a stream visits (m): a crown belongs to the block that holds its centre. */
-export const TREE_BLOCK = 24;
+export const TREE_BLOCK = TREE_CELL_BLOCK;
 /** World blocks between two partial installs of a stream that is still being built (nearest blocks first). */
 const PARTIAL_BLOCKS = 96;
 /** Lathe of one tree: 10 segments around (even, for the alternating conifer bough tips), 8 bands between 9 rings: three
@@ -68,6 +67,8 @@ export const TREE_VERTICES = SEGMENTS * BANDS * 6;
 export const TREE_STRIDE = 12;
 
 export interface TreeInputs {
+  /** Retain the procedural crown ID in emission order for the terrain hand-off. */
+  emittedId?(id: number): void;
   field: ForestField;
   occupation?: ForestOccupation;
   seed: number;
@@ -541,7 +542,8 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
         let c = [mix(0.25, 0.22, summer) * tone, mix(0.34, 0.37, summer) * tone, mix(0.15, 0.16, summer) * tone];
         c = c.map((v, k) => mix(mix(v, [0.47, 0.34, 0.12][k], fall), [0.31, 0.27, 0.23][k] * (0.85 + 0.3 * tint), 1 - fruitLeaf));
         // Standard fruit trees: a 2.4-2.9 m stem under the crown (crown 60 % of the height).
-        emit(x, y, z, radius, height, 0.6 * height, 0, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], (fruitLeaf < 0.5 ? 1 : 0) + snowLoad(false));
+        inputs.emittedId?.(h2);
+        emit(x, y, z, radius, height, 0.6 * height, 0, tint * 6.2831853, c[0], c[1], c[2], (fruitLeaf < 0.5 ? 1 : 0) + snowLoad(false));
         if (count >= cap) return out.slice(0, count);
       }
     }
@@ -685,7 +687,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           if (!alive || inputs.water(cx, cy) >= (inputs.renderV2 > 0 ? 0.05 : 0.5)) continue;
           if (inputs.renderV2 > 0 && u8(forestHash(i, j, level * 2 + 37, crownSeed), 0) < beachAt(cx, cy)) continue;
           const isNeedle = u8(h2, 8) < needle,
-            larch = isNeedle && u8(Math.imul(h, 0x27d4eb2d) >>> 0, 16) < larchShare;
+            larch = isNeedle && u8(Math.imul(h2, 0x27d4eb2d) >>> 0, 16) < larchShare;
           // Social class and giants, as forestCrown paints them (forestSocial, forestGiant): margins are stand gaps,
           // wood edges within 2.5 radii and bank galleries; giants grow in old-growth cores, landmark trees in meadows.
           const margin = Math.max(edge, open > -1e3 ? 1 - sstep(0, 2.5 * radius, -open) : 0, riparian ? 0.6 : 0),
@@ -765,7 +767,8 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
             }
             if (overlaps) continue;
           }
-          emit(cx, cy, z, width, tree, crown, form.shape, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], ((!isNeedle || larch) && leaf < 0.5 ? 1 : 0) + snowLoad(isNeedle));
+          inputs.emittedId?.(h2);
+          emit(cx, cy, z, width, tree, crown, form.shape, tint * 6.2831853, c[0], c[1], c[2], ((!isNeedle || larch) && leaf < 0.5 ? 1 : 0) + snowLoad(isNeedle));
           if (count >= cap) return out.slice(0, count);
         }
     }
@@ -808,13 +811,13 @@ out float treeLevel;
 out vec4 crownChart;
 out vec4 crownInfo;
 ${BARE_LIMBS_GLSL}
+${TREE_OWNER_GLSL}
 ${TREE_PROFILE_GLSL}void main(){
   int v=int(gl_VertexID),quad=v/6,corner=v-quad*6;
   int band=quad/${SEGMENTS},seg=quad-band*${SEGMENTS};
   int dseg=corner==1||corner==2||corner==4?1:0,dring=corner==2||corner==4||corner==5?1:0;
   int ring=band+dring;
-  float fade=1.-smoothstep(treeFade.z,treeFade.w,distance(treeBase.xy,treeFade.xy));
-  if(fade<=0.){gl_Position=vec4(2.,2.,2.,1.);world=vec3(0.);treeNormal=vec3(0.,1.,0.);tint=vec3(0.);treeLevel=0.;crownChart=vec4(0.);crownInfo=vec4(0.,1.,0.,0.);return;}
+  if(!treeInVolume(treeBase.xy,treeShape.w/6.2831853,treeFade)){gl_Position=vec4(2.,2.,2.,1.);world=vec3(0.);treeNormal=vec3(0.,1.,0.);tint=vec3(0.);treeLevel=0.;crownChart=vec4(0.);crownInfo=vec4(0.,1.,0.,0.);return;}
   // Form (instance z): 0 broadleaf, 1 conifer spire, 2 broadleaf parasol, 3 conifer parasol (umbrella pine).
   int form=int(treeShape.z+.5);bool needle=form==1||form==3,parasol=form>=2,spire=form==1;
   // The instance carries the crown length (live crown ratio times height, buildNearTreesSteps): the crown base.
@@ -829,9 +832,9 @@ ${TREE_PROFILE_GLSL}void main(){
     vec2 dir=vec2(cos(angle),sin(angle));
     mat2 turn=mat2(cos(treeShape.w),sin(treeShape.w),-sin(treeShape.w),cos(treeShape.w));
     vec2 local=turn*(joint.xz+joint.w*dir)*r;
-    world=foot+vec3(local.x,joint.y*h*fade,local.y);
+    world=foot+vec3(local.x,joint.y*h,local.y);
     treeNormal=normalize(vec3((turn*dir).x,.45,(turn*dir).y));
-    tint=vec3(.24,.19,.14);treeLevel=joint.y;crownChart=vec4(0.);
+    tint=vec3(.26,.235,.21);treeLevel=joint.y;crownChart=vec4(0.);
     crownInfo=vec4(0.,1.,fract(treeColor.w)*joint.y,0.);
     gl_Position=matrix*vec4(world,1.);return;
   }
@@ -865,7 +868,7 @@ ${TREE_PROFILE_GLSL}void main(){
     // Leafless broadleaves keep a narrower, sparser outline; leafy ones get lumps.
     else radius*=(1.+.13*sin(3.*angle+2.*treeShape.w)*(1.-abs(u-.5)*1.4))*(!needle&&treeColor.w>.5?.8:1.);
   }
-  vec3 local=vec3(dir.x*radius,y*fade,dir.y*radius);
+  vec3 local=vec3(dir.x*radius,y,dir.y*radius);
   if(ring<3)treeNormal=vec3(dir.x,0.,dir.y);
   else if(spire)treeNormal=normalize(vec3(dir*(h-bottom),r).xzy);
   else {float mid=bottom+(parasol?.72:.4)*(h-bottom),hd=max(.55*(h-bottom),.1);treeNormal=normalize(vec3(local.x/(r*r),(y-mid)/(hd*hd),local.z/(r*r)));}
@@ -906,7 +909,9 @@ void main(){
   // Leaf clumps of the painted crowns (applyForest): same metric scale, strength, rim weighting and fade with the
   // footprint; nothing once the crown spans under a few pixels. Needles carry a weak albedo grain and no relief.
   if(foliage>0.&&r>2.5*fp){
-    vec3 clump=forestClump(crownChart.xy,r,fp,crownChart.z);
+    float angle=crownChart.z*6.2831853;
+    mat2 turn=mat2(cos(angle),sin(angle),-sin(angle),cos(angle));
+    vec3 clump=forestClump(turn*crownChart.xy,r,fp,crownChart.z);
     float detail=foliage*(crownInfo.x>.5?.3:1.)*mix(.55,1.,crownInfo.w);
     albedo*=1.+.3*detail*clump.x;
     // Snow gathers on the clumps and leaves the gaps dark, as on the painted crowns.
@@ -915,7 +920,7 @@ void main(){
       // Clump relief in the chart, laid on the surface: radial chart axis along the meridian, the other around it.
       float len=length(crownChart.xy);vec2 d=len>1e-4?crownChart.xy/len:vec2(1.,0.);
       vec3 across=vec3(-d.y,0.,d.x),down=cross(n,across);
-      vec2 g=clump.yz;
+      vec2 g=transpose(turn)*clump.yz;
       n=normalize(n-detail*(dot(g,d)*down+dot(g,vec2(-d.y,d.x))*across));
     }
   }

@@ -101,6 +101,7 @@ interface Tile {
   iy: number;
   slot: number;
   generation: number;
+  treeOwner: number;
   shownAt: number;
   used: number;
 }
@@ -304,12 +305,34 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     for (let a = tier - 1; a >= 0; a--) if (tiles.has(tileKey(a, ix >> (tier - a), iy >> (tier - a)))) return true;
     return false;
   }
-  const needs = (tier: number, ix: number, iy: number): boolean => tiles.get(tileKey(tier, ix, iy))?.generation !== generation;
+  let selection: ReturnType<NonNullable<LiveGroundOptions['treeSelection']>>,
+    selectionRevision = -1;
+  function syncRegion(frame: LiveFrame): void {
+    const next = options.treeSelection?.(frame),
+      revision = next?.revision ?? -1;
+    if (next === selection && revision === selectionRevision) return;
+    selection = next;
+    selectionRevision = revision;
+    tileRevision++;
+  }
+  function treeOwner(tier: number, ix: number, iy: number): number {
+    if (!selection) return 0;
+    const size = gridSize / 2 ** tier;
+    if (size / TILE >= 40) return 0;
+    // A stand-only ancestor remains valid while the selected instance ranges change.
+    if (tier === 0) return -1;
+    return selection.stamp(ix * size, iy * size, size, 32 + (GUTTER * size) / TILE);
+  }
+  const matchesRegion = (tile: Tile): boolean => tile.treeOwner === treeOwner(tile.tier, tile.ix, tile.iy);
+  const needs = (tier: number, ix: number, iy: number): boolean => {
+    const tile = tiles.get(tileKey(tier, ix, iy));
+    return !tile || tile.generation !== generation || !matchesRegion(tile);
+  };
   /** Tier 0 holds the current look: the whole map can be shown in it. */
   const lookBaked = (): boolean => (tiles.get(0)?.generation ?? -1) >= lookGeneration;
   /** The generation from which tiles may be drawn by this frame. */
   const drawFloor = (): number => (shownFrom = lookBaked() ? lookGeneration : -1);
-  const drawable = (tile: Tile): boolean => tile.generation >= shownFrom;
+  const drawable = (tile: Tile): boolean => tile.generation >= shownFrom && matchesRegion(tile);
 
   /** The tile needing a bake nearest to (cx, cy) (distance from its centre: the picture refines from the centre of the
    * view outwards, in rings, never in rows or columns), within the world rectangle grown by `pad` tiles. */
@@ -458,7 +481,8 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       y = iy * ts;
     const box: Rect4 = { minX: x - g, minY: y - g, maxX: x + ts + g, maxY: y + ts + g };
     // Render first: a refused render must not cost an eviction.
-    const source = renderer.renderWorldTile(box, RENDER);
+    const owner = treeOwner(tier, ix, iy);
+    const source = renderer.renderWorldTile(box, RENDER, owner === -1 ? 'stands' : owner ? selection?.image() : undefined);
     if (!source) return 'blocked';
     const size = source as { width?: number; height?: number };
     if (size.width !== RENDER || size.height !== RENDER) return 'blocked';
@@ -484,7 +508,8 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       // Replaced in place: no fade over its stale self; a tile of another look was not drawn, it fades in over its ancestor.
       if (existing.generation < lookGeneration) existing.shownAt = tier > 0 ? performance.now() : -Infinity;
       existing.generation = generation;
-    } else tiles.set(key, { tier, ix, iy, slot, generation, used: stamp, shownAt: hasBakedAncestor(tier, ix, iy) ? performance.now() : -Infinity });
+      existing.treeOwner = owner;
+    } else tiles.set(key, { tier, ix, iy, slot, generation, treeOwner: owner, used: stamp, shownAt: hasBakedAncestor(tier, ix, iy) ? performance.now() : -Infinity });
     tileRevision++;
     return 'ok';
   }
@@ -579,10 +604,11 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     tilts: true,
 
     ready(frame: LiveFrame): boolean {
+      syncRegion(frame);
       // Tier 0 covers the whole map (any generation: stale tiles stay on screen); the paper covers the rest.
       // After a look switch, tier 0 of the new look first: until then the page keeps its last picture whole rather than
       // show the old look's tiles under the new look's other layers.
-      return !!state && gridSize > 0 && options.mapSize() === gridSize && tiles.has(0) && frame.width > 0 && (lookBaked() || performance.now() - lookAt > LOOK_HOLD_MS);
+      return !!state && gridSize > 0 && options.mapSize() === gridSize && tiles.has(0) && matchesRegion(tiles.get(0)!) && frame.width > 0 && (lookBaked() || performance.now() - lookAt > LOOK_HOLD_MS);
     },
 
     /** The tiles are the ground: a finer tile that arrives refines this picture, no other renderer replaces it. */
@@ -592,6 +618,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       const s = state;
       if (!s) return;
       const started = performance.now();
+      syncRegion(frame);
       light = frame.quality === 'light';
       if (frame.camera.tilted) {
         draped ??= new DrapedGround(gl, drapeTiles);
@@ -714,6 +741,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       const s = ensure();
       if (!s) return false;
       if (size !== gridSize) resetTiles(size);
+      if (frame) syncRegion(frame);
       // A tilted frame shows up to 134 tiles of several tiers (tests/world.drapeBudget.test.ts) whatever the quality:
       // the light budget (96 tiles) would evict, as the camera moves, tiles a few frames from being shown again.
       if (frame) maxPages = pagesFor(frame.camera.tilted ? 'full' : frame.quality);

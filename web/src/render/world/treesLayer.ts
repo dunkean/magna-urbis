@@ -13,6 +13,7 @@ import { TREES_BLOCK, TREE_SIZE_M, treeBlockSteps, treeCloseShare, treeDrawShare
 import { bareTreeMesh, bareMiddleMesh, bareDistantMesh } from '../../../../rust/bridge/bareTree';
 import { SATELLITE_TREES, TREE_MESHES, WORLD_TREE_FS, WORLD_TREE_VS, type TreePalette } from './treesShader';
 import { TREE_MAX_BLOCKS, treeMemoryBudget, treeTriangleBudget } from './treesRange';
+import { TreeSelection } from './treeSelection';
 import { TreeCoverage } from './treesVisibility';
 import { VOLUME_LIGHT, ViewVolume, hazeDistance, startVolumeProgram, volumeProgramLinked, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
 
@@ -40,6 +41,7 @@ export interface WorldTreesOptions {
   invalidate(): void;
 }
 export interface WorldTreesLayer extends VolumeLayer {
+  selection(frame: LiveFrame): TreeSelection | undefined;
   /** This view still owes a streamed block or the end of its on-screen fade. */
   pendingPresentation(): boolean;
 }
@@ -70,6 +72,8 @@ interface Slot {
   /** The footprints its trees keep off (TreeBuildings.blockKey). */
   town: number;
   samples: TreeSamples;
+  admitted?: number;
+  ids?: Uint32Array;
   barePrefix?: Uint32Array;
   vao?: WebGLVertexArrayObject;
   buffer?: WebGLBuffer;
@@ -99,6 +103,8 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
   const diagnostics = layerDiagnosticsEnabled() ? new TreeDiagnostics(stats) : undefined;
   const volume = new ViewVolume();
   const coverage = new TreeCoverage();
+  const selected = new TreeSelection();
+  let preparedAt = NaN;
   const slots = new Map<number, Slot>();
   const wantKey = new Float64Array(TREE_MAX_BLOCKS),
     wantPriority = new Float64Array(TREE_MAX_BLOCKS);
@@ -190,6 +196,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
         checked: revision,
         town: buildings?.blockKey(key % 65536, Math.floor(key / 65536)) ?? 0,
         samples: block.samples,
+        ids: block.ids,
         count,
         bytes: data.byteLength,
         used: tick,
@@ -220,13 +227,15 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       // A stable partition keeps each original LOD range selectable with two instance ranges.
       let ordered = data;
       let bareCount = 0;
-      for (let i = 11; i < data.length; i += TREE_STRIDE) if (data[i] > .5) bareCount++;
+      for (let i = 11; i < data.length; i += TREE_STRIDE) if (data[i] > 0.5) bareCount++;
       if (bareCount) {
         const prefix = new Uint32Array(count + 1);
         ordered = new Float32Array(data.length);
-        let leafy = 0, bare = count - bareCount;
+        let leafy = 0,
+          bare = count - bareCount;
         for (let i = 0; i < count; i++) {
-          const start = i * TREE_STRIDE, leafless = data[start + 11] > .5;
+          const start = i * TREE_STRIDE,
+            leafless = data[start + 11] > 0.5;
           prefix[i + 1] = prefix[i] + Number(leafless);
           const to = leafless ? bare++ : leafy++;
           ordered.set(data.subarray(start, start + TREE_STRIDE), to * TREE_STRIDE);
@@ -289,10 +298,130 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     return pending;
   };
 
+  function prepare(frame: LiveFrame): TreeSelection | undefined {
+    if (frame.now !== undefined && frame.now === preparedAt) return visibleCount ? selected : undefined;
+    preparedAt = frame.now;
+    selected.begin();
+    visibleCount = 0;
+    const camera = frame.camera,
+      standing = volumesDrawn(camera) && options.shown();
+    tick++;
+    diagnostics?.selection();
+    if (standing) sync();
+    const relief = heights;
+    const opacity = standing && relief ? coverage.opacity(frame, relief, options.distance()) : 0;
+    stats.opacity = opacity;
+    presentationPending = opacity > 0 && !!inputs && !program;
+    if (opacity > 0 && relief && inputs && program) {
+      if (options.distance() !== distance) {
+        distance = options.distance();
+        limits = treeLimits(distance);
+      }
+      const tx = camera.target[0],
+        ty = camera.target[1],
+        tz = camera.target[2],
+        // The eye's ground point: the trees in front of it are the ones the user stands among when the camera is low.
+        gx = camera.eye[0],
+        gy = camera.eye[1],
+        rise = camera.rise,
+        drawnPerMetre = relief.exaggeration * rise,
+        far = limits.far,
+        // CSS pixels per metre at a depth of one metre, and the closest depth a block is measured at.
+        focal = camera.focal / frame.dpr,
+        closest = Math.max(camera.near, 0.5),
+        streamRadius = Math.hypot(TREES_BLOCK * 0.71 + 16, 80 * rise);
+      wanted = 0;
+      visibleCount = 0;
+      volume.set(camera);
+      let demand = 0;
+      const last = Math.ceil(relief.width / TREES_BLOCK) - 1,
+        bx0 = Math.max(0, Math.floor((Math.min(tx, gx) - far) / TREES_BLOCK)),
+        bx1 = Math.min(last, Math.floor((Math.max(tx, gx) + far) / TREES_BLOCK)),
+        by0 = Math.max(0, Math.floor((Math.min(ty, gy) - far) / TREES_BLOCK)),
+        by1 = Math.min(last, Math.floor((Math.max(ty, gy) + far) / TREES_BLOCK));
+      for (let by = by0; by <= by1; by++)
+        for (let bx = bx0; bx <= bx1; bx++) {
+          const minX = bx * TREES_BLOCK,
+            minY = by * TREES_BLOCK;
+          // Within the tree distance of the target or of the eye's ground point, horizontally.
+          if (Math.min(gapTo(minX, minY, tx, ty), gapTo(minX, minY, gx, gy)) > far) continue;
+          const key = by * 65536 + bx,
+            slot = slots.get(key),
+            centreX = minX + TREES_BLOCK / 2,
+            centreY = minY + TREES_BLOCK / 2,
+            x = centreX - tx,
+            y = centreY - ty,
+            z = (slot?.centreRevision === reliefRevision ? slot.centreHeight : relief.heightAt(centreX, centreY)) * rise - tz;
+          if (!volume.sees(x, y, z, streamRadius)) continue;
+          const depth = volume.depth(x, y, z),
+            pixels = (TREE_SIZE_M * focal) / Math.max(depth, closest),
+            density = treeDrawShare(pixels),
+            solidShare = treeSolidShare(pixels),
+            closeShare = treeCloseShare(pixels);
+          if (!density) continue;
+          // Reserve once from the view, including empty and unbuilt blocks.
+          // The local mesh cost gives near, solid crowns most of the budget.
+          const weight = density * (TRIANGLES[2] + solidShare * (TRIANGLES[1] - TRIANGLES[2]) + closeShare * (TRIANGLES[0] - TRIANGLES[1])) * (0.7 + 0.3 * solidShare);
+          demand += weight;
+          let retired = false;
+          if (!slot || slot.checked !== revision) {
+            retired = !!slot && !!buildings && slot.town !== buildings.blockKey(bx, by);
+            if (wanted < TREE_MAX_BLOCKS) {
+              wantKey[wanted] = key;
+              wantPriority[wanted++] = retired ? depth - RETIRED_FIRST : depth;
+            }
+            if (!slot) continue;
+          }
+          // Keep the same candidates in memory even if their finely bounded
+          // geometry is just off screen, so work cannot evict and rebuild it.
+          slot.used = tick;
+          if (retired) continue;
+          if (!slot.count || visibleCount >= TREE_MAX_BLOCKS) continue;
+          const low = slot.low * drawnPerMetre,
+            high = slot.high * drawnPerMetre + slot.top * rise,
+            centre = (low + high) / 2 - tz,
+            radius = Math.hypot(TREES_BLOCK * 0.71 + slot.radius * 1.25, (high - low) / 2);
+          if (!volume.sees(x, y, centre, radius)) continue;
+          const all = Math.round(slot.count * density);
+          if (!all) continue;
+          visible[visibleCount] = slot;
+          visibleKey[visibleCount] = key;
+          visibleAll[visibleCount] = all;
+          visibleSolid[visibleCount] = Math.round(all * solidShare);
+          visibleClose[visibleCount] = Math.round(all * closeShare);
+          visibleWeight[visibleCount++] = weight;
+        }
+      visible.length = visibleCount;
+      presentationPending = wanted > 0;
+      const trianglesPerWeight = treeTriangleBudget(far) / Math.max(demand, 1e-6);
+      for (let i = 0; i < visibleCount; i++) {
+        const base = visibleAll[i] * TRIANGLES[2],
+          extra = visibleSolid[i] * (TRIANGLES[1] - TRIANGLES[2]) + visibleClose[i] * (TRIANGLES[0] - TRIANGLES[1]),
+          // Reduce the density of each tier together under pressure, so a
+          // resolved crown never becomes a billboard just to save triangles.
+          share = Math.min(1, (visibleWeight[i] * trianglesPerWeight) / (base + extra)),
+          limit = Math.floor(visibleAll[i] * share),
+          previous = visible[i].admitted ?? 0,
+          // Small camera movements should not rebake a tile to add a single tree.
+          all = previous > 0 && previous <= limit && limit < previous * 1.12 ? previous : limit,
+          solid = Math.floor(visibleSolid[i] * share),
+          close = Math.floor(visibleClose[i] * share);
+        visible[i].admitted = visibleAll[i] = all;
+        visibleSolid[i] = Math.min(all, solid);
+        visibleClose[i] = Math.min(all, close);
+        const ids = visible[i].ids;
+        if (ids) selected.select(visibleKey[i], ids, all);
+      }
+    } else wanted = 0;
+    selected.end();
+    return visibleCount ? selected : undefined;
+  }
+
   return {
     name: 'trees',
     tilts: true,
     tiltOnly: true,
+    selection: prepare,
     ready: () => true,
     pendingPresentation: () => presentationPending && options.shown(),
     work(budgetMs, frame) {
@@ -347,99 +476,21 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       return slice(started, evict(started + budgetMs));
     },
     draw(frame: LiveFrame) {
-      const started = performance.now(),
-        camera = frame.camera,
-        standing = volumesDrawn(camera) && options.shown();
-      tick++;
+      const started = performance.now();
+      prepare(frame);
       stats.drawCalls = stats.triangles = stats.instances = 0;
-      diagnostics?.selection();
-      if (standing) sync();
-      const relief = heights;
-      const opacity = standing && relief ? coverage.opacity(frame, relief, options.distance()) : 0;
-      stats.opacity = opacity;
-      presentationPending = opacity > 0 && !!inputs && !program;
-      if (opacity > 0 && relief && inputs && program) {
-        if (options.distance() !== distance) {
-          distance = options.distance();
-          limits = treeLimits(distance);
-        }
+      const camera = frame.camera,
+        relief = heights,
+        opacity = stats.opacity ?? 0;
+      if (relief && program) {
         const tx = camera.target[0],
           ty = camera.target[1],
           tz = camera.target[2],
-          // The eye's ground point: the trees in front of it are the ones the user stands among when the camera is low.
           gx = camera.eye[0],
           gy = camera.eye[1],
           rise = camera.rise,
           drawnPerMetre = relief.exaggeration * rise,
-          far = limits.far,
-          // CSS pixels per metre at a depth of one metre, and the closest depth a block is measured at.
-          focal = camera.focal / frame.dpr,
-          closest = Math.max(camera.near, 0.5),
-          streamRadius = Math.hypot(TREES_BLOCK * 0.71 + 16, 80 * rise);
-        wanted = 0;
-        visibleCount = 0;
-        volume.set(camera);
-        let demand = 0;
-        const last = Math.ceil(relief.width / TREES_BLOCK) - 1,
-          bx0 = Math.max(0, Math.floor((Math.min(tx, gx) - far) / TREES_BLOCK)),
-          bx1 = Math.min(last, Math.floor((Math.max(tx, gx) + far) / TREES_BLOCK)),
-          by0 = Math.max(0, Math.floor((Math.min(ty, gy) - far) / TREES_BLOCK)),
-          by1 = Math.min(last, Math.floor((Math.max(ty, gy) + far) / TREES_BLOCK));
-        for (let by = by0; by <= by1; by++)
-          for (let bx = bx0; bx <= bx1; bx++) {
-            const minX = bx * TREES_BLOCK,
-              minY = by * TREES_BLOCK;
-            // Within the tree distance of the target or of the eye's ground point, horizontally.
-            if (Math.min(gapTo(minX, minY, tx, ty), gapTo(minX, minY, gx, gy)) > far) continue;
-            const key = by * 65536 + bx,
-              slot = slots.get(key),
-              centreX = minX + TREES_BLOCK / 2,
-              centreY = minY + TREES_BLOCK / 2,
-              x = centreX - tx,
-              y = centreY - ty,
-              z = (slot?.centreRevision === reliefRevision ? slot.centreHeight : relief.heightAt(centreX, centreY)) * rise - tz;
-            if (!volume.sees(x, y, z, streamRadius)) continue;
-            const depth = volume.depth(x, y, z),
-              pixels = (TREE_SIZE_M * focal) / Math.max(depth, closest),
-              density = treeDrawShare(pixels),
-              solidShare = treeSolidShare(pixels),
-              closeShare = treeCloseShare(pixels);
-            if (!density) continue;
-            // Reserve once from the view, including empty and unbuilt blocks.
-            // The local mesh cost gives near, solid crowns most of the budget.
-            const weight = density * (TRIANGLES[2] + solidShare * (TRIANGLES[1] - TRIANGLES[2]) + closeShare * (TRIANGLES[0] - TRIANGLES[1])) * (0.7 + 0.3 * solidShare);
-            demand += weight;
-            let retired = false;
-            if (!slot || slot.checked !== revision) {
-              retired = !!slot && !!buildings && slot.town !== buildings.blockKey(bx, by);
-              if (wanted < TREE_MAX_BLOCKS) {
-                wantKey[wanted] = key;
-                wantPriority[wanted++] = retired ? depth - RETIRED_FIRST : depth;
-              }
-              if (!slot) continue;
-            }
-            // Keep the same candidates in memory even if their finely bounded
-            // geometry is just off screen, so work cannot evict and rebuild it.
-            slot.used = tick;
-            if (retired) continue;
-            if (!slot.count || visibleCount >= TREE_MAX_BLOCKS) continue;
-            const low = slot.low * drawnPerMetre,
-              high = slot.high * drawnPerMetre + slot.top * rise,
-              centre = (low + high) / 2 - tz,
-              radius = Math.hypot(TREES_BLOCK * 0.71 + slot.radius * 1.25, (high - low) / 2);
-            if (!volume.sees(x, y, centre, radius)) continue;
-            const all = Math.round(slot.count * density);
-            if (!all) continue;
-            visible[visibleCount] = slot;
-            visibleKey[visibleCount] = key;
-            visibleAll[visibleCount] = all;
-            visibleSolid[visibleCount] = Math.round(all * solidShare);
-            visibleClose[visibleCount] = Math.round(all * closeShare);
-            visibleWeight[visibleCount++] = weight;
-          }
-        visible.length = visibleCount;
-        presentationPending = wanted > 0;
-        const trianglesPerWeight = treeTriangleBudget(far) / Math.max(demand, 1e-6);
+          far = limits.far;
         if (visibleCount) {
           const u = program.u;
           gl.useProgram(program.program);
@@ -487,15 +538,10 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
               key = visibleKey[i],
               minX = (key % 65536) * TREES_BLOCK,
               minY = Math.floor(key / 65536) * TREES_BLOCK;
-            const base = visibleAll[i] * TRIANGLES[2],
-              extra = visibleSolid[i] * (TRIANGLES[1] - TRIANGLES[2]) + visibleClose[i] * (TRIANGLES[0] - TRIANGLES[1]),
-              // Reduce the density of each tier together under pressure, so a
-              // resolved crown never becomes a billboard just to save triangles.
-              share = Math.min(1, (visibleWeight[i] * trianglesPerWeight) / (base + extra)),
-              all = Math.floor(visibleAll[i] * share),
-              solid = Math.floor(visibleSolid[i] * share),
-              close = Math.floor(visibleClose[i] * share);
-            if (diagnostics) leastDensity = Math.min(leastDensity, all / visibleAll[i]);
+            const all = visibleAll[i],
+              solid = visibleSolid[i],
+              close = visibleClose[i];
+            if (diagnostics) leastDensity = Math.min(leastDensity, all / Math.max(slot.count, 1));
             if (!all) continue;
             const t = Math.min(1, Math.max(0, (started - slot.born) / STREAM_FADE_MS));
             if (t < 1) fading = true;
@@ -506,7 +552,8 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
               const end = level === 0 ? close : level === 1 ? solid : all;
               const prefix = slot.barePrefix;
               if (prefix) {
-                const lo = prefix[first], hi = prefix[end];
+                const lo = prefix[first],
+                  hi = prefix[end];
                 draw(slot, level, first - lo, end - first - (hi - lo));
                 draw(slot, BRANCH_LEVEL + level, slot.count - prefix[slot.count] + lo, hi - lo);
               } else draw(slot, level, first, end - first);

@@ -284,7 +284,16 @@ export class ComposedView {
       owners.ground = false;
       live.setLayer(
         'ground',
-        createLiveGroundLayer(gl, { renderer: () => ground.groundTiles(), mapSize: () => map.world?.mapSize ?? 1, paper: () => map.groundPaper, terrain: () => this.relief(), cave: this.volumes.cave, night: this.volumes.trees.night, invalidate: map.compose }),
+        createLiveGroundLayer(gl, {
+          renderer: () => ground.groundTiles(),
+          treeSelection: frame => this.trees?.selection(frame),
+          mapSize: () => map.world?.mapSize ?? 1,
+          paper: () => map.groundPaper,
+          terrain: () => this.relief(),
+          cave: this.volumes.cave,
+          night: this.volumes.trees.night,
+          invalidate: map.compose,
+        }),
       );
     }
     // The ground layer's work stops while it has no renderer to bake from: when one appears it is told, which also

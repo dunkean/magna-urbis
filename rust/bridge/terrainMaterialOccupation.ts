@@ -371,6 +371,7 @@ void applyPaperMap(inout GroundMaterial m,vec2 world,float footprint){
   open=mix(open,vec3(.33,.34,.16),shade*.9);
   forest=mix(mix(forest,vec3(.40,.39,.20),.75),forest,groundSmooth(.15,.9,share));
   vec3 p=mix(open,forest,wood);
+  p=mix(p,vec3(.26,.235,.21),v2BareInk);
   // Paper fibre, fixed to the sheet scale.
   p*=1.+.022*surfaceNoise(vec3(world/max(footprint*2.3,.4),0.),uMaterialSeed+1151u);
   m.albedo=groundToLinear(p);

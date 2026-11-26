@@ -221,10 +221,10 @@ export class TerrainGpu implements TerrainRenderer {
   }
 
   /** Live ground tile (terrain/gpu/worldTiles.ts). */
-  renderWorldTile(box: Rect4, px: number): TexImageSource | undefined {
-    if (this.fallback) return this.fallback.renderWorldTile(box, px);
+  renderWorldTile(box: Rect4, px: number, treeOwners?: TerrainLook['treeOwners']): TexImageSource | undefined {
+    if (this.fallback) return this.fallback.renderWorldTile(box, px, treeOwners);
     if (this.disposed || this.recovery.recovering) return undefined;
-    return this.parts.tiles.render(this.look, box, px, look => this.pipelines.created(look, this.parts.inputs.details.length > 0));
+    return this.parts.tiles.render(treeOwners && this.look ? { ...this.look, treeOwners } : this.look, box, px, look => this.pipelines.created(look, this.parts.inputs.details.length > 0));
   }
   /** Changes whenever renderWorldTile would draw other pixels (inputs, created pipelines, style pixel ratio, fall back). */
   contentRevision(): number {

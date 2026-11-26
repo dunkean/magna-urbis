@@ -12,7 +12,11 @@ import type { TerrainCameraRig } from './camera';
 import type { TerrainForest } from './forest';
 import type { TerrainSurface } from './surface';
 
+import { treeIdImage, TREE_VOLUME_BLOCK, type TreeIdImage } from '../../../../../rust/bridge/treeOwnership';
+
 export class NearTrees {
+  /** Admitted crown IDs and their root blocks, read on the unused brush atlas binding. */
+  owners?: TreeIdImage;
   /** Near trees on demand (the 3D view's "3D trees" switch). Off, nothing is built or drawn and the painted crowns
    * stay whole; a built stream is kept, so switching back on shows it at once. */
   enabled = false;
@@ -134,12 +138,24 @@ export class NearTrees {
     const view = { x, y, forwardX: frame.forward[0] / fl, forwardY: frame.forward[2] / fl, distance: this.distance, inView: this.inView(frame) };
     // Key cells are 40 m: masks within this radius of the stream's eye can reach a tree of this stream or the next.
     this.area = { x, y, r: treeLimits(this.distance).far + 60 };
+    const ids: number[] = [];
+    inputs.emittedId = id => ids.push(id);
+    const upload = (values: Float32Array): void => {
+      this.owners = treeIdImage(this.count, insert => {
+        for (let i = 0; i < this.count; i++) {
+          const offset = i * TREE_STRIDE;
+          const block = Math.floor(values[offset + 1] / TREE_VOLUME_BLOCK) * 65536 + Math.floor(values[offset] / TREE_VOLUME_BLOCK);
+          insert(ids[i], block);
+        }
+      });
+      this.resources.uploadTrees(values);
+    };
     const install = (values: Float32Array): void => {
       this.count = values.length / TREE_STRIDE;
       this.readyKey = key;
       this.complete = true;
       (globalThis as { magnaNearTrees?: number }).magnaNearTrees = this.count;
-      if (this.count) this.resources.uploadTrees(values);
+      if (this.count) upload(values);
     };
     // Capture uses the exact stream immediately, independent of a live queue's progress.
     if (context.fullQualityCapture) {
@@ -154,7 +170,7 @@ export class NearTrees {
       if (!current() || this.complete || values.length / TREE_STRIDE <= this.count) return;
       this.count = values.length / TREE_STRIDE;
       if (this.count) {
-        this.resources.uploadTrees(values);
+        upload(values);
         context.request();
       }
     };
