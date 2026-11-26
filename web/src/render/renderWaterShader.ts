@@ -111,16 +111,18 @@ void main() {
     color = freshWaterTone(color*(1.02-.15*deep));
     if(capsule)color=mix(color,vec3(.63,.74,.75),.34*max(0.,(regime.b-.30)/.70));
     if(pools<1.) {
-      float wash=riverNoise(world/61.);
-      float grain=riverNoise(world/4.7+vec2(3.2*wash,-1.7*wash));
-      // The dry capsule carries a signed-section scour. Raster banks use
-      // their resolved depth and local gravel patches instead.
-      float scour=capsule?deep:centre*smoothstep(.35,.68,wash);
-      float bar=smoothstep(.36,.78,.65*wash+.35*grain)*(1.-scour);
-      float detail=1.-smoothstep(1.,5.,uPx);
+      // Bend and rotate the sediment fields. Gravel lenses overlap at different
+      // scales so individual lattice cells never form squares across a broad bar.
+      vec2 q=vec2(dot(world,vec2(.83,.56)),dot(world,vec2(-.56,.83)));
+      float bend=riverNoise(world/38.);
+      float wash=riverNoise(q/53.+vec2(1.7,-.8)*bend);
+      float lens=riverNoise(vec2(q.x/21.,q.y/9.)+vec2(-2.3,1.6)*wash);
+      float fine=(riverNoise(world/2.1+vec2(1.8,-2.4)*lens)-.5)*(1.-smoothstep(.45,1.8,uPx));
+      float deposits=smoothstep(.19,.85,.65*wash+.35*lens);
+      float scour=(capsule?deep:centre)*(.24+.76*(1.-deposits));
       vec3 gravel=mix(uWaterBed,vec3(.66,.63,.56),.50);
-      vec3 bed=mix(gravel,uWaterBed*1.09,bar)*mix(1.,.72,scour)
-              +vec3(.10*(wash-.5)+.13*(grain-.5)*detail);
+      vec3 bed=mix(gravel,uWaterBed*1.07,deposits*(1.-.45*scour))*mix(1.,.76,scour)
+              +vec3(.055*(wash-.5)+.048*fine);
       // The satellite decodes exposed sediment by red minus blue before toning.
       bed.b=min(bed.b,bed.r-.155);
       color=mix(bed,color,pools);

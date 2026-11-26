@@ -149,7 +149,7 @@ export function widthRegimeSize(width: number, scale: number, r0: number): numbe
 /** Width of the running water inside a bed of width `width` (m) on this network: see `threadShare`. */
 export const threadWidth = (water: VectorWater, width: number): number => width * threadShare(runoffOf(water));
 /** Seasonal state per drawn vertex, from the absolute mean discharge of the course there (not its rank on the map). */
-function riverStates(water: VectorWater, geo: HeadwaterGeometry, climate: WaterClimate, _threshold: number, line?: RiverLine): RiverState[] {
+function riverStates(water: VectorWater, geo: DrawnCourse, climate: WaterClimate, _threshold: number, line?: RiverLine): RiverState[] {
   const scale = water.widthScale ?? water.rivers?.widthScale ?? 1,
     r0 = runoffOf(water);
   const p = geo.points,
@@ -157,7 +157,8 @@ function riverStates(water: VectorWater, geo: HeadwaterGeometry, climate: WaterC
     arc = new Float64Array(n);
   for (let i = 1; i < n; i++) arc[i] = arc[i - 1] + Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]);
   const out: RiverState[] = [];
-  for (let i = 0; i < n; i++) out.push(riverState(climate, widthRegimeSize(geo.widths[i], scale, r0)));
+  const bankfull = geo.bankfullWidths ?? geo.widths;
+  for (let i = 0; i < n; i++) out.push(riverState(climate, widthRegimeSize(bankfull[i], scale, r0)));
   // A course dries over a distance, not at a vertex: dryness is averaged over about 500 m of channel.
   if (climate.aridity > 0 && n > 2) {
     const dry = out.map(s => s.dry);
@@ -627,12 +628,38 @@ function headwaterSet(water: VectorWater, threshold: number): Set<RiverLine> {
 /** A drawn course and the index of its first vertex past the coastline (its vertex count when it ends on land). */
 export interface DrawnCourse extends HeadwaterGeometry {
   sea: number;
+  /** Hydraulic widths before the local spreading of a dry wash; used to infer discharge. */
+  bankfullWidths?: number[];
 }
 /** River line geometry as drawn: a genuine headwater emerges from zero width instead of starting as a full-width disc,
  * and a course that ends in the sea opens into its estuary (every style, 2D GPU ribbon, SVG ink and 3D water masks). */
 export function riverGeometry(water: VectorWater, line: RiverLine, thinner: number, riverAreaKm2: number): DrawnCourse {
   const widths = channelWidths(water, line, thinner);
-  return coastGeometry(water, line, terminalGeometry(water, line, estuaryGeometry(water, line, headwaterSet(water, riverAreaKm2 * 1e6).has(line) ? headwaterGeometry(line, widths) : { points: line.points, widths, level: line.level, kind: line.kind, reach: 0 })));
+  const course = coastGeometry(water, line, terminalGeometry(water, line, estuaryGeometry(water, line, headwaterSet(water, riverAreaKm2 * 1e6).has(line) ? headwaterGeometry(line, widths) : { points: line.points, widths, level: line.level, kind: line.kind, reach: 0 })));
+  const profile = dryBedProfile(water, line);
+  if (!profile || course.widths.length < 2) return course;
+  const shaped: DrawnCourse = { points: [], widths: [], kind: [], level: [], reach: course.reach, sea: 0 };
+  const bankfull: number[] = [];
+  const sample = (k: number, next: number, t: number): void => {
+    const x = course.points[2 * k] + t * (course.points[2 * next] - course.points[2 * k]);
+    const y = course.points[2 * k + 1] + t * (course.points[2 * next + 1] - course.points[2 * k + 1]);
+    const w = course.widths[k] + t * (course.widths[next] - course.widths[k]);
+    shaped.points.push(x, y);
+    shaped.widths.push(w * profile.factor(x, y));
+    shaped.level.push(course.level[k] + t * (course.level[next] - course.level[k]));
+    shaped.kind.push(course.kind[t === 1 ? next : k]);
+    bankfull.push(w);
+  };
+  sample(0, 0, 0);
+  for (let k = 1; k < course.widths.length; k++) {
+    if (k === course.sea) shaped.sea = shaped.widths.length;
+    const length = Math.hypot(course.points[2 * k] - course.points[2 * k - 2], course.points[2 * k + 1] - course.points[2 * k - 1]);
+    const steps = Math.min(48, Math.max(1, Math.ceil(length / profile.spacing)));
+    for (let j = 1; j <= steps; j++) sample(k - 1, k, j / steps);
+  }
+  if (course.sea === course.widths.length) shaped.sea = shaped.widths.length;
+  shaped.bankfullWidths = bankfull;
+  return shaped;
 }
 /** A course that ends inland on its own (no receiving course, sea, lake or map edge: a closed basin floor, or the water
  * budget drying it out) fans out into its sink: the channel narrows to a thread over its last stretch instead of
@@ -906,6 +933,23 @@ function estuaryGeometry(water: VectorWater, line: RiverLine, geo: HeadwaterGeom
   }
   return { points, widths, level, kind, reach: geo.reach };
 }
+/** Low-runoff beds alternate between constrictions and broad sediment fans.
+ * Two oblique fields in metres keep both banks continuous through bends and joins.
+ * Sample spacing follows the size of the course, independently of the camera. */
+function dryBedProfile(water: VectorWater, line: RiverLine) {
+  const strength = smoothstep(0.18, 0.78, 1 - threadShare(runoffOf(water)));
+  if (!strength || !line.area.length) return;
+  const trunk = channelWidth(line.area[line.area.length - 1], water.widthScale ?? water.rivers?.widthScale ?? 1);
+  const span = Math.max(32, 2.8 * trunk);
+  return {
+    spacing: span / 5,
+    factor(x: number, y: number) {
+      const broad = strandNoise(373, (0.83 * x + 0.56 * y) / span);
+      const bar = strandNoise(941, (-0.44 * x + 0.9 * y) / (0.57 * span));
+      return 1 + strength * (0.65 * broad + 0.3 * bar + 0.18 * broad * broad);
+    },
+  };
+}
 /** Hydraulic channel widths of a course, before its estuary. */
 function channelWidths(water: VectorWater, line: RiverLine, thinner: number): number[] {
   return line.area.map((a, i) => channelWidth(a / (line.threads?.[i] ?? 1), water.widthScale ?? water.rivers?.widthScale ?? 1) * (thinner ? 0.65 : 1));
@@ -924,6 +968,8 @@ export function riverWidths(water: VectorWater, line: RiverLine, thinner = 0): n
       if (i) t += Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]);
     }
   }
+  const profile = dryBedProfile(water, line);
+  if (profile) for (let k = 0; k < widths.length; k++) widths[k] *= profile.factor(p[2 * k], p[2 * k + 1]);
   return widths;
 }
 

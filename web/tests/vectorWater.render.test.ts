@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { lakeField, lakeSample } from '../src/ui/lakeGeometry';
 import { computeHydrology, waterBodies } from '../src/ui/simpleHydrology';
 import { vectorRivers, channelWidth, type RiverLine } from '../src/ui/riverVectors';
-import { ESTUARY_LENGTH, ESTUARY_PROFILE, ESTUARY_SEA, estuaryFlare, riverSegments, riverWidths, vectorWaterSvg, type WaterDisplay } from '../src/ui/vectorWaterRender';
+import { ESTUARY_LENGTH, ESTUARY_PROFILE, ESTUARY_SEA, estuaryFlare, riverGeometry, riverSegments, riverWidths, vectorWaterSvg, type WaterDisplay } from '../src/ui/vectorWaterRender';
 import type { VectorWater } from '../src/ui/vectorWater';
 import { computeVectorWater } from '../src/ui/vectorWater';
 import { waterBalance } from '../src/ui/waterBalance';
@@ -234,6 +234,17 @@ describe('continuous vector water', () => {
     expect(segments[8]).toBe(0);
     expect(segments[17]).toBeGreaterThan(0.4);
     expect(segments[26]).toBe(0);
+  });
+
+  it('varies the banks of a long dry reach even under constant discharge', async () => {
+    const source = await basin();
+    const line: RiverLine = { points: [1200, 3250, 2500, 3250, 4000, 3250], area: Array(3).fill(8e6), level: [5, 4, 3], kind: [0, 0, 0], joins: 0 };
+    const geometry = (r0: number) => riverGeometry({ ...source, runoff: { ...source.runoff!, r0 } }, line, 0, display.riverArea);
+    const dry = geometry(2), humid = geometry(300);
+    expect(new Set(humid.widths).size).toBe(1);
+    expect(dry.widths.length).toBeGreaterThan(line.area.length);
+    expect(Math.max(...dry.widths) / Math.min(...dry.widths)).toBeGreaterThan(1.7);
+    expect(new Set(dry.bankfullWidths)).toEqual(new Set(humid.widths));
   });
 
   it('lets the thread of a wide bed wander inside it and stops the bare bed at the coastline', async () => {

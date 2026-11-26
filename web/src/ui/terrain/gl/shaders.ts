@@ -827,15 +827,10 @@ void main() {
            *smoothstep(.4,2.,bank)*(1.-smoothstep(.45,2.,uPx));
     }
     if(vColor.r<.001){
-      // A signed cross-section gives a wadi one wandering scour, even when
-      // the running strand has disappeared. Both coordinates are in metres.
-      vec2 world=uOrigin+vP*uPx;
-      float halfWidth=max(mix(vHalf.x,vHalf.y,h),.5);
-      float side=dot(pa-ba*h,vec2(-ba.y,ba.x))/max(length(ba)*halfWidth,1.e-4);
-      float wander=riverNoise(world/57.)-.5;
-      float gravel=riverNoise(world/11.);
-      float scour=1.-smoothstep(.03,.32,abs(side-1.35*wander-.25*(gravel-.5)));
-      core=.30*scour;
+      // The radial distance includes each round cap. Adjacent reaches can MAX
+      // their interiors without projecting a different stripe across each join.
+      float halfWidth=max(mix(vHalf.x,vHalf.y,h)*uPx,uPx*.5);
+      core=.30*smoothstep(0.,max(.75*halfWidth,uPx),bank);
     }
     color.b=core+.70*glint;
   }

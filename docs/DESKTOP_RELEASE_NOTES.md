@@ -1,7 +1,7 @@
 ## Alpha 0.3.11
 
-- Satellite rivers grade from jade, glacial blue and tannin brown to iron-red silt across different climates and reaches. At flowing mouths, a plume widens and fades into the coastal shallows. Winter ice shows blue seams and frosted patches.
-- Dry washes show gravel bars and darker scour channels. Bank margins and seasonally exposed lake shores vary in width.
+- Satellite rivers grade from jade, glacial blue and tannin brown to iron-red silt across different climates and reaches. At flowing mouths, a plume widens and fades into the coastal shallows. Frozen rivers take on the same shore-fast ice as the Arctic sea, breaking into floes during thaw.
+- Savanna washes and desert wadis widen into gravel flats and narrow again, with smoothly shaded beds around bends. Bank margins and seasonally exposed lake shores vary in width.
 - Winter trees show grey-brown branches at map scale and in 3D. Nearby modelled trees replace their painted crowns, and savanna crowns have individually oriented grain.
 
 - The Buildings menu offers five detail levels: low, medium, high, high* and extra.

@@ -1,6 +1,6 @@
 import { RENDER_V2_ENVIRONMENT_GLSL, RENDER_V2_CANOPY_MEAN_GLSL } from './terrainRenderV2Environment';
 import { RENDER_V2_RELIEF_GLSL } from './terrainRenderV2Relief';
-import { RENDER_V2_WINTER_GLSL } from './terrainRenderV2Winter';
+import { RENDER_V2_WINTER_GLSL, RENDER_V2_FRESH_ICE_GLSL } from './terrainRenderV2Winter';
 import { RENDER_V2_GROUND_GLSL } from './terrainRenderV2Ground';
 
 /** Shared environmental appearance. The local adapter has one annual climate,
@@ -396,6 +396,44 @@ vec4 v2IcePlate(vec2 world,float scale,uint salt){
   }}
   return vec4((second-first)/max(2.*length(secondDelta-firstDelta),1e-5)*scale,identity,firstDelta*scale);
 }
+// The shore-fast sheet and drifting pack share one surface on salt and fresh water.
+vec3 v2PackSurface(vec3 water,vec2 world,float footprint,float c,float raw,vec2 gradT,out float iceCover,out float packCover){
+  float t=clamp(raw,0.,1.);
+  float pw=max(footprint,.3),resolved=1.-sstep(25.,60.,footprint),gate=v2SeaIceGate(c);
+  vec3 g=vec3(world,0.);
+  // One gentle domain bend (displacement slope below 1) for both cell sets: curved edges, no straight lattice.
+  vec2 q=world;float erode=0.;
+  if(resolved>0.){q+=38.*vec2(v2Pattern(g,260.,footprint,uMaterialSeed+755u),v2Pattern(g+vec3(517.,-293.,0.),260.,footprint,uMaterialSeed+756u));erode=v2Pattern(g,16.,footprint,uMaterialSeed+757u);}
+  vec4 floe=v2IcePlate(q,140.,uMaterialSeed+751u);
+  float tf=clamp(raw+dot(gradT,floe.zw),0.,1.),scale=140.;
+  // Hairline leads whose width varies along the edge and grows a little offshore; none in the solid sheet.
+  float lead=sstep(0.,.15,tf)*(.3+(.6+1.6*tf)*fract(floe.y*3.17))*max(1.+.9*erode,.15);
+  float body=1.-v2IceLead(floe.x,lead,pw);
+  // Past its own threshold a big plate has broken: smaller floes replace it whole (no nested outline).
+  if(resolved>0.&&tf>.15+.55*floe.y){
+    floe=v2IcePlate(q,52.,uMaterialSeed+754u);tf=clamp(raw+dot(gradT,floe.zw),0.,1.);scale=52.;
+    lead=(.3+(.5+1.4*tf)*fract(floe.y*3.17))*max(1.+.9*erode,.15);
+    body*=1.-v2IceLead(floe.x,lead,pw);
+  }
+  float id2=fract(floe.y*7.13),id3=fract(floe.y*3.17);
+  // Offshore floes erode round: the cell is clipped by a ragged disc that shrinks with the progress.
+  float radius=scale*mix(1.3,.42,sstep(.25,1.,tf))*(1.+.12*erode);
+  body*=clamp((radius-length(floe.zw))/pw+.5,0.,1.)*step(v2ShoreIceDrop(c,tf),id2);
+  iceCover=mix(body,v2ShoreIceMean(c,t),1.-resolved)*gate;
+  // Between floes: grey slush and brash near the sheet, open dark water further out.
+  float slush=(1.-sstep(.1,.8,t))*gate;
+  water=mix(water,vec3(.40,.50,.56),.65*slush);
+  float brash=resolved>0.?sstep(.25,.6,v2Pattern(g,22.,footprint,uMaterialSeed+758u))*slush:0.;
+  // Shore-fast ice is a cooler grey-blue than the snow on land, so the coastline reads as one clean line;
+  // drifting floes are brighter, each with its own tone. The grain changes the tone only.
+  float grain=.008*v2Pattern(g,120.,footprint,uMaterialSeed+753u);
+  vec3 iceTone=mix(vec3(.75,.82,.87),vec3(.84,.89,.91)*(.96+.07*id3*resolved),sstep(.1,.45,t))+grain;
+  water=mix(water,iceTone*.92,.7*brash);
+  water=mix(water,iceTone,iceCover);
+  packCover=iceCover+(1.-iceCover)*.65*slush;
+  return water;
+}
+${RENDER_V2_FRESH_ICE_GLSL}
 // Set by v2WaterColor for a sea fragment (left alone by fresh water): share of its surface frozen (ice, plus the
 // slush between floes), 0 open water. Whatever the callers lay over the sea after the evaluation (an estuary's river
 // water, climate tints, swell and surf) lies under this ice: the shore band of a frozen sea is ice to the coastline.
@@ -456,7 +494,7 @@ vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,
     water=mix(water,vec3(.03,.16,.33),arid*(1.-shelf)*.35);
     water=mix(water,water*vec3(.80,.90,1.)+vec3(0.,.01,.02),cold*.6);
     float c=seaIce.x;
-    float raw=v2SeaIceProgress(seaIce.x,seaIce.y,depth),t=clamp(raw,0.,1.);
+    float raw=v2SeaIceProgress(seaIce.x,seaIce.y,depth);
     // Gradient of the unclamped progress on the ground (screen derivatives, both map and 3D projections), so each
     // plate reads its progress at its own seed: it shrinks evenly instead of tapering into a wedge.
     vec2 dw1=dFdx(world),dw2=dFdy(world);float dt1=dFdx(raw),dt2=dFdy(raw),det=dw1.x*dw2.y-dw1.y*dw2.x;
@@ -467,38 +505,7 @@ vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,
     // near the sheet. Every decision (break, melt) is taken at a floe's seed, so no depth contour cuts a floe, and
     // nothing blurs the coastline (the land/water cover draws it). Leads are box-filtered: crisp, never aliased.
     if(c>0.&&raw<1.6){
-      float pw=max(footprint,.3),resolved=1.-sstep(25.,60.,footprint),gate=v2SeaIceGate(c);
-      vec3 g=vec3(world,0.);
-      // One gentle domain bend (displacement slope below 1) for both cell sets: curved edges, no straight lattice.
-      vec2 q=world;float erode=0.;
-      if(resolved>0.){q+=38.*vec2(v2Pattern(g,260.,footprint,uMaterialSeed+755u),v2Pattern(g+vec3(517.,-293.,0.),260.,footprint,uMaterialSeed+756u));erode=v2Pattern(g,16.,footprint,uMaterialSeed+757u);}
-      vec4 floe=v2IcePlate(q,140.,uMaterialSeed+751u);
-      float tf=clamp(raw+dot(gradT,floe.zw),0.,1.),scale=140.;
-      // Hairline leads whose width varies along the edge and grows a little offshore; none in the solid sheet.
-      float lead=sstep(0.,.15,tf)*(.3+(.6+1.6*tf)*fract(floe.y*3.17))*max(1.+.9*erode,.15);
-      float body=1.-v2IceLead(floe.x,lead,pw);
-      // Past its own threshold a big plate has broken: smaller floes replace it whole (no nested outline).
-      if(resolved>0.&&tf>.15+.55*floe.y){
-        floe=v2IcePlate(q,52.,uMaterialSeed+754u);tf=clamp(raw+dot(gradT,floe.zw),0.,1.);scale=52.;
-        lead=(.3+(.5+1.4*tf)*fract(floe.y*3.17))*max(1.+.9*erode,.15);
-        body*=1.-v2IceLead(floe.x,lead,pw);
-      }
-      float id2=fract(floe.y*7.13),id3=fract(floe.y*3.17);
-      // Offshore floes erode round: the cell is clipped by a ragged disc that shrinks with the progress.
-      float radius=scale*mix(1.3,.42,sstep(.25,1.,tf))*(1.+.12*erode);
-      body*=clamp((radius-length(floe.zw))/pw+.5,0.,1.)*step(v2ShoreIceDrop(c,tf),id2);
-      iceCover=mix(body,v2ShoreIceMean(c,t),1.-resolved)*gate;
-      // Between floes: grey slush and brash near the sheet, open dark water further out.
-      float slush=(1.-sstep(.1,.8,t))*gate;
-      water=mix(water,vec3(.40,.50,.56),.65*slush);
-      float brash=resolved>0.?sstep(.25,.6,v2Pattern(g,22.,footprint,uMaterialSeed+758u))*slush:0.;
-      // Shore-fast ice is a cooler grey-blue than the snow on land, so the coastline reads as one clean line;
-      // drifting floes are brighter, each with its own tone. The grain changes the tone only.
-      float grain=.008*v2Pattern(g,120.,footprint,uMaterialSeed+753u);
-      vec3 iceTone=mix(vec3(.75,.82,.87),vec3(.84,.89,.91)*(.96+.07*id3*resolved),sstep(.1,.45,t))+grain;
-      water=mix(water,iceTone*.92,.7*brash);
-      water=mix(water,iceTone,iceCover);
-      v2SeaIceCover=iceCover+(1.-iceCover)*.65*slush;
+      water=v2PackSurface(water,world,footprint,c,raw,gradT,iceCover,v2SeaIceCover);
     }
   }
   if(uRenderV2==5)water=mix(vec3(.08,.17,.24),vec3(.85,.94,1.),iceCover);
