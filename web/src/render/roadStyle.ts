@@ -762,12 +762,21 @@ function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: Road
  * Earth beds end butt: the runs of one way meet end to end, and round caps would bead at every change of level. */
 export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0, metres = width): void {
   if (style.simple && style.look === 'rendered') {
-    ctx.strokeStyle = roadPaint(ctx, rank, style);
+    const paint = roadPaint(ctx, rank, style);
+    const alpha = Math.min(1, RENDERED_BED[rank] * emphasisAlpha(style.emphasis)) * roadCanopyOpacity(rank, canopy) * clamp(metres / width, 0.1, 1);
+    const feather = roadFeather(rank, width, scale);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'butt';
     ctx.setLineDash([]);
-    ctx.lineWidth = width;
-    ctx.globalAlpha = Math.min(1, RENDERED_BED[rank] * emphasisAlpha(style.emphasis)) * roadCanopyOpacity(rank, canopy) * clamp(metres / width, 0.1, 1);
+    if (feather) {
+      ctx.strokeStyle = !style.night && !styleSnow(style) ? roadVergePaint(ctx) : paint;
+      ctx.lineWidth = width + feather;
+      ctx.globalAlpha = alpha * 0.72;
+      ctx.stroke(path);
+    }
+    ctx.strokeStyle = paint;
+    ctx.lineWidth = width - feather;
+    ctx.globalAlpha = alpha;
     ctx.stroke(path);
     ctx.globalAlpha = 1;
     ctx.lineCap = 'round';
