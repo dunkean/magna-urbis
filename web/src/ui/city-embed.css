@@ -1,0 +1,82 @@
+:root {
+  font: 13px Helvetica, Arial, sans-serif;
+  color: #34313a;
+  --paper: #faf8f1;
+  --line: #aca6ad;
+  --accent: #5e4fa2;
+  --inset: 5px;
+  --target: 30px;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body, #map { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #f4f1ea; }
+#map { position: absolute; inset: 0; cursor: grab; touch-action: none; user-select: none; }
+#map.dragging { cursor: grabbing; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#status {
+  position: absolute; z-index: 2; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: min(210px, calc(100% - 18px)); padding: 10px 14px;
+  background: var(--paper); border: 1px solid var(--line); border-top: 2px solid var(--accent);
+  box-shadow: 0 2px 7px #29203830; text-align: center; pointer-events: none;
+}
+#status progress { display: block; width: 100%; height: 6px; margin: 6px auto 0; accent-color: var(--accent); }
+#caption {
+  position: absolute; top: var(--inset); left: var(--inset);
+  max-width: calc(100% - 5 * var(--target) - 20px); pointer-events: none;
+}
+#burg-name {
+  display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  padding: 3px 7px; border-left: 2px solid var(--accent); background: #faf8f1e8;
+  font: bold 14px/1.25 Georgia, serif;
+}
+.rail {
+  position: absolute; display: flex; align-items: center; gap: 0;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 3px;
+  box-shadow: 0 1px 4px #23202b3b;
+}
+#detail-actions { top: var(--inset); right: var(--inset); }
+#map-navigation { bottom: var(--inset); left: var(--inset); }
+.icon {
+  display: inline-grid; place-items: center; position: relative; flex: none; width: var(--target); height: var(--target);
+  background: transparent; border: 0; margin: 0; padding: 0; cursor: pointer;
+}
+.rail .icon + .icon { border-left: 1px solid #dad4cd; }
+.icon::before {
+  content: ""; width: 24px; height: 24px; pointer-events: none;
+  background: url("./assets/city-embed-icons.webp") var(--x, 0%) var(--y, 0%) / 400% 400% no-repeat;
+}
+[data-icon="minus"], [data-icon="paint"], [data-icon="apply"], [data-icon="saved"] { --x: 33.333333%; }
+[data-icon="compass"], [data-icon="houses"], [data-icon="expand"], [data-icon="wait"] { --x: 66.666667%; }
+[data-icon="save"], [data-icon="shrink"], [data-icon="alert"] { --x: 100%; }
+[data-icon="terrain"], [data-icon="paint"], [data-icon="houses"], [data-icon="save"] { --y: 33.333333%; }
+[data-icon="dice"], [data-icon="apply"], [data-icon="expand"], [data-icon="shrink"] { --y: 66.666667%; }
+[data-icon="plan"], [data-icon="saved"], [data-icon="wait"], [data-icon="alert"] { --y: 100%; }
+.icon:disabled { opacity: .46; cursor: default; }
+.icon:hover:not(:disabled), #open:hover { background-color: #e9e5ed; }
+.icon[aria-pressed="true"] { background: #e8e3f1; box-shadow: inset 0 -3px var(--accent); }
+.icon:active:not(:disabled) { background: #dbd6e5; }
+#open {
+  position: absolute; bottom: var(--inset); right: var(--inset); padding: 4px 5px;
+  background: #faf8f1e8; color: #39333c; font: 600 11px/1 Georgia, serif;
+  text-decoration: none; border-radius: 2px;
+}
+#open:hover { text-decoration: underline; }
+#open:not([href]) { display: none; }
+html.demo-host body { overflow: auto; padding: 16px; background: #f4f1ea; }
+#demo-controls { display: flex; flex-wrap: wrap; gap: 5px 8px; align-items: center; margin-bottom: 8px; }
+#demo-controls > .icon, #population-form { border: 1px solid var(--line); background: var(--paper); border-radius: 2px; }
+#population-form { display: flex; align-items: center; gap: 6px; padding-left: 7px; }
+#preview-population { width: 6.2em; padding: 2px 4px; border: 1px solid #aaa7ae; font: inherit; }
+#demo-params { font-size: 11px; color: #504b50; }
+#test-frame { display: block; box-sizing: content-box; width: min(360px, 60vw); height: min(320px, 60vh); border: 1px solid #77717e; }
+@media (pointer: coarse) and (min-width: 280px) { :root { --target: 36px; } }
+@media (max-width: 250px) {
+  :root { --target: 25px; --inset: 3px; }
+  .icon::before { width: 21px; height: 21px; }
+  #burg-name { padding: 3px 4px; font-size: 12px; }
+}
+@media (max-width: 175px) {
+  #caption { max-width: calc(100% - 6px); }
+  #detail-actions { top: 26px; }
+  #open { font-size: 10px; padding-inline: 2px; }
+}

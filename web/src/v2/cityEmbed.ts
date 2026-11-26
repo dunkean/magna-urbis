@@ -4,20 +4,25 @@ import { cityEmbedEditorUrl, cityEmbedHints, cityEmbedSource, cityEmbedView } fr
 import { compactPreviewKey, readCompactPreview, saveCompactPreview, readCityView, saveCityView, readCityWorld, saveCityWorld, type SavedCityView } from './cityEmbedCache';
 import { mountCityEmbedPopulation, randomCityEmbedUrl } from './cityEmbedDemo';
 import { mountCityEmbedNavigation } from './cityEmbedNavigation';
+import { mountCityEmbedOverlay } from './cityEmbedOverlay';
 import { MinimalCanvasRenderer } from './minimalCanvas';
-import { preferredLanguage } from './languages';
-import { cityEmbedText, localizeCityEmbed, cityEmbedSummary } from './cityEmbedMessages';
-import { cityEmbedBlocksOnly, unpackMinimalFeatures, type CityDetailStyle, type CityPreviewResult, type DetailedCityResult, type CityPreviewMode, type CityPreviewResponse, type CityPreviewRequest } from './cityPreviewMap';
+import { cityEmbedText, localizeCityEmbed, cityEmbedSummary, embedLocale, loadEmbedLocale } from './cityEmbedMessages';
+import { cityEmbedStartsWithBlocks, unpackMinimalFeatures, type CityDetailStyle, type CityPreviewResult, type DetailedCityResult, type CityPreviewMode, type CityPreviewResponse, type CityPreviewRequest } from './cityPreviewMap';
 import type { Rect4 } from '../render/view';
 
 const current = new URL(location.href);
-if (window.parent === window && !current.search && !current.hash) {
-  current.search = 'preview=1&lang=fr&name=Brackenford&seed=12340007&population=2500&coast=0&river=0&walls=1';
+if (window.parent === window && !current.hash && [...current.searchParams.keys()].every(key => key === 'lang')) {
+  for (const [key, value] of Object.entries({ preview: '1', name: 'Brackenford', seed: '12340007', population: '2500', coast: '0', river: '0', walls: '1' })) current.searchParams.set(key, value);
   history.replaceState(null, '', current);
 }
-const language = preferredLanguage(current.search);
+let hostLanguage = '';
+if (window.parent !== window) {
+  try { hostLanguage = window.parent.document.documentElement.lang; } catch { /* Cross-origin hosts pass lang in the preview URL. */ }
+}
+const language = embedLocale(current.searchParams.get('lang') ?? '', hostLanguage, ...(navigator.languages.length ? navigator.languages : [navigator.language]));
+await loadEmbedLocale(language);
 const translate = (text: string) => cityEmbedText(text, language);
-document.documentElement.lang = language === 'fr' ? 'fr' : 'en';
+document.documentElement.lang = language;
 document.title = translate('Magna Urbis · City preview');
 localizeCityEmbed(document.body, language);
 
@@ -41,7 +46,30 @@ let worker: Worker | undefined;
 const detailedButton = document.querySelector<HTMLButtonElement>('#detailed')!;
 const housesButton = document.querySelector<HTMLButtonElement>('#houses')!;
 const saveButton = document.querySelector<HTMLButtonElement>('#save-view')!;
-const styleSelect = document.querySelector<HTMLSelectElement>('#detail-style')!;
+const planButton = document.querySelector<HTMLButtonElement>('#plan')!;
+const paintedButton = document.querySelector<HTMLButtonElement>('#painted')!;
+const views = [planButton, detailedButton, paintedButton, housesButton];
+document.querySelectorAll<HTMLElement>('.icon[aria-label], #open').forEach(icon => { icon.title = icon.getAttribute('aria-label')!; });
+
+function iconLabel(icon: HTMLElement, label: string, sprite: string) {
+  icon.title = translate(label);
+  icon.setAttribute('aria-label', icon.title);
+  icon.dataset.icon = sprite;
+}
+
+function viewControls(selected: HTMLButtonElement) {
+  for (const button of views) {
+    button.disabled = false;
+    button.setAttribute('aria-pressed', String(button === selected));
+    button.removeAttribute('aria-busy');
+  }
+}
+
+function loadingView(target: HTMLButtonElement) {
+  for (const button of views) button.disabled = true;
+  target.setAttribute('aria-busy', 'true');
+  saveButton.disabled = true;
+}
 type MapRenderer = Pick<MinimalCanvasRenderer, 'drawLive' | 'dispose'> & { element: HTMLElement };
 let renderer: MapRenderer | undefined;
 let pendingRenderer: MapRenderer | undefined;
@@ -61,15 +89,16 @@ function fail(error: unknown): void {
   pendingRenderer = undefined;
   if (disposed) return;
   if (root.dataset.state === 'ready') {
-    housesButton.disabled = saveButton.disabled = false;
+    saveButton.disabled = false;
     status.hidden = true;
     root.dataset.detail = 'unavailable';
-    detailedButton.hidden = false;
-    detailedButton.disabled = false;
-    styleSelect.disabled = false;
-    detailedButton.textContent = translate('retry detail');
-    detailedButton.title = translate('Detailed map unavailable. Try again.');
-    detailedButton.removeAttribute('aria-busy');
+    for (const button of views) {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+    }
+    progressLabel.textContent = translate('Detailed map unavailable. Try again.');
+    bar.hidden = true;
+    status.hidden = false;
     console.error(error);
     return;
   }
@@ -84,18 +113,19 @@ const afterPaint = () => new Promise<void>(resolve => requestAnimationFrame(() =
 function start(): void {
   const source = cityEmbedSource(current);
   const hints = cityEmbedHints(source);
-  const editor = cityEmbedEditorUrl(current, source);
+  const editor = new URL(cityEmbedEditorUrl(current, source));
+  editor.searchParams.set('lang', language);
   if (current.searchParams.get('preview') !== '1') {
     location.replace(editor);
     return;
   }
 
-  (document.getElementById('open') as HTMLAnchorElement).href = editor;
+  (document.getElementById('open') as HTMLAnchorElement).href = editor.href;
   const name = document.getElementById('burg-name')!;
   name.textContent = hints.name?.slice(0, 200) ?? '';
   name.hidden = !name.textContent;
   const controls = document.getElementById('demo-controls')!;
-  const blocksOnly = cityEmbedBlocksOnly(hints.population);
+  const blocksOnly = cityEmbedStartsWithBlocks(hints.population);
   const summary = cityEmbedSummary(hints, current.searchParams.get('cultureBase'), language);
   if (window.parent === window) {
     document.documentElement.classList.add('demo-host');
@@ -110,28 +140,41 @@ function start(): void {
     frame.sandbox.add('allow-scripts', 'allow-same-origin', 'allow-popups', 'allow-popups-to-escape-sandbox');
     frame.allow = "cross-origin-isolated 'none'";
     const inner = new URL(current);
+    inner.searchParams.set('lang', language);
     // A different loopback site exercises the third-party storage and sandbox used by FMG.
     if (inner.hostname === '127.0.0.1') inner.hostname = 'localhost';
     else if (inner.hostname === 'localhost') inner.hostname = '127.0.0.1';
     frame.src = inner.href;
-    const expand = document.createElement('button');
-    expand.id = 'expand-preview';
-    expand.textContent = translate('Enlarge');
-    expand.onclick = () => {
-      const expanded = frame.classList.toggle('expanded');
-      expand.textContent = translate(expanded ? 'Actual size' : 'Enlarge');
-      expand.setAttribute('aria-expanded', String(expanded));
-    };
-    expand.setAttribute('aria-controls', frame.id);
-    expand.setAttribute('aria-expanded', 'false');
-    controls.append(expand);
     document.body.append(frame);
+    mountCityEmbedOverlay(frame);
     return;
   }
+  const expand = document.getElementById('expand-preview')!;
+  let hostOrigin: string | undefined;
+  const askHost = (action: 'expand' | 'close') => {
+    if (hostOrigin) window.parent.postMessage({ type: 'magna-urbis:frame-' + action }, hostOrigin);
+  };
+  window.addEventListener('message', event => {
+    if (event.source !== window.parent || event.data?.type !== 'magna-urbis:frame-state') return;
+    hostOrigin = event.origin;
+    const expanded = event.data.expanded === true;
+    expand.hidden = false;
+    expand.setAttribute('aria-expanded', String(expanded));
+    iconLabel(expand, expanded ? 'Actual size' : 'Enlarge', expanded ? 'shrink' : 'expand');
+    if (typeof event.data.lang === 'string' && event.data.lang && embedLocale(event.data.lang) !== language) {
+      current.searchParams.set('lang', embedLocale(event.data.lang));
+      location.replace(current);
+    }
+  });
+  expand.onclick = () => askHost(expand.getAttribute('aria-expanded') === 'true' ? 'close' : 'expand');
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && expand.getAttribute('aria-expanded') === 'true') askHost('close');
+  });
+  window.parent.postMessage({ type: 'magna-urbis:frame-ready' }, '*');
   if (blocksOnly) {
-    document.querySelector('#caption small')!.textContent = translate('City blocks');
-    detailedButton.hidden = true;
-  } else if (language === 'fr') detailedButton.textContent = translate('Improve map');
+    iconLabel(planButton, 'City blocks', 'plan');
+    iconLabel(housesButton, 'Generate architectural houses', 'houses');
+  }
 
   // Local profiling uses the same V2 native engine as the studio and the benches.
   const local = current.searchParams.get('profile') === 'local' && ['127.0.0.1', 'localhost', '[::1]'].includes(current.hostname);
@@ -142,6 +185,8 @@ function start(): void {
   let requestedTier: DetailedCityResult['mode'] = tier;
   let cachedFrame: SavedCityView | undefined;
   let saveSerial = 0;
+  let style: CityDetailStyle = 'satellite-light';
+  let compactData: CityPreviewResult | undefined;
   const draw = () => {
     if (!renderer || !bounds || disposed) return;
     const { width, height } = host.getBoundingClientRect();
@@ -165,7 +210,7 @@ function start(): void {
     () => {
       if (root.dataset.detail === 'ready') {
         ++saveSerial;
-        saveButton.textContent = translate('Save view');
+        iconLabel(saveButton, 'Save view', 'save');
         delete root.dataset.saved;
       }
       scheduleDraw();
@@ -195,6 +240,9 @@ function start(): void {
     await next.setContent({ key: 'compact', terrainKey: 1, size: map.size, features: unpackMinimalFeatures(map.geometry), places: [] }, map.recipe, map.plan, { terrain: false, landuse: false, labels: false });
     if (disposed) return;
     install(next, map.bounds);
+    cachedFrame = undefined;
+    detail = undefined;
+    compactData = data;
     root.dataset.runtime = data.runtime;
     if (data.wasm) {
       root.dataset.wasmMode = data.wasm.mode;
@@ -206,47 +254,45 @@ function start(): void {
     root.dataset.readyMs = String(Math.round(performance.now()));
     root.dataset.detail = blocksOnly ? 'blocks' : 'idle';
     status.hidden = true;
-    detailedButton.disabled = blocksOnly;
-    document.querySelectorAll<HTMLButtonElement>('#map-navigation button:not(#detailed)').forEach(button => {
+    root.dataset.tier = 'compact';
+    delete root.dataset.detailStyle;
+    saveButton.hidden = true;
+    viewControls(planButton);
+    document.querySelectorAll<HTMLButtonElement>('#map-navigation button:not(#save-view)').forEach(button => {
       button.disabled = false;
     });
   };
   let detailModule: Promise<typeof import('./cityEmbedDetail')> | undefined;
   let detail: ReturnType<typeof import('./cityEmbedDetail').detailedCityMap> | undefined;
   const detailControls = () => {
-    detailedButton.hidden = true;
-    housesButton.hidden = tier === 'houses';
-    saveButton.hidden = false;
-    styleSelect.hidden = false;
-    housesButton.disabled = styleSelect.disabled = saveButton.disabled = false;
+    viewControls(tier === 'houses' ? housesButton : style === 'satellite-light' ? detailedButton : paintedButton);
+    saveButton.hidden = saveButton.disabled = false;
     root.dataset.tier = tier;
   };
   const saveFrame = async () => {
     const serial = ++saveSerial;
     if (disposed) return;
     if (!previewKey || !detail || !bounds) {
-      saveButton.textContent = translate('Storage unavailable');
+      iconLabel(saveButton, 'Storage unavailable', 'alert');
       return;
     }
     const canvas = detail.renderer.snapshot();
     if (!canvas) {
-      saveButton.textContent = translate('Save view');
+      iconLabel(saveButton, 'Save view', 'save');
       return;
     }
     const { width, height } = host.getBoundingClientRect();
-    const metadata = { tier, style: styleSelect.value as CityDetailStyle, bounds, width, height, camera: navigation!.camera(), view: navigation!.view(cityEmbedView(bounds, width, height)) };
-    saveButton.textContent = translate('Saving…');
+    const metadata = { tier, style, bounds, width, height, camera: navigation!.camera(), view: navigation!.view(cityEmbedView(bounds, width, height)) };
+    iconLabel(saveButton, 'Saving…', 'wait');
     const image = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
     if (disposed || serial !== saveSerial) return;
     const stored = !!image && (await saveCityView(previewKey, { ...metadata, image }));
     if (disposed || serial !== saveSerial) return;
     root.dataset.saved = stored ? 'yes' : 'no';
-    saveButton.textContent = translate(stored ? 'View saved' : 'Storage unavailable');
+    iconLabel(saveButton, stored ? 'View saved' : 'Storage unavailable', stored ? 'saved' : 'alert');
   };
   const paintStyle = async (area: Rect4) => {
     if (!detail || disposed) return;
-    const style = styleSelect.value as CityDetailStyle;
-    styleSelect.disabled = true;
     root.dataset.detail = 'loading';
     showProgress(style === 'satellite-light' ? 'Rendering fast satellite…' : 'Rendering painted satellite…');
     await detail.setStyle(style);
@@ -260,12 +306,11 @@ function start(): void {
     root.dataset.detail = 'ready';
     root.dataset.detailStyle = style;
     root.dataset.detailMs = String(Math.round(performance.now()));
-    detailedButton.removeAttribute('aria-busy');
     tier = requestedTier;
     cachedFrame = undefined;
     detailControls();
     void saveFrame().catch(() => {
-      saveButton.textContent = translate('Storage unavailable');
+      iconLabel(saveButton, 'Storage unavailable', 'alert');
     });
   };
   const showDetailed = async (data: DetailedCityResult, fresh: boolean) => {
@@ -279,13 +324,16 @@ function start(): void {
     await paintStyle(bounds ?? data.bounds);
   };
   const requestTier = async (mode: DetailedCityResult['mode']) => {
-    if (blocksOnly || disposed) return;
+    if (disposed) return;
     ++saveSerial;
     requestedTier = mode;
     root.dataset.detail = 'loading';
     delete root.dataset.saved;
-    housesButton.disabled = detailedButton.disabled = styleSelect.disabled = saveButton.disabled = true;
-    detailedButton.setAttribute('aria-busy', 'true');
+    loadingView(mode === 'houses' ? housesButton : style === 'satellite-light' ? detailedButton : paintedButton);
+    if (detail && renderer === detail.renderer && tier === mode && bounds) {
+      await paintStyle(bounds);
+      return;
+    }
     showProgress(mode === 'houses' ? 'Generating architectural houses…' : 'Generating the detailed map');
     detailModule = import('./cityEmbedDetail');
     void detailModule.catch(fail);
@@ -294,20 +342,32 @@ function start(): void {
     if (cached) await showDetailed(cached, false);
     else generate(mode);
   };
-  styleSelect.onchange = () => {
-    if (cachedFrame || !detail || renderer !== detail.renderer) void requestTier(tier).catch(fail);
-    else if (bounds) {
-      housesButton.disabled = saveButton.disabled = true;
-      void paintStyle(bounds).catch(fail);
-    }
+  const chooseView = (mode: DetailedCityResult['mode'], nextStyle: CityDetailStyle) => {
+    if (root.dataset.detail === 'ready' && tier === mode && style === nextStyle) return;
+    style = nextStyle;
+    void requestTier(mode).catch(fail);
   };
-  housesButton.onclick = () => {
-    styleSelect.value = 'satellite-2';
-    void requestTier('houses').catch(fail);
+  detailedButton.onclick = () => chooseView('detailed', 'satellite-light');
+  paintedButton.onclick = () => chooseView('detailed', 'satellite-2');
+  housesButton.onclick = () => chooseView('houses', 'satellite-2');
+  planButton.onclick = async () => {
+    if (root.dataset.tier === 'compact' && root.dataset.detail !== 'unavailable') return;
+    ++saveSerial;
+    root.dataset.detail = 'loading';
+    loadingView(planButton);
+    showProgress('Drawing the map…');
+    try {
+      const data = compactData ?? (previewKey && await readCompactPreview(previewKey));
+      if (disposed) return;
+      if (data) await showCompactMap(data);
+      else generate('compact');
+    } catch (error) {
+      fail(error);
+    }
   };
   saveButton.onclick = () => {
     if (cachedFrame) {
-      saveButton.textContent = translate('View saved');
+      iconLabel(saveButton, 'View saved', 'saved');
       return;
     }
     draw();
@@ -316,7 +376,7 @@ function start(): void {
         .settled()
         .then(saveFrame)
         .catch(() => {
-          saveButton.textContent = translate('Storage unavailable');
+          iconLabel(saveButton, 'Storage unavailable', 'alert');
         });
   };
   const generate = (mode: CityPreviewMode) => {
@@ -347,16 +407,11 @@ function start(): void {
       fail(error);
     }
   };
-  detailedButton.onclick = () => {
-    if (detailedButton.disabled || disposed) return;
-    detailedButton.textContent = translate('detailing…');
-    void requestTier(requestedTier).catch(fail);
-  };
   const showCompact = async () => {
     // A loopback engine can be rebuilt independently of the web app.
     try {
       previewKey = await compactPreviewKey(hints, threaded, local);
-      const saved = !blocksOnly && previewKey && (await readCityView(previewKey));
+      const saved = previewKey && (await readCityView(previewKey));
       if (disposed) return;
       if (saved) {
         const { savedCityRenderer } = await import('./cityEmbedSaved');
@@ -369,7 +424,7 @@ function start(): void {
         install(next, saved.bounds);
         cachedFrame = saved;
         tier = requestedTier = saved.tier;
-        styleSelect.value = saved.style;
+        style = saved.style;
         root.dataset.state = root.dataset.detail = 'ready';
         root.dataset.detailStyle = saved.style;
         root.dataset.previewCache = 'render';
@@ -378,8 +433,8 @@ function start(): void {
         root.dataset.runtime = local ? 'native' : 'wasm';
         status.hidden = true;
         detailControls();
-        saveButton.textContent = translate('View saved');
-        document.querySelectorAll<HTMLButtonElement>('#map-navigation button:not(#detailed)').forEach(button => {
+        iconLabel(saveButton, 'View saved', 'saved');
+        document.querySelectorAll<HTMLButtonElement>('#map-navigation button:not(#save-view)').forEach(button => {
           button.disabled = false;
         });
         scheduleDraw();

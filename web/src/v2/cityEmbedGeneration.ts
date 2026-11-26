@@ -5,10 +5,10 @@ import { defaultSettings } from './settings';
 import { presetComposition } from '../render/composition';
 import type { V2Settings } from './contracts';
 import type { Vec2, World } from '../gen/types';
-import { cityEmbedBlocksOnly } from './cityPreviewMap';
+import { cityEmbedStartsWithBlocks, type CityPreviewMode } from './cityPreviewMap';
 import { polygonArea } from '../gen/core/geom';
 
-export function cityEmbedSettings(hints: ExternalCityHints, local: boolean): V2Settings {
+export function cityEmbedSettings(hints: ExternalCityHints, local: boolean, mode: CityPreviewMode = 'compact'): V2Settings {
   const settings = applyExternalCity(hints, defaultSettings());
   const backend = local ? 'native' : 'rust';
   settings.generation = 'procedural';
@@ -20,7 +20,7 @@ export function cityEmbedSettings(hints: ExternalCityHints, local: boolean): V2S
   const site = settings.region.placement?.list?.[0];
   if (site && hints.port && hints.coast && hints.coast !== 'none') site.siteType = 'harbor';
   settings.runtime = { backend, autoBackend: false, source: 'procedural', compute: 'cpu' };
-  settings.urban = { backend, architecture: 'silhouette', through: cityEmbedBlocksOnly(hints.population) ? 'layout' : 'buildings' };
+  settings.urban = { backend, architecture: mode === 'houses' ? 'detailed' : 'silhouette', through: mode === 'compact' && cityEmbedStartsWithBlocks(hints.population) ? 'layout' : 'buildings' };
   settings.appearance = { style: 'parchment', composition: presetComposition('minimal') };
   return settings;
 }

@@ -1,6 +1,28 @@
 /** Copy for cityEmbed's standalone preview. Keep the iframe's copy independent of the studio catalogue. */
-import { LANGUAGES, type Language } from './languages';
 import type { ExternalCityHints } from './externalCity/types';
+
+// Ship just the selected FMG locale. Shared editor terminology comes from Azgaar's
+// MIT-licensed dictionaries (public/licenses/azgaar-embed-locales.txt).
+const locales = import.meta.glob<Record<string, string>>('./embedLocales/*.json', { import: 'default' });
+const supported = ['en', 'fr', ...Object.keys(locales).map(path => path.split('/').pop()!.replace('.json', ''))];
+const loaded = new Map<string, Record<string, string>>();
+
+export function embedLocale(...preferences: string[]): string {
+  for (const preference of preferences) {
+    const tag = preference.toLowerCase().replaceAll('_', '-');
+    const match = supported.find(code => code.toLowerCase() === tag);
+    if (match) return match;
+    if (/^zh-(hant|hk|mo|tw)\b/.test(tag)) return 'zh-TW';
+    const base = tag.split('-')[0];
+    if (supported.includes(base)) return base;
+  }
+  return 'en';
+}
+
+export async function loadEmbedLocale(language: string) {
+  const load = locales['./embedLocales/' + language + '.json'];
+  if (load && !loaded.has(language)) loaded.set(language, await load());
+}
 
 const rows = [
   ['Magna Urbis · City preview', 'Magna Urbis · Aperçu de ville'],
@@ -24,6 +46,9 @@ const rows = [
   ['Rendering fast satellite…', 'Rendu satellite rapide…'],
   ['Rendering painted satellite…', 'Rendu satellite peint…'],
   ['Architectural houses', 'Maisons détaillées'],
+  ['Generate architectural houses', 'Générer les maisons détaillées'],
+  ['Map views', 'Niveaux de vue'],
+  ['City plan', 'Plan de ville'],
   ['Saving…', 'Enregistrement…'],
   ['Generating architectural houses…', 'Construction des maisons détaillées…'],
   ['Save view', 'Mémoriser la vue'],
@@ -60,12 +85,12 @@ const rows = [
 ] as const;
 const french = new Map<string, string>(rows);
 
-export function cityEmbedText(text: string, language: Language): string {
-  return language === 'fr' ? (french.get(text) ?? text) : text;
+export function cityEmbedText(text: string, language: string): string {
+  return (language === 'fr' ? french.get(text) : loaded.get(language)?.[text]) ?? text;
 }
 
-export function localizeCityEmbed(root: HTMLElement, language: Language): void {
-  if (language !== 'fr') return;
+export function localizeCityEmbed(root: HTMLElement, language: string): void {
+  if (language === 'en') return;
   for (const element of Array.from(root.querySelectorAll<HTMLElement>('[data-embed-text], [aria-label], [title]'))) {
     if (element.hasAttribute('data-embed-text')) element.textContent = cityEmbedText(element.textContent!.trim(), language);
     for (const attribute of ['aria-label', 'title']) {
@@ -76,12 +101,13 @@ export function localizeCityEmbed(root: HTMLElement, language: Language): void {
 }
 
 /** Labels are translated independently; imported culture names and compass directions remain user data. */
-export function cityEmbedSummary(hints: ExternalCityHints, cultureBase: string | null, language: Language = 'en'): string {
+export function cityEmbedSummary(hints: ExternalCityHints, cultureBase: string | null, language = 'en'): string {
   const translate = (text: string) => cityEmbedText(text, language);
-  const numberLocale = LANGUAGES.find(item => item.code === language)!.locale;
+  const population = (hints.population ?? 2500).toLocaleString(language);
+  const populationText = loaded.get(language)?.['{{- population}} people'];
   return [
     cultureBase ?? hints.culture?.replaceAll('-', ' '),
-    `${(hints.population ?? 2500).toLocaleString(numberLocale)} ${translate('people')}`,
+    populationText ? populationText.replace('{{- population}}', population) : `${population} ${translate('people')}`,
     (hints.coast ?? 'none') !== 'none' ? `${translate('Coast')} ${hints.coast}` : translate('Inland'),
     hints.river && hints.river !== 'none' ? translate('River') : '',
     hints.walls ? translate('Walls') : '',

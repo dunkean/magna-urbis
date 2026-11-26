@@ -12,6 +12,8 @@ versions; this change does not revoke earlier GPL grants.
 
 ## Locked software dependencies
 
+The embedded city preview uses a subset of the [Azgaar Fantasy Map Generator interface translations](https://github.com/Azgaar/Fantasy-Map-Generator/tree/master/src/locales). The [MIT license](web/src/ui/public/licenses/azgaar-embed-locales.txt) is also distributed with the preview.
+
 The embedded Namebench toponym resources are documented separately in the
 [naming guide](docs/NAMEBENCH_TOPONYMS_FR.md) and their
 [source and transformation manifest](web/src/gen/names/data/names-manifest.json).

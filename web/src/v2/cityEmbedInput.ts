@@ -25,6 +25,7 @@ export function cityEmbedSource(url: URL): string {
     const flag = (key: string) => (/^(1|true)$/i.test(p.get(key) ?? '') ? true : /^(0|false)$/i.test(p.get(key) ?? '') ? false : undefined);
     const watabou = new URL('https://watabou.github.io/city-generator/');
     watabou.search = p.toString();
+    watabou.searchParams.delete('lang');
     return JSON.stringify({
       format: 'fmg-burg-v1',
       i: p.get('id') ?? 0,

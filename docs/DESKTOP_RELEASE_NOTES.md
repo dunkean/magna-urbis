@@ -1,8 +1,9 @@
 ## Alpha 0.3.11
 
 - The Azgaar FMG iframe draws a fitted 2D view of the generated town. Detailed opens the fast Satellite map with lightweight natural terrain and lets you switch to Painted satellite at the same zoom. The test page lets you choose the population. Reopened browser previews reuse the original map geometry.
-- The FMG iframe and test page show progress in the center while generating or switching views. Towns of 10,000 people and above open as street and block maps.
-- Small FMG towns can upgrade again to native architectural houses on the painted satellite map. Completed views and their camera can be saved and reopened locally. The test page uses a small, expandable iframe.
+- The FMG iframe opens towns of 20,000 people and above as street and block maps. Select the house icon to generate architectural houses directly at any population.
+- Illustrated icons switch between the city plan, fast satellite, painted satellite and architectural houses. The lower-right magna-urbis link opens the full editor. The preview shows progress in the center and remembers detailed views and their camera locally.
+- The preview follows the Azgaar interface language. Its expand icon floats the map over a participating host page. Click outside or press Escape to dock it at the same zoom.
 - The Minimal map can show parcel boundaries when that layer is enabled.
 
 - Town streets render again on WebGL2 devices that enforce reserved shader names.

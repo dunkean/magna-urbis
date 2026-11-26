@@ -14,9 +14,22 @@ uses browser WASM. A cross-origin-isolated preview can use WASM threads. Add
 runtime. Reopening the same browser preview reuses its packed vector geometry when
 storage is available, so it can redraw at any size without rerunning the engine.
 
-Direct previews include **Randomize city**, **Population** and **Improve map**.
-Apply a new population to run the same seed with that value.
-An embedded iframe hides these test controls unless it receives `demo=1`.
+The standalone test page hosts a small cross-origin iframe with external population and randomization controls. Its four view icons select the plan, fast satellite, painted satellite or architectural houses. At 20,000 inhabitants the first plan shows blocks. The house icon builds detailed houses on demand at any population.
+
+### Locale and floating preview
+
+Pass the host document's language in the preview URL, including regional tags such as `pt-BR` or `zh-TW`. Without a host preference the preview uses the browser's preferred supported language. The full-editor link carries the selected language.
+
+The optional host adapter enables the maximize icon inside the frame. It floats the existing iframe above the host and docks it on an outside click, Escape or a second click of the icon. Keep the adapter alongside the host's scripts and call its cleanup function when removing the burg dialog.
+
+```js
+import { mountCityEmbedOverlay } from './city-embed-host.js';
+
+const url = new URL(preview);
+url.searchParams.set('lang', document.documentElement.lang);
+iframe.src = url.href;
+const disposeOverlay = mountCityEmbedOverlay(iframe);
+```
 
 ## Simple link
 
@@ -48,7 +61,7 @@ exact terrain, coastline or river course.
 Send the existing `fmg-burg-v1` object described in [AZGAAR_IMPORT.md](AZGAAR_IMPORT.md), directly
 from FMG's burg/cell data. No console prompt, clipboard, full-map export, POST endpoint or
 cross-origin DOM access is needed. A single city payload is small enough to use ordinary JSON;
-compression and messaging are unnecessary for this first integration.
+the host adapter uses messaging only for the floating preview.
 
 ```js
 function magnaUrbisLinks(data) {

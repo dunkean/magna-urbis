@@ -18,9 +18,8 @@ namesRenamedAfterActions();
 scope.onmessage = async ({ data: { hints, local, mode } }: MessageEvent<CityPreviewRequest>) => {
   const send = (message: CityPreviewResponse, transfer: Transferable[] = []) => scope.postMessage(message, transfer);
   try {
-    let settings = cityEmbedSettings(hints, local);
-    const detailed = mode !== 'compact' && settings.urban?.through !== 'layout';
-    if (detailed && mode === 'houses') settings.urban = { ...settings.urban, architecture: 'detailed' };
+    let settings = cityEmbedSettings(hints, local, mode);
+    const detailed = mode !== 'compact';
     const progress: ProgressCallback = value => send({ type: 'progress', progress: value });
     const stage = <T>(run: (effective: V2Settings) => Promise<T>) =>
       retryNativeStage(

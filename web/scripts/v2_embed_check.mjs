@@ -45,9 +45,19 @@ const assets = createServer(async (request, response) => {
 });
 await new Promise(ready => assets.listen(0, '127.0.0.1', ready));
 const base = 'http://127.0.0.1:' + assets.address().port + prefix;
-const parent = createServer((request, response) => {
-  const src = new URL(request.url, 'http://localhost').searchParams.get('src');
+const parent = createServer(async (request, response) => {
+  const url = new URL(request.url, 'http://localhost');
+  if (url.pathname === '/city-embed-host.js') {
+    response.writeHead(200, { 'Content-Type': 'text/javascript' });
+    response.end(await readFile(resolve(output, 'city-embed-host.js')));
+    return;
+  }
+  const src = url.searchParams.get('src');
   response.writeHead(200, { 'Content-Type': 'text/html' });
+  if (url.searchParams.has('hostLocale')) {
+    response.end('<!doctype html><html lang="de"><iframe></iframe><script type="module">import {mountCityEmbedOverlay} from "/city-embed-host.js"; const frame=document.querySelector("iframe");frame.src=' + JSON.stringify(src).replaceAll('<', '\\u003c') + ';mountCityEmbedOverlay(frame);</script></html>');
+    return;
+  }
   response.end(
     '<!doctype html><style>body{margin:0}iframe{width:440px;height:320px;border:0}</style><iframe title="City preview" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe><script>document.querySelector("iframe").src=' +
       JSON.stringify(src).replaceAll('<', '\\u003c') +
@@ -91,6 +101,7 @@ try {
               window.__detailedGenerations = (window.__detailedGenerations ?? 0) + 1;
             } else if (data.mode === 'houses') {
               window.__houseScene = Object.values(data.world.debug.v2RustCities)[0].scene?.generator_version;
+              window.__houseCount = data.town.buildings;
             }
           }
         });
@@ -130,7 +141,7 @@ try {
     const started = performance.now();
     await page.goto(framed(source), { waitUntil: 'commit' });
     const root = page.frameLocator('iframe').locator('html');
-    await root.and(page.frameLocator('iframe').locator('[data-state="ready"]')).waitFor({ timeout: 30000 });
+    await root.and(page.frameLocator('iframe').locator('[data-state="ready"]')).waitFor({ timeout: blocksOnly ? 120000 : 30000 });
     const frame = page.frames().find(candidate => candidate.url().startsWith(base));
     assert.equal(await frame.evaluate(() => crossOriginIsolated), false);
     assert.equal(await frame.locator('#status').isVisible(), false);
@@ -148,7 +159,8 @@ try {
       assert.ok(town.layouts && town.streets);
       assert.equal(town.buildings, 0);
       assert.ok(await frame.evaluate(() => window.__townLayers.includes('block') && !window.__townLayers.includes('building') && !window.__townProgress.some(([stage]) => ['urban-parcels', 'urban-building-sites', 'urban-buildings'].includes(stage))));
-      assert.equal(await frame.locator('#detailed').isVisible(), false);
+      assert.equal(await frame.locator('#detailed').isEnabled(), true);
+      assert.equal(await frame.locator('#houses').isEnabled(), true);
     } else assert.ok(town?.layouts && town.buildings > 0, 'The map must come from the Rust settlement and contain actual building footprints.');
     const pixels = await frame.locator('#map canvas').evaluate(canvas => {
       const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
@@ -215,7 +227,7 @@ try {
   const detailTown = await repeat.frame.evaluate(() => window.__townDetailed);
   assert.ok(detailTown?.buildings > 0, 'Detailed must return real Rust building footprints.');
   assert.deepEqual(detailTown, result.cases[1].town, 'The two V2 passes must retain the same streets and buildings.');
-  assert.equal(await repeat.frame.locator('#detail-style').inputValue(), 'satellite-light');
+  assert.equal(await repeat.frame.locator('#detailed').getAttribute('aria-pressed'), 'true');
   result.detailedMs = Math.round(performance.now() - detailStart);
   result.detailPasses = await repeat.frame.evaluate(() =>
     Object.fromEntries(
@@ -262,7 +274,7 @@ try {
   assert.ok(result.fastSatelliteChangedFraction > 0.2, 'Fast Satellite must visibly repaint the town.');
   await capture(page, 'town-satellite-fast');
   const switchStart = performance.now();
-  await repeat.frame.locator('#detail-style').selectOption('satellite-2');
+  await repeat.frame.locator('#painted').click();
   await assertCenteredProgress(repeat.frame);
   await repeat.frame.locator('html[data-detail-style="satellite-2"][data-detail="ready"]').waitFor({ timeout: 120000 });
   result.switchMs = Math.round(performance.now() - switchStart);
@@ -341,7 +353,7 @@ try {
     format: 'fmg-burg-v1',
     i: 12,
     name: 'Port Skarholm',
-    population: 10000,
+    population: 20001,
     mfcgSeed: '12340012',
     capital: true,
     port: true,
@@ -358,7 +370,16 @@ try {
   const rich = new URL(base + 'embed.html?preview=1&lang=fr&profile=' + runtime);
   rich.hash = new URLSearchParams({ burg: JSON.stringify(data) }).toString();
   const port = await preview('port-rich', rich.href, true);
-  assert.equal(await port.frame.locator('#open').innerText(), 'Ouvrir dans Magna Urbis ↗');
+  assert.equal(await port.frame.locator('#open').innerText(), 'magna-urbis');
+  await port.frame.getByRole('button', { name: 'Générer les maisons détaillées' }).click();
+  await port.frame.locator('html[data-tier="houses"][data-detail="ready"]').waitFor({ timeout: 240000 });
+  assert.match(await port.frame.evaluate(() => window.__houseScene), /architectural|houses/);
+  result.largeHouseCount = await port.frame.evaluate(() => window.__houseCount);
+  assert.ok(result.largeHouseCount > 0);
+  assert.equal(await port.frame.locator('#houses').getAttribute('aria-pressed'), 'true');
+  await capture(page, 'large-town-houses');
+  await port.frame.locator('#plan').click();
+  await port.frame.locator('html[data-tier="compact"][data-detail="blocks"]').waitFor();
 
   // Verify the iframe can open the actual studio, preserving its source data and locale.
   const opened = page.waitForEvent('popup');
@@ -412,10 +433,22 @@ try {
   assert.equal(await demoFrame.locator('html').evaluate(() => crossOriginIsolated), false);
   const size = () => page.locator('#test-frame').evaluate(f => [f.clientWidth, f.clientHeight]);
   assert.deepEqual(await size(), [360, 300]);
-  await page.locator('#expand-preview').click();
+  assert.ok(await demoFrame.locator('#open').evaluate(el => innerHeight - el.getBoundingClientRect().bottom <= 6));
+  const maximize = demoFrame.locator('#expand-preview');
+  await demoFrame.locator('#zoom-in').click();
+  const instance = await demoFrame.locator('html').evaluate(() => performance.timeOrigin);
+  await maximize.click();
+  await page.locator('#test-frame:popover-open').waitFor();
   assert.ok((await size())[0] > 360);
-  await page.locator('#expand-preview').click();
+  await page.mouse.click(2, 2);
+  await page.locator('#test-frame:popover-open').waitFor({ state: 'detached' });
   assert.deepEqual(await size(), [360, 300]);
+  assert.equal(await demoFrame.locator('html').evaluate(() => performance.timeOrigin), instance);
+  assert.equal(await demoFrame.locator('#map').getAttribute('data-zoom'), '1.5');
+  await maximize.click();
+  await page.locator('#test-frame:popover-open').waitFor();
+  await maximize.press('Escape');
+  await page.locator('#test-frame:popover-open').waitFor({ state: 'detached' });
   await page.locator('#preview-population').fill('1250');
   await page.getByRole('button', { name: 'Appliquer' }).click();
   await page.waitForURL(url => url.searchParams.get('population') === '1250');
@@ -446,6 +479,12 @@ try {
   const chosen = JSON.parse(new URLSearchParams(new URL(page.url()).hash.slice(1)).get('burg'));
   assert.deepEqual(chosen, { ...demoBurg, population: 850 });
   assert.equal(await page.locator('#preview-population').inputValue(), '850');
+  await page.goto(framed(flatUrl) + '&hostLocale=1');
+  const german = page.frameLocator('iframe');
+  await german.locator('html[lang="de"][data-state="ready"]').waitFor({ timeout: 40000 });
+  assert.equal(await german.locator('#houses').getAttribute('title'), 'Detaillierte Häuser');
+  assert.equal(await german.locator('#open').innerText(), 'magna-urbis');
+  assert.equal(new URL(await german.locator('#open').getAttribute('href')).searchParams.get('lang'), 'de');
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.missing, []);
 } finally {

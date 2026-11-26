@@ -5,11 +5,23 @@ import type { World } from '../../src/gen/types';
 import { worldToScreen } from '../../src/render/view';
 import { decodeCityCode } from '../../src/v2/cityCode';
 import { cityEmbedPopulationUrl, randomCityEmbedUrl } from '../../src/v2/cityEmbedDemo';
-import { cityEmbedSummary, cityEmbedText } from '../../src/v2/cityEmbedMessages';
+import { cityEmbedSummary, cityEmbedText, embedLocale, loadEmbedLocale } from '../../src/v2/cityEmbedMessages';
 
 const read = (url: URL) => cityEmbedHints(cityEmbedSource(url));
 
 describe('city iframe contract', () => {
+  it('uses the preferred FMG language, including regional variants, independently of the city seed', async () => {
+    expect(embedLocale('de-AT', 'fr')).toBe('de');
+    expect(embedLocale('zh-Hant-HK')).toBe('zh-TW');
+    expect(embedLocale('pt-BR')).toBe('pt-BR');
+    expect(embedLocale('xx', 'es-ES')).toBe('es');
+    await loadEmbedLocale('de');
+    expect(cityEmbedText('Architectural houses', 'de')).toBe('Detaillierte Häuser');
+    const url = new URL('https://example.org/embed.html?preview=1&name=Harbour');
+    const initial = read(url);
+    url.searchParams.set('lang', 'de');
+    expect(read(url)).toEqual(initial);
+  });
   it('registers French UI copy and preserves the requested language in navigation', () => {
     expect(cityEmbedText('City preview', 'fr')).toBe('Aperçu de la ville');
     expect(cityEmbedText('Open in Magna Urbis ↗', 'fr')).toBe('Ouvrir dans Magna Urbis ↗');
@@ -75,10 +87,13 @@ describe('city iframe contract', () => {
     expect(new URLSearchParams(new URL(cityEmbedEditorUrl(url)).hash.slice(1)).get('city')).toBe(JSON.stringify(data));
   });
 
-  it('stops large previews at city blocks from 10,000 inhabitants', () => {
+  it('starts at blocks from 20,000 inhabitants and lets users request houses', () => {
     const hints = read(new URL('https://example.org/embed.html?preview=1&seed=42'));
-    expect(cityEmbedSettings({ ...hints, population: 9999 }, false).urban?.through).toBe('buildings');
-    expect(cityEmbedSettings({ ...hints, population: 10000 }, false).urban?.through).toBe('layout');
+    expect(cityEmbedSettings({ ...hints, population: 19_999 }, false).urban?.through).toBe('buildings');
+    const city = { ...hints, population: 20_000 };
+    expect(cityEmbedSettings(city, false).urban?.through).toBe('layout');
+    expect(cityEmbedSettings(city, false, 'detailed').urban?.through).toBe('buildings');
+    expect(cityEmbedSettings(city, false, 'houses').urban).toMatchObject({ through: 'buildings', architecture: 'detailed' });
   });
 
   it('shows invalid payload errors rather than generating an unrelated default city', () => {

@@ -148,6 +148,13 @@ export default defineConfig({
   // Cross-origin isolation for the WASM threads package (static hosting: public/coi-serviceworker.js).
   server: { host: '127.0.0.1', port: 5174, strictPort: true, fs: { allow: [root] }, headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'credentialless' } },
   preview: { headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'credentialless' } },
-  build: { outDir: output, emptyOutDir: true, target: 'es2022', chunkSizeWarningLimit: 6000, rollupOptions: { input: { studio: resolve(web, 'src/ui/v2.html'), embed: resolve(web, 'src/ui/embed.html') }, output: { banner: vendorNotice } } },
+  build: {
+    outDir: output, emptyOutDir: true, target: 'es2022', chunkSizeWarningLimit: 6000,
+    rollupOptions: {
+      preserveEntrySignatures: 'exports-only',
+      input: { studio: resolve(web, 'src/ui/v2.html'), embed: resolve(web, 'src/ui/embed.html'), 'city-embed-host': resolve(web, 'src/v2/cityEmbedOverlay.ts') },
+      output: { banner: vendorNotice, entryFileNames: chunk => chunk.name === 'city-embed-host' ? 'city-embed-host.js' : 'assets/[name]-[hash].js' },
+    },
+  },
   worker: { format: 'es', plugins: () => [externalAssets()], rollupOptions: { output: { banner: vendorNotice } } },
 });
