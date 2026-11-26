@@ -35,7 +35,7 @@ import { DEFAULT_FRACTAL_DETAIL } from '../../../rust/bridge/terrainAdjust';
 import { forestOccupation } from './forestOccupation';
 import { roadCorridor, regionalRoadCorridor, streetCorridors } from '../render/forestRoom';
 import { layoutStreetPavements } from '../render/roadPavement';
-import { setRoadCanopy } from '../render/roadStyle';
+import { mapRoadTones, setRoadGround, setRoadCanopy } from '../render/roadStyle';
 import { withLandDetail } from './landDetail';
 import { decorWaterSvg } from './decorWater';
 import { decorWater3d } from './decorWater3d';
@@ -500,6 +500,9 @@ async function drawBackground(d: Decor): Promise<void> {
     t = terrain,
     climate = decorClimate(d.meta),
     q = new URLSearchParams(d.meta.query);
+  const rendered = c.networks.roads.look === 'rendered',
+    biome = decorBiome(d.meta);
+  setRoadGround(settlements.landuse, d.raster.width, mapRoadTones(r, biome, decorClimateZone(d.meta)), c.ambience === 'night', rendered ? d.raster : undefined);
   const key = `${r.keys.terrainLook}:${r.keys.water}:${c.vegetation.look}:${r.keys.forest}:${settlements.ruralGroundRevision}`;
   // Automated shots wait for data-ground-applied to equal data-ground-wanted.
   viewport.dataset.groundWanted = key;

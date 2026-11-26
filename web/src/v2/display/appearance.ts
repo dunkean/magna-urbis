@@ -19,9 +19,8 @@ import type { World } from '../../gen/types';
 import type { V2Settings } from '../contracts';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import type { ExportLayers } from '../../render/exportLayers';
-import { roadSoilOf, roadGroundTones, setRoadGround } from '../../render/roadStyle';
+import { mapRoadTones, setRoadGround } from '../../render/roadStyle';
 import { setMapClimateZone, setMapSeason, setMapSnowRelief, snowReliefOf } from '../../render/seasonPalette';
-import { climatePalette } from '../../render/biomes';
 import { terrainStyle } from '../../render/terrainStyle';
 import { displayBiomeName, displayTerrainSettings } from '../displayBiome';
 import { effectiveTerrainSettings } from '../terrainSettings';
@@ -74,8 +73,9 @@ export class AppearancePasses {
         world.landuse,
         world.mapSize,
         // The ground of the roads keeps its summer tones: their own snow follows the date (roadStyle.ts roadTone).
-        roadGroundTones(r.ground.traits.family === 'material', climatePalette(r.palette.mapStyle, displayBiomeName(settings, world)), roadSoilOf(effective.climateZone, displayBiomeName(settings, world))),
+        mapRoadTones(r, displayBiomeName(settings, world), effective.climateZone),
         r.composition.ambience === 'night',
+        r.composition.networks.roads.look === 'rendered' ? world.terrain : undefined,
       );
       const effectiveKey = JSON.stringify([effective.relief, effective.refine, effective.detailNoise, effective.climate, effective.climateValues, effective.climateZone, effective.hydrology?.riverMode]);
       // The forest field grows from the generation climate (displayForest.ts): a display biome only repaints it.

@@ -89,7 +89,8 @@ function decor(world: World, pal: Palette, u: number): string {
 }
 
 export function renderSvg(world0: World, opts: RenderOptions = {}): string {
-  if (groundRoadLook(opts.roadLook)) setRoadGround(world0.landuse, world0.mapSize, opts.roadGround ?? roadGroundTones(false, applyRenderColors(biomePalette(opts.style ?? world0.options.style, world0.options.biome), opts.colors)), !!opts.roadNight);
+  if (groundRoadLook(opts.roadLook))
+    setRoadGround(world0.landuse, world0.mapSize, opts.roadGround ?? roadGroundTones(false, applyRenderColors(biomePalette(opts.style ?? world0.options.style, world0.options.biome), opts.colors)), !!opts.roadNight, opts.roadLook === 'rendered' ? world0.terrain : undefined);
   if (opts.landuseKinds && world0.landuse) world0 = { ...world0, landuse: { ...world0.landuse, areas: world0.landuse.areas.filter(area => opts.landuseKinds!(area.kind)) } };
   world0 = cavernDisplayWorld(displayWorld(world0, undefined, opts.buildings));
   const world = renderView(world0);

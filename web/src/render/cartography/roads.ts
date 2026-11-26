@@ -35,7 +35,7 @@ export function roadPainters(c: CartographyContext, f: FrameBase): RoadPainters 
   };
 
   const requested: RoadStyle = deps.roadStyle?.() ?? { look: deps.roadLook ?? 'ink', emphasis: 1, night: false, colors: deps.colors };
-  const roadStyle: RoadStyle = c.activeLight ? { ...requested, look: 'ink' } : requested;
+  const roadStyle: RoadStyle = c.activeLight ? { ...requested, look: requested.look === 'rendered' ? 'rendered' : 'ink', simple: true } : requested;
   const natural = groundRoadLook(roadStyle.look),
     inkAlpha = emphasisAlpha(roadStyle.emphasis);
   /** All the visible pieces of some layers as one path: a translucent stroke never doubles at chunk ends. */

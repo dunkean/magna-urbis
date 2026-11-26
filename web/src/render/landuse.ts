@@ -13,7 +13,7 @@ import type { RenderColors } from './customColors';
 import { type Palette, ruralInk } from './styles';
 import { f1, pathD } from './util';
 import { regionalBridgeSurface, regionalRoadSurface } from './roadSurfaces';
-import { CANOPY_LEVELS, canopyRuns, naturalMarks, regionalRank, roadCanopyOpacity, roadToneAt, roadWidth, type RoadStyle } from './roadStyle';
+import { CANOPY_LEVELS, canopyRuns, lookRoadWidth, naturalMarks, roadFeather, regionalRank, roadCanopyOpacity, roadToneAt, type RoadStyle } from './roadStyle';
 import { MAP_STROKES, svgMapStroke } from './strokes';
 import { fungalBedLook, underdarkPatterns, underdarkMarkSvg } from './underdark';
 import { canopyAreaMarks, canopySvg, type VegetationStyle } from './canopy';
@@ -385,17 +385,21 @@ export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgB
     // hierarchy: cased major roads, thinner minor roads, tracks as thin earth lines
     if (groundRoadLook(roadLook)) {
       // Same marks as the canvas painter, flat: SVG has no ground texture, so each road takes the tone of its midpoint.
-      const style: RoadStyle = { look: 'natural', emphasis: roadEmphasis, night: roadNight, colors };
+      const style: RoadStyle = { look: roadLook === 'rendered' ? 'rendered' : 'natural', emphasis: roadEmphasis, night: roadNight, colors };
       for (const road of roads.filter(r => r.kind === k)) {
         const rank = k === 'track' && road.width < 2 ? 'path' : regionalRank(k),
-          width = roadWidth(rank, road.width, 1 / u);
+          width = lookRoadWidth(style.look, rank, road.width, 1 / u);
         for (const run of canopyRuns(road.path)) {
           const canopy = run.level / (CANOPY_LEVELS - 1),
             mid = run.pts[run.pts.length >> 1],
             marks = naturalMarks(rank, width, 1 / u, style),
             d = pathD(run.pts, false);
           if (marks.shadow) out += `<path d="${d}" stroke="${marks.shadow.color}" stroke-opacity="${(marks.shadow.alpha * (1 - canopy)).toFixed(2)}" stroke-width="${f1(width + marks.shadow.extra)}"/>`;
-          out += `<path d="${d}" stroke="${roadToneAt(mid.x, mid.y, rank, style)}" stroke-opacity="${(marks.bed.alpha * roadCanopyOpacity(rank, canopy)).toFixed(2)}" stroke-width="${f1(width)}" stroke-linecap="butt"/>`;
+          const bed = roadToneAt(mid.x, mid.y, rank, style),
+            alpha = marks.bed.alpha * roadCanopyOpacity(rank, canopy);
+          const feather = style.look === 'rendered' ? roadFeather(rank, width, 1 / u) : 0;
+          if (feather) out += `<path d="${d}" stroke="${bed}" stroke-opacity="${(alpha * 0.35).toFixed(2)}" stroke-width="${f1(width + feather)}" stroke-linecap="butt"/>`;
+          out += `<path d="${d}" stroke="${bed}" stroke-opacity="${alpha.toFixed(2)}" stroke-width="${f1(width - 2 * feather)}" stroke-linecap="butt"/>`;
         }
       }
     } else if (k === 'track') {

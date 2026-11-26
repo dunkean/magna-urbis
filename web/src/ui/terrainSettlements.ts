@@ -203,6 +203,13 @@ export function createTerrainSettlements(options: {
   const roads = createTerrainRoads({
     map,
     before: backend,
+    groundStyle: options.city
+      ? () => {
+          const r = resolveBenchAppearance(),
+            c = r.composition;
+          return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: r.palette.colors, simple: r.quality === 'light' };
+        }
+      : undefined,
     onConfigChange: () => {
       options.onChange();
       schedule();

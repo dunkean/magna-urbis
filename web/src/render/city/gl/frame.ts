@@ -364,7 +364,9 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
     } else if (paintRoads) useStroke(surfaceP);
     // The stone deck is render-background art: the look's bridges are their flat fill.
     gl.uniform1i(u.uBridgeDeck, (o.bridgeDeck ?? !o.live) ? 1 : 0);
+    gl.uniform1i(u.uRoadFeather, o.live?.roadLook === 'rendered' ? 1 : 0);
     strokes(streets, first, 1, s, softStreets && streetSurface);
+    gl.uniform1i(u.uRoadFeather, 0);
     gl.uniform1i(u.uBridgeDeck, 0);
   }
   // Lot enclosures (live look; drawLotEnclosures): from the mid level, thinner and fading out across mid; gate jambs

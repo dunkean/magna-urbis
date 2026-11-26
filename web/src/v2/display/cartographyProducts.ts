@@ -14,7 +14,7 @@ import { getDistanceUnit } from '../units';
 import { cityOverlayLandKinds, cityOverlayLandKey, cityCountrysideCanvasOptions, cityOverlayPlanMarks } from '../../render/cityEnvironment';
 import type { World, LandKind } from '../../gen/types';
 import { createCanvasRenderer, type CanvasRenderer } from '../../render/canvas';
-import { roadGroundTones } from '../../render/roadStyle';
+import { mapRoadTones } from '../../render/roadStyle';
 import { displayWorld } from '../../render/displayWorld';
 import { buildingOccupationShapes } from '../../ui/forestOccupation';
 import { nativeCitiesOf } from '../nativeProducts';
@@ -22,7 +22,7 @@ import { activityScene } from '../activitySites';
 import { mapSeasonKey } from '../../render/seasonPalette';
 import { biomePalette } from '../../render/biomes';
 import type { Palette } from '../../render/styles';
-import { displayBiomeName } from '../displayBiome';
+import { displayBiomeName, displayTerrainSettings } from '../displayBiome';
 import { renderSvg } from '../../render/svg';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
 import { settlementRaster, type SettlementRaster } from '../../../../rust/bridge/settlements';
@@ -329,6 +329,8 @@ export class CartographyProducts implements Cartography {
     const landuseOn = layers.landuse !== false && r.cartography.landuse;
     // Rural semantics sit above the physical land use but below roads and labels: with a semantic look on, the land use is its own raster (exportGround) under the semantics.
     const split = landuseOn && this.semantic!.rural !== 'off';
+    const biome = displayBiomeName(this.map.settings, this.map.world);
+    const zone = displayTerrainSettings(this.map.settings!, this.map.world!.mapSize).climateZone;
     const common = {
       width: EXPORT_OVERLAY_PX,
       style: r.palette.mapStyle,
@@ -340,7 +342,7 @@ export class CartographyProducts implements Cartography {
       labels: false,
       brushes: sources,
       vegetation: r.vegetation.symbols,
-      roadGround: roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, displayBiomeName(this.map.settings, this.map.world))),
+      roadGround: mapRoadTones(r, biome, zone),
       roadLook: r.composition.networks.roads.look,
       roadEmphasis: r.composition.networks.roads.emphasis,
       roadNight: r.composition.ambience === 'night',

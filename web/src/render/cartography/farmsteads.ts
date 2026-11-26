@@ -7,7 +7,6 @@ import { CITY_LOD_LIMITS } from '../cityCanvas';
 import { drawFarmLots, drawFarmRoofs } from '../farmRoofs';
 import { yardStyle } from '../yardStyle';
 import { drawRuralDetails } from '../ruralDetails';
-import { roadWidth, strokeNaturalRoad } from '../roadStyle';
 import { drawPanelCanvas } from '../legend';
 import { fungalBedLook, fungalBedMarks } from '../underdark';
 import type { CartographyContext } from './context';
@@ -15,12 +14,12 @@ import type { VectorFrame } from './frame';
 
 export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
   const { pal, P, brushes, family, polyL, linesOf, timedRec, getPattern } = c;
-  const { ctx, dpr, sc, lod, px, lw, pathRect, polyPaths, fillPolys, strokePolys, strokeLines, roadStyle, natural, inkAlpha, merged, brushFill, brushTrees, luOn } = f;
+  const { ctx, dpr, sc, lod, px, lw, pathRect, polyPaths, fillPolys, strokePolys, strokeLines, roadStyle, natural, inkAlpha, strokeEarthRoads, brushFill, brushTrees, luOn } = f;
   // 4. regional roads + farmsteads
   if (lod.farmsteads && polyL('farm-yards')) {
     const drives = linesOf(l => l.role === 'drive');
     if (natural) {
-      if (drives.length) strokeNaturalRoad(ctx, merged(drives), 'track', roadWidth('track', drives[0].width, sc), sc, roadStyle);
+      if (drives.length) strokeEarthRoads(drives, 'track', drives[0].width);
     } else strokeLines(drives, pal.trackFill, l => Math.min(lw(l.width * 0.7, 1), px(2.4)), 0.55 * Math.min(1, inkAlpha), [], 'butt');
     // On a natural ground the lot belongs to the photograph (farmRoofs.ts drawFarmLots): beaten earth that fades
     // at its edge, a muted garden with its bed rows, grass under the orchard, a dark pond in a wet bank; no plan

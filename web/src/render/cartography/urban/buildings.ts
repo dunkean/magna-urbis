@@ -6,7 +6,7 @@
  */
 import { CITY_LOD_LIMITS } from '../../cityCanvas';
 import { drawPlaceholderRoofs } from '../../farmRoofs';
-import { roadWidth, strokeNaturalRoad } from '../../roadStyle';
+import { lookRoadWidth, strokeNaturalRoad } from '../../roadStyle';
 import { litDots } from '../../extras';
 import type { CartographyContext } from '../context';
 import type { VectorFrame } from '../frame';
@@ -109,7 +109,7 @@ export function paintBuildings(c: CartographyContext, f: VectorFrame, u: UrbanFr
         Path: P,
         lanesOnly,
         roofAppearance: lanesOnly ? undefined : c.deps.buildingRoofs?.(),
-        lane: path => strokeNaturalRoad(ctx, path, 'lane', roadWidth('lane', 3, sc), sc, roadStyle),
+        lane: path => strokeNaturalRoad(ctx, path, 'lane', lookRoadWidth(roadStyle.look, 'lane', 3, sc), sc, roadStyle, 0, 3),
       }),
     );
   }

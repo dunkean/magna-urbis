@@ -9,7 +9,7 @@ import { Palette, ruralInk } from '../styles';
 import { fieldBoundaryStyle, fieldHedgeStyle } from '../hedges';
 import { furrowSpacing } from '../furrows';
 import { CANVAS_MAP_STROKES as MAP_STROKES, mapStrokeWidth } from '../strokes';
-import { roadWidth, trackInk } from '../roadStyle';
+import { trackInk } from '../roadStyle';
 import { WAY_SCALE, FURROW_MIN_PX, FURROW_HOLDER_BUDGET } from '../lod';
 import type { CartographyContext } from './context';
 import type { VectorFrame } from './frame';
@@ -79,7 +79,7 @@ export function paintFieldNetwork(c: CartographyContext, f: VectorFrame): void {
     if (sc >= WAY_SCALE) {
       const ways = linesOf(l => l.name === 'field-ways');
       if (natural) {
-        if (ways.length) strokeEarthRoads(ways, 'path', roadWidth('path', ways[0].width * 0.7, sc));
+        if (ways.length) strokeEarthRoads(ways, 'path', ways[0].width * 0.7);
       } else strokeLines(ways, trackInk(rk, pal.roadFill), () => lw(1.4, 0.8), Math.min(1, pal.rural.way * inkAlpha), [], 'butt');
     }
     if (pal.hedgeOn) {

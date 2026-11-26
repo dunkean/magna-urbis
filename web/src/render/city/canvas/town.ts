@@ -17,7 +17,7 @@ import { buildingColors } from '../../urbanBuildingStyle';
 import { layerPattern, materialImagesNow, placeLayer, wallStoneLayer } from '../../buildingMaterials';
 import { drawLotEnclosures, updateYardEnclosures } from '../../cityLotEnclosures'; // enclosures hook (cityLotEnclosures.ts)
 import { cityWallDetails, drawCityWallGround, drawCityWalls } from '../../cityWalls'; // walls hook (cityWalls.ts)
-import { roadGrain, roadPaint } from '../../roadStyle';
+import { roadGrain, roadPaint, roadVergePaint } from '../../roadStyle';
 import { layoutStreetPavements } from '../../roadPavement';
 import { drawGardenDetails } from '../../readableGardens';
 import { polygonCentroid as shapeRingCenter } from '../../../gen/core/geom';
@@ -227,7 +227,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
     });
     // A paint of the look in this context: a colour as it is, the ground-textured road paint of a rank (one pattern per
     // rank and context, so its strokes batch together), the aggregate grain, a textured material.
-    const paintOf = (p: StreetPaint): string | CanvasPattern | undefined => (typeof p === 'string' ? p : 'grain' in p ? roadGrain(ctx) : 'material' in p ? pat(p.material) || p.fallback : roadPaint(ctx, p.road, p.style));
+    const paintOf = (p: StreetPaint): string | CanvasPattern | undefined => (typeof p === 'string' ? p : 'grain' in p ? roadGrain(ctx, p.worn) : 'material' in p ? pat(p.material) || p.fallback : p.verge ? roadVergePaint(ctx) : roadPaint(ctx, p.road, p.style));
     const fillOf = (f: StreetFill): Style => ({ fill: paintOf(f.paint), alpha: f.alpha });
     // Near and close: streets drawn as their ground surface (roadSurface.ts), filled once per style.
     const surfaced: { s: CityStreet; x: StreetSurface; casing?: Style; fill: Style; inner?: Style }[] = [];

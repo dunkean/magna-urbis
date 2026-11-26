@@ -64,8 +64,8 @@ export function drawTileRoads(ctx: CanvasRenderingContext2D, roads: readonly Str
     groups = new Map<string, { rank: RoadRank; width: number; metres: number; roads: Street[]; paved: boolean }>();
   const add = (road: Street, paved: boolean): void => {
     if (!tileRoadVisible(road, box, mpp)) return;
-    const rank = regionalStreetRank(road.rank),
-      mean = road.widths.reduce((sum, w) => sum + w, 0) / Math.max(1, road.widths.length);
+    const mean = road.widths.reduce((sum, w) => sum + w, 0) / Math.max(1, road.widths.length);
+    const rank = style.look === 'rendered' && road.rank > 2 && mean < 2 ? 'path' : regionalStreetRank(road.rank);
     // The rendered surface keeps true widths: below a pixel, roads of one stroke width still differ by their true width.
     const rendered = style.look === 'rendered',
       metres = rendered ? Math.round(mean * 2) / 2 : 0;

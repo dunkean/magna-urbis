@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Satellite roads and footpaths have broken, soil-coloured verges and a continuous worn centre. Earth darkens on low banks and takes on a stonier colour on steep slopes. Town lanes blend into adjoining streets at junctions.
 - Satellite rivers grade from jade, glacial blue and tannin brown to iron-red silt across different climates and reaches. At flowing mouths, fresh water starts mixing at the shoreline and drifts across a wider, irregular patch of sea. Frozen lakes show more fine fractures between plates, with snow obscuring parts of each seam. Frozen rivers show subtler cracks at channel scale.
 - In satellite view, submerged gravel and silt show through on the inside of river bends. Deeper runs follow the opposite bank, with clearer water revealing more of the bed. Lake margins now reveal gravel and silt through shallow water, especially along gently sloping shores.
 - Satellite maps without lakes skip the lake textures and shoreline sampling. Inland and open-sea terrain load without computing a coastline distance field.

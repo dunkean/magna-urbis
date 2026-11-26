@@ -9,6 +9,9 @@ import { RENDER_ROAD_PX, ROAD_STROKE_LAYERS, renderCrossingStrokes, renderRoadSt
 
 import { groundAt, onToneReady, toneKey, toneStreet } from '../render/groundTone';
 import { BLEND_ROAD_ALPHA, BLEND_ROAD_COLOR, BLEND_ROAD_PX, GROUND_BLEND_LABEL, GROUND_BLEND_TITLE, getGroundBlend, gradeFade, isBlended, onGroundBlend, setGroundBlend, type GroundBlend } from '../render/groundBlend';
+import { CANOPY_LEVELS, canopyRuns, lookRoadWidth, roadCanopyRevision, roadGroundKey, strokeNaturalRoad, type RoadRank, type RoadStyle as GroundRoadStyle } from '../render/roadStyle';
+import { layoutPavementSites, splitByPavement } from '../render/roadPavement';
+import { mapLandSnowKey } from '../render/seasonPalette';
 import { getBenchRenderColors } from './benchRenderColors';
 import { v1RoadPaint, type V1LandscapeStyle } from '../render/v1Landscape';
 const ns = 'http://www.w3.org/2000/svg';
@@ -152,7 +155,7 @@ const curveData = (path: Point[]): string => {
 const esc = (text: string): string => text.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 
 /** The "Roads" stage: its own options, status and drawing; placement never runs from here. */
-export function createTerrainRoads(options: { map: SVGSVGElement; before: Element | null; onConfigChange(): void; onDisplayChange(): void }) {
+export function createTerrainRoads(options: { map: SVGSVGElement; before: Element | null; groundStyle?(): GroundRoadStyle | undefined; onConfigChange(): void; onDisplayChange(): void }) {
   let v1Style: V1LandscapeStyle | undefined;
   options.map.addEventListener('urban:v1-style', event => {
     const detail = (event as CustomEvent<{ active: boolean; style: V1LandscapeStyle }>).detail;
@@ -181,6 +184,8 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   let pathCache = new WeakMap<Point[], Map<number, { paths: Point[][]; straight?: string; curved?: string }>>();
   /** Painted preset: each road cut at its crossings, with stable piece identities for pathCache. */
   let splitCache = new WeakMap<RoadSegment, { path: Point[]; crossing?: RoadCrossing['kind'] }[]>();
+  let paintViewport: ((scale: number) => void) | undefined;
+  let lastCamera = '';
   const saved = new URLSearchParams(location.search).get('roads');
   if (saved)
     try {
@@ -385,8 +390,18 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     const box = options.map.viewBox.baseVal;
     if (box?.width) layer.style.setProperty('--road-k', String(+(options.map.clientWidth / box.width).toPrecision(5)));
     const scale = box?.width ? options.map.clientWidth / box.width : 1;
-    const state = `${enabled}|${show}|${isBlended()}|${JSON.stringify(style)}|${v1Style ?? ''}|${v1Style ? scale : ''}`;
-    if (layer === drawnLayer && drawn === output && state === drawnState && drawnOwnership === urbanOwnership) return;
+    const groundStyle = options.groundStyle?.();
+    const rendered = groundStyle?.look === 'rendered' && !v1Style && scale > 0 && box.width > 0 && box.height > 0;
+    const camera = rendered ? [box.x, box.y, box.width, box.height, scale, devicePixelRatio].join('|') : '';
+    const material = rendered ? [roadGroundKey(), roadCanopyRevision(), mapLandSnowKey(), JSON.stringify(groundStyle)].join('|') : '';
+    const state = material + `${enabled}|${show}|${isBlended()}|${JSON.stringify(style)}|${v1Style ?? ''}|${v1Style ? scale : ''}`;
+    if (layer === drawnLayer && drawn === output && state === drawnState && drawnOwnership === urbanOwnership) {
+      if (lastCamera !== camera) paintViewport?.(scale);
+      lastCamera = camera;
+      return;
+    }
+    paintViewport = undefined;
+    lastCamera = camera;
     drawnLayer = layer;
     drawn = output;
     drawnState = state;
@@ -425,7 +440,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       preparedOutput = output;
       pathCache = new WeakMap();
     }
-    const outsidePath = (path: Point[], width: number, curves: boolean): string => {
+    const outsidePieces = (path: Point[], width: number) => {
       let widths = pathCache.get(path);
       if (!widths) {
         widths = new Map();
@@ -437,18 +452,64 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
         entry = { paths };
         widths.set(width, entry);
       }
+      return entry;
+    };
+    const outsidePath = (path: Point[], width: number, curves: boolean): string => {
+      const entry = outsidePieces(path, width);
       if (curves) return (entry.curved ??= entry.paths.map(curveData).join(' '));
       return (entry.straight ??= entry.paths.map(pathData).join(' '));
     };
-    if (!v1Style && isBlended()) {
+    if (!rendered && !v1Style && isBlended()) {
       drawBlended(order, outsidePath, painted, hits);
       layer.append(painted, hits);
       return;
     }
-    if (!v1Style && style.preset === 'render') {
+    if (!rendered && !v1Style && style.preset === 'render') {
       drawRender(order, outsidePath, painted, hits);
       layer.append(painted, hits);
       return;
+    }
+    // Draw the V2 road materials into the bench viewport. A pan reuses the clipped and grouped paths.
+    // Crossings and the interactive hit paths remain SVG so they keep their ownership and titles.
+    if (rendered) {
+      const host = document.createElementNS(ns, 'foreignObject');
+      host.style.pointerEvents = 'none';
+      const canvas = document.createElement('canvas');
+      canvas.style.cssText = 'width:100%;height:100%;display:block';
+      const ctx = canvas.getContext('2d')!;
+      const sites = layoutPavementSites(urbanOwnership);
+      const groups = new Map<string, { path: Path2D; rank: RoadRank; metres: number; pavement: 'earth' | 'asphalt'; canopy: number }>();
+      for (const s of order) {
+        const rank = s.class === 'main' || s.class === 'highway' ? 'major' : s.class === 'local' ? 'minor' : s.width < 2 ? 'path' : 'track';
+        const metres = s.width * style.width;
+        // Clip the complete way once, before dividing it by surface and canopy.
+        for (const path of outsidePieces(s.path, s.width).paths) {
+          for (const piece of splitByPavement(path, rank === 'major' || rank === 'minor' ? sites : undefined)) {
+            for (const run of canopyRuns(piece.path as Point[])) {
+              const id = [rank, metres, piece.pavement, run.level].join('|');
+              let group = groups.get(id);
+              if (!group) groups.set(id, (group = { path: new Path2D(), rank, metres, pavement: piece.pavement, canopy: run.level / (CANOPY_LEVELS - 1) }));
+              group.path.addPath(new Path2D(style.curves ? curveData(run.pts) : pathData(run.pts)));
+            }
+          }
+        }
+      }
+      paintViewport = scale => {
+        const box = options.map.viewBox.baseVal,
+          density = scale * Math.min(devicePixelRatio, 2);
+        for (const k of ['x', 'y', 'width', 'height'] as const) host.setAttribute(k, String(box[k]));
+        const w = Math.max(1, Math.ceil(box.width * density)),
+          h = Math.max(1, Math.ceil(box.height * density));
+        if (canvas.width !== w) canvas.width = w;
+        if (canvas.height !== h) canvas.height = h;
+        ctx.resetTransform();
+        ctx.clearRect(0, 0, w, h);
+        ctx.setTransform(density, 0, 0, density, -box.x * density, -box.y * density);
+        for (const g of groups.values()) strokeNaturalRoad(ctx, g.path, g.rank, lookRoadWidth('rendered', g.rank, g.metres, scale), scale, { ...groundStyle, pavement: g.pavement }, g.canopy, g.metres);
+      };
+      paintViewport(scale);
+      host.append(canvas);
+      painted.append(host);
     }
     for (const s of order) {
       // Cut the physical polyline first: smoothing each remainder preserves its
@@ -466,7 +527,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       // World-size feature: the preset width is a screen floor under the road's metric width (V1 paints are metric already).
       const body = v1 ? w : roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, w, s.width),
         plus = (px: number): number | string => (v1 ? w + px : `calc(${body} + ${px}px)`);
-      if (d) {
+      if (d && !rendered) {
         if (casing) casings.append(line(d, casing, v1?.casingWidth ?? plus(1.6)));
         const road = line(d, fill, body);
         if (v1) road.setAttribute('opacity', String(v1.opacity));

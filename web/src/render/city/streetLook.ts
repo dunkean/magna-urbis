@@ -15,7 +15,7 @@ import { isBoardwalk } from '../cityGround';
 import { STRUCTURE_ROLES, blendTone, isBlended, softStreet, type BlendTone } from '../groundBlend';
 import type { SurfaceEnd } from '../roadSurface';
 import { streetToneAt } from '../groundTone';
-import { STREET_MIN_PX, cobbleTone, emphasisAlpha, naturalMarks, pavedMarks, pavedRank, quayFill, roadToneAt, sidewalkTone, streetRank, type RoadRank, type RoadStyle } from '../roadStyle';
+import { STREET_MIN_PX, cobbleTone, emphasisAlpha, naturalMarks, pavedMarks, pavedRank, roadFeather, quayFill, roadToneAt, sidewalkTone, streetRank, type RoadRank, type RoadStyle } from '../roadStyle';
 import type { RoadPavement } from '../roadPavement';
 import { streetLayer } from '../buildingMaterials';
 import { URBAN_SNOW, mapLandSnow } from '../seasonPalette';
@@ -79,7 +79,7 @@ const deckEdge = (mpp: number): number => Math.max(1.2, 1.4 * mpp);
 
 /** A colour, or a pattern the renderer resolves: the ground-textured road paint of a rank (roadStyle.ts roadPaint),
  * the aggregate grain (roadGrain), a textured material layer with the colour that stands for it. */
-export type StreetPaint = string | { road: RoadRank; style: RoadStyle } | { grain: true } | { material: number; fallback: string };
+export type StreetPaint = string | { road: RoadRank; style: RoadStyle; verge?: true } | { grain: true; worn?: boolean } | { material: number; fallback: string };
 /** Draw layers of the stroked ways, bottom to top: casings, ways under the surfaced streets, [surface casings, bodies
  * and carriageways], wear and winter marks, crossings, rails and treads. */
 export type StreetLayer = 'casing' | 'under' | 'marks2' | 'over' | 'marks';
@@ -243,11 +243,17 @@ function streetPaint(f: StreetFrame, s: CityStreet, town: StreetContext): Street
       add('marks2', paintRoad, w2 * (0.16 + 0.18 * busy), bedAlpha * (0.55 + 0.45 * busy), 'butt');
     }
     if (marks.wear) add('marks2', marks.wear.color, w2 * marks.wear.share, marks.wear.alpha, 'butt');
-    if (marks.grain) add('marks2', { grain: true }, w2, marks.grain, 'butt');
-    // A loose earth end narrows into the ground; a lane stops flat.
-    if (surfaceOk()) return { mode: 'natural', strokes, surface: { w, edge, casing: shoulder && lod !== 'far' ? { paint: shoulder.color, alpha: shoulder.alpha } : undefined, fill: { paint: paintRoad, alpha: bedAlpha }, end: s.role === 'lane' ? 'butt' : 'taper' } };
-    if (shoulder && lod !== 'far') add('casing', shoulder.color, w2 + 2 * edge, shoulder.alpha, 'butt');
-    add(body, paintRoad, w2, bedAlpha, 'butt');
+    if (marks.grain) add('marks2', { grain: true, worn: roadStyle.look === 'rendered' && !snow && !roadStyle.night }, w2, marks.grain, 'butt');
+    // The inset uses the same joined junction polygon as the bed, including its curb returns and tapered ends.
+    const feather = f.roadStyle.look === 'rendered' ? roadFeather(rank, w, 1 / mpp) : 0;
+    const verge: StreetPaint | undefined = shoulder && (feather && !snow && !roadStyle.night ? { ...paintRoad, verge: true } : shoulder.color);
+    const margin = feather ? Math.max(edge, feather) : edge;
+    const fill = { paint: paintRoad, alpha: bedAlpha * (feather ? 0.48 : 1) };
+    const core = feather ? { paint: paintRoad, alpha: bedAlpha } : undefined;
+    if (surfaceOk()) return { mode: 'natural', strokes, surface: { w, edge: margin, casing: verge && shoulder && lod !== 'far' ? { paint: verge, alpha: shoulder.alpha } : undefined, fill, inset: feather || undefined, inner: core, end: s.role === 'lane' ? 'butt' : 'taper' } };
+    if (verge && shoulder && lod !== 'far') add('casing', verge, w2 + 2 * margin, shoulder.alpha, 'butt');
+    add(body, paintRoad, w2, fill.alpha, 'butt');
+    if (core) add(body, paintRoad, w2 - 2 * feather, core.alpha, 'butt');
     return { mode: 'natural', strokes };
   }
   const toned = f.roadLook === 'ink' || night ? undefined : streetToneAt(s.street.path, s.role, s.rank); // map-tinted street (groundTone.ts)

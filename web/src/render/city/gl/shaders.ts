@@ -150,8 +150,9 @@ uniform vec4 uOverride;
 uniform highp sampler2D uColors;
 #if VARIANT == 3
 uniform highp sampler2D uMats;
-out vec2 vWorld; flat out vec2 vMat;
+flat out vec2 vMat;
 #endif
+out vec2 vRoadWorld;
 out vec4 vColor; out vec2 vLocal; out float vAlong;
 flat out float vLen; flat out float vHw; flat out uint vMeta; flat out float vFoot; flat out float vBase;
 void main() {
@@ -179,8 +180,8 @@ void main() {
   float s0 = (meta & 32u) != 0u ? -uDevPx : -pad, s1 = (meta & 64u) != 0u ? len + uDevPx : len + pad;
   float s = mix(s0, s1, float(gl_VertexID & 1)), t = mix(-pad, pad, float(gl_VertexID >> 1));
   vLocal = vec2(s, t); vLen = len; vHw = hw; vMeta = meta; vAlong = aShape.z + s;
+  vRoadWorld = a + dir * s + n * t;
 #if VARIANT == 3
-  vWorld = a + dir * s + n * t;
   vec4 m = texelFetch(uMats, ivec2(f & 4095, f >> 12), 0) * 255.0;
   vMat = vec2(m.r - 1.0, m.g);
 #endif
@@ -195,13 +196,14 @@ precision highp float;
 precision highp int;
 in vec4 vColor; in vec2 vLocal; in float vAlong;
 flat in float vLen; flat in float vHw; flat in uint vMeta; flat in float vFoot; flat in float vBase;
+in vec2 vRoadWorld;
 #if VARIANT == 3
-in vec2 vWorld; flat in vec2 vMat;
+flat in vec2 vMat;
 uniform highp sampler2DArray uAlbedo;
 uniform float uExt[32];
 #endif
 uniform float uMpp, uDevPx, uFade;
-uniform int uPass, uBridgeDeck, uSingle;
+uniform int uPass, uBridgeDeck, uSingle, uRoadFeather;
 out vec4 outColor;
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float vnoise(vec2 p) {
@@ -252,7 +254,7 @@ void main() {
 #if VARIANT == 3
   {
     float ext = uExt[int(max(vMat.x, 0.0))];
-    vec2 p = vMat.y > 0.5 ? vec2(vAlong, vLocal.y) : vWorld;
+    vec2 p = vMat.y > 0.5 ? vec2(vAlong, vLocal.y) : vRoadWorld;
     vec3 tex = texture(uAlbedo, vec3(p / ext, max(vMat.x, 0.0))).rgb;
     if ((vMeta & 16u) == 0u && vMat.x >= 0.0) color = tex * (1.0 - 0.3 * smoothstep(0.8, 1.0, t / max(vHw, 1e-3)));
   }
@@ -288,6 +290,12 @@ void main() {
   // Single coverage (translucent streets under a stencil): a fragment claims its samples
   // whole, so overlapping segments of one class never blend twice; MSAA smooths the edge.
   if (uSingle == 1) a = a < 0.5 ? 0.0 : 1.0;
+  if (uRoadFeather == 1 && (vMeta & 272u) == 0u && vHw > uMpp) {
+    float loose = float((vMeta & 15u) >= 3u);
+    float fringe = min(mix(1.6, 1.2, loose), vHw * mix(0.26, 0.5, loose)) * smoothstep(1.0, 2.0, vHw / uMpp);
+    float patch = vnoise(vRoadWorld * 0.19);
+    cover *= 1.0 - (0.76 - 0.22 * patch) * smoothstep(-max(0.001, fringe) * (0.65 + patch), 0.0, d);
+  }
   if (a <= 0.0) discard;
   outColor = vec4(color, 1.0) * (vColor.a * a * cover * uFade);
 }`;

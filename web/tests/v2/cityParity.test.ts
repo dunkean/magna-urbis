@@ -614,8 +614,14 @@ describe('V2 and City Bench stay in sync', () => {
         expect(city3dPlanOptions(r).roadLook).toBe(r.composition.networks.roads.look);
       }
     }
-    // The V2 sets the biome soil of the rendered surface through the shared ground tones, once for both views of the map.
-    expect(read('../../src/v2/display/appearance.ts')).toContain('roadSoilOf(');
+    // Both hosts bind their retained terrain and select the same soil for the rendered road painter.
+    expect(read('../../src/render/roadStyle.ts')).toContain('roadSoilOf(zone, biome)');
+    for (const file of ['../../src/v2/display/appearance.ts', '../../src/ui/citybench.ts']) {
+      expect(read(file)).toContain('mapRoadTones(r,');
+      expect(read(file)).toContain('setRoadGround(');
+    }
+    expect(read('../../src/ui/terrainRoads.ts')).toContain('strokeNaturalRoad(ctx');
+    expect(read('../../src/render/cartography/roads.ts')).toContain('strokeNaturalRoad(ctx');
   });
 
   it('gives the same drawCity options to both pages for one resolved appearance', () => {
