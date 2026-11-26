@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultSettings } from '../src/v2/settings';
 import { generateTerrain, planRegion, generateTown, generateTowns } from '../src/v2/engine';
 import { TerrainCache } from '../src/v2/cache';
@@ -13,7 +13,7 @@ beforeEach(() => {
   native.setQuartersWave.mockClear();
 });
 
-async function fixture() {
+async function buildRegionFixture() {
   const settings = defaultSettings();
   settings.generation = 'procedural';
   settings.runtime = { backend: 'typescript', compute: 'cpu', source: 'procedural' };
@@ -26,17 +26,26 @@ async function fixture() {
   const world = await generateTown(region, settings, 'main');
   for (const [i, key] of ['east', 'west'].entries()) world.settlements!.push({ ...structuredClone(world.settlements![0]), key, main: false, center: { x: 400 + i * 1400, y: 400 }, urban: structuredClone(world.urban) });
   settings.urban = { backend: 'rust' };
+  return { settings, world };
+}
+
+let regionFixture: Awaited<ReturnType<typeof buildRegionFixture>>;
+beforeAll(async () => {
+  regionFixture = await buildRegionFixture();
+});
+
+function fixture() {
   native.build.mockImplementation(async (source: World, _settings, key, _progress, stage) => ({
     urban: { ...structuredClone(source.urban!), buildings: stage === 'layout' ? [] : structuredClone(source.urban!.buildings) },
     snapshot: { stage, marker: key },
     stats: { [`v2.urbanStage:${key}`]: stage ?? 'buildings' },
   }));
-  return { settings, world };
+  return structuredClone(regionFixture);
 }
 
 describe('Cities batch scope', () => {
   it('uses one lane with the single-thread WASM engine and leaves the quarters wave untouched', async () => {
-    const { settings, world } = await fixture(),
+    const { settings, world } = fixture(),
       build = native.build.getMockImplementation()!;
     let active = 0,
       peak = 0;
@@ -57,7 +66,7 @@ describe('Cities batch scope', () => {
     expect(native.setQuartersWave).not.toHaveBeenCalled();
   });
   it('runs an explicit stage for a deduplicated subset and preserves all other cities and regional geometry', async () => {
-    const { settings, world } = await fixture();
+    const { settings, world } = fixture();
     const original = structuredClone(world);
     settings.urban!.local = { east: { houses: { floors: 3 } } };
     const next = await generateTowns(world, settings, undefined, ['east', 'east'], 'layout');
@@ -71,7 +80,7 @@ describe('Cities batch scope', () => {
     expect(world).toEqual(original);
   });
   it('applies the chosen stage to every city when no subset is provided', async () => {
-    const { settings, world } = await fixture();
+    const { settings, world } = fixture();
     const next = await generateTowns(world, settings, undefined, undefined, 'parcels');
     expect(native.build.mock.calls.map(call => [call[2], call[4]])).toEqual([
       ['main', 'parcels'],
@@ -81,13 +90,13 @@ describe('Cities batch scope', () => {
     expect(next.stats['v2.urbanStage:west']).toBe('parcels');
   });
   it('rejects an empty or obsolete subset before any city is modified', async () => {
-    const { settings, world } = await fixture();
+    const { settings, world } = fixture();
     await expect(generateTowns(world, settings, undefined, [])).rejects.toThrow('Select at least one');
     await expect(generateTowns(world, settings, undefined, ['east', 'missing'])).rejects.toThrow('Unknown settlement');
     expect(native.build).not.toHaveBeenCalled();
   });
   it('invalidates only downstream products for a house or cadastral recipe change and tracks the target set', async () => {
-    const { settings, world } = await fixture(),
+    const { settings, world } = fixture(),
       scope = JSON.stringify(['selection', ['east']]);
     const before = cityStageValidityKeys(settings, world, scope);
     settings.urban!.houses = { floors: 3 };
