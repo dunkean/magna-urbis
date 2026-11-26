@@ -1,5 +1,10 @@
 /** English, French, Spanish, Portuguese, Chinese, Arabic, Russian, Japanese. */
 export const roadEditorMessages: readonly (readonly [string,string,string,string,string,string,string,string])[] = [
+  ['Undo river deletion','Annuler la suppression de rivière','Deshacer la eliminación del río','Desfazer a exclusão do rio','撤销删除河流','التراجع عن حذف النهر','Отменить удаление реки','川の削除を元に戻す'],
+  ['Redo river deletion','Rétablir la suppression de rivière','Rehacer la eliminación del río','Refazer a exclusão do rio','重新删除河流','إعادة حذف النهر','Повторить удаление реки','川の削除をやり直す'],
+  ['River and deleted channels restored.','Rivière et chenaux supprimés restaurés.','Se han restaurado el río y los cauces eliminados.','O rio e os canais excluídos foram restaurados.','已恢复河流和被删除的河道。','تمت استعادة النهر والمجاري المحذوفة.','Река и удалённые русла восстановлены.','川と削除された流路を復元しました。'],
+  ['River deletion reapplied.','Suppression de rivière réappliquée.','Se ha vuelto a eliminar el río.','O rio foi excluído novamente.','已再次删除河流。','حُذف النهر مجددًا.','Река снова удалена.','川を再び削除しました。'],
+  ['The map changed. Select the river again.','La carte a changé. Sélectionnez à nouveau la rivière.','El mapa ha cambiado. Vuelve a seleccionar el río.','O mapa mudou. Selecione o rio novamente.','地图已更改。请重新选择河流。','تغيّرت الخريطة. اختر النهر مجددًا.','Карта изменилась. Выберите реку ещё раз.','地図が変更されました。川を選び直してください。'],
   ['Finish Editing','Terminer l’édition','Finalizar edición','Concluir edição','完成编辑','إنهاء التحرير','Завершить редактирование','編集を終了'],
   ['Line selected','Ligne sélectionnée','Línea seleccionada','Linha selecionada','已选择线','تم تحديد الخط','Выбрана линия','線を選択'],
   ['Point selected','Point sélectionné','Punto seleccionado','Ponto selecionado','已选择点','تم تحديد النقطة','Выбрана точка','点を選択'],

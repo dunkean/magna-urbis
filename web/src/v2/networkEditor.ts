@@ -140,6 +140,11 @@ const T = {
   confirmEntry: copy('Delete this regional entry and its road? Shared road sections will be kept.', 'Supprimer cette entrée régionale et sa route ? Les tronçons partagés seront conservés.'),
   cutPreview: copy('The red gap previews the road cut. Click the scissors to apply.', 'L’interruption rouge prévisualise la coupure. Cliquez sur les ciseaux pour l’appliquer.'),
   undo: copy('Undo road edit', 'Annuler la modification de route'),
+  undoRiver: copy('Undo river deletion', 'Annuler la suppression de rivière'),
+  redoRiver: copy('Redo river deletion', 'Rétablir la suppression de rivière'),
+  riverRestored: copy('River and deleted channels restored.', 'Rivière et chenaux supprimés restaurés.'),
+  riverDeletedAgain: copy('River deletion reapplied.', 'Suppression de rivière réappliquée.'),
+  riverMapChanged: copy('The map changed. Select the river again.', 'La carte a changé. Sélectionnez à nouveau la rivière.'),
   redo: copy('Redo road edit', 'Rétablir la modification de route'),
   reroll: copy('Reroll route', 'Autre trajet'),
   sameRoute: copy('This search found the same practicable route.', 'Cette recherche a retrouvé le même trajet praticable.'),
@@ -219,7 +224,7 @@ const pathData = (path: readonly Vec2[]): string => path.map((p, i) => `${i ? 'L
 
 type Drag = { kind: 'vertex' | 'road' | 'segment'; pointer: number; road: number; index: number; base: Polyline; controls: Polyline; inserted?: boolean; origin: Vec2; moved: boolean; start: Vec2; lineTap: boolean };
 type HistoryState = { world: World; exits: Partial<ExitCounts> | undefined; roadsDisabled: boolean; hadRegion: boolean; hadRoads: boolean; roadOverrides?: RoadOverrides; selected: number; vertex: number; segment: number };
-type HistoryEdit = { before: HistoryState; after: HistoryState; validated?: boolean; session?: { before: HistoryState; start: number } };
+type HistoryEdit = { before: HistoryState; after: HistoryState; riverDeletion?: boolean; validated?: boolean; session?: { before: HistoryState; start: number } };
 
 export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
   const modeToken = `network:${host.tools?.join('-') ?? 'all'}`;
@@ -455,7 +460,8 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     const source = world();
     if (!source) return;
     const before = historyState(source);
-    if (host.tools?.includes('roads') && !sessionBefore) {
+    const riverDeletion = current === 'rivers';
+    if (!riverDeletion && host.tools?.includes('roads') && !sessionBefore) {
       sessionBefore = before;
       sessionHistoryStart = undoStack.length;
     }
@@ -464,9 +470,9 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     render();
     try {
       const settings = host.tools?.includes('roads') ? host.getSettings?.() : undefined;
-      const updatedPlan = updateExitCounts(source, next);
       const edited = next;
-      if (host.tools?.includes('roads')) {
+      const updatedPlan = riverDeletion ? undefined : updateExitCounts(source, next);
+      if (!riverDeletion && host.tools?.includes('roads')) {
         next = identifyRoads(syncUrbanRoadEdits(editableRuralRoads(next), source));
         if (settings) {
           settings.roadOverrides = recordRoadOverrides(settings.roadOverrides, source, next, before.roadsDisabled);
@@ -484,7 +490,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
         const u = selectedRoad.urban;
         selected = next.roads?.findIndex(r => r.urban?.key === u.key && r.urban.id === u.id && (r.urban.part === u.part || r.urban.part.startsWith(u.part + ':'))) ?? -1;
       } else if (selectedRoad && next !== edited) selected = next.roads?.findIndex(r => !r.urban && (r.path === selectedRoad.path || samePath(r.path, selectedRoad.path))) ?? -1;
-      undoStack.push({ before, after: historyState(next) });
+      undoStack.push({ before, after: historyState(next), riverDeletion });
       if (undoStack.length > 30) {
         undoStack.shift();
         sessionHistoryStart = Math.max(0, sessionHistoryStart - 1);
@@ -497,8 +503,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
       cutPreview = false;
       drawOverlay();
     } catch (error) {
-      if (host.tools?.includes('roads')) restoreRoadRecipe(before);
-      else restoreExitSettings(before.exits, before.roadsDisabled);
+      if (!riverDeletion) restoreRoadRecipe(before);
       fail(error);
     } finally {
       working = false;
@@ -507,16 +512,20 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
       render();
     }
   }
+  function historyEntry(redo: boolean): HistoryEdit | undefined {
+    const entry = (redo ? redoStack : undoStack).at(-1);
+    return entry && !!entry.riverDeletion === (current === 'rivers') ? entry : undefined;
+  }
   async function historyMove(redo: boolean): Promise<void> {
     if (working || host.busy?.()) return;
     const from = redo ? redoStack : undoStack,
       to = redo ? undoStack : redoStack,
-      entry = from.at(-1);
+      entry = historyEntry(redo);
     if (!entry) return;
     const expected = redo ? entry.before : entry.after,
       target = redo ? entry.after : entry.before;
     if (world() !== expected.world) {
-      fail('The map changed outside road editing. Reopen the road editor before continuing.');
+      fail(entry.riverDeletion ? T.riverMapChanged : 'The map changed outside road editing. Reopen the road editor before continuing.');
       render();
       return;
     }
@@ -527,7 +536,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     cancelPreview();
     render();
     try {
-      restoreRoadRecipe(target);
+      if (!entry.riverDeletion) restoreRoadRecipe(target);
       await host.setWorld(target.world);
       knownWorld = target.world;
       selected = target.selected;
@@ -536,7 +545,8 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
       from.pop();
       to.push(entry);
       host.changed?.();
-      announce(redo ? T.redone : T.undone);
+      if (entry.riverDeletion) announce(redo ? T.riverDeletedAgain : T.riverRestored);
+      else announce(redo ? T.redone : T.undone);
       drawOverlay();
       if (entry.validated) {
         if (redo) {
@@ -549,7 +559,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
         }
       }
     } catch (error) {
-      restoreRoadRecipe(expected);
+      if (!entry.riverDeletion) restoreRoadRecipe(expected);
       fail(error);
     } finally {
       working = false;
@@ -949,7 +959,8 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
   }
   async function deletePlannedRiver(): Promise<void> {
     const w = world();
-    if (!w || !plan || plan.world !== w) return;
+    if (!w || working || !plan || plan.world !== w) return;
+    const selection = plan;
     try {
       let next = deleteRiver(w, plan.plan.selected, { throughLakes }).world;
       const removed = plan.plan.rivers.length,
@@ -964,6 +975,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
           console.warn('Forest refresh after the river deletion failed:', error);
         }
       }
+      if (world() !== w || plan !== selection) throw new Error(T.riverMapChanged);
       plan = undefined;
       working = false;
       await commit(next, fmt(T.riverDeleted, { n: removed }));
@@ -1284,7 +1296,8 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
   function onKey(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
     const historyKey = (event.ctrlKey || event.metaKey) && ['z', 'y'].includes(event.key.toLowerCase());
-    if (current === 'off' && !(host.tools?.includes('roads') && historyKey && (undoStack.length || redoStack.length))) return;
+    if (historyKey && !historyEntry(event.key.toLowerCase() === 'y' || event.shiftKey)) return;
+    if (current === 'off' && !(host.tools?.includes('roads') && historyKey)) return;
     const target = event.target as HTMLElement | null;
     if (document.querySelector('dialog[open]')) return;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
@@ -1564,6 +1577,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
       b.prepend(icon);
       b.dataset.roadReroll = 'true';
     } else if (text === T.deleteRiver) editorButtonIcon(b, 'family-water', '×');
+    else if (text === T.undoRiver || text === T.redoRiver) editorButtonIcon(b, 'family-water', text === T.undoRiver ? '↶' : '↷');
     else if (text === T.undo || text === T.redo) editorButtonIcon(b, 'display-roads', '↶');
     else if (text === T.deleteRoad) editorButtonIcon(b, 'display-roads', '×');
     else if (text === T.removePoint) editorButtonIcon(b, 'display-roads', '−');
@@ -1620,11 +1634,11 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     banner.hidden = current === 'off' || !(status || current === 'roads' || current === 'draw' || (current === 'rivers' && !plan));
     banner.textContent = status ? translate(status) : cutPreview ? translate(T.cutPreview) : current === 'roads' ? translate(addingPoint ? addHint : roadsHint) : current === 'draw' ? translate(autoHint) : translate(T.riversHint);
     if (!w || current === 'off') return;
-    if (current === 'roads') {
+    if (current === 'roads' || current === 'rivers') {
       const history = el('div', 'v2-network-row');
       history.append(
-        button(T.undo, () => void historyMove(false), { disabled: !undoStack.length }),
-        button(T.redo, () => void historyMove(true), { disabled: !redoStack.length }),
+        button(current === 'rivers' ? T.undoRiver : T.undo, () => void historyMove(false), { disabled: !historyEntry(false) }),
+        button(current === 'rivers' ? T.redoRiver : T.redo, () => void historyMove(true), { disabled: !historyEntry(true) }),
       );
       detail.append(history);
     }

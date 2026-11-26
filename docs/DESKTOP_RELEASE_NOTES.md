@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- The river editor can undo and redo a deletion, including all the channels it removed.
 - Fantasy maps keep brush marks in the same positions where detailed views overlap.
 - Town streets render again on WebGL2 devices that enforce reserved shader names.
 - The live map keeps its cartographic overlay when town buildings first appear.

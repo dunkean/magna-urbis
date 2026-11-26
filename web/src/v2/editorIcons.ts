@@ -1,7 +1,7 @@
 import { iconUrl, type IconId } from './stageIcons';
 
 /** Decorative paint stays separate from the live, localized button caption. */
-export function editorButtonIcon(button: HTMLButtonElement, icon: IconId, badge?: '+' | '−' | '×' | '↶' | '✓'): void {
+export function editorButtonIcon(button: HTMLButtonElement, icon: IconId, badge?: '+' | '−' | '×' | '↶' | '↷' | '✓'): void {
   const url = iconUrl(icon);
   if (!url) return;
   button.dataset.editorIcon = icon;
