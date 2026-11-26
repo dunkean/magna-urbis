@@ -4,6 +4,7 @@
 - One star opens fast satellite and two stars open painted satellite. Both keep unlocked houses and the camera. The lower-right magna-urbis link opens the full editor.
 - The preview follows the Azgaar interface language. Its expand icon floats the map over a participating host page. Click outside or press Escape to dock it at the same zoom.
 - The test page lets you choose the population. The iframe shows progress in the center and automatically remembers the detailed view and its last framing.
+- The FMG iframe zooms in farther to show individual buildings.
 - The Minimal map can show parcel boundaries when that layer is enabled.
 
 - Town streets render again on WebGL2 devices that enforce reserved shader names.
