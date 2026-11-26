@@ -20,15 +20,21 @@ export interface UvttFrame extends ExportFrame {
   metresPerGrid: number;
 }
 
-/** One orthographic scale for the picture, the grid and every obstruction. */
-export function uvttFrame(rect: ExportRect, longestEdge: number, requestedMetres?: number): UvttFrame {
+export function orthographicExportFrame(rect: ExportRect, longestEdge: number): ExportFrame {
   const { width, height } = exportPixelSize(rect, longestEdge);
   const scale = longestEdge / Math.max(rect.width, rect.height);
+  return { view: { cx: rect.x + rect.width / 2, cy: rect.y + rect.height / 2, scale }, width, height };
+}
+
+/** One orthographic scale for the picture, the grid and every obstruction. */
+export function uvttFrame(rect: ExportRect, longestEdge: number, requestedMetres?: number): UvttFrame {
+  const frame = orthographicExportFrame(rect, longestEdge);
+  const { scale } = frame.view;
   const target = 100 / scale;
   const decade = 10 ** Math.floor(Math.log10(target));
   const metres = requestedMetres ?? [1, 1.5, 2, 2.5, 3, 5, 7.5, 10].map(n => n * decade).reduce((a, b) => (Math.abs(a - target) <= Math.abs(b - target) ? a : b));
   const pixelsPerGrid = Math.round(metres * scale);
-  return { view: { cx: rect.x + rect.width / 2, cy: rect.y + rect.height / 2, scale }, width, height, pixelsPerGrid, metresPerGrid: pixelsPerGrid / scale };
+  return { ...frame, pixelsPerGrid, metresPerGrid: pixelsPerGrid / scale };
 }
 
 const samePoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) < 1e-7 && Math.abs(a.y - b.y) < 1e-7;

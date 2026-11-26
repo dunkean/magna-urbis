@@ -1,5 +1,7 @@
 ## Alpha 0.3.11
 
+- Export a Foundry VTT scene with its map image, an Owlbear Rodeo map bundle, or a Roll20 UVTT file.
+- Export metric 3D terrain and buildings as glTF, Wavefront OBJ, a Godot 4 project, or a Unity asset package.
 - Export a region, town or selected area as Universal VTT with detailed overhead buildings, a configurable grid, and fortification walls and gates. Building footprints can also block vision.
 - On newly generated vector maps, the river deletion preview distinguishes separate watercourses even when their drawn endpoints overlap.
 - Rural land cover stops at the drawn coastline and follows island shores.

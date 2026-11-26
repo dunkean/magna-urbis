@@ -771,19 +771,19 @@ export class StudioClient {
       throw error;
     }
   }
-  async exportBench(settings: V2Settings, resolved: ResolvedAppearance, size: number, layers: Partial<ExportLayers>, frame?: ExportFrame): Promise<HTMLCanvasElement> {
+  async exportBench(settings: V2Settings, resolved: ResolvedAppearance, size: number, layers: Partial<ExportLayers>, frame?: ExportFrame, source = this.world): Promise<HTMLCanvasElement> {
     // Style switches may still be preparing the shared GPU resources. Export waits for that work.
     for (;;) {
       const work = this.appearanceWork;
       await work;
       if (work === this.appearanceWork) break;
     }
-    if (!this.world) throw new Error('Create a region first.');
+    if (!source) throw new Error('Create a region first.');
     if (resolved.path === 'minimal') {
       const { MinimalRenderer } = await import('./minimalRenderer'),
         renderer = new MinimalRenderer(() => {});
       try {
-        await renderer.set(this.world, settings, resolved, layers);
+        await renderer.set(source, settings, resolved, layers);
         return await renderer.capture(size);
       } finally {
         renderer.dispose();
@@ -792,7 +792,7 @@ export class StudioClient {
     const { BenchRenderer } = await import('./benchRenderer');
     // Use the viewer's async GPU path for exports too. Forcing the raster path recompiles the
     // satellite material in synchronous WebGL even when the viewer already runs on WebGPU.
-    const world = mapPresentation(this.world, settings),
+    const world = mapPresentation(source, settings),
       snapshot = { ...settings, appearance: settings.appearance ? structuredClone(settings.appearance) : undefined },
       renderer = new BenchRenderer(() => {}, false, this.bench?.rasterContext(), this.bench?.sharedResources());
     renderer.resourceSource = w => this.resources(w);

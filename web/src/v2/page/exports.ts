@@ -8,7 +8,11 @@ import { mapPresentation } from '../mapPresentation';
 import { ruralSemanticLegend } from '../../render/semanticLayer';
 import { resolveSettingsAppearance, resolvedDisplayOptions } from '../appearance';
 import { presetComposition } from '../../render/composition';
-import { uvttDocument, uvttFrame, uvttImageData } from '../uvtt';
+import { orthographicExportFrame, uvttDocument, uvttFrame } from '../uvtt';
+import { encodeVttMap, isVttExport, type VttExport } from '../vttFormats';
+import { encodeMapMesh, isMeshExport, type MeshExport } from '../meshFormats';
+import { viewRect } from '../../render/view';
+import type { ExportRect } from '../../ui/exportCropGeometry';
 import type { World } from '../../gen/types';
 import type { ExportLayers } from '../../render/exportLayers';
 import { chooseExportArea, chooseExportCrop } from '../../ui/exportCrop';
@@ -115,8 +119,7 @@ export function createExportsActions(state: PageState, actions: PageActions) {
     }
   }
 
-  async function uvttMapExport(width: number, crop: boolean): Promise<{ blob: Blob; metres: number } | null> {
-    const world = state.world!;
+  function detailedExportAppearance(world: World) {
     const base = state.settings;
     const initial = resolveSettingsAppearance(base, world, 'export');
     const composition = initial.composition.recipe;
@@ -135,35 +138,75 @@ export function createExportsActions(state: PageState, actions: PageActions) {
         },
       },
     };
-    const resolved = resolveSettingsAppearance(settings, world, 'export');
-    const layers = exportLayers();
-    const map = { x: 0, y: 0, width: world.mapSize, height: world.mapSize };
-    let rect = map;
-    if (crop) {
-      const preview = await state.client.exportBench(settings, resolved, 1200, layers);
-      try {
-        const area = await chooseExportArea(await canvasPng(preview), map, width, bindTree);
-        if (!area) return null;
-        rect = area.rect;
-      } finally {
-        preview.width = preview.height = 0;
-      }
+    return { settings, resolved: resolveSettingsAppearance(settings, world, 'export') };
+  }
+
+  async function mapExportRect(world: World, width: number, crop: boolean, appearance: ReturnType<typeof detailedExportAppearance>, layers: Partial<ExportLayers>): Promise<ExportRect | null> {
+    const bounds = { x: 0, y: 0, width: world.mapSize, height: world.mapSize };
+    if (!crop) return bounds;
+    const preview = await state.client.exportBench(appearance.settings, appearance.resolved, 1200, layers, undefined, world);
+    try {
+      return (await chooseExportArea(await canvasPng(preview), bounds, width, bindTree))?.rect ?? null;
+    } finally {
+      preview.width = preview.height = 0;
     }
+  }
+
+  function areaName(name: string, area: ExportRect, crop: boolean): string {
+    if (!crop) return name;
+    const [x, y, w, h] = [area.x, area.y, area.width, area.height].map(Math.round);
+    return `${name}-${x}-${y}-${w}x${h}`;
+  }
+
+  async function uvttMapExport(format: VttExport, name: string, width: number, crop: boolean): Promise<{ blob: Blob; extension: string; metres: number } | null> {
+    const world = state.world!;
+    const appearance = detailedExportAppearance(world);
+    const layers = exportLayers();
+    const rect = await mapExportRect(world, width, crop, appearance, layers);
+    if (!rect) return null;
     const grid = $<HTMLInputElement>('#export-vtt-grid');
     if (!grid.checkValidity()) throw new Error(translate('Enter a positive distance per VTT grid cell.'));
     const frame = uvttFrame(rect, width, grid.value === '' ? undefined : grid.valueAsNumber);
     if (frame.pixelsPerGrid < 50) throw new Error(translate('Use a larger distance per cell, a higher resolution, or a smaller export area. The VTT grid needs at least 50 pixels per cell.'));
     if (!Number.isFinite(frame.pixelsPerGrid) || frame.pixelsPerGrid > Math.max(frame.width, frame.height)) throw new Error(translate('The VTT grid cell is larger than the export area.'));
     setText($('#export-note'), 'Rendering the VTT map…');
-    const canvas = await state.client.exportBench(settings, resolved, width, layers, frame);
+    const canvas = await state.client.exportBench(appearance.settings, appearance.resolved, width, layers, frame, world);
     try {
-      const image = await uvttImageData(await canvasPng(canvas));
+      const png = await canvasPng(canvas);
       const obstacles = $<HTMLInputElement>('#export-vtt-building-walls').checked;
-      const output = uvttDocument(world, frame, image, obstacles, layers.city !== false);
-      return { blob: new Blob([JSON.stringify(output)], { type: 'application/json' }), metres: frame.metresPerGrid };
+      const output = uvttDocument(world, frame, '', obstacles, layers.city !== false);
+      const archive = await encodeVttMap(format, output, frame, png, areaName(name, rect, crop));
+      return { ...archive, metres: frame.metresPerGrid };
     } finally {
       canvas.width = canvas.height = 0;
     }
+  }
+
+  async function meshMapExport(format: MeshExport, name: string, width: number, crop: boolean): Promise<{ blob: Blob; extension: string } | null> {
+    const world = state.world!;
+    const appearance = detailedExportAppearance(world);
+    const layers = exportLayers();
+    const rect = await mapExportRect(world, width, crop, appearance, layers);
+    if (!rect) return null;
+    setText($('#export-note'), 'Building the 3D export…');
+    const frame = orthographicExportFrame(rect, width);
+    const bounds = viewRect(frame.view, frame.width, frame.height);
+    const area = { x: bounds.minX, y: bounds.minY, width: bounds.maxX - bounds.minX, height: bounds.maxY - bounds.minY };
+    let texture: Uint8Array | undefined;
+    if (layers.terrain !== false) {
+      const canvas = await state.client.exportBench(appearance.settings, appearance.resolved, width, { ...layers, city: false, labels: false }, frame, world);
+      try {
+        texture = new Uint8Array(await (await canvasPng(canvas)).arrayBuffer());
+      } finally {
+        canvas.width = canvas.height = 0;
+      }
+    }
+    const { mapMesh } = await import('../mapMesh');
+    const resolution = Number($<HTMLSelectElement>('#export-mesh-grid').value);
+    const scene = await mapMesh(world, area, resolution, layers, !appearance.resolved.underdark && appearance.resolved.city.groundShaping, appearance.resolved.city.terraces);
+    if (!scene.parts.length) throw new Error(translate('The selected area and layers contain no 3D meshes.'));
+    const { bytes, extension, type } = await encodeMapMesh(scene, format, areaName(name, rect, crop), texture);
+    return { blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type }), extension };
   }
 
   /** The SVG export never reads the native town snapshots: they are not cloned into its worker. */
@@ -198,30 +241,25 @@ export function createExportsActions(state: PageState, actions: PageActions) {
     const select = $<HTMLSelectElement>('#export-format');
     if (!available && select.value === 'svg') select.value = 'png';
     const format = select.value;
-    $('#export-map-options').hidden = !['png', 'svg', 'dd2vtt'].includes(format);
-    $('#export-vtt-options').hidden = format !== 'dd2vtt';
-    setText(
-      $('#export-note'),
-      format === 'binary'
-        ? 'The binary project retains the exact map, settings and edits in a compressed file.'
-        : format === 'project'
-          ? 'The JSON project is a readable interchange format. Use Save map for a smaller file.'
-          : format === 'heightmap'
-            ? '65,536-level PNG with its elevation range, ready to import again. Save map retains the exact FP32 grids.'
-            : format === 'recipe'
-              ? 'The recipe retains settings and edits. Faithful reproduction requires the same engine version.'
-              : format === 'seed'
-                ? 'The seed alone contains neither your settings nor your edits.'
-                : format === 'names'
-                  ? 'Renamed places and edited labels, which the short code does not carry.'
-                : format === 'dd2vtt'
-                  ? 'Exports a detailed overhead map, walls and gates. Set the cell distance in your VTT after importing.'
-                  : !available
-                  ? 'SVG is unavailable for the current style. Use PNG.'
-                  : 'Visual exports use the current map without rerunning generation.',
-    );
+    $('#export-map-options').hidden = !['png', 'svg'].includes(format) && !isVttExport(format) && !isMeshExport(format);
+    $('#export-vtt-options').hidden = !isVttExport(format);
+    $('#export-mesh-options').hidden = !isMeshExport(format);
+    const explicit: Record<string, string> = {
+      binary: 'The binary project retains the exact map, settings and edits in a compressed file.',
+      project: 'The JSON project is a readable interchange format. Use Save map for a smaller file.',
+      heightmap: '65,536-level PNG with its elevation range, ready to import again. Save map retains the exact FP32 grids.',
+      recipe: 'The recipe retains settings and edits. Faithful reproduction requires the same engine version.',
+      seed: 'The seed alone contains neither your settings nor your edits.',
+      names: 'Renamed places and edited labels, which the short code does not carry.',
+      foundry: 'Includes a Foundry 14 scene JSON and its background image.',
+      owlbear: 'Includes a PNG for the scene importer and UVTT for Smoke & Spectre!.',
+      roll20: 'Import this UVTT from the Roll20 page menu using Upload Background.',
+      dd2vtt: 'Exports a detailed overhead map, walls and gates. Set the cell distance in your VTT after importing.',
+    };
+    const visual = available ? 'Visual exports use the current map without rerunning generation.' : 'SVG is unavailable for the current style. Use PNG.';
+    setText($('#export-note'), explicit[format] ?? (isMeshExport(format) ? 'Exports metric meshes and a terrain texture. Resolution controls the texture size.' : visual));
   }
-  return { download, svgExport, pngMapExport, uvttMapExport, heightmapBlob, syncExportOptions };
+  return { download, svgExport, pngMapExport, uvttMapExport, meshMapExport, heightmapBlob, syncExportOptions };
 }
 
 export function mountExports(state: PageState, actions: PageActions): void {
@@ -232,6 +270,16 @@ export function mountExports(state: PageState, actions: PageActions): void {
     'SVG is unavailable for the current style. Use PNG.': { en: 'SVG is unavailable for the current style. Use PNG.', fr: 'Le SVG n’est pas disponible pour le style actuel. Utilisez le PNG.' },
     'SVG vector map · unavailable for this style': { en: 'SVG vector map · unavailable for this style', fr: 'Carte vectorielle SVG · indisponible pour ce style' },
     'Universal VTT · .dd2vtt': { en: 'Universal VTT · .dd2vtt', fr: 'Universal VTT · .dd2vtt' },
+    'Foundry VTT 14 · Scene ZIP': { en: 'Foundry VTT 14 · Scene ZIP', fr: 'Foundry VTT 14 · Scène ZIP' },
+    'Owlbear Rodeo · Map and UVTT ZIP': { en: 'Owlbear Rodeo · Map and UVTT ZIP', fr: 'Owlbear Rodeo · Carte et UVTT ZIP' },
+    'Godot 4 · Project ZIP': { en: 'Godot 4 · Project ZIP', fr: 'Godot 4 · Projet ZIP' },
+    'Terrain mesh subdivisions': { en: 'Terrain mesh subdivisions', fr: 'Subdivisions du maillage de terrain' },
+    'Includes a Foundry 14 scene JSON and its background image.': { en: 'Includes a Foundry 14 scene JSON and its background image.', fr: 'Contient la scène JSON Foundry 14 et son image de fond.' },
+    'Includes a PNG for the scene importer and UVTT for Smoke & Spectre!.': { en: 'Includes a PNG for the scene importer and UVTT for Smoke & Spectre!.', fr: 'Contient un PNG pour l’import de scène et un UVTT pour Smoke & Spectre!.' },
+    'Import this UVTT from the Roll20 page menu using Upload Background.': { en: 'Import this UVTT from the Roll20 page menu using Upload Background.', fr: 'Dans le menu des pages de Roll20, choisissez Upload Background pour importer cet UVTT.' },
+    'Exports metric meshes and a terrain texture. Resolution controls the texture size.': { en: 'Exports metric meshes and a terrain texture. Resolution controls the texture size.', fr: 'Exporte des maillages métriques et une texture de terrain. La résolution règle la taille de la texture.' },
+    'Building the 3D export…': { en: 'Building the 3D export…', fr: 'Préparation de l’export 3D…' },
+    'The selected area and layers contain no 3D meshes.': { en: 'The selected area and layers contain no 3D meshes.', fr: 'La zone et les calques sélectionnés ne contiennent aucun maillage 3D.' },
     'Metres per VTT grid cell': { en: 'Metres per VTT grid cell', fr: 'Mètres par case VTT' },
     'Buildings block vision': { en: 'Buildings block vision', fr: 'Les bâtiments bloquent la vision' },
     'Exports a detailed overhead map, walls and gates. Set the cell distance in your VTT after importing.': { en: 'Exports a detailed overhead map, walls and gates. Set the cell distance in your VTT after importing.', fr: 'Exporte une carte détaillée vue du dessus, les murs et les portes. Réglez la distance par case dans le VTT après l’import.' },
@@ -290,18 +338,23 @@ export function mountExports(state: PageState, actions: PageActions): void {
         await new Promise<void>(resolve => setTimeout(resolve, 0));
         const width = Number($<HTMLSelectElement>('#export-resolution').value),
           crop = $<HTMLInputElement>('#export-crop').checked;
-        let blob: Blob | null;
+        let blob: Blob | null, extension = format;
         if (format === 'png') blob = await exporter.pngMapExport(width, crop);
-        else if (format === 'dd2vtt') {
-          const result = await exporter.uvttMapExport(width, crop);
+        else if (isVttExport(format)) {
+          const result = await exporter.uvttMapExport(format, name, width, crop);
           blob = result?.blob ?? null;
-          if (result) success = translate('VTT export downloaded. Set the grid to {distance} m per cell.').replace('{distance}', result.metres.toLocaleString(numberLocale(), { maximumSignificantDigits: 4 }));
+          extension = result?.extension ?? format;
+          if (result && format !== 'foundry') success = translate('VTT export downloaded. Set the grid to {distance} m per cell.').replace('{distance}', result.metres.toLocaleString(numberLocale(), { maximumSignificantDigits: 4 }));
+        } else if (isMeshExport(format)) {
+          const result = await exporter.meshMapExport(format, name, width, crop);
+          blob = result?.blob ?? null;
+          extension = result?.extension ?? format;
         } else {
           const svg = await exporter.svgExport();
           blob = crop ? ((await chooseExportCrop(svg, width, bindTree))?.blob ?? null) : svg;
         }
         if (!blob) return;
-        actions.download(blob, `${name}.${format}`);
+        actions.download(blob, `${name}.${extension}`);
       }
       actions.log(`Export : ${format}`);
       actions.toast(success);
