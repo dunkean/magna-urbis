@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { partitionRegion, type FieldNet } from '../../rust/bridge/landuseTools';
 import { Rng } from '../src/gen/core/rng';
 import { Noise2D } from '../src/gen/core/noise';
@@ -27,9 +27,15 @@ const corners = (p: Polygon, minimumTurn: number) =>
     return Math.abs(Math.atan2(dx * ey - dy * ex, dx * ex + dy * ey)) > minimumTurn;
   }).length;
 describe('compact agricultural holdings', () => {
+  const flat = net(),
+    holed = net(),
+    hole = box(300, 280, 65, 85);
+  beforeAll(() => {
+    partitionRegion(box(0, 0, 900), [], ctx('flat-holdings'), flat);
+    partitionRegion(box(0, 0, 900), [hole], { ...ctx('hole'), dirAt: () => 0 }, holed);
+  });
   it('keeps four-sided agricultural holdings on flat ground while their shared boundaries bend', () => {
-    const result = net();
-    partitionRegion(box(0, 0, 900), [], ctx('flat-holdings'), result);
+    const result = flat;
     expect(result.furlongs.length).toBeGreaterThan(20);
     let total = 0,
       quadrilaterals = 0;
@@ -49,6 +55,9 @@ describe('compact agricultural holdings', () => {
     expect(result.furlongs.some(f => corners(f.outer, 1e-6) > 4)).toBe(true);
     expect(result.headlands).toHaveLength(0);
     expect(result.ways.length).toBeLessThanOrEqual(2);
+  });
+  it('conserves the complete flat agricultural area', () => {
+    const total = flat.furlongs.reduce((sum, f) => sum + Math.abs(polygonArea(f.outer)), 0);
     expect(total).toBeCloseTo(810000, 3);
   });
   it('uses straight quadrilaterals for compact plots below the agricultural size range', () => {
@@ -64,13 +73,12 @@ describe('compact agricultural holdings', () => {
     expect(result.margins).toHaveLength(1);
     expect(mpArea(result.margins!)).toBeCloseTo(3200, 4);
   });
-  it('preserves holes and the complete source area without overlapping holdings', () => {
-    const result = net(),
-      outer = box(0, 0, 900),
-      hole = box(300, 280, 65, 85);
-    partitionRegion(outer, [hole], { ...ctx('hole'), dirAt: () => 0 }, result);
-    const all = [...result.furlongs.map(f => ({ outer: f.outer, holes: f.holes })), ...(result.margins ?? [])];
-    expect(mpArea(intersectionS(all, hole))).toBeLessThan(0.001);
+  const holedPieces = () => [...holed.furlongs.map(f => ({ outer: f.outer, holes: f.holes })), ...(holed.margins ?? [])];
+  it('keeps holdings and margins out of the hole', () => {
+    expect(mpArea(intersectionS(holedPieces(), hole))).toBeLessThan(0.001);
+  });
+  it('conserves the complete holed agricultural area without overlapping holdings', () => {
+    const all = holedPieces();
     expect.soft(mpArea(all)).toBeCloseTo(mpArea(unionS(all)), 3);
     expect.soft(mpArea(all)).toBeCloseTo(810000 - 65 * 85, 3);
   });
