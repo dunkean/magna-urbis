@@ -88,7 +88,10 @@ export class MapView implements AppearanceListener, ViewStatus {
     if (document.hidden) {
       this.motion.restDone();
       this.suspendStepwisePaints();
-    } else if (this.map.world) this.map.repaint();
+    } else if (this.map.world) {
+      this.composed.retryOnForeground();
+      this.map.repaint();
+    }
   };
 
   draw(view: View, w: number, h: number, dpr: number): void {

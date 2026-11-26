@@ -495,6 +495,10 @@ export class ComposedView {
   syncWork(): void {
     this.live?.setPaused(this.map.preparing || (handheldDevice() && document.hidden) || !(this.onPage || this.warming));
   }
+  /** A new foreground visit can try a context once more after the previous retry budget was exhausted. */
+  retryOnForeground(): void {
+    if (!this.live && this.refusedUntil === Infinity) this.refusedUntil = 0;
+  }
   private applyVisibility(): void {
     if (this.overlayOnPage) this.overlayOnPage.style.visibility = !this.volumeBuildings && atOrAbove('overlay', this.shownFrom) ? 'visible' : 'hidden';
     this.cityCanvas.style.visibility = !this.volumeBuildings && atOrAbove('city', this.shownFrom) ? 'visible' : 'hidden';
