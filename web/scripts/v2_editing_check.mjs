@@ -30,7 +30,12 @@ try {
   const point = (x, y) => ({ x: map.x + map.width / 2 + (x - 500) * scale, y: map.y + map.height / 2 + (y - 500) * scale });
   await page.locator('[data-network-tool=rivers]').click();
   await page.mouse.click(point(500, 400).x, point(500, 400).y);
+  const metricsBeforeDeletion = await page.locator('#map-metrics').textContent();
   await page.getByRole('button', { name: 'Delete river and tributaries', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('#map-metrics').textContent.startsWith('1 '));
+  await page.getByRole('button', { name: 'Undo river deletion', exact: true }).click();
+  await page.waitForFunction(expected => document.querySelector('#map-metrics').textContent === expected, metricsBeforeDeletion);
+  await page.getByRole('button', { name: 'Redo river deletion', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('#map-metrics').textContent.startsWith('1 '));
   await page.locator('#family-tab-map').click();
   await reveal('[data-network-quick=roads]');

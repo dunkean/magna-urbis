@@ -733,24 +733,28 @@ const texel = (r: CanopyRaster, x: number, y: number): number => {
 };
 /** Closed canopy share over a point, 0 open to 1 closed: open land of the occupation (fields, meadows, clearings,
  * towns) carries none; a covered way (class 12) keeps the woods it runs through. */
-function canopyAt(x: number, y: number, occupation: CanopyOccupation | undefined): number {
-  if (!canopyField) return 0;
-  const f = texel(canopyField, x, y);
+export function forestCanopyAt(field: CanopyRaster | undefined, x: number, y: number, occupation: CanopyOccupation | undefined): number {
+  if (!field) return 0;
+  const f = texel(field, x, y);
   if (f < 0) return 0;
   const o = occupation ? texel(occupation, x, y) : -1;
   if (o >= 0 && blocksCanopy(occupation!.rgba, o)) return 0;
   // Read the continuous control field like the 3D canopy, instead of stepping between its coarse texels.
-  const gx = ((x - canopyField.x) / canopyField.width) * canopyField.n - 0.5,
-    gy = ((y - canopyField.y) / canopyField.width) * canopyField.n - 0.5;
+  const gx = ((x - field.x) / field.width) * field.n - 0.5,
+    gy = ((y - field.y) / field.width) * field.n - 0.5;
   const ix = Math.floor(gx),
     iy = Math.floor(gy),
     fx = gx - ix,
     fy = gy - iy;
-  const at = (i: number, j: number): number => canopyField!.rgba[(clamp(j, 0, canopyField!.n - 1) * canopyField!.n + clamp(i, 0, canopyField!.n - 1)) * 4] / 255;
-  const c = (at(ix, iy) * (1 - fx) + at(ix + 1, iy) * fx) * (1 - fy) + (at(ix, iy + 1) * (1 - fx) + at(ix + 1, iy + 1) * fx) * fy;
+  const x0 = clamp(ix, 0, field.n - 1) * 4,
+    x1 = clamp(ix + 1, 0, field.n - 1) * 4,
+    y0 = clamp(iy, 0, field.n - 1) * field.n * 4,
+    y1 = clamp(iy + 1, 0, field.n - 1) * field.n * 4;
+  const c = ((field.rgba[y0 + x0] * (1 - fx) + field.rgba[y0 + x1] * fx) * (1 - fy) + (field.rgba[y1 + x0] * (1 - fx) + field.rgba[y1 + x1] * fx) * fy) / 255;
   const t = clamp((c - 0.3) / 0.45, 0, 1);
   return t * t * (3 - 2 * t);
 }
+const canopyAt = (x: number, y: number, occupation: CanopyOccupation | undefined): number => forestCanopyAt(canopyField, x, y, occupation);
 /** Canopy levels of a split way: 0 open … CANOPY_LEVELS - 1 closed. */
 export const CANOPY_LEVELS = 4;
 /** A continuous trace in canopy gaps; made roads lose only a little contrast at their cleared edges. */

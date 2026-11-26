@@ -1,7 +1,7 @@
 /** Pure machine policy checks: optional hints are neutral, combined constraints demote, hard limits beat preferences,
  * and the handheld ladder moves by measured windows. */
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { decideMachineTier, decidePerformance, forcedMachineTier, machineDefaultPreset, handheldStart, handheldWindowStep, type LearnedPerformance } from '../src/v2/machineTier';
+import { decideMachineTier, decidePerformance, forcedMachineTier, machineDefaultPreset, handheldStart, handheldWindowStep, prefersCpuSatelliteGround, type LearnedPerformance } from '../src/v2/machineTier';
 import { machineViewDefaults, performanceKnobs } from '../src/v2/machineView';
 import { TREE_DISTANCE_MIN, TREE_DISTANCE_DEFAULT } from '../src/ui/terrain3dTrees';
 import { VIEW_DEPTH_DEFAULT } from '../src/render/world/viewDepth';
@@ -22,6 +22,13 @@ async function page(search = '', storage = memoryStorage()) {
   return policy;
 }
 describe('machine defaults', () => {
+  it('keeps the textured economy ground on the CPU for the affected phone GPU', () => {
+    const affected = 'ANGLE (Qualcomm, Adreno (TM) 619, OpenGL ES 3.2)';
+    expect(prefersCpuSatelliteGround({ handheld: true, level: 'economy' }, affected)).toBe(true);
+    expect(prefersCpuSatelliteGround({ handheld: true, level: 'balanced' }, affected)).toBe(false);
+    expect(prefersCpuSatelliteGround({ handheld: false, level: 'economy' }, affected)).toBe(false);
+    expect(prefersCpuSatelliteGround({ handheld: true, level: 'economy' }, 'Adreno (TM) 730')).toBe(false);
+  });
   it.each(['SwiftShader', 'Microsoft WARP', 'ANGLE (D3D11 WARP)', 'llvmpipe'])('uses minimal for %s', renderer => expect(decideMachineTier({ webgl2: true, renderer }).tier).toBe('veryslow'));
   it('requires WebGL2 and combines CPU and memory constraints', () => {
     expect(decideMachineTier({ webgl2: false }).tier).toBe('veryslow');

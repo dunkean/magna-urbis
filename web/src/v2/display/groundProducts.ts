@@ -9,7 +9,7 @@
 import { rasterizeSvg as imageOf } from '../../render/svgRaster';
 import type { MaterialRasterContext } from '../../../../rust/bridge/terrainMaterialContext';
 import type { World } from '../../gen/types';
-import { setRoadCanopy } from '../../render/roadStyle';
+import { forestCanopyAt, setRoadCanopy } from '../../render/roadStyle';
 import { v2DisplayForestAsync, v2ForestOccupationParts, withBuildingOccupationAsync } from '../displayForest';
 import { localEditRegions } from '../localEditRegion';
 import type { ForestField, ForestOccupation } from '../../../../rust/bridge/terrainForest';
@@ -23,7 +23,7 @@ import { seaDistanceSurface, seaMaterialSvg } from '../../render/terrainWater';
 import { DEFAULT_FRACTAL_DETAIL, seedHash } from '../../../../rust/bridge/terrainAdjust';
 import { climateOf, type TerrainData, type TerrainSettings } from '../../../../rust/bridge/terrain';
 import { displayBiomeName, displayTerrainSettings } from '../displayBiome';
-import { createTerrainRenderer, type TerrainRenderer } from '../../ui/terrainRenderer';
+import { createTerrainRenderer, requestedTerrainBackend, type TerrainRenderer } from '../../ui/terrainRenderer';
 import { MAP_GPU_FAILED_MESSAGE, MAP_GPU_LIGHTER_MESSAGE, MapContextLostError, enterMapGpuLight, isMapContextLost, noteMapRenderer } from '../../ui/glContextRecovery';
 import { registerFantasyBrushes, isFantasyStyle, renderFantasyTerrain, prepareFantasyTerrain } from '../../../../rust/bridge/fantasyTerrain';
 import { fantasyClearance, prepareFantasyRaster, type FantasyRaster } from '../../ui/fantasyRaster';
@@ -32,6 +32,7 @@ import { getDisplayQuality, reportDisplayRenderer } from '../../render/displayQu
 import type { GroundTileRenderer } from '../../render/live/contract';
 import { underdarkSceneLook } from '../../render/underdarkLighting';
 import { nativeCitiesOf } from '../nativeProducts';
+import { prefersCpuSatelliteGround } from '../machineTier';
 import { SOFTWARE_GL } from '../../render/softwareGl';
 import type { Ground } from './contract';
 import type { MapState } from './mapState';
@@ -85,6 +86,7 @@ export class GroundProducts implements Ground {
   /** The terrain draws on the GPU when it can; the CPU raster otherwise. Evaluated lazily: the terrainData pass may demote it. */
   mode(): 'gpu' | 'cpu' {
     const r = this.map.resolved!;
+    if (r.target === 'view2d' && r.ground.traits.satelliteVariant > 0 && !requestedTerrainBackend() && prefersCpuSatelliteGround()) return 'cpu';
     return this.map.exportLayers.terrain !== false && r.ground.layers.relief && !isFantasyStyle(r.ground.style) && !this.gpuUnavailable ? 'gpu' : 'cpu';
   }
   preparePrograms(): Promise<void> {
@@ -252,11 +254,24 @@ export class GroundProducts implements Ground {
     }
     if (handheldDevice() && r.target === 'view2d' && layers.relief && r.ground.traits.satelliteVariant > 0) {
       // A lost GPU must not trigger a full satellite raster and shader rebuild on the UI thread.
-      const palette = biomePalette(terrainStyle(style, colors).palette, displayBiomeName(settings, world));
+      const basePalette = terrainStyle(style, colors).palette;
+      const palette = biomePalette(
+        r.ground.traits.paperMap || isUnderdarkBiome(world.options.biome)
+          ? basePalette
+          : { ...basePalette, hypso: [[0, '#9c9d68'], [0.2, '#8e9164'], [0.55, '#a79b82'], [1, '#a6a39c']], shade: 0.68 },
+        displayBiomeName(settings, world),
+      );
+      const [field, occupation] = await Promise.all([v2DisplayForestAsync(world, settings, r), this.groundOccupation()]);
+      setRoadCanopy(field, occupation);
       const pixels = renderTerrainPixels(
         world,
-        { ...palette, paper: layers.water && t.globalMinHeight < 0 ? palette.seaFill : palette.paper, hypso: layers.hypsometry ? palette.hypso : [[0, palette.paper], [1, palette.paper]], hatch: 0, grain: 0 },
-        { pixels: 512, lighting, heightRange: { min: Math.max(0, t.globalMinHeight), max: Math.max(1, t.globalMaxHeight) } },
+        { ...palette, paper: layers.water && t.globalMinHeight < 0 ? palette.seaFill : palette.paper, hypso: layers.hypsometry ? palette.hypso : [[0, palette.paper], [1, palette.paper]], hatch: 0, grain: 0.035 },
+        {
+          pixels: 512,
+          lighting,
+          heightRange: { min: Math.max(0, t.globalMinHeight), max: Math.max(1, t.globalMaxHeight) },
+          canopy: field ? { color: palette.land.forest, coverageAt: (x, y) => forestCanopyAt(field, x, y, occupation) } : undefined,
+        },
       );
       const canvas = document.createElement('canvas');
       canvas.width = pixels.w;

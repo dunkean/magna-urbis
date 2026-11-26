@@ -64,9 +64,10 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (c.deps.terrain && nextSource.landuse?.areas !== sourceWorld.landuse?.areas) c.terrainImg = undefined;
     if (nextScene.density?.cov !== scene.density?.cov) c.densityImg = undefined;
     if (nextScene.furrows !== scene.furrows) c.furrowCache.clear();
+    // Forest sprite atlas rows encode the biome-dependent conifer choice.
+    if (nextScene !== scene || nextWorld.options.biome !== world.options.biome) c.treeSprites.clear();
     if (nextScene !== scene) {
       c.treeMarks.clear();
-      c.treeSprites.clear();
       if (!sameContent) {
         c.penMarks.clear();
         c.penBlocks.invalidate(local ? nextScene.dirty : undefined, LAYER_TILE_REACH);

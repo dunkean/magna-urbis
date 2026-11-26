@@ -68,7 +68,9 @@ describe('on-demand browser neural downloads', () => {
   it('translates every new source string into every V2 language', () => {
     for (const row of neuralDownloadMessages)
       for (const [index, language] of LANGUAGES.entries()) {
-        expect(translate(row[0], language.code)).toBe(row[index]);
+        // Authored columns cover the first eight languages; community locales come from src/locales/*.json.
+        if (index < row.length) expect(translate(row[0], language.code)).toBe(row[index]);
+        else expect(translate(row[0], language.code), `${language.code}: ${row[0]}`).not.toBe(row[0]);
       }
   });
 });

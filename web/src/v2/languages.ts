@@ -7,6 +7,10 @@ export const LANGUAGES = [
   { code: 'ar', name: 'العربية', locale: 'ar' },
   { code: 'ru', name: 'Русский', locale: 'ru-RU' },
   { code: 'ja', name: '日本語', locale: 'ja-JP' },
+  { code: 'de', name: 'Deutsch', locale: 'de-DE' },
+  { code: 'it', name: 'Italiano', locale: 'it-IT' },
+  { code: 'pl', name: 'Polski', locale: 'pl-PL' },
+  { code: 'ko', name: '한국어', locale: 'ko-KR' },
 ] as const;
 export type Language = (typeof LANGUAGES)[number]['code'];
 export const isLanguage = (value: unknown): value is Language => LANGUAGES.some(item => item.code === value);

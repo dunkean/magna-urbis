@@ -113,8 +113,8 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
     if (!isRecord(value.naming)) throw new Error('Nommage invalide.');
     checkEnum(value.naming.toponymCulture, CULTURES, 'culture des toponymes');
     checkEnum(value.naming.mode, ['cultural', 'localized'], 'mode des toponymes');
-    checkEnum(value.naming.displayLanguage, ['fr', 'en', 'ja', 'ar', 'es', 'pt', 'zh', 'ru'], 'langue d’affichage des toponymes');
-    checkEnum(value.naming.mapLanguage, ['ui', 'fr', 'en', 'ja', 'ar', 'es', 'pt', 'zh', 'ru'], 'langue de la carte');
+    checkEnum(value.naming.displayLanguage, ['fr', 'en', 'ja', 'ar', 'es', 'pt', 'zh', 'ru', 'de', 'it', 'pl', 'ko'], 'langue d’affichage des toponymes');
+    checkEnum(value.naming.mapLanguage, ['ui', 'fr', 'en', 'ja', 'ar', 'es', 'pt', 'zh', 'ru', 'de', 'it', 'pl', 'ko'], 'langue de la carte');
     checkEnum(value.naming.script, ['source', 'latin'], 'écriture des noms');
     const policy = (v: unknown) => {
       if (!isRecord(v)) throw new Error('Profil de nommage invalide.');

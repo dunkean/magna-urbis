@@ -103,10 +103,10 @@ function mockGl(): WebGL2RenderingContext {
   });
 }
 /** The frame the compositor would hand the layers for a view. */
-function frame(gl: WebGL2RenderingContext, view: View, heights: TerrainHeights): LiveFrame {
+function frame(gl: WebGL2RenderingContext, view: View, heights: TerrainHeights, width = W, height = H): LiveFrame {
   const camera = createFrameCamera();
-  frameCamera(camera, view, W, H, W, H, 1, heights);
-  return { gl, view, cssW: W, cssH: H, dpr: 1, width: W, height: H, camera, target: null, now: 0, moving: false, quality: 'full' } as unknown as LiveFrame;
+  frameCamera(camera, view, width, height, width, height, 1, heights);
+  return { gl, view, cssW: width, cssH: height, dpr: 1, width, height, camera, target: null, now: 0, moving: false, quality: 'full' } as unknown as LiveFrame;
 }
 
 describe('world buildings', () => {
@@ -500,10 +500,13 @@ describe('world trees', () => {
   });
 
   it('draws coarser lathes and fewer trees as they get smaller on screen', () => {
-    expect(TREE_MESHES.map(mesh => mesh.indices.length / 3)).toEqual([78, 28, 6]);
+    // The close mesh has a ten-sided stem and crown, the middle has two eight-sided
+    // crown rims and a four-sided stem, and the distant silhouette is still six triangles.
+    expect(TREE_MESHES.map(mesh => mesh.indices.length / 3)).toEqual([130, 36, 6]);
     for (const [level, mesh] of [bareTreeMesh, bareMiddleMesh, bareDistantMesh].entries()) {
       expect(mesh.indices.length).toBeLessThanOrEqual(TREE_MESHES[level].indices.length);
       expect(Math.max(...mesh.indices)).toBeLessThan(mesh.vertices.length / 4);
+      expect(Math.max(...TREE_MESHES[level].indices)).toBeLessThan(TREE_MESHES[level].vertices.length / 4);
     }
     // A small zoom change swaps a few individuals between levels, using the same prefix of the block.
     expect([18, 28, 38].map(treeSolidShare)).toEqual([0, 0.5, 1]);
@@ -513,15 +516,17 @@ describe('world trees', () => {
   });
 
   it('keeps the trees around the target whatever the pitch', () => {
-    // A distance whose triangle budget the dense stand stays under: the budget thins the smallest trees otherwise.
-    const heights = relief(2400),
-      inputs = stand(220, 100, 120),
+    // Match the terrain to the emitted root heights. Increase resolution and scale together
+    // so even the shortest trees near the target clear the size cutoff without tightening the view.
+    // The 1500 m distance gives the dense stand room under the silhouette budget.
+    const heights = new TerrainHeights(new Float32Array(4).fill(20), 2, 2400, 0, 2),
+      inputs = stand(220, 180, 120),
       gl = mockGl(),
       layer = createWorldTreesLayer(gl, { inputs: () => inputs, terrain: () => heights, distance: () => 1500, shown: () => true, invalidate: () => {} });
     const inner: number[] = [],
       front: number[] = [];
     for (let pitch = 0.3; pitch <= 1.2001; pitch += 0.15) {
-      const view = frame(gl, { cx: 1200, cy: 1200, scale: 1, pitch, yaw: 0.2 }, heights);
+      const view = frame(gl, { cx: 1200, cy: 1200, scale: 2, pitch, yaw: 0.2 }, heights, W * 2, H * 2);
       for (let pass = 0; pass < 4; pass++) {
         layer.draw(view);
         while (layer.work!(8, view));

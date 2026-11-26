@@ -102,29 +102,27 @@ export function* recordTreeSpriteSteps(c: CartographyContext, ctx: RecordingCont
   if (!canopy || brushes) return false;
   const kind = tl.kind === 'orchard' ? 'orchard' : 'forest',
     resolution = canopy.resolutionFor(pxPerMetre, 1);
+  const image = canopy.spriteImage(kind, resolution, kind === 'forest');
+  if (!image) return false;
   let cache = treeSprites.get(tl);
   if (!cache) {
     cache = new Map();
     treeSprites.set(tl, cache);
   }
-  const parts: { image: CanvasImageSource; data: Float32Array; marks: Mark[] }[] = [];
+  const parts: { data: Float32Array; marks: Mark[] }[] = [];
   for (const tile of tl.index.tilesInRect(area)) {
     const key = `${tile}|${resolution}`;
     let entry = cache.get(key);
     if (entry === undefined) {
       const marks = tileTreeMarks(c, tl, tile);
-      const made = canopy.spriteData(marks, kind, pxPerMetre, 1, tl.kind === 'forest' ? (m: Mark) => coniferOf(c, m) : undefined);
-      entry = made ? { ...made, marks } : null;
+      entry = { marks, data: canopy.spriteGeometry(marks, resolution, kind === 'forest' ? (m: Mark) => coniferOf(c, m) : undefined) };
       if (cache.size >= 16384) cache.delete(cache.keys().next().value!);
       cache.set(key, entry);
     }
-    if (entry === null) return false;
     if (entry.marks.length) parts.push(entry);
     yield;
   }
   if (!parts.length) return true;
-  const image = parts[0].image;
-  if (parts.some(p => p.image !== image)) return false;
   // Gather the marks inside the area, painted from back to front like the Canvas canopy (sorted by y, then x).
   let n = 0;
   for (const p of parts) n += p.marks.length;

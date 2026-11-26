@@ -17,9 +17,15 @@ import { coastTraceMessages } from './coastTraceMessages';
 import { engineRuntimeEntries, engineRuntimeTemplates } from './engineRuntimeMessages';
 import { urbanHelpMessages } from './localeUrbanHelp';
 import { cityCodeMessages } from './localeCityCode';
+import { communityCatalogues } from '../locales';
 
 /** Translations keyed by canonical English presentation text; schema catalogs are reviewed separately. */
-export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Record<string, string>> = {
+export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja' | 'de' | 'it' | 'pl' | 'ko', Record<string, string>> = {
+  // Community locales (JSON under src/locales); copied so later passes never write into the imported catalogue.
+  de: { ...communityCatalogues.de.ui },
+  it: { ...communityCatalogues.it.ui },
+  pl: { ...communityCatalogues.pl.ui },
+  ko: { ...communityCatalogues.ko.ui },
   "es": {
     "Desktop app": "Aplicación de escritorio",
     "Desktop app v{version}": "Aplicación de escritorio v{version}",
@@ -8708,6 +8714,8 @@ const engineSourceLabels = {
   es: 'Diagnóstico del motor (texto fuente)', pt: 'Diagnóstico do motor (texto de origem)',
   zh: '引擎诊断（源文本）', ar: 'تشخيص المحرك (النص الأصلي)',
   ru: 'Диагностика движка (исходный текст)', ja: 'エンジン診断（原文）',
+  de: 'Engine-Diagnose (Originaltext)', it: 'Diagnostica del motore (testo originale)',
+  pl: 'Diagnostyka silnika (tekst oryginalny)', ko: '엔진 진단 (원문)',
 } as const;
 for (const language of Object.keys(engineSourceLabels) as (keyof typeof engineSourceLabels)[]) {
   for (const [, english] of [...engineRuntimeEntries, ...engineRuntimeTemplates]) {

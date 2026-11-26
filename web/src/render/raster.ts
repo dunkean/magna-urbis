@@ -124,6 +124,8 @@ export interface TerrainRasterOptions {
   sea?: { distance: Float32Array; bandWidth: number };
   /** Keep paper grain anchored in world coordinates across camera regions. */
   grainCoordinates?: { x: number; y: number; cell: number };
+  /** Ground colour under woodland, sampled in map metres. */
+  canopy?: { color: string; coverageAt: (x: number, y: number) => number };
 }
 
 /** Sample a positive, C2 cubic B-spline surface at output pixel centers.
@@ -235,6 +237,7 @@ export function renderTerrainPixels(world: World, pal: Palette, options: Terrain
   const paper = hexToRgb(pal.paper);
   const seaColors = options.sea && hasCoastalSea(pal.name) ? coastalSeaColors(pal) : undefined;
   const inkRgb = hexToRgb(pal.ink);
+  const canopyColor = options.canopy && hexToRgb(options.canopy.color);
   const HP = 6; // hatch period in raster px
   const out = new Uint8Array(W * H * 3);
   const lights = options.lighting ? terrainLights(options.lighting) : undefined;
@@ -277,6 +280,7 @@ export function renderTerrainPixels(world: World, pal: Palette, options: Terrain
       }
       const t = options.heightRange ? Math.max(0, Math.min(1, (hv - options.heightRange.min) / Math.max(1, options.heightRange.max - options.heightRange.min))) : Math.min(1, hv / landMax);
       const c = colorAt(Math.pow(t, 0.85));
+      const cover = options.canopy ? options.canopy.coverageAt((x + 0.5) * pxM, (y + 0.5) * pxM) * 0.85 : 0;
       const grain = options.grainCoordinates;
       const grainX = grain ? Math.floor((grain.x + (x + 0.5) * pxM) / grain.cell) : x;
       const grainY = grain ? Math.floor((grain.y + (y + 0.5) * pxM) / grain.cell) : y;
@@ -295,9 +299,10 @@ export function renderTerrainPixels(world: World, pal: Palette, options: Terrain
         a *= pal.hatch * 0.85;
         k *= g;
       }
-      out[o] = Math.max(0, Math.min(255, c[0] * k * (1 - a) + inkRgb[0] * a));
-      out[o + 1] = Math.max(0, Math.min(255, c[1] * k * (1 - a) + inkRgb[1] * a));
-      out[o + 2] = Math.max(0, Math.min(255, c[2] * k * (1 - a) + inkRgb[2] * a));
+      for (let channel = 0; channel < 3; channel++) {
+        const tint = cover && canopyColor ? c[channel] + (canopyColor[channel] - c[channel]) * cover : c[channel];
+        out[o + channel] = Math.max(0, Math.min(255, tint * k * (1 - a) + inkRgb[channel] * a));
+      }
     }
   }
   return { w: W, h: H, rgb: out };

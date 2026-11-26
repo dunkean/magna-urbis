@@ -23,6 +23,7 @@ import type { BenchRenderer } from './benchRenderer';
 import type { MinimalRenderer } from './minimalRenderer';
 import { resolveSettingsAppearance, resolvedDisplayOptions } from './appearance';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
+import { prefersCpuSatelliteGround } from './machineTier';
 import type { FrameRequest } from '../ui/viewer';
 import type { ExportLayers } from '../render/exportLayers';
 import type { MapPick } from './display/composedView';
@@ -303,10 +304,12 @@ export class StudioClient {
     // The display's code and GPU preparation do not depend on the result: load them while the engine computes.
     if (this.resolve(settings, world, true).path !== 'minimal') {
       void import('./benchRenderer').catch(() => undefined);
-      void import('../ui/terrainRenderer').then(
-        module => module.prewarmTerrainRenderer(),
-        () => undefined,
-      );
+      if (!prefersCpuSatelliteGround() || this.resolve(settings, world, true).ground.traits.satelliteVariant === 0) {
+        void import('../ui/terrainRenderer').then(
+          module => module.prewarmTerrainRenderer(),
+          () => undefined,
+        );
+      }
       if (['town', 'towns', 'all'].includes(action))
         void import('../render/cityBuildingsParallel').then(
           module => module.prewarmCityBuildingWorkers(),

@@ -5,11 +5,14 @@ import type { CanvasLike, LandBackdrop } from '../src/render/cartography/contrac
 import { createExactTiles } from '../src/render/cartography/exactTiles';
 import { createMapRecording } from '../src/render/cartography/mapRecording';
 import { seasonRecording } from '../src/render/cartography/seasonRecording';
+import { recordTreeSprites } from '../src/render/cartography/woods';
+import { TileIndex, boxesOf } from '../src/render/tileindex';
+import type { TextureLayer } from '../src/render/scene';
 import { BandLook } from '../src/render/cartography/bandRecording';
 import { urbanFrame } from '../src/render/cartography/urban/frame';
 import type { VectorFrame } from '../src/render/cartography/frame';
 import { selectLod } from '../src/render/lod';
-import { setMapInk } from '../src/render/gpu/recorder';
+import { RecordingContext, setMapInk } from '../src/render/gpu/recorder';
 import type { DisplayList, GpuRasterizer } from '../src/render/gpu/contract';
 import { applySeason, mapLandSeason, seasonPaint, setMapClimateZone, setMapSeason } from '../src/render/seasonPalette';
 import { PALETTES } from '../src/render/styles';
@@ -51,6 +54,39 @@ function fixture(withLand: boolean, cpu = false) {
     },
   };
 }
+
+it('reuses tree sprite geometry with the current seasonal atlas until the look changes', () => {
+  const world = fakeWorld({ mapSize: 64, buildings: 0, streets: 0, landAreas: 0 });
+  const canvas = (w: number, h: number) => {
+    const surface = mockCanvas(w, h).canvas as unknown as CanvasLike;
+    surface.getContext('2d')!.createLinearGradient = () => ({ addColorStop() {} });
+    return surface;
+  };
+  let palette = applySeason(PALETTES.parchment, seasonPaint(0.5, 'nordic'));
+  const c = new CartographyContext(canvas(64, 64), world, 'parchment', { vegetation: 'canopy', palette: () => palette, createCanvas: canvas });
+  const poly = [{ x: 0, y: 0 }, { x: 64, y: 0 }, { x: 64, y: 64 }, { x: 0, y: 64 }];
+  const layer: TextureLayer = { kind: 'orchard', areas: [{ kind: 'orchard', poly }], index: new TileIndex(64, 64, boxesOf([poly]), 'overlap') };
+  const record = () => {
+    const target = createMapRecording(64, 64);
+    const ctx = target.getContext('2d');
+    if (!(ctx instanceof RecordingContext)) throw Error('Expected recording context');
+    expect(recordTreeSprites(c, ctx, layer, { minX: 0, minY: 0, maxX: 64, maxY: 64 }, 1)).toBe(true);
+    const [op] = target.finish().ops;
+    if (op?.type !== 'sprites') throw Error('Expected tree sprites');
+    return { source: op.source, geometry: [...c.treeSprites.get(layer)!.values()][0].data };
+  };
+  const summer = record();
+  expect(summer.geometry.length).toBeGreaterThan(0);
+  palette = applySeason(PALETTES.parchment, seasonPaint(0, 'nordic'));
+  c.syncPalette();
+  const winter = record();
+  expect(winter.geometry).toBe(summer.geometry);
+  expect(winter.source).not.toBe(summer.source);
+  expect(winter.source).toBe(c.canopy!.spriteImage('orchard', 1, false));
+
+  c.syncPalette(true);
+  expect(record().geometry).not.toBe(winter.geometry);
+});
 
 it('rebinds cropped summer relief and furrow pigments without moving the old drawing to the new date', () => {
   const { c, backdrop, date } = fixture(true);

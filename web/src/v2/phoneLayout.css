@@ -271,6 +271,9 @@
   #app:has(#sidebar:not(.mobile-closed), #entity-sheet:not([hidden])) > #mobile-toggle {
     visibility: hidden;
   }
+  body:has(#app #sidebar:not(.mobile-closed), #app #entity-sheet:not([hidden])) > #machine-notice {
+    visibility: hidden;
+  }
 
   /* Map overlays, one zone each: zoom and compass top right, places chip top left, scale above the Workshop button,
      progress above the bottom controls, entity sheet at the bottom. */

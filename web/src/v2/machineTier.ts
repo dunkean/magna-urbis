@@ -194,6 +194,10 @@ export const machineStyleProtected = (): boolean => protectedStyle;
 export const machineSummary = (): string =>
   signals ? `${signals.renderer || 'no WebGL2'}${signals.adapter?.name ? ` · WebGPU ${signals.adapter.name.trim()}` : ''}${compositor === false ? ' · compositor refused' : ''} · preference ${preference}` : 'not inspected';
 export const performancePreference = (): PerformancePreference => preference;
+/** The Adreno 619 can compose a light ground in 3D, but the satellite material can reset its graphics process. */
+export function prefersCpuSatelliteGround(choice: Pick<MachineDecision, 'handheld' | 'level'> = decision, renderer = signals?.renderer): boolean {
+  return choice.handheld && choice.level === 'economy' && /\bAdreno[^\d]*619\b/i.test(renderer ?? '');
+}
 /** Guards only the preset swap of the untouched default recipe; levels still follow the machine. */
 export function protectMachineStyle(): void {
   protectedStyle = true;
