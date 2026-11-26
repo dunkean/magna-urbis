@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '../src/v2/settings';
-import { migrateUrbanSeeds, rerollUrbanSeeds, setUrbanSeed, streetSeedConfig, urbanSeed, URBAN_SEED_STAGES } from '../src/v2/urbanSeeds';
+import { migrateUrbanSeeds, rerollSettlement, rerollUrbanSeeds, setUrbanSeed, streetSeedConfig, urbanSeed, URBAN_SEED_STAGES } from '../src/v2/urbanSeeds';
 import { defaultLayoutConfig } from '../../rust/bridge/urbanConfig';
 import type { Layout } from '../../rust/bridge/urban';
 import { seedRoot } from '../../rust/bridge/generationSeed';
@@ -24,6 +24,32 @@ describe('independent city draws', () => {
     migrateUrbanSeeds(settings);
     expect(settings.options.seed).toBe(encoded);
   });
+  it('draws a complete town in one plan, even after an independent street edit', () => {
+    const settings = defaultSettings();
+    rerollUrbanSeeds(settings, ['east'], 'streets');
+    rerollSettlement(settings, 'east');
+    const plan = urbanSeed(settings, 'east', 'composition');
+    expect(urbanSeed(settings, 'east', 'streets')).toBe(plan);
+    rerollUrbanSeeds(settings, ['east'], 'streets');
+    expect(urbanSeed(settings, 'east', 'streets')).not.toBe(plan);
+    expect(urbanSeed(settings, 'east', 'composition')).toBe(plan);
+    rerollSettlement(settings, 'east');
+    expect(urbanSeed(settings, 'east', 'composition')).not.toBe(plan);
+    expect(urbanSeed(settings, 'east', 'streets')).toBe(urbanSeed(settings, 'east', 'composition'));
+  });
+
+  it('redraws explicit global stages locally and keeps their independence', () => {
+    const settings = defaultSettings();
+    settings.urban = { seeds: { streets: 'shared-streets' } };
+    rerollSettlement(settings, 'east');
+    const streets = urbanSeed(settings, 'east', 'streets');
+    expect(streets).not.toBe('shared-streets');
+    expect(streets).not.toBe(urbanSeed(settings, 'east', 'composition'));
+    rerollSettlement(settings, 'east');
+    expect(urbanSeed(settings, 'east', 'streets')).not.toBe(streets);
+    expect(urbanSeed(settings, 'west', 'streets')).toBe('shared-streets');
+  });
+
   it('inherits the historical draw until a global or local city seed is explicitly chosen', () => {
     const settings = defaultSettings();
     expect(urbanSeed(settings, 'east')).toBe(settings.options.seed);

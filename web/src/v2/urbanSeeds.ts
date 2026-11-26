@@ -53,10 +53,16 @@ export function rerollUrbanSeeds(settings: V2Settings, keys: readonly string[], 
 /** A new complete variant of one place; regional population and neighbour draws stay fixed. */
 export function rerollSettlement(settings: V2Settings, key: string): void {
   migrateUrbanSeeds(settings);
-  settings.options.seed = rerollSeed(
-    settings.options.seed,
-    URBAN_SEED_STAGES.map(stage => `city/${key}/${stage}`),
-  );
+  const recipe = readGenerationSeed(settings.options.seed);
+  const prefix = `city/${key}/`;
+  // One new town draw already includes its streets, parcels and buildings. Only
+  // stages with an explicit regional draw need a local variation of that draw.
+  const steps = [prefix + 'default'];
+  for (const stage of URBAN_SEED_STAGES) {
+    if (recipe.variations[`city/*/${stage}`] !== undefined) steps.push(prefix + stage);
+    else delete recipe.variations[prefix + stage];
+  }
+  settings.options.seed = rerollSeed(writeGenerationSeed(recipe), steps);
 }
 
 /** The editor shows effective values; sparse overrides remain an implementation detail. */

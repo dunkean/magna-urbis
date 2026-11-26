@@ -1,5 +1,8 @@
 ## Alpha 0.3.11
 
+- Rerolling a whole settlement draws its plan and streets together. Independent street variations remain available.
+- Automatic generation retries multithreaded Rust on a later visit after a temporary worker startup timeout.
+
 - The river editor can undo and redo a deletion, including all the channels it removed.
 - Changing the map date reuses tree placements when redrawing engraved woodland and orchard sprites.
 - Fantasy maps keep brush marks in the same positions where detailed views overlap.

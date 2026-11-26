@@ -120,10 +120,13 @@ describe('short city code', () => {
     settings.options.seed = rerollSeed(rerollSeed(settings.options.seed, ['settle-sites']), ['settle-sites']);
     rerollSettlement(settings, 'site-1');
     const code = encodeCityCode(settings);
-    expect(code).toBe(`magnas_i02_${settlementNumber('site-1')}u1`);
+    expect(code).toBe(`magnas_i02_${settlementNumber('site-1')}i61`);
     const decoded = decodeCityCode(code).settings;
     expect(stepSeed(decoded.options.seed, 'settle-sites')).toBe(stepSeed(settings.options.seed, 'settle-sites'));
+    expect(decoded.options.seed).toBe(settings.options.seed);
     same(code);
+    const previous = `magnas_i02_${settlementNumber('site-1')}u1`;
+    same(previous);
   });
   it('addresses settlement and quarter edits hierarchically, in code order', () => {
     expect(settlementKey(settlementNumber('site-3')!)).toBe('site-3');

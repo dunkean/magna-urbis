@@ -54,10 +54,14 @@ export function wasmThreadsSetting(): WasmThreadsSetting {
 // workers) is remembered for a few days, so the next visits start the single-thread package at once.
 const FAILURE_KEY = 'magna-urbis-wasm-threads-failure',
   FAILURE_DAYS = 3;
+let startupFailureThisVisit: string | undefined;
 function rememberedFailure(): string | undefined {
   try {
     const stored = JSON.parse(globalThis.localStorage?.getItem(FAILURE_KEY) ?? 'null') as { at: number; reason: string } | null;
-    return stored && Date.now() - stored.at < FAILURE_DAYS * 864e5 ? stored.reason : undefined;
+    if (!stored || typeof stored.reason !== 'string') return undefined;
+    // A suspended or busy tab can miss the startup deadline on a working device.
+    const cooldown = stored.reason.includes('did not start within') ? 10 * 60_000 : FAILURE_DAYS * 864e5;
+    return Date.now() - stored.at < cooldown ? stored.reason : undefined;
   } catch {
     return undefined;
   }
@@ -65,7 +69,7 @@ function rememberedFailure(): string | undefined {
 /** Options for `new Worker(...)` / Vite `?worker` constructors: carries the setting and the device class. */
 export function wasmWorkerOptions(name = 'magna-wasm'): WorkerOptions {
   const setting = wasmThreadsSetting();
-  return { name: deviceWorkerName(`${name} threads=${workerFailure || (setting === 'auto' && rememberedFailure()) ? 'off' : setting}`) };
+  return { name: deviceWorkerName(`${name} threads=${workerFailure || (setting === 'auto' && (startupFailureThisVisit || rememberedFailure())) ? 'off' : setting}`) };
 }
 let workerFailure: string | undefined;
 /**
@@ -113,7 +117,8 @@ export function wasmThreadsInfo(): WasmThreadsInfo {
 export function publishWasmThreads(info: WasmThreadsInfo | undefined): void {
   if (!info) return;
   scope.magnaWasmThreads = info;
-  if (info.reason?.startsWith('threads package failed to start') && !rememberedFailure()) {
+  if (info.reason?.startsWith('threads package failed to start') && !startupFailureThisVisit) {
+    startupFailureThisVisit = info.reason;
     try {
       globalThis.localStorage?.setItem(FAILURE_KEY, JSON.stringify({ at: Date.now(), reason: info.reason }));
     } catch {
