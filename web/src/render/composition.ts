@@ -151,8 +151,8 @@ export interface TownPlan {
 }
 export const TOWN_PLAN_LAYERS: readonly (keyof TownPlan)[] = ['districts', 'blocks', 'parcels'];
 /** The town plan switches a ground look honours: none on the plan-less grounds (Satellite and Atlas towns stay free of
- * plan graphics); the Minimal renderer draws no lots. */
-export const townPlanSwitches = (look: StyleId): readonly (keyof TownPlan)[] => (!VIEW_STYLE[look].plan ? [] : look === 'minimal' ? ['districts', 'blocks'] : TOWN_PLAN_LAYERS);
+ * plan graphics). */
+export const townPlanSwitches = (look: StyleId): readonly (keyof TownPlan)[] => (VIEW_STYLE[look].plan ? TOWN_PLAN_LAYERS : []);
 /** The town plan a recipe shows: its switches (`buildings.districts|blocks|parcels`), else the ground look's own choice. */
 export function townPlanOf(c: CompositionRecipe): TownPlan {
   const view = VIEW_STYLE[c.ground.look],

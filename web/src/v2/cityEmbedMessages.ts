@@ -4,6 +4,12 @@ import type { ExternalCityHints } from './externalCity/types';
 
 const rows = [
   ['Magna Urbis · City preview', 'Magna Urbis · Aperçu de ville'],
+  ['detailing…', 'en cours…'],
+  ['retry detail', 'réessayer'],
+  ['Generate a detailed map', 'Générer une carte détaillée'],
+  ['Generating the detailed map', 'Génération de la carte détaillée'],
+  ['Detailed map unavailable. Try again.', 'Carte détaillée indisponible. Réessayer.'],
+  ['Detailed map shown', 'Carte détaillée affichée'],
   ['City map: drag to pan, scroll to zoom', 'Carte de la ville : glisser pour déplacer, molette pour zoomer'],
   ['Generating city…', 'Génération de la ville…'],
   ['City preview', 'Aperçu de la ville'],
@@ -23,6 +29,8 @@ const rows = [
   ['Expected an fmg-burg-v1 city payload.', 'Les données de la ville doivent être au format fmg-burg-v1.'],
   ['No city data supplied.', 'Aucune donnée de ville fournie.'],
   ['Invalid city payload.', 'Données de ville invalides.'],
+  ['Population', 'Population'],
+  ['Apply', 'Appliquer'],
   ['people', 'hab.'],
   ['Coast', 'Côte'],
   ['Inland', 'Intérieur'],

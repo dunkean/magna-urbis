@@ -1,4 +1,6 @@
 /** cityEmbed's demonstration profiles: randomize coherent city inputs while keeping every result shareable as an FMG-style URL. */
+import { cityEmbedHints, cityEmbedSource } from './cityEmbedInput';
+
 const profiles = [
   { base: 'English', type: 'Generic', name: 'Brackenford', biome: 'Temperate deciduous forest', temperature: 12, rain: 900, elevation: 120, min: 500, max: 12000 },
   { base: 'Nordic', type: 'Naval', name: 'Kaldvik', biome: 'Taiga', temperature: 3, rain: 800, elevation: 40, min: 150, max: 5000 },
@@ -49,4 +51,41 @@ export function randomCityEmbedUrl(current: URL, random: () => number = Math.ran
   if (language) url.searchParams.set('lang', language);
   if (current.searchParams.get('profile') === 'local') url.searchParams.set('profile', 'local');
   return url;
+}
+
+/** Change the effective population and preserve the rest of the burg URL. */
+export function cityEmbedPopulationUrl(current: URL, population: number): URL {
+  const next = new URL(current);
+  const fragment = new URLSearchParams(next.hash.slice(1));
+  const burg = fragment.get('burg');
+  if (burg === null) {
+    if (!next.searchParams.get('seed')?.trim()) {
+      // The Watabou importer derives a seed from the original query when none is supplied.
+      const { seed } = cityEmbedHints(cityEmbedSource(current));
+      next.searchParams.set('seed', seed.slice('mfcg-'.length));
+    }
+    next.searchParams.set('population', String(population));
+  } else {
+    fragment.set('burg', JSON.stringify({ ...JSON.parse(burg), population }));
+    next.hash = fragment.toString();
+  }
+  return next;
+}
+
+export function mountCityEmbedPopulation(current: URL, population: number): void {
+  const form = document.querySelector<HTMLFormElement>('#population-form')!;
+  const field = form.querySelector<HTMLInputElement>('#preview-population')!;
+  const initial = Math.min(Number(field.max), Math.max(Number(field.min), population));
+  field.value = String(initial);
+  form.onsubmit = event => {
+    event.preventDefault();
+    if (!form.reportValidity() || field.valueAsNumber === initial) return;
+    const next = cityEmbedPopulationUrl(current, field.valueAsNumber);
+    if (next.search !== current.search) location.assign(next);
+    else {
+      // A change confined to the rich burg fragment would only navigate within the page.
+      history.replaceState(history.state, '', next);
+      location.reload();
+    }
+  };
 }

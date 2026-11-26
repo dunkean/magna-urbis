@@ -159,8 +159,6 @@ export interface V2WorkerRequest {
   terrainStage?: string;
   cityOutput?: string;
   assetBase?: string;
-  /** Publish the built town before finishing its surroundings. Used by embed.html. */
-  cityPreview?: boolean;
   /** Scheduling only: one background pass reuses its bounded urban sessions across batches. */
   keepUrbanLanes?: boolean;
   /** Direct road edits retain placement and update only the selected built towns. */
@@ -179,7 +177,6 @@ export interface V2ResourceRequest {
 }
 export type V2WorkerResponse =
   | { id: number; type: 'progress'; progress: V2Progress }
-  | { id: number; type: 'city-preview'; world: World }
   | { id: number; type: 'resources'; payload?: import('../../../rust/bridge/resources').ResourcePayload }
   /** `heavy`: the town packs moved with the result exceed HEAVY_RESULT_BYTES (urbanPack.ts); the page replaces this worker
    * before unpacking, so the tab's shared JS heap never holds the worker's copy of the town and the page's at once. */

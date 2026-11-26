@@ -23,6 +23,7 @@ for (const file of await readdir(resolve(output, 'assets'))) {
   compressed.set(path, await gzipAsync(await readFile(path)));
 }
 const addedLatency = Number(process.env.MAGNA_EMBED_TEST_LATENCY_MS ?? 0);
+const servedAssets = [];
 const assets = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, 'http://localhost');
@@ -36,6 +37,7 @@ const assets = createServer(async (request, response) => {
     if (gzip) compressed.set(path, body);
     if (addedLatency > 0) await new Promise(done => setTimeout(done, addedLatency));
     response.writeHead(200, { 'Content-Type': mime[ext] ?? 'application/octet-stream', 'Cache-Control': 'public, max-age=3600', 'Content-Length': body.length, Vary: 'Accept-Encoding', ...(gzip ? { 'Content-Encoding': 'gzip' } : {}) });
+    servedAssets.push({ url: url.pathname, bytes: body.length });
     response.end(body);
   } catch {
     response.writeHead(404).end();
@@ -80,11 +82,12 @@ try {
         super(...args);
         this.addEventListener('message', ({ data }) => {
           if (data.type === 'progress') (window.__townProgress ??= []).push([data.progress.stage, Math.round(performance.now())]);
-          if (data.type === 'result' || data.type === 'city-preview') {
-            const native = data.world.debug?.v2RustCities?.main;
-            const town = { buildings: native?.scene?.buildings?.length ?? data.world.urban?.buildings?.length ?? 0, streets: native?.layouts?.[0]?.streets?.length ?? 0, layouts: native?.layouts?.length ?? 0 };
-            if (data.type === 'city-preview') window.__townFirstResult = town;
-            else window.__townResult = town;
+          if (data.type === 'city-preview') {
+            if (data.mode === 'compact') window.__townResult = data.town;
+            else if (data.mode === 'detailed') {
+              window.__townDetailed = data.town;
+              window.__detailedLayers = data.map.geometry.layers;
+            }
           }
         });
       }
@@ -104,6 +107,7 @@ try {
     if (response.status() >= 400) result.missing.push(response.url());
   });
   async function preview(name, source) {
+    const firstAsset = servedAssets.length;
     const requests = [];
     const responses = [];
     const remember = request => requests.push(request.url());
@@ -118,15 +122,13 @@ try {
     assert.equal(await frame.evaluate(() => crossOriginIsolated), false);
     assert.equal(await frame.locator('#status').isVisible(), false);
     assert.equal(await frame.locator('#demo-controls').isVisible(), false);
-    await root.and(page.frameLocator('iframe').locator('[data-detail="ready"]')).waitFor({ timeout: 15000 });
-    const timing = await root.evaluate(el => ({ firstMs: Number(el.dataset.readyMs), detailMs: Number(el.dataset.detailMs), runtime: el.dataset.runtime }));
+    assert.equal(await root.getAttribute('data-detail'), 'idle', 'The richer generation must be opt-in.');
+    const timing = await root.evaluate(el => ({ firstMs: Number(el.dataset.readyMs), runtime: el.dataset.runtime }));
     if (runtime === 'local') assert.equal(timing.runtime, 'native');
-    const { town, first, image } = await frame.evaluate(() => ({ town: window.__townResult, first: window.__townFirstResult, image: window.__townFirstImage }));
-    assert.deepEqual(first, town, 'The first published view must already have the final street and building counts.');
+    const { town, image } = await frame.evaluate(() => ({ town: window.__townResult, image: window.__townFirstImage }));
     assert.ok(image, 'A completed first canvas paint must precede the context view.');
     await writeFile(resolve(artifacts, name + '-first.png'), Buffer.from(image, 'base64'));
     assert.ok(town?.layouts && town.buildings > 0, 'The map must come from the Rust settlement and contain actual building footprints.');
-    assert.ok(timing.detailMs > timing.firstMs);
     const pixels = await frame.locator('#map canvas').evaluate(canvas => {
       const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
       const colors = new Set();
@@ -134,15 +136,18 @@ try {
       return colors.size;
     });
     assert.ok(pixels > 20, 'The map must contain visible geometry.');
-    assert.equal(workers.size, 0, 'The preview must release its worker after enrichment.');
+    assert.equal(workers.size, 0, 'The preview must release its worker after the compact generation.');
     assert.ok(!requests.some(url => /\/(?:studio-|brushAssets-|neuralRuntime-|terrainGpu-)/.test(url)), 'The preview must not load the studio, brush libraries or neural runtime.');
     page.off('request', remember);
     page.off('response', size);
     const assets = await Promise.all(responses);
     const bytes = assets.reduce((sum, asset) => sum + asset.bytes, 0);
     const largest = assets.sort((a, b) => b.bytes - a.bytes).slice(0, 6);
+    const served = servedAssets.slice(firstAsset);
+    const staticBytes = served.reduce((sum, asset) => sum + asset.bytes, 0);
+    const wasmDownloads = served.filter(asset => asset.url.endsWith('.wasm')).length;
     const progress = await frame.evaluate(() => window.__townProgress);
-    const report = { name, ...timing, checkedMs: Math.round(performance.now() - started), bytes, pixels, requests: requests.length, town, progress, largest };
+    const report = { name, ...timing, checkedMs: Math.round(performance.now() - started), bytes, staticBytes, wasmDownloads, pixels, requests: requests.length, town, progress, largest };
     console.log(JSON.stringify({ ...report, progress: undefined, largest: undefined }));
     result.cases.push(report);
     return { frame, pixels: hash(await capture(page, name)) };
@@ -151,6 +156,25 @@ try {
   const cold = await preview('town-cold', flatUrl);
   const repeat = await preview('town-repeat', flatUrl);
   assert.equal(repeat.pixels, cold.pixels, 'The same burg must reproduce the same drawing.');
+  const compactMap = await repeat.frame.locator('#map canvas').evaluate(canvas => canvas.toDataURL());
+  const detailStart = performance.now();
+  const detailStarted = page.waitForEvent('worker');
+  await repeat.frame.locator('#detailed').click();
+  const detailWorker = await detailStarted;
+  await repeat.frame.locator('html[data-detail="loading"]').waitFor();
+  assert.equal(await repeat.frame.locator('#map canvas').evaluate(canvas => canvas.toDataURL()), compactMap, 'Keep the compact map while Detailed runs.');
+  assert.equal(await repeat.frame.locator('#detailed').isDisabled(), true);
+  await repeat.frame.locator('html[data-detail="ready"]').waitFor({ timeout: 120000 });
+  assert.equal(workers.has(detailWorker), false, 'Release the detailed generation worker.');
+  const detailTown = await repeat.frame.evaluate(() => window.__townDetailed);
+  assert.ok(detailTown?.buildings > 0, 'Detailed must return real Rust building footprints.');
+  assert.deepEqual(detailTown, await repeat.frame.evaluate(() => window.__townResult), 'The two V2 passes must retain the same streets and buildings.');
+  const detailedLayers = await repeat.frame.evaluate(() => window.__detailedLayers);
+  assert.ok(detailedLayers.includes('parcel') && detailedLayers.includes('quarter'), 'Detailed must carry the cadastral and quarter outlines.');
+  result.detailedMs = Math.round(performance.now() - detailStart);
+  assert.notEqual(await repeat.frame.locator('#map canvas').evaluate(canvas => canvas.toDataURL()), compactMap, 'Detailed must update the rendered map.');
+  await capture(page, 'town-detailed');
+
   await repeat.frame.locator('#zoom-in').click();
   assert.equal(await repeat.frame.locator('#map').getAttribute('data-zoom'), '1.5');
   const pos = await repeat.frame.locator('#map').boundingBox();
@@ -241,15 +265,38 @@ try {
   await page.frameLocator('iframe').locator('html[data-state="error"]').waitFor();
   assert.equal(workers.size, 0);
   await page.goto(flatUrl + '&demo=1&lang=fr');
-  await page.locator('html[data-detail="ready"]').waitFor();
+  await page.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
   assert.equal(await page.locator('#randomize').isVisible(), true);
+  assert.equal(await page.locator('#preview-population').inputValue(), '2500');
+  await page.locator('#preview-population').fill('1250');
+  await page.getByRole('button', { name: 'Appliquer' }).click();
+  await page.waitForURL(url => url.searchParams.get('population') === '1250');
+  await page.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
+  assert.equal(await page.locator('#preview-population').inputValue(), '1250');
+  assert.equal(new URL(page.url()).searchParams.get('seed'), '12340007');
   await page.evaluate(() => {
     Math.random = () => 0.3;
   });
   await page.locator('#randomize').click();
   await page.waitForURL(url => url.searchParams.get('cultureBase') === 'Chinese');
-  await page.locator('html[data-detail="ready"]').waitFor();
+  await page.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
   assert.match(await page.locator('#demo-params').textContent(), /Chinese.*hab\./);
+
+  const demoBurg = { format: 'fmg-burg-v1', i: 19, name: 'Demo Burg', population: 700, mfcgSeed: '12340019', river: false, coast: null };
+  const richDemo = new URL(base + 'embed.html?preview=1&demo=1&lang=fr&profile=' + runtime);
+  richDemo.hash = new URLSearchParams({ burg: JSON.stringify(demoBurg) }).toString();
+  await page.goto(richDemo.href);
+  await page.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
+  assert.equal(await page.locator('#preview-population').inputValue(), '700');
+  await page.evaluate(() => {
+    window.__beforePopulationEdit = true;
+  });
+  await page.locator('#preview-population').fill('850');
+  await page.locator('#preview-population').press('Enter');
+  await page.waitForFunction(() => !window.__beforePopulationEdit && document.documentElement.dataset.state === 'ready', undefined, { timeout: 30000 });
+  const chosen = JSON.parse(new URLSearchParams(new URL(page.url()).hash.slice(1)).get('burg'));
+  assert.deepEqual(chosen, { ...demoBurg, population: 850 });
+  assert.equal(await page.locator('#preview-population').inputValue(), '850');
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.missing, []);
 } finally {

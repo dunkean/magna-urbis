@@ -1,9 +1,10 @@
+import { cityEmbedBounds, cityEmbedSettings } from '../../src/v2/cityEmbedGeneration';
 import { describe, expect, it } from 'vitest';
-import { cityEmbedBounds, cityEmbedHints, cityEmbedEditorUrl, cityEmbedSettings, cityEmbedSource, cityEmbedView } from '../../src/v2/cityEmbedInput';
+import { cityEmbedHints, cityEmbedEditorUrl, cityEmbedSource, cityEmbedView } from '../../src/v2/cityEmbedInput';
 import type { World } from '../../src/gen/types';
 import { worldToScreen } from '../../src/render/view';
 import { decodeCityCode } from '../../src/v2/cityCode';
-import { randomCityEmbedUrl } from '../../src/v2/cityEmbedDemo';
+import { cityEmbedPopulationUrl, randomCityEmbedUrl } from '../../src/v2/cityEmbedDemo';
 import { cityEmbedSummary, cityEmbedText } from '../../src/v2/cityEmbedMessages';
 
 const read = (url: URL) => cityEmbedHints(cityEmbedSource(url));
@@ -17,6 +18,27 @@ describe('city iframe contract', () => {
     expect(new URL(cityEmbedEditorUrl(url)).searchParams.get('lang')).toBe('fr');
     expect(randomCityEmbedUrl(url, () => 0.3).searchParams.get('lang')).toBe('fr');
     expect(cityEmbedSummary(read(url), 'Imported culture')).toContain('Imported culture');
+  });
+
+  it('applies a population change to the effective source without changing the burg seed', () => {
+    const flat = new URL('https://example.org/sub/embed.html?preview=1&lang=fr&profile=local&name=Harbour&seed=42&coast=1&sea=0&population=2500');
+    const flatEdit = cityEmbedPopulationUrl(flat, 6500);
+    expect(read(flatEdit)).toMatchObject({ name: 'Harbour', seed: 'mfcg-42', population: 6500, coast: 'E' });
+    expect(flat.searchParams.get('population')).toBe('2500');
+    expect(flatEdit.searchParams.get('profile')).toBe('local');
+    expect(flatEdit.searchParams.get('lang')).toBe('fr');
+
+    const unseeded = new URL('https://example.org/embed.html?preview=1&name=Harbour&size=24');
+    const unseededEdit = cityEmbedPopulationUrl(unseeded, 600);
+    expect(read(unseededEdit)).toMatchObject({ seed: read(unseeded).seed, population: 600 });
+
+    const rich = new URL(flat.href);
+    const burg = { format: 'fmg-burg-v1', i: 42, name: 'Skarholm', mfcgSeed: '12340042', population: 2500, walls: true, coast: { water: 'ocean', sea: 0.5 } };
+    rich.hash = new URLSearchParams({ burg: JSON.stringify(burg), lang: 'fr' }).toString();
+    const richEdit = cityEmbedPopulationUrl(rich, 7500);
+    expect(read(richEdit)).toMatchObject({ name: 'Skarholm', seed: 'mfcg-12340042', population: 7500, walls: true, coast: 'N' });
+    expect(new URLSearchParams(richEdit.hash.slice(1)).get('lang')).toBe('fr');
+    expect(JSON.parse(new URLSearchParams(new URL(cityEmbedEditorUrl(richEdit)).hash.slice(1)).get('city')!)).toEqual({ ...burg, population: 7500 });
   });
 
   it('randomizes the actual city inputs and replaces a rich payload', () => {

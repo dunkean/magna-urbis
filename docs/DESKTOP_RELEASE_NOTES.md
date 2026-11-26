@@ -1,6 +1,7 @@
 ## Alpha 0.3.11
 
-- The Azgaar FMG iframe draws a fitted 2D view of the generated town, adds its surrounding terrain detail, and links to the full editor.
+- The Azgaar FMG iframe draws a fitted 2D view of the generated town. Use Detailed to add plots, quarter boundaries and terrain or open the full editor. The test page lets you regenerate the same burg with a different population.
+- The Minimal map can show parcel boundaries when that layer is enabled.
 
 - Town streets render again on WebGL2 devices that enforce reserved shader names.
 - The live map keeps its cartographic overlay when town buildings first appear.

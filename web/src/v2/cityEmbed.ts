@@ -1,17 +1,13 @@
 /** FMG displays a real V2 town through the shared Minimal Canvas renderer. */
-import EngineWorker from './engine.worker?worker';
-import { unpackWorldLanduse } from './landusePack';
-import { unpackWorldPartitions } from './urbanPack';
-import { cityEmbedBounds, cityEmbedEditorUrl, cityEmbedHints, cityEmbedSettings, cityEmbedSource, cityEmbedView } from './cityEmbedInput';
-import { randomCityEmbedUrl } from './cityEmbedDemo';
+import CityWorker from './cityEmbed.worker?worker';
+import { cityEmbedEditorUrl, cityEmbedHints, cityEmbedSource, cityEmbedView } from './cityEmbedInput';
+import { mountCityEmbedPopulation, randomCityEmbedUrl } from './cityEmbedDemo';
 import { mountCityEmbedNavigation } from './cityEmbedNavigation';
-import { resolveSettingsAppearance } from './appearance';
-import { MinimalRenderer } from './minimalRenderer';
+import { MinimalCanvasRenderer } from './minimalCanvas';
 import { preferredLanguage } from './languages';
 import { cityEmbedText, localizeCityEmbed, cityEmbedSummary } from './cityEmbedMessages';
-import type { World } from '../gen/types';
+import { unpackMinimalFeatures, type CityPreviewMode, type CityPreviewResponse, type CityPreviewRequest } from './cityPreviewMap';
 import type { Rect4 } from '../render/view';
-import type { V2WorkerRequest, V2WorkerResponse } from './contracts';
 
 const language = preferredLanguage(location.search);
 const translate = (text: string) => cityEmbedText(text, language);
@@ -23,7 +19,9 @@ const root = document.documentElement;
 const status = document.getElementById('status')!;
 const host = document.getElementById('map')!;
 let worker: Worker | undefined;
-let renderer: MinimalRenderer | undefined;
+const detailedButton = document.querySelector<HTMLButtonElement>('#detailed')!;
+let renderer: MinimalCanvasRenderer | undefined;
+let pendingRenderer: MinimalCanvasRenderer | undefined;
 let navigation: ReturnType<typeof mountCityEmbedNavigation> | undefined;
 let resize: ResizeObserver | undefined;
 let drawFrame = 0;
@@ -36,8 +34,15 @@ function stopWorker(): void {
 
 function fail(error: unknown): void {
   stopWorker();
+  pendingRenderer?.dispose();
+  pendingRenderer = undefined;
+  if (disposed) return;
   if (root.dataset.state === 'ready') {
     root.dataset.detail = 'unavailable';
+    detailedButton.disabled = false;
+    detailedButton.textContent = translate('retry detail');
+    detailedButton.title = translate('Detailed map unavailable. Try again.');
+    detailedButton.removeAttribute('aria-busy');
     return;
   }
   root.dataset.state = 'error';
@@ -64,13 +69,13 @@ function start(): void {
   const demo = window.parent === window || current.searchParams.get('demo') === '1';
   controls.hidden = !demo;
   if (demo) {
+    mountCityEmbedPopulation(current, hints.population ?? 2500);
     document.getElementById('randomize')!.onclick = () => location.assign(randomCityEmbedUrl(current).href);
     document.getElementById('demo-params')!.textContent = cityEmbedSummary(hints, current.searchParams.get('cultureBase'), language);
   }
 
   // Local profiling uses the same V2 native engine as the studio and the benches.
   const local = current.searchParams.get('profile') === 'local' && ['127.0.0.1', 'localhost', '[::1]'].includes(current.hostname);
-  const settings = cityEmbedSettings(hints, local);
   let bounds: Rect4 | undefined;
   const draw = () => {
     if (!renderer || !bounds || disposed) return;
@@ -92,58 +97,71 @@ function start(): void {
   document.getElementById('fit-view')!.onclick = () => navigation!.reset();
   resize = new ResizeObserver(scheduleDraw);
   resize.observe(host);
-  renderer = new MinimalRenderer(scheduleDraw);
-  host.append(renderer.element);
-
-  const showTown = async (world: World) => {
-    bounds = cityEmbedBounds(world);
-    const appearance = resolveSettingsAppearance(settings, world, 'view2d');
-    await renderer!.set(world, settings, appearance, { terrain: false, landuse: false, labels: false });
-    draw();
+  const show = async (data: Extract<CityPreviewResponse, { type: 'city-preview' }>) => {
+    const { map, mode } = data;
+    const next = new MinimalCanvasRenderer(scheduleDraw);
+    pendingRenderer = next;
+    const height = map.height;
+    await next.setContent({
+      key: mode, terrainKey: 1, size: map.size, features: unpackMinimalFeatures(map.geometry), places: [],
+      height: height ? () => height : undefined,
+    }, map.recipe, map.plan, { terrain: mode === 'detailed', landuse: mode === 'detailed', labels: false });
+    if (disposed) return;
+    // Paint offscreen first. Throughout generation, panning and resizing still use the live compact map.
+    const { width, height: h } = host.getBoundingClientRect();
+    if (width > 0 && h > 0) next.drawLive(navigation!.view(cityEmbedView(map.bounds, width, h)), width, h, window.devicePixelRatio || 1);
+    host.append(next.element);
+    renderer?.dispose();
+    renderer = next;
+    pendingRenderer = undefined;
+    bounds = map.bounds;
+    root.dataset.runtime = data.runtime;
     await afterPaint();
     if (disposed) return;
-    root.dataset.state = 'ready';
-    root.dataset.readyMs = String(Math.round(performance.now()));
-    status.hidden = true;
-    document.querySelectorAll<HTMLButtonElement>('#map-navigation button').forEach(button => {
-      button.disabled = false;
-    });
-  };
-  const showContext = async (world: World) => {
-    const appearance = settings.appearance!;
-    const composition = appearance.composition!;
-    const detailed = resolveSettingsAppearance({ ...settings, appearance: { ...appearance, composition: { ...composition, landuse: { ...composition.landuse, rural: 'subtle' }, effects: { ...composition.effects, relief: true } } } }, world, 'view2d');
-    await renderer!.set(world, settings, detailed, { labels: false });
-    draw();
-    await afterPaint();
-    if (disposed) return;
-    root.dataset.detail = 'ready';
-    root.dataset.detailMs = String(Math.round(performance.now()));
-  };
-
-  let firstPaint: Promise<void> | undefined;
-  const unpack = (world: World) => unpackWorldPartitions(unpackWorldLanduse(world));
-  worker = new EngineWorker({ name: 'magna-city-preview profile=' + (local ? 'local' : 'web') + ' threads=off' });
-  worker.onerror = () => fail(new Error('The city generator stopped.'));
-  worker.onmessage = ({ data }: MessageEvent<V2WorkerResponse>) => {
-    if (data.type === 'error') fail(new Error(data.error));
-    else if (data.type === 'progress' && data.progress.stage === 'runtime-fallback') root.dataset.runtime = 'wasm';
-    else if (data.type === 'city-preview') {
-      firstPaint ??= Promise.resolve().then(() => showTown(unpack(data.world)));
-      void firstPaint.catch(fail);
-    } else if (data.type === 'result') {
-      stopWorker();
-      root.dataset.runtime = data.world.stats['v2.urbanBackend'] === 'rust-native-cpu' ? 'native' : 'wasm';
-      void Promise.resolve()
-        .then(async () => {
-          const world = unpack(data.world);
-          await (firstPaint ?? showTown(world));
-          if (!disposed) await showContext(world);
-        })
-        .catch(fail);
+    if (mode === 'compact') {
+      root.dataset.state = 'ready';
+      root.dataset.readyMs = String(Math.round(performance.now()));
+      root.dataset.detail = 'idle';
+      status.hidden = true;
+      document.querySelectorAll<HTMLButtonElement>('#map-navigation button').forEach(button => { button.disabled = false; });
+    } else {
+      root.dataset.detail = 'ready';
+      root.dataset.detailMs = String(Math.round(performance.now()));
+      detailedButton.removeAttribute('aria-busy');
+      detailedButton.textContent = translate('detailed');
+      detailedButton.title = translate('Detailed map shown');
     }
   };
-  worker.postMessage({ id: 1, action: 'all', settings, assetBase: document.baseURI, cityPreview: true } satisfies V2WorkerRequest);
+  const generate = (mode: CityPreviewMode) => {
+    try {
+      const active = new CityWorker({ name: 'magna-city-' + mode + ' profile=' + (local ? 'local' : 'web') + ' threads=off' });
+      worker = active;
+      const stopped = () => { if (worker === active) fail(new Error('The city generator stopped.')); };
+      active.onerror = stopped;
+      active.onmessageerror = stopped;
+      active.onmessage = ({ data }: MessageEvent<CityPreviewResponse>) => {
+        if (disposed || worker !== active) return;
+        if (data.type === 'error') fail(new Error(data.error));
+        else if (data.type === 'city-preview') {
+          stopWorker();
+          void show(data).catch(fail);
+        }
+      };
+      active.postMessage({ hints, local, mode } satisfies CityPreviewRequest);
+    } catch (error) {
+      fail(error);
+    }
+  };
+  detailedButton.onclick = () => {
+    if (detailedButton.disabled || disposed) return;
+    detailedButton.disabled = true;
+    detailedButton.setAttribute('aria-busy', 'true');
+    detailedButton.textContent = translate('detailing…');
+    detailedButton.title = translate('Generating the detailed map');
+    root.dataset.detail = 'loading';
+    generate('detailed');
+  };
+  generate('compact');
 }
 
 try {
@@ -159,5 +177,6 @@ window.addEventListener('pagehide', event => {
   navigation?.dispose();
   resize?.disconnect();
   renderer?.dispose();
+  pendingRenderer?.dispose();
   cancelAnimationFrame(drawFrame);
 });

@@ -814,7 +814,7 @@ export async function generateTown(regionWorld: World, settings: V2Settings, key
   world.stats['ms.towns'] = Math.round(performance.now() - t0);
   return world;
 }
-export async function generateTowns(regionWorld: World, settings: V2Settings, onProgress?: ProgressCallback, keys?: readonly string[], through?: V2TownStage, keepUrbanLanes = false, onBuilt?: (world: World) => void): Promise<World> {
+export async function generateTowns(regionWorld: World, settings: V2Settings, onProgress?: ProgressCallback, keys?: readonly string[], through?: V2TownStage, keepUrbanLanes = false, includeSurroundings = true): Promise<World> {
   if (regionWorld.settlements?.length === 0 && regionWorld.stats['v2.stage'] === 'region') return cloneV2WorldForGeneration(regionWorld);
   validateSettings(settings);
   assertRegion(regionWorld, settings);
@@ -927,8 +927,7 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
     }
   }
   world.stats['ms.townLoop'] = Math.round(performance.now() - t0);
-  onBuilt?.(world);
-  await finishTowns(world, settings, onProgress);
+  if (includeSurroundings) await finishTowns(world, settings, onProgress);
   world.stats['ms.towns'] = Math.round(performance.now() - t0);
   return world;
 }

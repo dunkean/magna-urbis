@@ -88,7 +88,7 @@
         padding: 6px;
         border-radius: 3px;
       }
-      @media (max-width: 250px) {
+      @media (max-width: 340px) {
         #open {
           bottom: 44px;
         }
@@ -102,8 +102,9 @@
         left: 10px;
         right: 10px;
         display: flex;
+        flex-wrap: wrap;
         align-items: flex-start;
-        gap: 8px;
+        gap: 6px;
         pointer-events: none;
       }
       #demo-controls[hidden] {
@@ -128,6 +129,42 @@
       #randomize:focus-visible {
         outline: 2px solid #725c47;
         outline-offset: 2px;
+      }
+      #population-form {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        max-width: 100%;
+        box-sizing: border-box;
+        padding: 3px 5px 3px 7px;
+        border: 1px solid #b9a58d;
+        border-radius: 6px;
+        background: #fffaf0;
+        pointer-events: auto;
+        font-size: 12px;
+      }
+      #preview-population {
+        width: 5.8em;
+        min-width: 3.25em;
+        box-sizing: border-box;
+        padding: 3px 4px;
+        border: 1px solid #b9a58d;
+        border-radius: 3px;
+        background: #fff;
+        color: inherit;
+        font: inherit;
+      }
+      #population-form button {
+        border: 0;
+        border-radius: 3px;
+        padding: 4px 5px;
+        background: #f0e6d4;
+        color: #49372a;
+        font: 600 11px system-ui;
+        cursor: pointer;
+      }
+      #population-form button:hover {
+        background: #e8dac3;
       }
       #demo-params {
         font-size: 11px;
@@ -154,6 +191,13 @@
         font: 18px system-ui;
         cursor: pointer;
       }
+      #map-navigation #detailed {
+        width: auto;
+        font-size: 11px;
+        padding: 0 6px;
+        color: #665b4e;
+        background: #f4f1ead9;
+      }
       #map-navigation button:hover {
         background: #f0e4d0;
       }
@@ -173,12 +217,18 @@
     <div id="caption"><strong id="burg-name" hidden></strong><small data-embed-text>City preview</small></div>
     <div id="demo-controls" hidden>
       <button id="randomize" type="button" data-embed-text title="Randomize culture, population, geography and buildings">🎲 Randomize city</button>
+      <form id="population-form">
+        <label for="preview-population" data-embed-text>Population</label>
+        <input id="preview-population" type="number" min="1" max="5000000" step="1" required />
+        <button type="submit" data-embed-text>Apply</button>
+      </form>
       <span id="demo-params"></span>
     </div>
     <div id="map-navigation" aria-label="Navigation">
       <button id="zoom-in" type="button" disabled aria-label="Zoom in" title="Zoom in (+)">+</button>
       <button id="zoom-out" type="button" disabled aria-label="Zoom out" title="Zoom out (−)">−</button>
       <button id="fit-view" type="button" disabled aria-label="Recenter city" title="Recenter city (0)">⌖</button>
+      <button id="detailed" type="button" disabled data-embed-text aria-live="polite" title="Generate a detailed map">detailed</button>
     </div>
     <a id="open" target="_blank" data-embed-text rel="noopener">Open in Magna Urbis ↗</a>
     <script type="module" src="../v2/cityEmbed.ts"></script>

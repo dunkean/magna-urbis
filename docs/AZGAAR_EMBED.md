@@ -1,18 +1,17 @@
 # City iframe preview
 
-The V2 build includes `embed.html`. It generates a procedural town with the V2 Rust
-pipeline and draws it with the shared Minimal Canvas renderer. The preview uses flat procedural relief and the regular city footprint and building-site generation.
-The first paint shows
-the actual streets, walls and building footprints. The following paint adds the
-terrain shading and land use from the same result and keeps the city and camera in
-place. Window resizing redraws the same geometry at a uniform scale.
+The V2 build includes `embed.html`. The fitted 2D map uses real streets, walls and
+building footprints from the V2 Rust generator. Resizing redraws that geometry at
+a uniform scale. **Detailed** starts a new generation with parcel boundaries,
+quarters and terrain context. The current map stays visible while it works.
 
 The public endpoint is `https://magna-urbis.org/embed.html` after publication.
 For an internal native performance run, start the existing V2 engine and open
 `http://127.0.0.1:5174/embed.html?profile=local&preview=1&name=Brackenford&population=2500&seed=12340007&walls=1`.
-The explicit local profile is accepted on loopback only. The ordinary web preview uses
-browser WASM. Direct previews include **Randomize city** (French: **Tout changer**).
-An embedded iframe hides demonstration controls unless it receives `demo=1`.
+The explicit local profile is accepted on loopback only. The ordinary web preview
+uses browser WASM. Direct previews include **Randomize city** and a **Population**
+field. Enter a new population and apply it to run the same seed with that value.
+An embedded iframe hides these test controls unless it receives `demo=1`.
 
 ## Simple link
 
