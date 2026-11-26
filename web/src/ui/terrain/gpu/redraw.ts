@@ -6,6 +6,7 @@
  * the bind group entries, the slots, the live view's targets, the empty auxiliary image and the brush atlas. Built by
  * TerrainGpu for each device.
  */
+import { GroundRoadRaster, type GroundRoadPaint } from '../../../render/groundRoads';
 import { displayQualityUniform } from '../../../render/displayQuality';
 import { setSeasonCalendarGpu } from '../../../../../rust/bridge/terrainRenderV2Zones';
 import { dropHiddenDetails } from '../layers';
@@ -45,6 +46,7 @@ export interface GpuDrawRequest {
 }
 
 export interface GpuRedrawHooks {
+  roads(): GroundRoadPaint | undefined;
   /** A draw on the display canvas: the fallback presentation of the previous frame is stale. */
   displayDrawn(): void;
   alive(): boolean;
@@ -88,6 +90,9 @@ export class GpuRedraw {
     return { buffer: s.buffer, offset, size: params.bytes.length };
   };
   /** The request being drawn (the look bindings read its refinements and look). */
+  private readonly roadRaster = new GroundRoadRaster();
+  private roadRevision = -1;
+  private roadTexture?: GPUTexture;
   private request?: GpuDrawRequest;
   private readonly quad = [0, 0, 0, 0];
 
@@ -201,12 +206,27 @@ export class GpuRedraw {
     for (let i = 0; i < TERRAIN_TEXTURES.length; i++) entries[3 + i].resource = textures[TERRAIN_TEXTURES[i]];
     return this.device.createBindGroup({ layout: this.gpu.layouts.terrain, entries });
   }
+  private groundRoadTexture(look: TerrainLook, frame: RedrawFrame): GPUTextureView | undefined {
+    const paint = this.hooks.roads();
+    const canvas = paint && !look.groundCapture && look.treePlane !== 'keys' && this.roadRaster.draw(paint, frame);
+    if (!canvas) return undefined;
+    if (this.roadRevision !== this.roadRaster.revision) {
+      if (!this.roadTexture || this.roadTexture.width !== canvas.width || this.roadTexture.height !== canvas.height) {
+        this.roadTexture?.destroy();
+        this.roadTexture = this.device.createTexture({ size: [canvas.width, canvas.height], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+      }
+      this.device.queue.copyExternalImageToTexture({ source: canvas }, { texture: this.roadTexture, premultipliedAlpha: false }, [canvas.width, canvas.height]);
+      this.roadRevision = this.roadRaster.revision;
+    }
+    return this.roadTexture!.createView();
+  }
   /** One height layer (as GlRedraw.drawLayer); details need the variant's blending pipeline. Returns true while it fades. */
-  private drawLayer(encoderPass: GPURenderPassEncoder, layer: GpuHeightLayer, base: boolean, pipeline: GPURenderPipeline | undefined, frame: RedrawFrame, now: number): boolean {
+  private drawLayer(encoderPass: GPURenderPassEncoder, layer: GpuHeightLayer, base: boolean, pipeline: GPURenderPipeline | undefined, frame: RedrawFrame, now: number, roads?: GPUTextureView): boolean {
     const p = this.terrainParams;
     this.textures.uField = layer.view;
-    this.textures.uCave = layer.caveView ?? this.inputs.empty.view;
+    this.textures.uCave = roads ?? layer.caveView ?? this.inputs.empty.view;
     writeFieldParams(p, layer, base);
+    if (roads) p.int('uHasCave', 2);
     let fading = false;
     if (base) {
       p.float('uAlpha', 1);
@@ -356,10 +376,11 @@ export class GpuRedraw {
       p.int('uHasAux', aux ? 1 : 0);
     }
     const mapPass = beginPass(encoder, mapTarget, true, 'map');
-    this.drawLayer(mapPass, base, true, chosen.pipeline, frame, now);
+    const roadTexture = this.groundRoadTexture(look, frame);
+    this.drawLayer(mapPass, base, true, chosen.pipeline, frame, now, roadTexture);
     if (req.details.length) {
       const blended = this.pipelines.terrain(chosen.variant, 'map', 'alpha', wait);
-      for (const detail of req.details) animating = this.drawLayer(mapPass, detail, false, blended, frame, now) || animating;
+      for (const detail of req.details) animating = this.drawLayer(mapPass, detail, false, blended, frame, now, roadTexture) || animating;
     }
     mapPass.end();
     // The live view's details: a detail fully faded in hides (and releases) the older ones.
@@ -382,6 +403,7 @@ export class GpuRedraw {
   }
 
   dispose(): void {
+    this.roadTexture?.destroy();
     this.liveTargets.dispose();
     releaseImage(this.emptyUint);
     this.brushAtlas.dispose();

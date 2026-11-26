@@ -14,7 +14,8 @@ import { getDistanceUnit } from '../units';
 import { cityOverlayLandKinds, cityOverlayLandKey, cityCountrysideCanvasOptions, cityOverlayPlanMarks } from '../../render/cityEnvironment';
 import type { World, LandKind } from '../../gen/types';
 import { createCanvasRenderer, type CanvasRenderer } from '../../render/canvas';
-import { mapRoadTones } from '../../render/roadStyle';
+import { regionalGroundRoads } from '../../render/groundRoads';
+import { mapRoadTones, roadGroundKey, type RoadStyle } from '../../render/roadStyle';
 import { displayWorld } from '../../render/displayWorld';
 import { buildingOccupationShapes } from '../../ui/forestOccupation';
 import { nativeCitiesOf } from '../nativeProducts';
@@ -43,7 +44,7 @@ import { isUnderdarkBiome } from '../../gen/biomes';
 import { cityRegionalNetwork } from '../../render/cityBridges';
 import type { View } from '../../render/view';
 import type { ViewRasterRegion } from '../../render/viewRaster';
-import type { Cartography, DisplayParts, SemanticState, WorldBox } from './contract';
+import type { Cartography, DisplayParts, Ground, SemanticState, WorldBox } from './contract';
 import type { MapState } from './mapState';
 import { paintedBrushes } from './paintedBrushes';
 
@@ -69,6 +70,34 @@ export class CartographyProducts implements Cartography {
   renderer?: CanvasRenderer;
   /** The canvas the overlay renderer draws into; swapped when the renderer of another look comes back from the store. */
   overlay = document.createElement('canvas');
+  private roadsOnGround = false;
+  private roadSource?: { scene: Scene; key: string; gpu: Ground['gpu'] };
+  private syncGroundRoads(scene: Scene): void {
+    const r = this.map.resolved!,
+      layers = this.map.exportLayers,
+      ground = this.parts.ground,
+      source = this.map.native;
+    this.roadsOnGround = !!(
+      ground.gpuActive &&
+      ground.gpu?.setGroundRoads &&
+      source &&
+      !(source.field?.cave ?? source.caveMask)?.length &&
+      !Object.keys(layers).length &&
+      r.target !== 'export' &&
+      r.ground.traits.family === 'material' &&
+      r.composition.networks.roads.look === 'rendered'
+    );
+    const key = JSON.stringify([this.roadsOnGround, r.keys.roads, r.quality, roadGroundKey(), mapSeasonKey(), r.cartography.landuse]);
+    if (this.roadSource?.scene === scene && this.roadSource.key === key && this.roadSource.gpu === ground.gpu) return;
+    this.roadSource = { scene, key, gpu: ground.gpu };
+    const roads = scene.lines.filter(l => (l.role === 'road' ? r.composition.networks.roads.visible : r.cartography.landuse && (l.role === 'drive' || l.name === 'field-ways')));
+    ground.gpu?.setGroundRoads?.(this.roadsOnGround && roads.length ? regionalGroundRoads(roads, this.roadStyle) : undefined);
+    if (this.roadsOnGround) ground.dropBackground();
+  }
+  private roadStyle = (): RoadStyle => {
+    const r = this.map.resolved!;
+    return { look: r.composition.networks.roads.look, emphasis: r.composition.networks.roads.emphasis, night: r.composition.ambience === 'night', colors: r.palette.colors, simple: r.quality === 'light' };
+  };
   private cartographyKey = '';
   /** Dormant renderers of other looks. */
   private retained = new RetainedBudget();
@@ -165,6 +194,7 @@ export class CartographyProducts implements Cartography {
     const v = scene.revisions,
       sceneKey = JSON.stringify(['scene', cityOverlayLandKey(r), v.roads, v.landuse, v.settlements, v.terrain, v.cities, layers.roads, layers.city, r.city.visible, landuse, cartographic, world.mapSize, shown.seed, world.options.biome]);
     const built = this.map.shared.cache.get(sceneKey, () => buildScene(shown, undefined, { mask }));
+    this.syncGroundRoads(built);
     // Same overlay configuration on the same map (a town build or edit): keep the renderer and its tiles, repaint only the changed areas.
     const config = JSON.stringify([
       r.keys.cartography,
@@ -257,10 +287,8 @@ export class CartographyProducts implements Cartography {
       mask,
       urbanPlan: () => !!this.map.resolved && cityOverlayPlanMarks(this.map.resolved),
       roadLook: r.composition.networks.roads.look,
-      roadStyle: () => {
-        const c = this.map.resolved!.composition;
-        return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.map.resolved!.palette.colors };
-      },
+      roadStyle: this.roadStyle,
+      regionalRoadsOnGround: () => this.roadsOnGround,
       // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
       semantic: {
         createInk: gl => this.parts.contours.createLiveInk(gl),
@@ -320,6 +348,7 @@ export class CartographyProducts implements Cartography {
   async overlaysPass(): Promise<void> {
     const r = this.map.resolved!,
       layers = this.map.exportLayers;
+    if (this.cartographyState) this.syncGroundRoads(this.cartographyState.scene);
     this.renderer!.setOverlays({ text: r.composition.text, labels: layers.labels !== false && r.cartography.labels, legend: layers.decor !== false && r.cartography.legend, cartouche: layers.decor !== false && r.cartography.cartouche });
     this.exportOverlay = undefined;
     this.exportGround = undefined;

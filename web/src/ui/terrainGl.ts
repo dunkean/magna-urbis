@@ -47,6 +47,12 @@ export class TerrainGl {
   readonly gl: WebGL2RenderingContext;
   private parts!: GlParts;
   private readonly loss: GlContextLoss;
+  private roads?: import('../render/groundRoads').GroundRoadPaint;
+  setGroundRoads(paint: typeof this.roads): void {
+    if (paint === this.roads) return;
+    this.roads = paint;
+    this.changed('content');
+  }
   private look?: TerrainLook;
   private view?: ViewState;
   private frame = 0;
@@ -91,7 +97,7 @@ export class TerrainGl {
       this.request();
     });
     const inputs = new GlInputs(gl);
-    const redraw = new GlRedraw(gl, this.canvas, programs, inputs, { canvasDrawn: () => this.fallbackGround.invalidate(this.canvas), alive: () => !this.disposed && !this.gl.isContextLost(), animate: () => this.request(), shoreRingBaked: () => this.changed('content') });
+    const redraw = new GlRedraw(gl, this.canvas, programs, inputs, { canvasDrawn: () => this.fallbackGround.invalidate(this.canvas), alive: () => !this.disposed && !this.gl.isContextLost(), animate: () => this.request(), roads: () => this.roads, shoreRingBaked: () => this.changed('content') });
     return { programs, inputs, redraw, tiles: new GlWorldTiles(gl, this.canvas, redraw, inputs), captures: new GlCaptures(gl, this.canvas, redraw, inputs) };
   }
   /** On a restored context every GL object is gone: build the parts again and replay the retained CPU inputs. The

@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- In satellite views, woodland canopies cover regional roads branch by branch. Town streets show compacted earth, wheel ruts, worn pedestrian strips and stony margins.
 - Satellite roads and footpaths have broken, soil-coloured verges and a continuous worn centre. Earth darkens on low banks and takes on a stonier colour on steep slopes. Town lanes blend into adjoining streets at junctions.
 - Overhead forests keep their rounded painted crowns. Tilting reveals whole foreground stands, including dense tropical woods, while preserving the forest floor and trees along riverbanks.
 - Satellite rivers grade from jade, glacial blue and tannin brown to iron-red silt across different climates and reaches. At flowing mouths, fresh water starts mixing at the shoreline and drifts across a wider, irregular patch of sea. Frozen lakes show more fine fractures between plates, with snow obscuring parts of each seam. Frozen rivers show subtler cracks at channel scale.

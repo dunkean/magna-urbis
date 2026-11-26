@@ -43,6 +43,7 @@ export interface CanvasRendererDeps {
    * palette object, painted with the scene, paths and marks of the same renderer. Absent: the biome palette of the
    * style given to createCanvasRenderer. */
   palette?: () => Palette;
+  regionalRoadsOnGround?: () => boolean;
   roadLook?: RoadLook;
   /** Look, emphasis and ambience of the roads, read per frame so a new emphasis repaints without a rebuild. */
   roadStyle?: () => RoadStyle;

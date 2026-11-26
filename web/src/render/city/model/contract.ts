@@ -108,6 +108,7 @@ export interface CityStreet {
   role: string;
   joined: JoinedStreet;
   path?: Path2D;
+  wheelPath?: Path2D;
 }
 export interface CityWall {
   kind: string;

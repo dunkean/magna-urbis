@@ -497,6 +497,16 @@ void main() {
     // Resolved crowns of the fragment, trees or Underdark mushroom caps: rooted on land, they overhang every water
     // (rivers, lakes, the sea shore) whole (terrainCrownWater.ts waterUnderCrown).
     float crownCover=underdark?udCapCover:forestResolvedCover;
+#ifndef AUX_PASS
+    // On open-air maps the cave binding carries the road paint of this exact tile, top row first.
+    // The same seasonal crown silhouette and cast shade that cover the river also cover the travelled ground.
+    if(uHasCave==2 && landCover>0.){
+      ivec2 at=clamp(ivec2(px),ivec2(0),ivec2(uCanvas)-1);
+      vec4 bed=texelFetch(uCave,at,0);
+      color=mix(color,bed.rgb*(1.-.32*forestResolvedShade),bed.a*landCover*(1.-crownCover));
+      wBase=color;
+    }
+#endif
     // Fresh ice of the fragment (terrainRenderV2Winter v2FreshIce): x freeze of the water's altitude, y open channel
     // of a river, z inside a lake, w lake shore; the bank line apart. One sheet evaluation below for every case.
     vec4 wIce=vec4(0.);float wIceEdge=0.;

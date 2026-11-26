@@ -294,7 +294,32 @@ void main() {
     float loose = float((vMeta & 15u) >= 3u);
     float fringe = min(mix(1.6, 1.2, loose), vHw * mix(0.26, 0.5, loose)) * smoothstep(1.0, 2.0, vHw / uMpp);
     float patch = vnoise(vRoadWorld * 0.19);
-    cover *= 1.0 - (0.76 - 0.22 * patch) * smoothstep(-max(0.001, fringe) * (0.65 + patch), 0.0, d);
+    uint traffic = (vMeta >> 9u) & 3u;
+    if (traffic != 0u) {
+      float bed = clamp(t / vHw, 0., 1.);
+      float margin = smoothstep(.68, .99, bed + .10 * (patch - .5));
+      float detail = smoothstep(1.2, 3.5, vHw / uMpp);
+      float gravel = vnoise(vRoadWorld * 1.7);
+      float turning = ((vMeta & 32u) != 0u ? smoothstep(.4,vHw+1.,s) : 1.) *
+                      ((vMeta & 64u) != 0u ? smoothstep(.4,vHw+1.,vLen-s) : 1.);
+      color *= 1. + detail * ((.08 * (1. - margin) - .11 * margin) * turning + .19 * (patch - .5) + .10 * (gravel - .5) * smoothstep(.0,.8,.85-uMpp));
+      if (traffic == 1u) {
+        float wander = .19 * sin(dot(vRoadWorld, vec2(.13,.17))) + .12 * sin(dot(vRoadWorld, vec2(.29,-.09)));
+        float wheel = abs(abs(vLocal.y - wander) - .72);
+        float width = max(.23, .64 * uMpp);
+        float damp = smoothstep(.30,.71, .7*vnoise(vRoadWorld*.083)+.3*gravel);
+        color *= 1. - .30 * exp(-wheel*wheel/(width*width)) * min(1., .32 / uMpp) * detail * damp * turning;
+      } else if (traffic == 3u && uMpp < .28) {
+        vec2 grid = vec2(vAlong / .48, vLocal.y / .34);
+        grid.x += .5 * mod(floor(grid.y), 2.);
+        vec2 edges = min(fract(grid), 1.-fract(grid)) * vec2(.48,.34);
+        float joint = 1. - smoothstep(.015,.035+.5*uMpp,min(edges.x,edges.y));
+        color *= 1. + smoothstep(.0, .21, .28-uMpp) * (.08*(hash(floor(grid))-.5)-.16*joint);
+      }
+      cover *= 1. - .36 * smoothstep(-min(fringe, .48), .001, d);
+    } else {
+      cover *= 1.0 - (0.76 - 0.22 * patch) * smoothstep(-max(0.001, fringe) * (0.65 + patch), 0.0, d);
+    }
   }
   if (a <= 0.0) discard;
   outColor = vec4(color, 1.0) * (vColor.a * a * cover * uFade);

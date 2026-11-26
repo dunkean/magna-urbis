@@ -4,6 +4,7 @@
  * Owns the live view's intermediate targets, the empty auxiliary texture and the glUniform* bindings of the look's
  * parameter block (terrain/lookParams.ts). Built by TerrainGl for each context (again after a restore).
  */
+import { GroundRoadRaster, type GroundRoadPaint } from '../../../render/groundRoads';
 import { displayQualityUniform } from '../../../render/displayQuality';
 import { setSeasonCalendarGl } from '../../../../../rust/bridge/terrainRenderV2Zones';
 import { bindForestBrushes } from '../../../render/forestBrushAtlas';
@@ -39,6 +40,7 @@ export interface GlDrawRequest {
 }
 
 export interface GlRedrawHooks {
+  roads(): GroundRoadPaint | undefined;
   /** Every draw changes the canvas: the fallback presentation of the previous frame is stale. */
   canvasDrawn(): void;
   alive(): boolean;
@@ -56,6 +58,9 @@ export class GlRedraw {
   private emptyAux?: WebGLTexture;
   private readonly params: LookBindings;
   /** The request being drawn (the look bindings read its refinements and look). */
+  private readonly roadRaster = new GroundRoadRaster();
+  private roadRevision = -1;
+  private roadTexture?: WebGLTexture;
   private request?: GlDrawRequest;
   private readonly quad = [0, 0, 0, 0];
 
@@ -223,15 +228,34 @@ export class GlRedraw {
     this.params.int('uHasAux', aux ? 1 : 0);
   }
 
+  private groundRoadTexture(look: TerrainLook, frame: RedrawFrame): WebGLTexture | undefined {
+    const paint = this.hooks.roads();
+    const canvas = paint && !look.groundCapture && look.treePlane !== 'keys' && this.roadRaster.draw(paint, frame);
+    if (!canvas) return undefined;
+    if (this.roadRevision !== this.roadRaster.revision) {
+      const gl = this.gl;
+      this.roadTexture ??= gl.createTexture()!;
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.roadTexture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+      this.roadRevision = this.roadRaster.revision;
+    }
+    return this.roadTexture;
+  }
   /** One height layer of the map pass: the base opaque, a detail cross-faded over it. Returns true while it fades. */
-  private drawLayer(layer: GlHeightLayer, base: boolean, frame: RedrawFrame, now: number): boolean {
+  private drawLayer(layer: GlHeightLayer, base: boolean, frame: RedrawFrame, now: number, roads?: WebGLTexture): boolean {
     const gl = this.gl,
       p = this.params;
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, layer.texture);
     gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, layer.cave ?? this.inputs.empty);
+    gl.bindTexture(gl.TEXTURE_2D, roads ?? layer.cave ?? this.inputs.empty);
     writeFieldParams(p, layer, base);
+    if (roads) p.int('uHasCave', 2);
     let fading = false;
     if (base) {
       p.float('uAlpha', 1);
@@ -358,8 +382,9 @@ export class GlRedraw {
     }
     this.renderAux(req, v, state, separateWater, wait, estuaries);
     if (estuaries) this.bindEstuaries(estuaries);
-    this.drawLayer(base, true, frame, now);
-    for (const detail of req.details) animating = this.drawLayer(detail, false, frame, now) || animating;
+    const roadTexture = this.groundRoadTexture(look, frame);
+    this.drawLayer(base, true, frame, now, roadTexture);
+    for (const detail of req.details) animating = this.drawLayer(detail, false, frame, now, roadTexture) || animating;
     // The live view's details: a detail fully faded in hides (and releases) the older ones.
     if (req.details === inputs.details) inputs.details = dropHiddenDetails(inputs.details, now, inputs.release);
     if (!separateWater && look.treePlane !== 'keys') {
@@ -373,6 +398,7 @@ export class GlRedraw {
   }
 
   dispose(): void {
+    if (this.roadTexture) this.gl.deleteTexture(this.roadTexture);
     if (this.emptyAux) this.gl.deleteTexture(this.emptyAux);
     this.liveTargets.dispose(this.gl);
   }

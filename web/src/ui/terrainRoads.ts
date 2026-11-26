@@ -155,7 +155,7 @@ const curveData = (path: Point[]): string => {
 const esc = (text: string): string => text.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 
 /** The "Roads" stage: its own options, status and drawing; placement never runs from here. */
-export function createTerrainRoads(options: { map: SVGSVGElement; before: Element | null; groundStyle?(): GroundRoadStyle | undefined; onConfigChange(): void; onDisplayChange(): void }) {
+export function createTerrainRoads(options: { map: SVGSVGElement; before: Element | null; groundStyle?(): GroundRoadStyle | undefined; setGroundRoads?(paint?: import('../render/groundRoads').GroundRoadPaint): boolean; onConfigChange(): void; onDisplayChange(): void }) {
   let v1Style: V1LandscapeStyle | undefined;
   options.map.addEventListener('urban:v1-style', event => {
     const detail = (event as CustomEvent<{ active: boolean; style: V1LandscapeStyle }>).detail;
@@ -407,6 +407,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     drawnState = state;
     drawnOwnership = urbanOwnership;
     layer.replaceChildren();
+    if (!rendered || !output || !show || !enabled) options.setGroundRoads?.();
     if (!output || !show || !enabled) return;
     const order = [...output.segments].sort((a, b) => ROAD_CLASSES.indexOf(b.class) - ROAD_CLASSES.indexOf(a.class));
     // A number is a screen width in px; a string is a CSS width (roadStrokeWidth: metric with a px floor, following --road-k).
@@ -494,7 +495,20 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
           }
         }
       }
+      const onGround = options.setGroundRoads?.((context, _rect, density) => {
+        const ground = context();
+        for (const g of groups.values()) strokeNaturalRoad(ground, g.path, g.rank, lookRoadWidth('rendered', g.rank, g.metres, density), density, { ...groundStyle, pavement: g.pavement }, 0, g.metres);
+        if (style.opacity < 1) {
+          ground.save();
+          ground.resetTransform();
+          ground.globalCompositeOperation = 'destination-in';
+          ground.fillStyle = `rgba(0,0,0,${style.opacity})`;
+          ground.fillRect(0, 0, ground.canvas.width, ground.canvas.height);
+          ground.restore();
+        }
+      });
       paintViewport = scale => {
+        if (onGround) return;
         const box = options.map.viewBox.baseVal,
           density = scale * Math.min(devicePixelRatio, 2);
         for (const k of ['x', 'y', 'width', 'height'] as const) host.setAttribute(k, String(box[k]));

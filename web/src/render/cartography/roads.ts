@@ -71,12 +71,14 @@ export function roadPainters(c: CartographyContext, f: FrameBase): RoadPainters 
     return out;
   };
   const strokeEarthRoads = (ls: LineLayer[], rank: Parameters<typeof strokeNaturalRoad>[2], metres: number): void => {
+    if (deps.regionalRoadsOnGround?.()) return;
     const width = lookRoadWidth(roadStyle.look, rank, metres, sc);
     canopyMerged(ls).forEach((p, k) => {
       if (p) strokeNaturalRoad(ctx, p, rank, width, sc, roadStyle, k / (CANOPY_LEVELS - 1), metres);
     });
   };
   const drawRegionalRoads = (roads: LineLayer[], tracks: LineLayer[]): void => {
+    if (deps.regionalRoadsOnGround?.()) return;
     if (natural) {
       // Each retained width has its own layer, as on the 3D road surface.
       for (const l of tracks) {

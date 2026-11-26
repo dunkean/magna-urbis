@@ -315,7 +315,7 @@ export function* buildingColorsSteps(buildings: CityBuildings | undefined, s: Ci
  * `at` (the paved tone for an asphalt street); a material as the colour that stands for it; no grain. */
 function flatStreetPaint(paint: StreetPaint, at: Point): string | undefined {
   if (typeof paint === 'string') return paint;
-  if ('grain' in paint) return undefined;
+  if ('grain' in paint || 'traffic' in paint) return undefined;
   if ('material' in paint) return paint.fallback;
   return paint.verge ? roadVergeTone() : roadToneAt(at.x, at.y, paint.road, paint.style);
 }

@@ -671,6 +671,11 @@ const settlements = createTerrainSettlements({
   active: true,
   parcelDefault: false,
   labels,
+  setGroundRoads: paint => {
+    const active = !!groundRenderer && !!terrain && !terrain.field?.cave?.length && !terrain.caveMask?.length && resolveBenchAppearance().ground.traits.family === 'material';
+    groundRenderer?.setGroundRoads(active ? paint : undefined);
+    return active;
+  },
   getForestSource: () => {
     if (!decor) return undefined;
     const r = decor.raster,

@@ -334,8 +334,12 @@ const stain = (i: number, j: number): number => {
 };
 
 // In a wet hollow the earth packs dark. On a cut slope the loose material is paler and less saturated.
-function terrainRoadTone(c: Rgb, rank: RoadRank, emphasis: number, night: boolean, snow: number, paved: boolean, soil: BiomeSoil | undefined, exposure: number): Rgb {
-  const tone = paved ? pavedTone(c, rank, emphasis, night, snow) : soil ? renderedTone(c, soil, rank, emphasis, night, snow) : roadTone(c, rank, emphasis, night, snow);
+function terrainRoadTone(c: Rgb, rank: RoadRank, emphasis: number, night: boolean, snow: number, paved: boolean, soil: BiomeSoil | undefined, exposure: number, urban = false): Rgb {
+  let tone = paved ? pavedTone(c, rank, emphasis, night, snow) : soil ? renderedTone(c, soil, rank, emphasis, night, snow) : roadTone(c, rank, emphasis, night, snow);
+  if (urban && soil && !paved && !night) {
+    // A compacted street accumulates a mineral wearing surface even where its adjoining yards are green.
+    tone = over(over([194, 173, 140], soil.earth, 0.72), tone, (rank === 'street' ? 0.72 : 0.54) * (1 - snow));
+  }
   if (!soil || !exposure || night) return tone;
   const loose = paved ? 0.22 : 1 - RENDERED_EARTH[rank].gravel;
   const amount = (Math.abs(exposure) / 16) * loose * (1 - snow);
@@ -373,7 +377,7 @@ function texture(rank: RoadRank | 'bare', emphasis: number, paved = false, rende
           exposure = soil ? (ground.exposure?.[j * GRID + i] ?? 0) : 0,
           id = (((c[0] << 16) | (c[1] << 8) | c[2]) * 64 + level) * 33 + exposure;
         let t = lut.get(id);
-        if (!t) lut.set(id, (t = terrainRoadTone(c, rank, emphasis, night, snow, paved, soil, exposure)));
+        if (!t) lut.set(id, (t = terrainRoadTone(c, rank, emphasis, night, snow, paved, soil, exposure, urban)));
         c = t;
       }
       // A rolled surface is more even than trodden earth: resurfaced lengths, under half the mottling.
@@ -467,7 +471,7 @@ export function roadToneAt(x: number, y: number, rank: RoadRank, style: RoadStyl
   if (soil && !style.night && (!ground || c.every((v, i) => v === ground!.base[i]))) c = soil.ground;
   const cell = ground ? clamp(Math.floor((y * GRID) / ground.size), 0, GRID - 1) * GRID + clamp(Math.floor((x * GRID) / ground.size), 0, GRID - 1) : 0;
   const snow = style.night ? 0 : mapLandSnow(x, y, style.urban ? URBAN_SNOW : 0);
-  return rgbCss(terrainRoadTone(c, rank, style.emphasis, style.night, snow, pavedRank(rank, style.pavement), soil, ground?.exposure?.[cell] ?? 0));
+  return rgbCss(terrainRoadTone(c, rank, style.emphasis, style.night, snow, pavedRank(rank, style.pavement), soil, ground?.exposure?.[cell] ?? 0, style.urban));
 }
 
 // ---------------------------------------------------------------- the painter
@@ -496,6 +500,33 @@ function patchNoise(x: number, y: number, step: number): number {
   const a = stain(i, j) * (1 - fx) + stain(next(i), j) * fx;
   const b = stain(i, next(j)) * (1 - fx) + stain(next(i), next(j)) * fx;
   return a + (b - a) * fy;
+}
+const trafficTiles = new Map<string, Surface>();
+/** Patches of fine road dust or exposed damp earth. Both wheels sample the ground in world metres. */
+export function trafficPaint(ctx: CanvasRenderingContext2D, kind: 'dust' | 'rut' | 'setts'): CanvasPattern | undefined {
+  let tile = trafficTiles.get(kind);
+  if (!tile) {
+    tile = makeSurface(GRAIN, GRAIN);
+    const g = tile?.getContext('2d') as CanvasRenderingContext2D | undefined;
+    if (!tile || !g) return undefined;
+    const pixels = g.createImageData(GRAIN, GRAIN);
+    for (let y = 0; y < GRAIN; y++)
+      for (let x = 0; x < GRAIN; x++) {
+        const k = (y * GRAIN + x) * 4;
+        const soil = 0.76 * patchNoise(x, y, 32) + 0.24 * patchNoise(x, y, 8);
+        const row = y >> 3,
+          column = (x + (row % 2) * 6) % 16;
+        const joint = kind === 'setts' && (column <= 1 || y % 8 <= 1);
+        const dark = kind === 'rut' || joint;
+        pixels.data[k] = dark ? 85 : 222;
+        pixels.data[k + 1] = dark ? 67 : 202;
+        pixels.data[k + 2] = dark ? 47 : 172;
+        pixels.data[k + 3] = kind === 'setts' ? (joint ? 120 : 35 + 30 * stain(x >> 4, row)) : 255 * fadeIn(soil + 0.16 * stain(x, y), -0.48, 0.46);
+      }
+    g.putImageData(pixels, 0, 0);
+    trafficTiles.set(kind, tile);
+  }
+  return pattern(ctx, tile, kind === 'setts' ? 0.035 : 0.38);
 }
 function vergeTile(soil: BiomeSoil): Surface | undefined {
   const cached = vergeTiles.get(soil);

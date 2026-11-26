@@ -12,6 +12,8 @@
 import type { Point, Shape } from '../../../rust/bridge/urban';
 import type { CityBuildings, CityScene } from './cityCanvas';
 import type { CityRoofShape } from './city/model/contract';
+import { streetTraffic } from './city/streetTraffic';
+import { layoutStreetPavements } from './roadPavement';
 import { isBoardwalk } from './cityGround';
 import { CROSSINGS, streetMinPx } from './city/look';
 import { earcut } from './cityGlEarcut';
@@ -509,7 +511,10 @@ export function buildStreetStrokes(scene: CityScene, origin: Point, surface = tr
       k = key(i),
       rank = Math.min(15, Math.max(0, s.rank));
     for (let r = Math.max(0, k); r < 16; r++) if (firstWithRank[r] < 0) firstWithRank[r] = w.n;
-    const meta = rank | (CROSSINGS.has(s.role) ? META.crossing : 0) | (s.role === 'bridge' || s.role === 'mole' ? META.solidEdge : 0);
+    const layout = scene.layouts[s.layout];
+    const traffic = streetTraffic(s, layoutStreetPavements(layout)?.[s.index], layout?.programme?.population);
+    const wear = traffic === 'cart' ? 1 : traffic === 'foot' ? 2 : traffic === 'stone' ? 3 : 0;
+    const meta = (wear << 9) | rank | (CROSSINGS.has(s.role) ? META.crossing : 0) | (s.role === 'bridge' || s.role === 'mole' ? META.solidEdge : 0);
     const ck = `${k}|${cells[i]}`,
       before = w.n;
     putPolyline(w, s.joined.stroke, origin, !surface || isBoardwalk(s.role) || !s.joined.widths.length ? s.width : s.joined.widths.map(x => (Number.isFinite(x) && x > 0 ? x : s.width)), streetMinPx(s.role, s.rank, planPath), i, meta, true);

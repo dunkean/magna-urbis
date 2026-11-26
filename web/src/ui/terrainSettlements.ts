@@ -95,6 +95,7 @@ export function createTerrainSettlements(options: {
   onProjection?(active: boolean, camera?: import('./terrain3d').Terrain3dCamera): boolean | void;
   /** Render3D forest material is displayed: it replaces the cartoon landuse woods. */
   useForestMaterial?(): boolean;
+  setGroundRoads?(paint?: import('../render/groundRoads').GroundRoadPaint): boolean;
   getForestSource?(): import('./urbanLanduseData').UrbanLanduseInput['forest'];
   /** Applied rural occupation in the displayed terrain frame, or undefined. */
   onForestOccupation?(occupation: ForestOccupation | undefined): void;
@@ -203,6 +204,7 @@ export function createTerrainSettlements(options: {
   const roads = createTerrainRoads({
     map,
     before: backend,
+    setGroundRoads: options.setGroundRoads,
     groundStyle: options.city
       ? () => {
           const r = resolveBenchAppearance(),

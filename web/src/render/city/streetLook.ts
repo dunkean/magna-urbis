@@ -16,6 +16,7 @@ import { STRUCTURE_ROLES, blendTone, isBlended, softStreet, type BlendTone } fro
 import type { SurfaceEnd } from '../roadSurface';
 import { streetToneAt } from '../groundTone';
 import { STREET_MIN_PX, cobbleTone, emphasisAlpha, naturalMarks, pavedMarks, pavedRank, roadFeather, quayFill, roadToneAt, sidewalkTone, streetRank, type RoadRank, type RoadStyle } from '../roadStyle';
+import { streetTraffic } from './streetTraffic';
 import type { RoadPavement } from '../roadPavement';
 import { streetLayer } from '../buildingMaterials';
 import { URBAN_SNOW, mapLandSnow } from '../seasonPalette';
@@ -79,7 +80,7 @@ const deckEdge = (mpp: number): number => Math.max(1.2, 1.4 * mpp);
 
 /** A colour, or a pattern the renderer resolves: the ground-textured road paint of a rank (roadStyle.ts roadPaint),
  * the aggregate grain (roadGrain), a textured material layer with the colour that stands for it. */
-export type StreetPaint = string | { road: RoadRank; style: RoadStyle; verge?: true } | { grain: true; worn?: boolean } | { material: number; fallback: string };
+export type StreetPaint = string | { traffic: 'dust' | 'rut' | 'setts' } | { road: RoadRank; style: RoadStyle; verge?: true } | { grain: true; worn?: boolean } | { material: number; fallback: string };
 /** Draw layers of the stroked ways, bottom to top: casings, ways under the surfaced streets, [surface casings, bodies
  * and carriageways], wear and winter marks, crossings, rails and treads. */
 export type StreetLayer = 'casing' | 'under' | 'marks2' | 'over' | 'marks';
@@ -89,6 +90,7 @@ interface StreetStroke {
   /** World metres. */ width: number;
   alpha?: number;
   cap?: 'round' | 'butt';
+  wheels?: boolean;
 }
 export interface StreetFill {
   paint: StreetPaint;
@@ -227,14 +229,23 @@ function streetPaint(f: StreetFrame, s: CityStreet, town: StreetContext): Street
       return { mode: 'natural', strokes };
     }
     // Same paint as the regional roads: a tone of the local ground, a soft shoulder instead of a casing, wear up close.
+    const traffic = f.roadStyle.look === 'rendered' ? streetTraffic(s, town.pavement, town.population) : undefined;
     const marks = naturalMarks(rank, w, 1 / mpp, roadStyle),
-      bedAlpha = marks.bed.alpha * thin,
+      bedAlpha = (traffic ? Math.min(1, 0.91 * emphasisAlpha(f.emphasis)) : marks.bed.alpha) * thin,
       edge = Math.max(px(streetEdgePx('natural', lod)), w * 0.09),
       shoulder = marks.shadow && { ...marks.shadow, alpha: marks.shadow.alpha * 0.8 };
     const paintRoad: StreetPaint = { road: rank, style: f.roadStyle };
     const snow = f.roadStyle.night ? 0 : land;
     // Rendered surface: the main streets of a town centre are cobbled (weathered setts), lanes stay packed earth.
-    if (f.roadStyle.look === 'rendered' && s.role !== 'track' && s.rank <= 1 && (town.population ?? 0) >= 2000) add('marks2', cobbleTone(roadStyle), w2 * 0.92, bedAlpha * 0.78, 'butt');
+    const stone = traffic === 'stone' && !f.paintColors?.road;
+    const bedPaint = stone ? cobbleTone(roadStyle) : paintRoad;
+    if (traffic && !roadStyle.night && land < 0.85 && w2 / mpp >= 3) {
+      const detail = Math.min(1, 0.65 / mpp) * (1 - land);
+      // Feet and hooves polish a broad, dusty strip; stones and loose soil collect on its flanks.
+      add('marks2', { traffic: 'dust' }, w2 * (traffic === 'foot' ? 0.57 : 0.71), 0.31 * detail, 'butt');
+      if (stone && mpp < 0.26) add('marks2', { traffic: 'setts' }, w2 * 0.92, 0.54 * Math.min(1, (0.26 - mpp) / 0.16), 'butt');
+      if (traffic === 'cart' && mpp < 0.85) strokes.push({ layer: 'marks2', wheels: true, paint: { traffic: 'rut' }, width: 0.46, alpha: 0.48 * detail, cap: 'round' });
+    }
     if (snow && rank !== 'path' && w2 / mpp >= 4) {
       // Main streets are trodden to a grey-brown slush over most of their width; back lanes and tracks keep
       // their snow, with a cool shade and one narrow beaten line.
@@ -242,18 +253,18 @@ function streetPaint(f: StreetFrame, s: CityStreet, town: StreetContext): Street
       add('marks2', busy > 0.5 ? SLUSH : LANE_SNOW, w2 * (0.5 + 0.32 * busy), (0.2 + 0.32 * busy) * snow, 'butt');
       add('marks2', paintRoad, w2 * (0.16 + 0.18 * busy), bedAlpha * (0.55 + 0.45 * busy), 'butt');
     }
-    if (marks.wear) add('marks2', marks.wear.color, w2 * marks.wear.share, marks.wear.alpha, 'butt');
+    if (marks.wear && !traffic) add('marks2', marks.wear.color, w2 * marks.wear.share, marks.wear.alpha, 'butt');
     if (marks.grain) add('marks2', { grain: true, worn: roadStyle.look === 'rendered' && !snow && !roadStyle.night }, w2, marks.grain, 'butt');
     // The inset uses the same joined junction polygon as the bed, including its curb returns and tapered ends.
-    const feather = f.roadStyle.look === 'rendered' ? roadFeather(rank, w, 1 / mpp) : 0;
+    const feather = f.roadStyle.look === 'rendered' ? Math.min(traffic ? Math.min(0.6, 0.11 * w) : Infinity, roadFeather(rank, w, 1 / mpp)) : 0;
     const verge: StreetPaint | undefined = shoulder && (feather && !snow && !roadStyle.night ? { ...paintRoad, verge: true } : shoulder.color);
     const margin = feather ? Math.max(edge, feather) : edge;
-    const fill = { paint: paintRoad, alpha: bedAlpha * (feather ? 0.48 : 1) };
-    const core = feather ? { paint: paintRoad, alpha: bedAlpha } : undefined;
+    const fill = { paint: traffic && feather && !snow && !roadStyle.night ? '#90816b' : bedPaint, alpha: bedAlpha * (traffic ? 0.88 : feather ? 0.48 : 1) };
+    const core = feather ? { paint: bedPaint, alpha: bedAlpha } : undefined;
     if (surfaceOk()) return { mode: 'natural', strokes, surface: { w, edge: margin, casing: verge && shoulder && lod !== 'far' ? { paint: verge, alpha: shoulder.alpha } : undefined, fill, inset: feather || undefined, inner: core, end: s.role === 'lane' ? 'butt' : 'taper' } };
     if (verge && shoulder && lod !== 'far') add('casing', verge, w2 + 2 * margin, shoulder.alpha, 'butt');
-    add(body, paintRoad, w2, fill.alpha, 'butt');
-    if (core) add(body, paintRoad, w2 - 2 * feather, core.alpha, 'butt');
+    add(body, fill.paint, w2, fill.alpha, 'butt');
+    if (core) add(body, core.paint, w2 - 2 * feather, core.alpha, 'butt');
     return { mode: 'natural', strokes };
   }
   const toned = f.roadLook === 'ink' || night ? undefined : streetToneAt(s.street.path, s.role, s.rank); // map-tinted street (groundTone.ts)

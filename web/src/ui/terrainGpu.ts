@@ -54,6 +54,13 @@ export class TerrainGpu implements TerrainRenderer {
   private parts: GpuParts;
   private readonly pipelines: GpuPipelines;
   private readonly recovery: GpuRecovery;
+  private roads?: import('../render/groundRoads').GroundRoadPaint;
+  setGroundRoads(paint: typeof this.roads): void {
+    if (this.fallback) return this.fallback.setGroundRoads(paint);
+    if (paint === this.roads) return;
+    this.roads = paint;
+    this.changed('content');
+  }
   private look?: TerrainLook;
   private view?: ViewState;
   private frame = 0;
@@ -100,7 +107,8 @@ export class TerrainGpu implements TerrainRenderer {
         this.frame = 0;
         return { inputs, canvas: this.canvas, glCanvas: this.glCanvas, livePaused: this.livePaused };
       },
-      fellBack: (_gl, canvas) => {
+      fellBack: (gl, canvas) => {
+        gl.setGroundRoads(this.roads);
         this.canvas = canvas;
         this.revision.bump();
       },
@@ -115,7 +123,7 @@ export class TerrainGpu implements TerrainRenderer {
     gpu.listeners.add(this.pipelineCreated);
     gpu.lostListeners.add(this.recovery.onLost);
     const inputs = new GpuInputs(gpu.device);
-    const redraw = new GpuRedraw(gpu, this.pipelines, inputs, { displayDrawn: () => this.fallbackGround.invalidate(this.canvas), alive: () => !this.disposed, animate: () => this.request(), shoreRingBaked: () => this.changed('content') });
+    const redraw = new GpuRedraw(gpu, this.pipelines, inputs, { displayDrawn: () => this.fallbackGround.invalidate(this.canvas), alive: () => !this.disposed, animate: () => this.request(), roads: () => this.roads, shoreRingBaked: () => this.changed('content') });
     return { inputs, redraw, tiles: new GpuWorldTiles(gpu, redraw, inputs), captures: new GpuCaptures(gpu, redraw, inputs) };
   }
   private detach(): void {

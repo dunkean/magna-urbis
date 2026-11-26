@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ROAD_GRID, roadTerrain } from '../src/render/roadTerrain';
+import { streetTraffic } from '../src/render/city/streetTraffic';
+import { streetFrame, streetLook } from '../src/render/city/streetLook';
+import type { CityStreet } from '../src/render/city/model/contract';
 import { roadFeather } from '../src/render/roadStyle';
 
 describe('satellite road materials', () => {
@@ -22,6 +25,28 @@ describe('satellite road materials', () => {
     expect(value(17)).toBe(0);
     expect(roadTerrain(raster)).toBe(field);
     expect(roadTerrain({ ...raster, rock: water }).exposure.some(v => v < 0)).toBe(false);
+  });
+
+  it('uses wheel wear only on cart-width earth streets and preserves the joined roadbed', () => {
+    const lane = {
+      role: 'lane',
+      rank: 3,
+      width: 3.8,
+      street: {
+        path: [
+          { x: 0, y: 0 },
+          { x: 24, y: 0 },
+        ],
+      },
+    } as CityStreet;
+    const frame = streetFrame({ lod: 'close', palette: 'atlas', mpp: 0.25, layers: {}, roadLook: 'rendered' });
+    const wide = streetLook(frame, lane);
+    expect(wide.surface!.fill.alpha).toBeGreaterThan(0.75);
+    expect(wide.strokes.some(s => s.wheels)).toBe(true);
+    expect(streetLook(frame, { ...lane, width: 1.8 }).strokes.some(s => s.wheels)).toBe(false);
+    expect(streetTraffic({ ...lane, rank: 1 }, 'earth', 3000)).toBe('stone');
+    expect(streetTraffic(lane, 'asphalt')).toBeUndefined();
+    expect(streetTraffic({ ...lane, role: 'bridge' })).toBeUndefined();
   });
 
   it('reserves a continuous core and only opens the verge when its width resolves', () => {
