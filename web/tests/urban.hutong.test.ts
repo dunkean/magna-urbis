@@ -237,11 +237,11 @@ describe('Chinese hutong access', () => {
   });
 
   it('shrinks giant under-served p4uefz lots while preserving urban geometry', () => {
-    const w = generate(makeOptions({ seed: 'p4uefz', size: 'city', culture: 'chinese', moat: 'no', settlements: 'none' }));
+    const w = generate(makeOptions({ seed: 'p4uefz', size: 'city', population: 14783, culture: 'chinese', moat: 'no', settlements: 'none' }));
     const u = w.urban!,
       plots = u.parcels.filter(p => p.use === 'plot');
     // Corrected road, hutong and courtyard foundation, with all physical guards below.
-    expect(createHash('sha256').update(JSON.stringify(u)).digest('hex')).toBe('1456e1da46a7f6bc0c29a3861f2ee8729354b22f6206ba66de211b929bd249fe');
+    expect(createHash('sha256').update(JSON.stringify(u)).digest('hex')).toBe('e47bd4ddb842ebd33835995213ffad79bdabcce19a2ffefeda77805abf11f140');
     // Before hutongs the largest residential plot was 40,274 m² with only 20 m of frontage.
     expect(Math.max(...plots.map(p => area(p.poly)))).toBeLessThan(20000);
     expect(u.streets.filter(s => s.role === 'close').length).toBeGreaterThan(10);

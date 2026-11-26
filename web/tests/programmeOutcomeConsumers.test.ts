@@ -11,6 +11,8 @@ import { ColdTestBackend } from './helpers/urbanBuildingColdTestBackend';
 vi.mock('../src/ui/methodNotes', () => ({ openMethodNote: vi.fn() }));
 vi.mock('../src/ui/benchHistory', () => ({ openBench: vi.fn() }));
 vi.mock('../src/ui/cityShapeEditor', () => ({ ensureEditStyles: vi.fn() }));
+// This fixture inspects the source markup without mounting a browser translation observer.
+vi.mock('../src/ui/cityInspectorLocale', async importOriginal => ({ ...(await importOriginal<typeof import('../src/ui/cityInspectorLocale')>()), localizeCityInspector: vi.fn(() => () => {}) }));
 import { urbanBuildingPanelProgrammeOutcomeHtml, urbanBuildingPanelCapacity } from '../src/ui/urbanBuildingsPanel';
 import { renderCityInspector, type CityInspectorHooks } from '../src/ui/cityInspector';
 import type { CityScene } from '../src/render/cityCanvas';
