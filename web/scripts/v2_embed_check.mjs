@@ -194,7 +194,7 @@ try {
   const detailTown = await repeat.frame.evaluate(() => window.__townDetailed);
   assert.ok(detailTown?.buildings > 0, 'Detailed must return real Rust building footprints.');
   assert.deepEqual(detailTown, result.cases[1].town, 'The two V2 passes must retain the same streets and buildings.');
-  assert.equal(await repeat.frame.locator('#detail-style').inputValue(), 'parchment');
+  assert.equal(await repeat.frame.locator('#detail-style').inputValue(), 'satellite-light');
   result.detailedMs = Math.round(performance.now() - detailStart);
   result.detailPasses = await repeat.frame.evaluate(() =>
     Object.fromEntries(
@@ -207,7 +207,7 @@ try {
   // Compare the composited map between the toolbars. A control, an extra outline or a cleared canvas
   // cannot satisfy the requirement for a visibly different cartographic style.
   const mapPixels = () => page.screenshot({ clip: { x: 30, y: 70, width: 380, height: 180 } });
-  async function changedFraction(first, second) {
+  async function compareMapPixels(first, second) {
     return repeat.frame.evaluate(
       async encoded => {
         const pixels = await Promise.all(
@@ -222,22 +222,29 @@ try {
           }),
         );
         const [a, b] = pixels;
-        let changed = 0;
-        for (let i = 0; i < a.length; i += 4) if (Math.max(...[0, 1, 2].map(c => Math.abs(a[i + c] - b[i + c]))) >= 16) changed++;
-        return changed / (a.length / 4);
+        let changed = 0,
+          roofPixels = 0;
+        for (let i = 0; i < a.length; i += 4) {
+          if (Math.max(...[0, 1, 2].map(c => Math.abs(a[i + c] - b[i + c]))) >= 16) changed++;
+          // In this English burg the fast satellite roofs are terracotta, distinct from the ochre lots.
+          if (b[i] > b[i + 1] + 25 && b[i + 1] > 1.35 * b[i + 2] && b[i + 1] < 125) roofPixels++;
+        }
+        return { changed: changed / (a.length / 4), roofs: roofPixels / (a.length / 4) };
       },
       [first, second].map(buffer => buffer.toString('base64')),
     );
   }
-  const parchment = await mapPixels();
-  result.parchmentChangedFraction = await changedFraction(compactPixels, parchment);
-  assert.ok(result.parchmentChangedFraction > 0.2, 'Parchment must visibly repaint the town.');
-  await capture(page, 'town-detailed');
+  const fastSatellite = await mapPixels();
+  const fastPixels = await compareMapPixels(compactPixels, fastSatellite);
+  assert.ok(fastPixels.roofs > 0.02, 'The ready Fast Satellite frame must include visible town roofs.');
+  result.fastSatelliteChangedFraction = fastPixels.changed;
+  assert.ok(result.fastSatelliteChangedFraction > 0.2, 'Fast Satellite must visibly repaint the town.');
+  await capture(page, 'town-satellite-fast');
   const switchStart = performance.now();
   await repeat.frame.locator('#detail-style').selectOption('satellite-2');
   await repeat.frame.locator('html[data-detail-style="satellite-2"][data-detail="ready"]').waitFor({ timeout: 120000 });
   result.switchMs = Math.round(performance.now() - switchStart);
-  result.satelliteChangedFraction = await changedFraction(parchment, await mapPixels());
+  result.satelliteChangedFraction = (await compareMapPixels(fastSatellite, await mapPixels())).changed;
   assert.ok(result.satelliteChangedFraction > 0.2, 'Painted satellite must visibly repaint the town.');
   assert.equal(await repeat.frame.evaluate(() => window.__detailedGenerations), 1);
   await capture(page, 'town-painted-satellite');

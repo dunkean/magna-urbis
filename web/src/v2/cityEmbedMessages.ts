@@ -6,7 +6,7 @@ const rows = [
   ['Magna Urbis · City preview', 'Magna Urbis · Aperçu de ville'],
   ['Improve map', 'Améliorer la vue'],
   ['Detailed map style', 'Style de la carte détaillée'],
-  ['Parchment', 'Parchemin'],
+  ['Satellite · Fast', 'Satellite · Rapide'],
   ['Painted satellite', 'Satellite peint'],
   ['detailing…', 'en cours…'],
   ['retry detail', 'réessayer'],
@@ -44,7 +44,7 @@ const rows = [
 const french = new Map<string, string>(rows);
 
 export function cityEmbedText(text: string, language: Language): string {
-  return language === 'fr' ? french.get(text) ?? text : text;
+  return language === 'fr' ? (french.get(text) ?? text) : text;
 }
 
 export function localizeCityEmbed(root: HTMLElement, language: Language): void {
@@ -68,5 +68,7 @@ export function cityEmbedSummary(hints: ExternalCityHints, cultureBase: string |
     (hints.coast ?? 'none') !== 'none' ? `${translate('Coast')} ${hints.coast}` : translate('Inland'),
     hints.river && hints.river !== 'none' ? translate('River') : '',
     hints.walls ? translate('Walls') : '',
-  ].filter(Boolean).join(' · ');
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }

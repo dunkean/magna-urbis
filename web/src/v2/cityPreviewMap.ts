@@ -29,7 +29,7 @@ export interface CityPreviewResult {
   map: CityPreviewMap;
 }
 export type DetailedCityResult = Omit<CityPreviewResult, 'mode' | 'map'> & { mode: 'detailed'; world: World; settings: V2Settings; bounds: Rect4 };
-export type CityDetailStyle = 'parchment' | 'satellite-2';
+export type CityDetailStyle = 'satellite-light' | 'satellite-2';
 export type CityPreviewResponse = { type: 'progress'; progress: V2Progress } | CityPreviewResult | DetailedCityResult | { type: 'error'; error: string };
 
 interface PackedFeatures {
