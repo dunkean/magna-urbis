@@ -30,26 +30,16 @@ function ground(xs = [60], heights = [4]): UrbanBuildingGround {
 
 describe('3D terrain beside native foundations', () => {
   it('removes terrain cuts for hidden meshes and rebuilds them when visibility changes', () => {
+    const footprint = [{ outer: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], holes: [] }];
     const scene = {
       buildings: [
         {
           projection: 'native-building-visual-1',
-          ground_constraints: [
-            {
-              height_m: 4,
-              footprint: [
-                {
-                  outer: [
-                    { x: 0, y: 0 },
-                    { x: 10, y: 0 },
-                    { x: 10, y: 10 },
-                    { x: 0, y: 10 },
-                  ],
-                  holes: [],
-                },
-              ],
-            },
-          ],
+          recipe_id: 'native-house',
+          ground_z_m: 4,
+          height_m: 6,
+          footprint,
+          ground_constraints: [{ height_m: 4, footprint }],
         },
       ],
     } as unknown as Building3dScene;
