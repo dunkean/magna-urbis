@@ -70,8 +70,13 @@ class RecordingPath extends MockPath2D {
     super.lineTo();
     this.rings.at(-1)?.push({ x, y });
   }
-  contains(x: number, y: number): boolean {
-    return this.rings.reduce((winding, ring) => (polygonContains(ring, { x, y }) ? winding + Math.sign(polygonArea(ring)) : winding), 0) !== 0;
+  override addPath(path: MockPath2D): void {
+    super.addPath(path);
+    if (path instanceof RecordingPath) this.rings.push(...path.rings);
+  }
+  contains(x: number, y: number, evenOdd = false): boolean {
+    const winding = this.rings.reduce((sum, ring) => (polygonContains(ring, { x, y }) ? sum + Math.sign(polygonArea(ring)) : sum), 0);
+    return evenOdd ? winding % 2 !== 0 : winding !== 0;
   }
 }
 
@@ -148,7 +153,7 @@ describe('natural cover in unoccupied urban plots', () => {
       squares: [],
       backLand: [],
     };
-    w.settlements = [{ main: false, urban: village } as unknown as NonNullable<typeof w.settlements>[number]];
+    w.settlements = [{ main: false, center: { x: 1150, y: 450 }, urban: village } as unknown as NonNullable<typeof w.settlements>[number]];
     const scene = buildScene(w);
     expect(scene.poly.get('u-natural-ground')?.polys).toEqual(snapshot.map(p => p.outer));
     const image = new Resvg(renderSvg(w, { ...options, raster: false })).render();
@@ -178,36 +183,39 @@ describe('natural cover in unoccupied urban plots', () => {
     const w = world(),
       m = mockCanvas(900, 700),
       ctx = m.canvas.getContext('2d') as Record<string, unknown>;
-    let clip: RecordingPath | undefined;
-    const stack: (RecordingPath | undefined)[] = [],
-      replays: RecordingPath[] = [];
+    type Coverage = (x: number, y: number) => boolean;
+    let clips: Coverage[] = [];
+    const stack: Coverage[][] = [], replays: Coverage[] = [];
     const fill = ctx.fill as (...args: unknown[]) => void;
     ctx.save = () => {
-      stack.push(clip);
+      stack.push(clips);
     };
     ctx.restore = () => {
-      clip = stack.pop();
+      clips = stack.pop() ?? [];
     };
-    ctx.clip = (p: RecordingPath) => {
-      clip = p;
+    ctx.clip = (p: RecordingPath, rule?: string) => {
+      if (p instanceof RecordingPath) clips = [...clips, (x, y) => p.contains(x, y, rule === 'evenodd')];
     };
     const pal = biomePalette('parchment', w.options.biome);
     ctx.fill = (...args: unknown[]) => {
-      if (clip && ctx.fillStyle === forestLandPaint(pal).color) replays.push(clip);
+      if (clips.length && ctx.fillStyle === forestLandPaint(pal).color) {
+        const active = clips, [path, rule] = args;
+        replays.push((x, y) => active.every(contains => contains(x, y)) && (!(path instanceof RecordingPath) || path.contains(x, y, rule === 'evenodd')));
+      }
       fill(...args);
     };
     const r = createCanvasRenderer(m.canvas as unknown as CanvasLike, w, 'parchment', { Path2D: RecordingPath as never, dpr: 1, terrain: () => null });
     r.draw({ cx: 500, cy: 500, scale: 0.6 });
     expect(replays.length).toBeGreaterThan(0);
-    expect(replays.every(p => !p.contains(600, 600))).toBe(true);
-    expect(replays.some(p => p.contains(900, 900))).toBe(true);
+    expect(replays.every(contains => !contains(600, 600))).toBe(true);
+    expect(replays.some(contains => contains(900, 900))).toBe(true);
     for (const p of replays)
       for (const [x, y] of [
         [415, 415],
         [300, 500],
         [665, 345],
       ])
-        expect(p.contains(x, y)).toBe(false);
+        expect(p(x, y)).toBe(false);
   });
 
   it('reuses only natural cover types and respects land-use toggles without inventing vegetation', () => {
