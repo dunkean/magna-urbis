@@ -214,6 +214,7 @@ The Apple Silicon DMG is signed ad hoc and distributed without Apple notarizatio
 - In the tilted view, twisting two fingers turns the map, together with pinch and pan. On phones and tablets, free flight has on-screen up and down buttons.
 - With a finger, the map editors pick roads, outlines and towns within a wider radius. Moving a town no longer blocks panning and pinching. Settlement placement and outline cuts have a Cancel button, and editor hints describe touch actions.
 - On phones and tablets, a map left less than 30 minutes ago is resumed automatically after the browser discarded the tab. The Reload previous map preference still decides when it has been set.
+- When a phone or tablet runs out of graphics resources, its performance level steps down and stays there on later visits. The 3D button now explains why it cannot tilt the map instead of doing nothing.
 
 ## Alpha 0.3.10
 

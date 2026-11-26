@@ -180,6 +180,14 @@ describe('machine defaults', () => {
     await Promise.resolve();
     expect(policy.machineDecision().level).toBe('economy');
   });
+  it('steps a handheld down for good when the map loses its GPU context', async () => {
+    const storage = memoryStorage();
+    const policy = await page('?device=handheld', storage);
+    policy.reportMachineGpuLoss();
+    await Promise.resolve();
+    expect(policy.machineDecision()).toMatchObject({ level: 'economy', reason: 'graphics' });
+    expect(JSON.parse(storage.values.get('magna-urbis-performance-auto')!)).toEqual({ level: 'economy', ceiling: 'economy', graphics: true });
+  });
   it('keeps a struggle for the session only', async () => {
     const storage = memoryStorage();
     const policy = await page('?device=handheld', storage);

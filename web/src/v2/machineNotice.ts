@@ -9,6 +9,7 @@ const reasons = {
   compositor: ['the graphics compositor is unavailable', 'le compositeur graphique est indisponible'],
   resources: ['available CPU, memory and GPU resources are limited', 'les ressources CPU, mémoire et GPU disponibles sont limitées'],
   frames: ['map navigation frames were slow', 'les images de navigation étaient lentes'],
+  graphics: ['the graphics card ran out of resources', 'la carte graphique a manqué de ressources'],
   normal: ['hardware resources are available', 'les ressources matérielles sont disponibles'],
 } as const;
 const message = '{level} performance was selected for this device because {reason}.';

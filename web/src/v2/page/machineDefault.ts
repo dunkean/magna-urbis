@@ -4,7 +4,8 @@
  */
 import type { PageState, PageActions } from './contract';
 import type { V2Settings } from '../contracts';
-import { machineStyleProtected, protectMachineStyle, onMachineDecision, reportMachineStruggle, claimPerformancePreference, machineDefaultPreset, type MachineDecision } from '../machineTier';
+import { machineStyleProtected, protectMachineStyle, onMachineDecision, reportMachineGpuLoss, reportMachineStruggle, claimPerformancePreference, machineDefaultPreset, type MachineDecision } from '../machineTier';
+import { MAP_GPU_FAILED_EVENT, MAP_GPU_LIGHTER_EVENT } from '../../ui/glContextRecovery';
 import { choosePerformance, performanceKnobs } from '../machineView';
 import { showMachineNotice } from '../machineNotice';
 import { currentComposition } from '../renderControls';
@@ -21,6 +22,7 @@ export function mountPerformancePolicy(): void {
     if (setDisplayPixelRatioCap(knobs.pixelRatioCap)) window.dispatchEvent(new Event('resize'));
   });
   onDisplayStruggle(reportMachineStruggle);
+  for (const type of [MAP_GPU_LIGHTER_EVENT, MAP_GPU_FAILED_EVENT]) window.addEventListener(type, reportMachineGpuLoss);
 }
 
 /** A copy of the scene clock: the environment is chosen independently of the map style. */

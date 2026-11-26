@@ -11,7 +11,7 @@ import { handheldDevice } from '../../../rust/bridge/deviceClass';
 export type MachineTier = 'capable' | 'slow' | 'veryslow';
 export type PerformanceLevel = 'minimal' | 'economy' | 'balanced' | 'high';
 export type PerformancePreference = 'auto' | 'economy' | 'balanced' | 'high';
-export type MachineReason = 'normal' | 'forced' | 'preference' | 'software' | 'webgl' | 'compositor' | 'resources' | 'frames';
+export type MachineReason = 'normal' | 'forced' | 'preference' | 'software' | 'webgl' | 'compositor' | 'resources' | 'frames' | 'graphics';
 export interface MachineDecision {
   tier: MachineTier;
   level: PerformanceLevel;
@@ -24,6 +24,8 @@ export type TierDecision = Pick<MachineDecision, 'tier' | 'reason'>;
 export interface LearnedPerformance {
   level: PerformanceLevel;
   ceiling: PerformanceLevel;
+  /** The level came down because the map lost its GPU context, not from slow frames. */
+  graphics?: boolean;
 }
 export interface MachineSignals {
   webgl2: boolean;
@@ -127,7 +129,7 @@ export function decidePerformance(s: MachineSignals, c: PerformanceContext): Mac
     const desktop = decideMachineTier(s);
     return made(tierLevel(desktop.tier), desktop.reason);
   }
-  if (c.learned) return made(c.learned.level, rank(c.learned.level) < rank('balanced') ? 'frames' : 'normal');
+  if (c.learned) return made(c.learned.level, rank(c.learned.level) >= rank('balanced') ? 'normal' : c.learned.graphics ? 'graphics' : 'frames');
   const start = handheldStartLevel(s.cores, s.memory);
   return made(start, start === 'economy' ? 'resources' : 'normal');
 }
@@ -145,7 +147,7 @@ function readLearned(): LearnedPerformance | undefined {
     const value = JSON.parse(globalThis.localStorage?.getItem(PERFORMANCE_AUTO_KEY) ?? 'null') as Partial<LearnedPerformance> | null;
     if (!value || !PERFORMANCE_LEVELS.includes(value.level!) || !PERFORMANCE_LEVELS.includes(value.ceiling!) || rank(value.level!) > rank(value.ceiling!)) return undefined;
     const floor = (level: PerformanceLevel): PerformanceLevel => (level === 'minimal' ? 'economy' : level);
-    return { level: floor(value.level!), ceiling: floor(value.ceiling!) };
+    return { level: floor(value.level!), ceiling: floor(value.ceiling!), ...(value.graphics === true ? { graphics: true } : {}) };
   } catch {
     return undefined;
   }
@@ -276,6 +278,12 @@ export function reportMachineFrame(ms: number): void {
 export function reportMachineStruggle(): void {
   if (!signals || force || !handheld || preference !== 'auto' || windows === 0) return;
   learn(handheldStruggleStep, false);
+}
+/** The map lost its GPU context for lack of resources (glContextRecovery.ts): measured evidence that the level is too
+ * heavy for this handheld. One step down, never below Economy, kept for later visits. */
+export function reportMachineGpuLoss(): void {
+  if (!signals || force || !handheld || preference !== 'auto') return;
+  learn(state => ({ ...handheldStruggleStep(state), graphics: true }), true);
 }
 /** Deferred by the boot module until after client initialization. A tiny temporary GL context is released immediately.
  * Optional WebGPU adapter hints have a bounded wait; absence of WebGPU never implies slow WebGL.

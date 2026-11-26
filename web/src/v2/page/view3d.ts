@@ -8,7 +8,8 @@
  * of the toolbar holds the navigation (worldNavigation.ts), the modelled trees (worldTrees.ts) and the PNG of the view.
  */
 import type { PageActions, PageState } from './contract';
-import { insertHTML, setText, setDynamicText } from '../i18n';
+import { insertHTML, registerMessages, setText, setDynamicText, translate } from '../i18n';
+import { liveStats } from '../../render/live/liveStats';
 import { isTilted } from '../../render/world/camera';
 import { $ } from './dom';
 import { mountWorldTreeControls } from './worldTrees';
@@ -16,6 +17,10 @@ import { mountWorldNavigation } from './worldNavigation';
 import { mountWorldDepthControl } from './worldDepth';
 import { mountWorldReliefControl } from './worldRelief';
 import { mountViewLock } from './viewLock';
+
+/** Only the composed view tilts; its fallback draws the top view alone (after a lost graphics context, for example). */
+const NOT_COMPOSED = '3D is unavailable for now: the map is drawn without the graphics compositor ({reason}).';
+registerMessages({ [NOT_COMPOSED]: { en: NOT_COMPOSED, fr: 'La 3D est indisponible pour l’instant : la carte est dessinée sans le compositeur graphique ({reason}).' } });
 
 /** Pitch the "3D" button eases the camera to: 57 degrees from the vertical. */
 const BUTTON_PITCH = 1;
@@ -41,6 +46,11 @@ function mountTiltButton(state: PageState, actions: PageActions): void {
     if (button.disabled) return;
     if (!state.world) {
       actions.toast('Create the terrain first.');
+      return;
+    }
+    // A press that cannot tilt says why: the viewer tilts only the frame source marked so (mapView.ts, canTilt).
+    if (!tilted && !document.querySelector('[data-camera="tilt"]')) {
+      actions.toast(translate(NOT_COMPOSED).replace('{reason}', liveStats().reason ?? ''), true);
       return;
     }
     // The yaw is kept on the way up and reset on the way back: "2D" is the map, north up.
