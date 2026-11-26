@@ -204,12 +204,7 @@ docs/                  documentation, method notes and the illustrated atlas
 
 Join the **[Discord](https://discord.gg/3yFq8t8Q2W)** to share maps, ask for help and follow development. Ideas and questions are also welcome in [Discussions](https://github.com/dunkean/magna-urbis/discussions). For bugs, open an [issue](https://github.com/dunkean/magna-urbis/issues) with the version, the share code or recipe, and a screenshot if you can.
 
-**You don't need to be a developer to help:**
-
-- 🌐 **Translations:** the interface ships in 12 languages and several are machine-bootstrapped. Native speakers can fix them in plain JSON ([guide](web/src/locales/README.md)), no code needed.
-- 🏛️ **Cultures:** propose a settlement culture (street patterns, building styles, naming, references) in the Discord `#cultures` forum.
-- 🗺️ **Maps and bug reports:** share what you make in `#showcase`; reproducible reports with a share code are gold.
-- 🛠️ **Code:** Rust/WASM engine, WebGPU rendering, TypeScript UI. Look for [`good first issue`](https://github.com/dunkean/magna-urbis/labels/good%20first%20issue) and [`help wanted`](https://github.com/dunkean/magna-urbis/labels/help%20wanted), and read the [contribution guide](CONTRIBUTING.md) before a pull request.
+**Want to contribute code?** The engine is Rust (compiled to WebAssembly and native), rendering is WebGL2/WebGPU, the interface is TypeScript. Look for [`good first issue`](https://github.com/dunkean/magna-urbis/labels/good%20first%20issue) and [`help wanted`](https://github.com/dunkean/magna-urbis/labels/help%20wanted), read the [contribution guide](CONTRIBUTING.md), and say hello in `#contributors` on Discord. Translations are plain JSON in [`web/src/locales/`](web/src/locales/README.md).
 
 Magna Urbis is mostly written by AI coding agents (Claude and Codex) under one human architect and reviewer. The [Ko-fi devlogs](docs/devlog/kofi-devlogs.md) tell how it is built, what broke and what worked.
 
