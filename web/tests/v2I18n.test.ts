@@ -6,7 +6,7 @@ import { CULTURE_LABELS } from '../src/gen/options';
 describe('V2 language preference and UI copy', () => {
   it('uses English by default and accepts only the supported explicit preferences', () => {
     expect(resolveLanguage('', null)).toBe('en');
-    expect(resolveLanguage('?lang=de', 'unknown')).toBe('en');
+    expect(resolveLanguage('?lang=xx', 'unknown')).toBe('en');
     expect(resolveLanguage('', 'fr')).toBe('fr');
     expect(resolveLanguage('?lang=en', 'fr')).toBe('en');
     expect(resolveLanguage('?lang=fr', 'en')).toBe('fr');

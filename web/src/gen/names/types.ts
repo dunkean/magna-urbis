@@ -7,7 +7,7 @@ export const NAME_FAMILIES: NameFamily[] = ['french', 'english', 'german', 'ital
 
 export type NameKind = 'town' | 'quarter' | 'street' | 'road' | 'square' | 'church' | 'castle' | 'gate' | 'river' | 'lake' | 'sea' | 'forest' | 'hill' | 'village' | 'farm' | 'bridge' | 'building';
 
-export type NameDisplayLanguage = 'fr' | 'en' | 'ja' | 'ar' | 'es' | 'pt' | 'zh' | 'ru';
+export type NameDisplayLanguage = 'fr' | 'en' | 'ja' | 'ar' | 'es' | 'pt' | 'zh' | 'ru' | 'de' | 'it' | 'pl' | 'ko';
 export type NameSource = 'auto' | 'geographic' | 'invented' | 'mixed';
 export interface NamingPolicy {
   profile?: string;

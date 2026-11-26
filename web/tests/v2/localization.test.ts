@@ -10,9 +10,9 @@ import { cartoucheModel, compactScaleModel, panelSvg } from '../../src/render/le
 import { PALETTES } from '../../src/render/styles';
 
 describe('V2 culture, UI language and physical display units', () => {
-  it('defaults to English and independently resolves all eight explicit preferences', () => {
+  it('defaults to English and independently resolves every explicit preference', () => {
     expect(resolveLanguage('', null)).toBe('en');
-    expect(LANGUAGES.map(language => language.code)).toEqual(['en', 'fr', 'es', 'pt', 'zh', 'ar', 'ru', 'ja']);
+    expect(LANGUAGES.map(language => language.code)).toEqual(['en', 'fr', 'es', 'pt', 'zh', 'ar', 'ru', 'ja', 'de', 'it', 'pl', 'ko']);
     for (const { code } of LANGUAGES) {
       expect(resolveLanguage(`?lang=${code}`, 'fr')).toBe(code);
       expect(resolveLanguage('', code)).toBe(code);
