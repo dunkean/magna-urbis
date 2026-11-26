@@ -255,6 +255,6 @@ describe('cavern walls and underground pebble correction', () => {
     expect(fmtPop(1234)).toBe('1\u202f234');
     const w = cavernWorld();
     w.options.workflow = 'environment';
-    expect(townTitle(w).sub).toContain(' m \u00b7 underdark-caverns');
+    expect(townTitle(w).sub).toContain('1.6 km \u00b7 underdark-caverns');
   });
 });

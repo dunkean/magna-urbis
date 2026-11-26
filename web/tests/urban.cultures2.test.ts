@@ -185,11 +185,12 @@ const CASES: [string, SizeName[]][] = [
 // cannot fit: warcamp's arena, shire's clear garden trees, and shoreline houses.
 // Exact whole-layer hashes protect the rejected result as well as every survivor;
 // all other seeds still require the full positive signatures above.
-const CONSTRAINED: Record<string, ConditionalFeatures & { hash: string }> = {
-  'orcish/hamlet/2': { arena: false, hash: '3e4bfc67c9eeec6fa90db48e89ee3f614f605c385adfb61380b52e766275fc7a' },
-  'halfling/hamlet/1': { trees: 2, hash: '4d3b8c4f400453f53a7416e437a87b71edfd42a22122cd6217283e8b31898367' },
-  'stilt-town/hamlet/2': { stiltHouses: 1, hash: 'd04470956f9f379bf34471e3013c633328ad40d7de2a93c3d2229ad098e481db' },
-  'stilt-town/town/1': { hash: 'cbc99aba538f41b5b97e851c0433b84554463c873139f08528432ee34a8679fb' }, // render.stiltShore data only (geometry unchanged)
+// The population drawn by a size preset can change independently of the constrained site.
+const CONSTRAINED: Record<string, ConditionalFeatures & { population: number; hash: string }> = {
+  'orcish/hamlet/2': { population: 107, arena: false, hash: '6c599826a58c47b6443b28b889c8abd56c690f658e2c0084afc7b7d35bd09a11' },
+  'halfling/hamlet/1': { population: 86, trees: 2, hash: '6999be6e329ad7b81a93a51903f0c49d3536dc57c4cb3bea91895f3ed4ab30d9' },
+  'stilt-town/hamlet/2': { population: 107, stiltHouses: 1, hash: '787dd112255d5000f3210359a39a92579c0dff8bb39b211164c2c542f50a4140' },
+  'stilt-town/town/1': { population: 3543, hash: '47caf333131b3909babc12109b51201f2a6a9e916d7dfbd1d3d3ee1567d57f4d' },
 };
 
 it('keeps shore reeds in the partition while enforcing habitable shape limits on plots and every building', () => {
@@ -232,10 +233,10 @@ describe('village and camp cultures', () => {
     for (const size of sizes)
       for (const seed of ['1', '2']) {
         it(`${culture} ${size} seed ${seed}`, () => {
-          const w = generate(makeOptions({ seed, size, culture }));
+          const constrained = CONSTRAINED[`${culture}/${size}/${seed}`];
+          const w = generate(makeOptions({ seed, size, culture, ...(constrained && { population: constrained.population }) }));
           expectInvariants(w);
           expect(w.urban!.culture).toBe(culture);
-          const constrained = CONSTRAINED[`${culture}/${size}/${seed}`];
           if (constrained) expect(createHash('sha256').update(JSON.stringify(w.urban)).digest('hex')).toBe(constrained.hash);
           for (const b of w.urban!.buildings) {
             if (b.parcel !== undefined) expect(w.urban!.parcels[b.parcel].use, 'reeds remain unoccupied shore residue').not.toBe('reed');

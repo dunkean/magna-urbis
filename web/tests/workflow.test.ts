@@ -111,9 +111,8 @@ describe('generation workflow output', () => {
           if (coverAt(far.x, far.y) !== 'forest') continue;
           woodedApproach++;
           if (coverAt(near.x, near.y) === 'forest') woodedVerge++;
-          // One generated land polygon is used by SVG and Canvas, so this cut keeps both
-          // a tree crown and the physical road casing clear without the 52 m cell mask.
-          const insideClearance = road.width / 2 + 4;
+          // Native land use clears a 2 m shoulder. Sample inside it on the original road.
+          const insideClearance = road.width / 2 + 1;
           const roadEdge = { x: mx + side * nx * insideClearance, y: my + side * ny * insideClearance };
           expect(coverAt(roadEdge.x, roadEdge.y)).toBeUndefined();
           expect(['field', 'orchard', 'garden'].includes(coverAt(near.x, near.y) ?? '')).toBe(false);

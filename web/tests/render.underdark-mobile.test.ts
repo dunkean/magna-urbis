@@ -75,7 +75,8 @@ describe('compact interactive map information', () => {
       const length = parseFloat(label.s) * (label.s.endsWith('km') ? 1000 : 1);
       const bars = panel.prims.filter(p => p.t === 'rect' && p.h === 4);
       expect(bars.reduce((sum, p) => sum + (p.t === 'rect' ? p.w : 0), 0)).toBeCloseTo(length * scale, 12);
-      expect(panel.w).toBeLessThanOrEqual(120);
+      // Metres-to-pixels multiplication can put a 120 px panel one float above its cap.
+      expect(panel.w).toBeLessThanOrEqual(120 + 120 * Number.EPSILON);
     }
   });
   it('invalidates external title panels when a new rendered snapshot arrives', () => {

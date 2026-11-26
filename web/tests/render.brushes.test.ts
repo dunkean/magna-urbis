@@ -122,6 +122,8 @@ describe('optional painted natural textures', () => {
   });
   it('embeds each atlas once and draws complete tree stamps without changing the model or classic SVG', () => {
     const world = fakeWorld({ mapSize: 1600, buildings: 0, streets: 0, clusters: 1, landAreas: 0 });
+    // Keep this stand outside the 300 synthetic road corridors so it can actually draw tree stamps.
+    world.roads = [];
     world.urban = undefined;
     world.settlements = [];
     world.megaDetail = undefined;
