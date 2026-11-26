@@ -204,7 +204,7 @@ function computeRegime(paths: readonly RetainedWaterPath[], width: number, clima
   blur(iceW, n, r);
   blur(weight, n, r);
   const trunk = riverState(climate, 1),
-    ring = 80 * climate.drop;
+    ring = 80 * climate.drop * climate.lowWater;
   const m = Math.min(n, 1024),
     code = canvas(m),
     wet = canvas(m),
@@ -297,7 +297,7 @@ const strokeAll = (c: CanvasRenderingContext2D, paths: readonly RetainedWaterPat
  * - `code`: the coverage in the regime code, for a material water compositor (RENDER_WATER_FS with uRegime);
  * - `cover`: the running water only, in `fill` (a material water cover, or the flat water of an ink style);
  * - `ink`: the map symbols of `style` over `cover`: running water, intermittent courses (pale water, dashed bank
- *   lines), wadis (flat sandy bed with a continuous bank edge), ice (pale sheet with an ink bank line);
+ *   lines), wadis (exposed ground with a continuous bank edge), ice (pale sheet with an ink bank line);
  * - `symbols`: the same symbols without the running water (drawn by a material water elsewhere);
  * - `ground`: dry beds and exposed shores as ground albedo (3D material ground);
  * - `ice`: the ice as a decal over the finished ground (3D material ground).
@@ -317,13 +317,8 @@ export function paintRetainedRegime(ctx: CanvasRenderingContext2D, paths: readon
     ctx.restore();
     return;
   }
-  // The map needs an opaque base even where seasonal masks cross-fade; otherwise
-  // their combined alpha exposes the captured ground/forest inside the channel.
-  if (mode === 'ink') {
-    ctx.fillStyle = fill;
-    fillAll(ctx, paths);
-  }
-  if (mode === 'cover')
+  // Between the inked banks the exposed bed shows the seasonal ground underneath.
+  if (mode === 'ink' || mode === 'cover')
     masked(ctx, regime.wet, width, c => {
       c.fillStyle = fill;
       fillAll(c, paths);
@@ -334,8 +329,6 @@ export function paintRetainedRegime(ctx: CanvasRenderingContext2D, paths: readon
     if (regime.drying) {
       for (const field of [regime.intermittent, regime.dry])
         masked(ctx, field, width, c => {
-          c.fillStyle = ink.bed;
-          fillAll(c, paths);
           // Clip the continuous edge to the bed so adjoining land stays untouched.
           c.save();
           const clip = new Path2D();

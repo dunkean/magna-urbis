@@ -558,8 +558,10 @@ void main() {
           // A dry course shows through the bank crowns.
           float through=uMaterialZone>0?step(.001,V2_WATER_ARIDITY[waterZone()]):0.;
           bed=mix(bed,water.a,solid*through);
-          // Let the surrounding ground show through the wash of exposed alluvium.
-          wBase=mix(wBase,painted,bed*solid*(uNaturalWater==1?.72:1.));wCover*=1.-solid;
+          // Snow already shades the ground at this fragment, including its local drifts and relief.
+          // Only the uncovered fraction receives a sediment wash. The wet channel freezes separately.
+          float bareGround=underdark?1.:1.-v2Here.snow;
+          wBase=mix(wBase,painted,bed*solid*bareGround*(uNaturalWater==1?.72:1.));wCover*=1.-solid;
           wBase*=1.-.3*wCover*damp;wCover*=1.-damp;
           // City Bench: a retained river reads as water at city zoom instead of a near-black ribbon. Its depth grows
           // from the bank (distance to the nearest dry pixel over 8 directions and 7 radii).
@@ -595,7 +597,7 @@ void main() {
             float deposit=v2Pattern(vec3(world,0.),180.,uPx,uMaterialSeed+905u);
             float retreat=drop*mix(.16,1.,smoothstep(-1.,1.,deposit)) / (1.+8.*grad);
             float ring=step(0.,inside)*(1.-smoothstep(.58*retreat,retreat,inside*uPx));
-            wBase=mix(wBase,waterExposedShore(world),wCover*ring);wCover*=1.-ring;
+            wBase=mix(wBase,waterExposedShore(world),wCover*ring*bareGround);wCover*=1.-ring;
           }
           // Fresh water freezes with the snow of the land at its own altitude (v2WinterFresh, set by v2Local): a lake
           // is one sheet whose shore opens first while it thaws; a river grows border ice from both banks and keeps

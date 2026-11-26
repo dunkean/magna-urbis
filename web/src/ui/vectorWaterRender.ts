@@ -161,7 +161,7 @@ function riverStates(water: VectorWater, geo: DrawnCourse, climate: WaterClimate
   const bankfull = geo.bankfullWidths ?? geo.widths;
   for (let i = 0; i < n; i++) out.push(riverState(climate, widthRegimeSize(bankfull[i], scale, r0)));
   // A course dries over a distance, not at a vertex: dryness is averaged over about 500 m of channel.
-  if (climate.aridity > 0 && n > 2) {
+  if (climate.lowWater > 0 && n > 2) {
     const dry = out.map(s => s.dry);
     for (let i = 0, a = 0, b = 0, sum = 0; i < n; i++) {
       while (b < n && arc[b] - arc[i] <= 250) sum += dry[b++];
@@ -171,7 +171,7 @@ function riverStates(water: VectorWater, geo: DrawnCourse, climate: WaterClimate
   }
   // Through a confluence the water is one: over its last 400 m a tributary takes the dryness of the course it
   // joins, so a silt bed never switches to running water at the junction.
-  const joined = line && climate.aridity > 0 && n > 1 ? receiverDry(water, line, climate, scale, r0) : undefined;
+  const joined = line && climate.lowWater > 0 && n > 1 ? receiverDry(water, line, climate, scale, r0) : undefined;
   if (joined !== undefined)
     for (let i = n - 1; i >= 0 && arc[n - 1] - arc[i] < 400; i--) {
       const t = 1 - (arc[n - 1] - arc[i]) / 400;
@@ -268,7 +268,7 @@ function regimeGroups(water: VectorWater, display: WaterDisplay): RegimeGroup[] 
     for (let k = 0; k < widths.length; k++) packed.set([geo.points[2 * k], geo.points[2 * k + 1], widths[k], geo.level[k]], k * 4);
     const states = climate ? riverStates(water, geo, climate, threshold, line) : undefined;
     // A bed wider than its water: the running reaches draw as a dry bed, the water as a thread inside (below).
-    const thread = threadWidths(water, widths, states);
+    const thread = threadWidths(water, widths, climate, states);
     const symbolAt = (k: number): RiverSymbol => (states ? riverSymbol(mean(states[k], states[k + 1])) : 'water');
     let inset: Float32Array | undefined;
     let start = 0;
@@ -337,11 +337,13 @@ function regimeGroups(water: VectorWater, display: WaterDisplay): RegimeGroup[] 
 }
 /** Narrowest running thread drawn (m). */
 const THREAD_MIN = 0.05;
-/** Width of the running water per vertex inside its bed (m), or undefined where the water fills the bed (humid
- * climates, or no seasonal regime): the bed width × `threadShare` × the running share, which fades to nothing where the
- * course turns dry (dry .85, the dry symbol) and under ice. One discharge drives both the state and the width. */
-function threadWidths(water: VectorWater, widths: ArrayLike<number>, states?: RiverState[]): Float64Array | undefined {
-  const share = threadShare(runoffOf(water));
+/** During recession the running channel narrows towards its discharge width. */
+function seasonalThreadShare(water: VectorWater, climate?: WaterClimate): number {
+  return 1 - (climate?.lowWater ?? 0) * (1 - threadShare(runoffOf(water)));
+}
+/** Width per vertex (m), fading to zero where the course dries or freezes. */
+function threadWidths(water: VectorWater, widths: ArrayLike<number>, climate?: WaterClimate, states?: RiverState[]): Float64Array | undefined {
+  const share = seasonalThreadShare(water, climate);
   if (!states || share >= 1) return;
   return Float64Array.from(widths, (w, k) => (states[k].ice >= 0.55 ? 0 : w * share * Math.max(0, Math.min(1, (0.85 - states[k].dry) / 0.85))));
 }
@@ -408,7 +410,7 @@ function threadStrands(geo: DrawnCourse, states: readonly RiverState[], thread: 
       pool = 1 - broken * (1 - smoothstep(-0.05, 0.4, strandNoise(seed + 3, q / 3))),
       // Shallow crossings spread across the bed; deeper runs leave wider bars.
       // Taper the variation at joins so tributaries still meet their trunk.
-      spread = 1 + 0.52 * end * strandNoise(seed + 6, q / 4.2),
+      spread = 1 + 0.52 * end * Math.min(1, 2 * (1 - at(thread) / Math.max(bed, 1e-6))) * strandNoise(seed + 6, q / 4.2),
       width = Math.min(bed, at(thread) * spread * pool * (1 + 0.5 * broken)),
       room = 0.47 * Math.max(0, bed - width),
       wander = 1.5 * (0.62 * strandNoise(seed, q / 5.5) + 0.28 * strandNoise(seed + 1, q / 2.1) + 0.1 * strandNoise(seed + 2, q / 0.9)),
@@ -501,8 +503,8 @@ export function riverSegments(water: VectorWater, display: WaterDisplay, mouthMi
   const line = (l: RiverLine, thinner: number): void => {
     const geo = riverGeometry(water, l, thinner, display.riverArea),
       { points, kind, widths } = geo;
-    const states = climate || display.material ? riverStates(water, geo, climate ?? { aridity: 0, rain: 1, ice: 0, sediment: 0, drop: 0 }, threshold, l) : undefined;
-    const thread = display.thread && climate ? threadWidths(water, widths, states) : undefined;
+    const states = climate || display.material ? riverStates(water, geo, climate ?? { aridity: 0, lowWater: 0, rain: 1, ice: 0, sediment: 0, drop: 0 }, threshold, l) : undefined;
+    const thread = display.thread && climate ? threadWidths(water, widths, climate, states) : undefined;
     if (mouthMix && !thinner && geo.sea > 1 && geo.sea < widths.length) {
       const k = geo.sea - 1,
         x = points[2 * k],
@@ -1085,8 +1087,8 @@ export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, materi
         svg += `<path d="${inner}" fill="${ink.ice}" stroke="none"/>`;
         svg += `<path d="${axes}" fill="none" stroke="${ink.iceLine}" stroke-width="0.6" stroke-opacity="0.3" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
       } else {
-        // Dry and intermittent beds retain the full river outline as a plain silt band.
-        svg += `<path d="${banks}" fill="${ink.bed}" stroke="${ink.dry}" stroke-width="0.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+        // Bank lines mark the exposed channel on ink maps. The seasonal land is visible between them.
+        svg += `<path d="${banks}" fill="none" stroke="${ink.dry}" stroke-width="0.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
       }
     }
   } else {
@@ -1155,7 +1157,7 @@ export function paintWaterRegime(ctx: CanvasRenderingContext2D, water: VectorWat
     // A material water cover (3D) keeps a shrunken low-water thread in the intermittent courses whose water fills its bed
     // (elsewhere the strands above are that water): a running trunk narrows into its bed instead of stopping short. Ink
     // styles draw their symbol.
-    if (display.style === 'render3d' && threadShare(runoffOf(water)) >= 1)
+    if (display.style === 'render3d' && seasonalThreadShare(water, climate) >= 1)
       for (const g of paths)
         if (g.symbol === 'intermittent') {
           ctx.save();
@@ -1202,8 +1204,10 @@ export function paintWaterRegime(ctx: CanvasRenderingContext2D, water: VectorWat
       }
       continue;
     }
-    ctx.fillStyle = ink.bed;
-    ctx.fill(g.banksPath);
+    if (mode === 'ground') {
+      ctx.fillStyle = ink.bed;
+      ctx.fill(g.banksPath);
+    }
     ctx.save();
     ctx.clip(g.banksPath);
     ctx.strokeStyle = ink.dry;

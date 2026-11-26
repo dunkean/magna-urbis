@@ -350,7 +350,7 @@ export async function loadTile(cityContext: City3dContext, tile: Terrain3dTile):
   if (cityContext.retainedWater?.regime && waterVisible) {
     if (look?.waterLook === 'ink') cityContext.fillRetainedWater(inkContext(), tile, k, cityContext.retainedWater.color, 'symbols');
     else {
-      cityContext.fillRetainedWater(inkContext(), tile, k, cityContext.retainedWater.color, 'symbols');
+      if (cityContext.retainedWater.regime.drying) cityContext.fillRetainedWater(groundContext(), tile, k, cityContext.retainedWater.color, 'ground');
       if (cityContext.retainedWater.regime.frozen) cityContext.fillRetainedWater(inkContext(), tile, k, cityContext.retainedWater.color, 'ice');
     }
   }

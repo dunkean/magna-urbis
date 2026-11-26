@@ -26,6 +26,8 @@ const SEDIMENT: Partial<Record<ClimateZone, number>> = { tropical: 1, savanna: 1
 
 export interface WaterClimate {
   aridity: number;
+  /** Strength of seasonal river recession, from bankfull (0) to the dry-season discharge width (1). */
+  lowWater: number;
   /** Rain of the moment relative to the yearly mean: 0 deep dry season, 1 mean, 2 peak of the rains. */
   rain: number;
   /** Freshwater ice cover of small still water, 0–1. */
@@ -46,8 +48,21 @@ const freezeOf = (snow: number): number => smooth(0.15, 0.7, snow);
 /** Lake draw-down: the dry season of a dry climate exposes the shore. Shared with WATER_FRESH_ICE_GLSL. */
 const dropOf = (aridity: number, rain: number): number => aridity * clamp01(1 - 0.8 * rain);
 
+function riverLowWater(zone: ClimateZone, rain: number): number {
+  switch (zone) {
+    case 'desert':
+      return 1;
+    case 'savanna':
+      return 1 - 0.75 * smooth(0.2, 1.8, rain);
+    case 'mediterranean':
+      return smooth(0, 0.75, 1 - rain);
+    default:
+      return 0;
+  }
+}
+
 export function waterClimate(s: WaterSeason): WaterClimate {
-  if (!s.zone) return { aridity: 0, rain: 1, ice: 0, sediment: 0, drop: 0 };
+  if (!s.zone) return { aridity: 0, lowWater: 0, rain: 1, ice: 0, sediment: 0, drop: 0 };
   const year = calendarSeason(s.zone, s.calendar),
     w = seasonWeights(s.season ?? 0.5);
   const snow = year.snow.reduce((sum, v, i) => sum + v * w[i], 0);
@@ -55,7 +70,7 @@ export function waterClimate(s: WaterSeason): WaterClimate {
     rain = Math.max(0, 1 + year.rain * (w[2] - w[0])),
     frozen = freezeOf(snow);
   // The sediment load keeps its winter low either way; only the ice decision leaves the regime with `landIce`.
-  return { aridity, rain, ice: s.landIce ? 0 : frozen, sediment: (SEDIMENT[s.zone] ?? 0) * clamp01(rain - 0.9 * aridity) * (1 - frozen), drop: dropOf(aridity, rain) };
+  return { aridity, rain, lowWater: riverLowWater(s.zone, rain), ice: s.landIce ? 0 : frozen, sediment: (SEDIMENT[s.zone] ?? 0) * clamp01(rain - 0.9 * aridity) * (1 - frozen), drop: dropOf(aridity, rain) };
 }
 /** Step of the drawn rain (share of the yearly mean): dry beds, pools and lake draw-down move by tenths. */
 const DRAWN_RAIN_STEP = 0.1;
@@ -72,7 +87,7 @@ export function drawnWaterClimate(s: WaterSeason): WaterClimate | undefined {
     ice = c.ice >= 0.5 ? 1 : 0;
   if (c.aridity <= 0 && !ice) return;
   const rain = c.aridity > 0 ? Math.round(c.rain / DRAWN_RAIN_STEP) * DRAWN_RAIN_STEP : 1;
-  return { aridity: c.aridity, rain, ice, sediment: 0, drop: dropOf(c.aridity, rain) };
+  return { aridity: c.aridity, lowWater: riverLowWater(s.zone, rain), rain, ice, sediment: 0, drop: dropOf(c.aridity, rain) };
 }
 /** Identity of `drawnWaterClimate`: the water pass and the water cut of the overlay follow the date through it. */
 export function drawnWaterKey(s: WaterSeason): string {
@@ -88,7 +103,7 @@ const YEAR_S = 31_557_600;
 export const meanDischarge = (area: number, r0: number): number => (Math.max(0, area) * Math.max(0, r0) * 1e-3) / YEAR_S;
 /** Discharge scale of the regime (m³/s, log): size 0 at 10 L/s (a brook), 1 at 10 m³/s (a river that crosses a
  * desert). The zone's aridity then sets the perennial threshold on it (`riverState`): about 8 m³/s in a desert,
- * 0.4 m³/s in a steppe, 0.03 m³/s in a mediterranean zone; humid zones (aridity 0) keep every course running. */
+ * 0.03 m³/s in a Mediterranean summer. Outside their low-water season, courses stay full. */
 const REGIME_LOW = 0.01,
   REGIME_HIGH = 10;
 export const dischargeSize = (discharge: number): number => (discharge > 0 ? clamp01(Math.log(discharge / REGIME_LOW) / Math.log(REGIME_HIGH / REGIME_LOW)) : 0);
@@ -108,13 +123,13 @@ export interface RiverState {
 }
 export function riverState(c: WaterClimate, q: number): RiverState {
   let dry = 0;
-  if (c.aridity > 0) {
+  if (c.lowWater > 0) {
     // The perennial threshold rises with aridity; the season shifts it (wet season: more courses run).
     const t = 0.85 * c.aridity,
       shifted = q + 0.35 * (c.rain - 1) * Math.min(1, c.aridity * 1.6);
     dry = 1 - smooth(t - 0.18, t + 0.12, shifted);
     // A desert never runs fully: even the courses that carry water show their bars.
-    dry = Math.max(dry, 0.12 * c.aridity * (1 - q));
+    dry = c.lowWater * Math.max(dry, 0.12 * c.aridity * (1 - q));
   }
   // A river is frozen or open as a whole, by the same rule as lakes (ice >= .5): never by section size, which painted
   // white patches on some reaches of a course only.

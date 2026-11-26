@@ -274,6 +274,20 @@ describe('continuous vector water', () => {
     expect(Math.max(...retention('desert', .5))).toBe(0);
   });
 
+  it('keeps the full channel on a low-runoff steppe and refills Mediterranean beds in winter', async () => {
+    const source = await basin();
+    const line: RiverLine = { points: [1200, 3250, 2500, 3250, 4000, 3250], area: Array(3).fill(2e6), level: [5, 4, 3], kind: [0, 0, 0], joins: 0 };
+    const water = { ...source, runoff: { ...source.runoff!, r0: 5 }, rivers: { ...source.rivers!, rivers: [line], braids: [], distributaries: [], oxbows: [] } };
+    const running = (zone: 'steppe' | 'mediterranean', season: number) => {
+      const segments = riverSegments(water, { ...display, material: true, thread: true, season: { zone, season, landIce: true } });
+      return segments.filter((_, index) => index % 9 === 6);
+    };
+    for (const [zone, season] of [['steppe', 0], ['steppe', 0.5], ['mediterranean', 0]] as const) {
+      expect(Math.min(...running(zone, season))).toBe(1);
+    }
+    expect(Math.min(...running('mediterranean', 0.5))).toBe(0);
+  });
+
   it('lets the thread of a wide bed wander inside it and stops the bare bed at the coastline', async () => {
     const source = await basin(),
       points = Array.from({ length: 30 }, (_, k) => [6000 - 200 * k, 3250])
@@ -281,7 +295,7 @@ describe('continuous vector water', () => {
         .concat(150, 3250),
       line: RiverLine = { points, area: points.filter((_, i) => i % 2 === 0).map(() => 16e6), level: new Array(31).fill(2), kind: new Array(31).fill(0) },
       water = { ...source, runoff: { r0: 50, e0: 900, aridity: 1 }, rivers: { ...source.rivers!, rivers: [line], braids: [], oxbows: [], distributaries: [] } } as VectorWater,
-      segments = riverSegments(water, { ...display, style: 'render3d', material: true, thread: true, season: { zone: 'mediterranean', season: 0 } });
+      segments = riverSegments(water, { ...display, style: 'render3d', material: true, thread: true, season: { zone: 'mediterranean', season: 0.5 } });
     let widest = 0,
       reach = 0,
       mouth = Infinity,
