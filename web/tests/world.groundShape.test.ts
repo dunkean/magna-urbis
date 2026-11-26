@@ -3,7 +3,7 @@ import { groundShapeSteps, SHAPE_BLOCK, type GroundShape } from '../src/render/w
 import { TerrainHeights } from '../src/render/world/heights';
 import { patchLevels, shapedPatchLevels } from '../src/render/world/patches';
 import { UrbanGroundCuts } from '../src/ui/urbanGroundCuts';
-import type { GroundShapeLot } from '../src/ui/urbanGroundShape';
+import { RoadLedges, UrbanGroundShape, type GroundShapeLot } from '../src/ui/urbanGroundShape';
 
 const rect = (x: number, y: number, w: number, d: number) => [
   { x, y },
@@ -37,6 +37,28 @@ describe('shaped ground of the tilted map', () => {
     expect(shape.groundAt(400, 310)).toBe(0);
     expect(shape.drawnAt(400, 340)).toBe(0);
     expect(shape.low).toBeLessThan(-2.5);
+  });
+
+  it('cuts a road level across a steep slope, not along it, in both 3D views', () => {
+    // An 80 % slope rising to the east: a road along the contour and one straight up the slope.
+    const cliff = (x: number): number => 50 + 0.8 * x,
+      road = (path: { x: number; y: number }[]) => ({ path, widths: path.map(() => 6) }),
+      roads = [road([{ x: 500, y: 100 }, { x: 500, y: 400 }]), road([{ x: 100, y: 700 }, { x: 400, y: 700 }])],
+      steps = groundShapeSteps(1024, [[]], new UrbanGroundCuts(), cliff, roads);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    const shape = step.value!;
+    for (const x of [496, 498, 502, 504]) expect(cliff(x) + shape.groundAt(x, 250)).toBeCloseTo(cliff(500), 1);
+    expect(shape.groundAt(520, 250)).toBe(0);
+    expect(shape.groundAt(250, 702)).toBe(0);
+    // City Bench's 3D view reads the same rule through its UrbanGroundShape.
+    const bench = new UrbanGroundShape([], cliff, new RoadLedges(roads, cliff, []));
+    for (const x of [497, 503]) expect(bench.shape(x, 250, cliff(x))).toBeCloseTo(cliff(500), 6);
+    expect(bench.shape(520, 250, cliff(520))).toBe(cliff(520));
+    // A bank eases the ledge back to the slope: no step at its edge.
+    const bank = bench.shape(508, 250, cliff(508));
+    expect(bank).toBeGreaterThan(cliff(500) + 1);
+    expect(bank).toBeLessThan(cliff(508) - 1);
   });
 
   it('is read by the relief, exaggerated with it', () => {

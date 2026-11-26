@@ -14,7 +14,7 @@ import type { CityBuildings, CityLayers, CityLod, CityPalette, CityScene, CityVi
 import type { CityGlFillMesh } from '../../cityGlBuild';
 import type { RenderColors } from '../../customColors';
 import { MATERIALS, coverLayer, placeLayer, streetLayer } from '../../buildingMaterials';
-import { mapGroundSnow } from '../../seasonPalette';
+import { URBAN_SNOW, mapGroundSnow, mapLandSnow } from '../../seasonPalette';
 import { pavedTone, roadToneAt } from '../../roadStyle';
 import type { RoadLook } from '../../composition';
 import { layoutStreetPavements } from '../../roadPavement';
@@ -320,7 +320,7 @@ function flatStreetPaint(paint: StreetPaint, at: Point): string | undefined {
   const tone = roadToneAt(at.x, at.y, paint.road, paint.style);
   if (paint.style.pavement !== 'asphalt' || paint.style.colors?.road) return tone;
   const v = rgb(tone),
-    paved = pavedTone([(v >> 16) & 255, (v >> 8) & 255, v & 255], paint.road, paint.style.emphasis, false);
+    paved = pavedTone([(v >> 16) & 255, (v >> 8) & 255, v & 255], paint.road, paint.style.emphasis, false, paint.style.night ? 0 : mapLandSnow(at.x, at.y, paint.style.urban ? URBAN_SNOW : 0));
   return `rgb(${Math.round(paved[0])},${Math.round(paved[1])},${Math.round(paved[2])})`;
 }
 /** Street colours: outer = casing, inner = fill (feature = street index): the bed and the casing (shoulder, soft edge

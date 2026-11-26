@@ -18,7 +18,7 @@ import { streetToneAt } from '../groundTone';
 import { STREET_MIN_PX, cobbleTone, emphasisAlpha, naturalMarks, pavedMarks, pavedRank, quayFill, roadToneAt, sidewalkTone, streetRank, type RoadRank, type RoadStyle } from '../roadStyle';
 import type { RoadPavement } from '../roadPavement';
 import { streetLayer } from '../buildingMaterials';
-import { mapGroundSnow } from '../seasonPalette';
+import { URBAN_SNOW, mapLandSnow } from '../seasonPalette';
 import { atLeast } from './levels';
 import { PARCH, SLUSH } from './planLook';
 
@@ -142,7 +142,8 @@ interface StreetFrame extends StreetFrameInput {
 export function streetFrame(o: StreetFrameInput): StreetFrame {
   const emphasis = o.roadEmphasis ?? 1;
   // The user's own colours; the night defaults of `colors` belong to the ink look.
-  const roadStyle: RoadStyle = { look: o.roadLook === 'rendered' ? 'rendered' : 'natural', emphasis, night: !!o.paintNight, colors: o.paintColors };
+  // Town ways: their snow is the town ground's (URBAN_SNOW), never whiter than it.
+  const roadStyle: RoadStyle = { look: o.roadLook === 'rendered' ? 'rendered' : 'natural', emphasis, night: !!o.paintNight, colors: o.paintColors, urban: true };
   return { ...o, night: !!o.night, natural: groundRoadLook(o.roadLook), soft: o.roadLook !== 'ink' && (o.groundBlend ?? isBlended()) && !o.textured, tone: o.materialGround ? 'earth' : blendTone(o.palette), emphasis, roadStyle, pavedStyle: { ...roadStyle, pavement: 'asphalt' } };
 }
 /** What a street's paint reads from its town. */
@@ -186,6 +187,11 @@ function streetPaint(f: StreetFrame, s: CityStreet, town: StreetContext): Street
     w2 = quarter(w);
   const structure = STRUCTURE_ROLES.has(s.role);
   if (f.natural && !structure) {
+    // The snow of the land the street crosses (at its middle): its slush, ruts and banks are never whiter than that ground.
+    const mid = s.street.path[s.street.path.length >> 1],
+      land = mid ? mapLandSnow(mid.x, mid.y, URBAN_SNOW) : 0,
+      roadStyle: RoadStyle = { ...f.roadStyle, snow: land },
+      pavedStyle: RoadStyle = { ...f.pavedStyle, snow: land };
     // Natural grounds: a street narrower than the pixel is not inflated to a plan stroke. It thins to about one
     // pixel and fades with its true share of that pixel, so a town seen from afar is its ground and its roofs,
     // not a street diagram laid over the land.
@@ -200,10 +206,10 @@ function streetPaint(f: StreetFrame, s: CityStreet, town: StreetContext): Street
       // Paved town street (roadPavement.ts): an asphalt carriageway, pale kerb and sidewalk strips inside the street
       // space of the wider streets, a centre line on the main ones; lanes and alleys are plain. Squares keep their paving.
       const paintRoad: StreetPaint = { road: rank, style: f.pavedStyle },
-        snow = f.pavedStyle.night ? 0 : mapGroundSnow();
+        snow = f.pavedStyle.night ? 0 : land;
       const walk = s.rank <= 2 && w >= 9 ? Math.min(3, Math.max(1.4, w * 0.16)) : 0,
         road = quarter(w - 2 * walk);
-      const paved = pavedMarks(rank, road, 1 / mpp, f.pavedStyle, s.rank <= 1 && road >= 7, false);
+      const paved = pavedMarks(rank, road, 1 / mpp, pavedStyle, s.rank <= 1 && road >= 7, false);
       paved.bed *= thin;
       const bed: StreetFill = { paint: paintRoad, alpha: paved.bed };
       if (snow && road / mpp >= 4) {
@@ -214,21 +220,21 @@ function streetPaint(f: StreetFrame, s: CityStreet, town: StreetContext): Street
       }
       for (const k of paved.strokes) add('marks2', k.paint ?? paintRoad, k.width, k.alpha, k.cap as 'round' | 'butt');
       if (paved.grain) add('marks2', { grain: true }, road, paved.grain, 'butt');
-      const sidewalk = walk ? sidewalkTone(f.pavedStyle) : undefined;
+      const sidewalk = walk ? sidewalkTone(pavedStyle) : undefined;
       if (surfaceOk()) return { mode: 'natural', strokes, surface: { w, edge: 0, fill: sidewalk ? { paint: sidewalk, alpha: paved.bed } : bed, inset: walk, inner: sidewalk ? bed : undefined, end: 'square' } };
       if (sidewalk) add('casing', sidewalk, w2, paved.bed, 'butt');
       add(body, paintRoad, sidewalk ? road : w2, paved.bed, 'butt');
       return { mode: 'natural', strokes };
     }
     // Same paint as the regional roads: a tone of the local ground, a soft shoulder instead of a casing, wear up close.
-    const marks = naturalMarks(rank, w, 1 / mpp, f.roadStyle),
+    const marks = naturalMarks(rank, w, 1 / mpp, roadStyle),
       bedAlpha = marks.bed.alpha * thin,
       edge = Math.max(px(streetEdgePx('natural', lod)), w * 0.09),
       shoulder = marks.shadow && { ...marks.shadow, alpha: marks.shadow.alpha * 0.8 };
     const paintRoad: StreetPaint = { road: rank, style: f.roadStyle };
-    const snow = f.roadStyle.night ? 0 : mapGroundSnow();
+    const snow = f.roadStyle.night ? 0 : land;
     // Rendered surface: the main streets of a town centre are cobbled (weathered setts), lanes stay packed earth.
-    if (f.roadStyle.look === 'rendered' && s.role !== 'track' && s.rank <= 1 && (town.population ?? 0) >= 2000) add('marks2', cobbleTone(f.roadStyle), w2 * 0.92, bedAlpha * 0.78, 'butt');
+    if (f.roadStyle.look === 'rendered' && s.role !== 'track' && s.rank <= 1 && (town.population ?? 0) >= 2000) add('marks2', cobbleTone(roadStyle), w2 * 0.92, bedAlpha * 0.78, 'butt');
     if (snow && rank !== 'path' && w2 / mpp >= 4) {
       // Main streets are trodden to a grey-brown slush over most of their width; back lanes and tracks keep
       // their snow, with a cool shade and one narrow beaten line.

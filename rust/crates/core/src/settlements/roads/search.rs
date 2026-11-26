@@ -635,7 +635,11 @@ impl Search {
             let (came, here) = (current.via(), current.d);
             // Junctions and settlements may turn sharply: roads meet there at any angle.
             let free = net.on_road(i) || net.settled[i];
-            let steep = 1.0 + 1.5 * f64::from(f.slope_s[i]).min(1.0);
+            // Where the ground is steeper than a bend's platform is levelled on (`hairpins::PLATFORM`), a turn also
+            // pays the walls of its cut (`curve_hairpins` draws the bend there all the same): a switchback turns
+            // where the face eases, and on an even face it takes few turns and long legs.
+            let face = f64::from(f.slope_s[i]);
+            let steep = 1.0 + 1.5 * face.min(1.0) + 4.0 * (face - crate::hairpins::PLATFORM).clamp(0.0, 1.0);
             let came_index = if came == NO_VIA { 24 } else { came as usize };
             // Turn limit and passability (which includes the map bounds) as one mask.
             let mut mask = allowed[usize::from(free)][came_index] & moves[i];

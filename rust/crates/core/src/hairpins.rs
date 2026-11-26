@@ -22,6 +22,9 @@ const STRAIGHT: f64 = 0.8;
 const RUN: (f64, f64) = (50.0, 240.0);
 const PIECE: f64 = 8.0;
 const BOW: f64 = 9.0;
+/// Shortest rung of a switchback (m): the leg between two tips. A shorter one is a jog, two tight hairpins at one
+/// corner of the ladder.
+const RUNG: f64 = 60.0;
 
 fn distance(a: Point, b: Point) -> f64 {
     (b.x - a.x).hypot(b.y - a.y)
@@ -206,6 +209,103 @@ pub(crate) fn round(path: &[Point], width: f64, joints: &[f64], fits: impl Fn(&[
     changed.then_some(out)
 }
 
+/// A path whose tips are single: a notched tip (reversals to both sides within `2 * REACH` of one another, what is
+/// left of a turn routed cell by cell) keeps the one vertex that reaches furthest, and a jog that short of a road that
+/// goes on keeps none, where `fits` accepts the stretch and what replaces it. None when nothing changes.
+pub(crate) fn denotch(path: &[Point], fits: impl Fn(&[Point], &[Point]) -> bool) -> Option<Vec<Point>> {
+    if path.len() < 4 {
+        return None;
+    }
+    let cum = stations(path);
+    let length = cum[cum.len() - 1];
+    let reversal = |i: usize| {
+        cum[i] >= REACH && length - cum[i] >= REACH && {
+            let (u, v) = (unit(at(path, &cum, cum[i] - REACH), path[i]), unit(path[i], at(path, &cum, cum[i] + REACH)));
+            dot(u, v).clamp(-1.0, 1.0).acos().to_degrees() >= TIP
+        }
+    };
+    let side = |i: usize| (path[i].x - path[i - 1].x) * (path[i + 1].y - path[i].y) - (path[i].y - path[i - 1].y) * (path[i + 1].x - path[i].x);
+    let last = path.len() - 1;
+    let mut out = vec![path[0]];
+    let mut changed = false;
+    let mut i = 1;
+    while i < last {
+        let mut j = i;
+        if reversal(i) {
+            let mut k = i + 1;
+            while k < last && cum[k] - cum[j] <= 2.0 * REACH {
+                if reversal(k) {
+                    j = k;
+                }
+                k += 1;
+            }
+        }
+        // Reversals to both sides: a notch, not the vertices of one blunt tip.
+        if j > i && (i..=j).any(|k| side(k) > 0.0) && (i..=j).any(|k| side(k) < 0.0) {
+            let (from, to) = (at(path, &cum, (cum[i] - 2.0 * REACH).max(0.0)), at(path, &cum, (cum[j] + 2.0 * REACH).min(length)));
+            let reach = |k: usize| distance(from, path[k]) + distance(path[k], to);
+            let back = dot(unit(from, path[i]), unit(path[j], to)) < 0.0;
+            let tip = (i..=j).max_by(|&a, &b| reach(a).total_cmp(&reach(b))).filter(|_| back);
+            let mut new = vec![path[i - 1]];
+            new.extend(tip.map(|k| path[k]));
+            new.push(path[j + 1]);
+            if fits(&path[i - 1..=j + 1], &new) {
+                out.extend(&new[1..new.len() - 1]);
+                changed = true;
+                i = j + 1;
+                continue;
+            }
+        }
+        out.extend(&path[i..=j]);
+        i = j + 1;
+    }
+    out.push(path[last]);
+    changed.then_some(out)
+}
+
+/// A path whose tips stand at least `RUNG` apart along it: two closer tips (a jog, a double hairpin at one corner)
+/// give way to a straight run from the leg before the first to the leg after the second, where `fits` accepts it (it
+/// receives the stretch and its run). The run leaves each leg as far from the jog as the tips around allow: a long
+/// run climbs gently, and those tips keep the room of their bends. The ends of the path stay. None when nothing
+/// changes.
+pub(crate) fn unjog(path: &[Point], fits: impl Fn(&[Point], &[Point]) -> bool) -> Option<Vec<Point>> {
+    if path.len() < 4 {
+        return None;
+    }
+    let mut out = path.to_vec();
+    let mut changed = false;
+    // One jog at a time: the tips are found again on the new path.
+    for _ in 0..path.len() {
+        let cum = stations(&out);
+        let length = cum[cum.len() - 1];
+        let found = tips(&out, &cum);
+        let run = (1..found.len()).filter(|&k| cum[found[k]] - cum[found[k - 1]] < RUNG).find_map(|k| {
+            let (first, last) = (cum[found[k - 1]], cum[found[k]]);
+            let low = if k >= 2 { cum[found[k - 2]] + 0.5 * RUNG } else { 0.0 };
+            let high = found.get(k + 1).map_or(length, |&n| cum[n] - 0.5 * RUNG);
+            [2.0 * RUNG, RUNG, 0.5 * RUNG].into_iter().find_map(|lead| {
+                let (from, to) = ((first - lead).max(low), (last + lead).min(high));
+                if from >= first || to <= last {
+                    return None;
+                }
+                let line = vec![at(&out, &cum, from), at(&out, &cum, to)];
+                let mut old = vec![line[0]];
+                old.extend(cum.iter().zip(&out).filter(|&(&c, _)| c > from && c < to).map(|(_, &p)| p));
+                old.push(line[1]);
+                fits(&old, &line).then_some((from, to, line))
+            })
+        });
+        let Some((from, to, line)) = run else { break };
+        let mut next: Vec<Point> = cum.iter().zip(&out).filter(|&(&c, _)| c < from).map(|(_, &p)| p).collect();
+        next.extend(line);
+        next.extend(cum.iter().zip(&out).filter(|&(&c, _)| c > to).map(|(_, &p)| p));
+        next.dedup_by(|a, b| distance(*a, *b) < 1e-6);
+        out = next;
+        changed = true;
+    }
+    changed.then_some(out)
+}
+
 /// A path whose ruler-straight runs across a slope bow gently: to the side that evens their climb. `fits` receives a
 /// run and its bowed line. The ends of every run stay.
 pub(crate) fn bow(path: &[Point], height: impl Fn(Point) -> f64, fits: impl Fn(&[Point], &[Point]) -> bool) -> Vec<Point> {
@@ -334,6 +434,52 @@ mod tests {
         assert!(round(&path, 7.0, &[], |_, _| false).is_none());
         // A plain corner is no tip.
         assert!(round(&points(&[(0.0, 0.0), (80.0, 0.0), (120.0, 60.0)]), 7.0, &[], |_, _| true).is_none());
+    }
+
+    #[test]
+    fn two_tips_at_one_corner_give_way_to_a_run_and_rungs_stay_long() {
+        // A ladder: two long rungs, then a jog of two tips 32 m apart at the top corner.
+        let path = points(&[(0.0, 0.0), (200.0, 0.0), (0.0, 30.0), (200.0, 60.0), (170.0, 70.0), (370.0, 80.0)]);
+        let gaps = |p: &[Point]| {
+            let cum = stations(p);
+            tips(p, &cum).windows(2).map(|w| cum[w[1]] - cum[w[0]]).fold(f64::INFINITY, f64::min)
+        };
+        assert!(gaps(&path) < RUNG);
+        let clean = unjog(&path, |_, _| true).expect("the jog goes");
+        assert!(gaps(&clean) >= RUNG, "{clean:?}");
+        assert_eq!((clean[0], clean[clean.len() - 1]), (path[0], path[path.len() - 1]));
+        // The two long rungs keep their tips.
+        assert!(clean.contains(&path[1]) && clean.contains(&path[2]), "{clean:?}");
+        // Where no run fits (too steep, wet), the jog stays; a ladder of long rungs has none.
+        assert!(unjog(&path, |_, _| false).is_none());
+        assert!(unjog(&path[..4], |_, _| true).is_none());
+        // The run holds the grade of the legs it joins (their first and last pieces, as the roads ask): on ground
+        // that rises with y at `k`, a run steeper than both leaves the jog.
+        fn held(k: f64) -> impl Fn(&[Point], &[Point]) -> bool {
+            let grade = move |a: Point, b: Point| k * (b.y - a.y).abs() / distance(a, b);
+            move |old, new| grade(new[0], new[1]) <= grade(old[0], old[1]).max(grade(old[old.len() - 2], old[old.len() - 1])) + 1e-9
+        }
+        assert!(unjog(&path, held(0.0)).is_some());
+        assert!(unjog(&path, held(0.5)).is_none());
+    }
+
+    #[test]
+    fn a_notched_tip_is_one_tip_and_every_tip_of_a_ladder_gets_a_round_bend() {
+        // Three rungs 154 m long whose tips stand 72 m apart; the second tip notched (three reversals within 25 m).
+        let ladder = points(&[(0.0, 0.0), (150.0, 36.0), (0.0, 72.0), (150.0, 108.0), (0.0, 144.0)]);
+        let notched = points(&[(0.0, 0.0), (150.0, 36.0), (0.0, 72.0), (12.0, 75.0), (2.0, 76.0), (150.0, 108.0), (0.0, 144.0)]);
+        assert_eq!(denotch(&notched, |_, _| true), Some(ladder.clone()));
+        assert!(denotch(&notched, |_, _| false).is_none());
+        assert!(denotch(&ladder, |_, _| true).is_none());
+        // A tiny jog of a road that goes on leaves no vertex.
+        let jog = points(&[(0.0, 0.0), (100.0, 0.0), (92.0, 3.0), (200.0, 6.0)]);
+        assert_eq!(denotch(&jog, |_, _| true), Some(points(&[(0.0, 0.0), (200.0, 6.0)])));
+        // No vertex is left pointed, and a long straight rung stays between two bends.
+        let bent = round(&ladder, 7.0, &[], |_, _| true).expect("the tips are rounded");
+        assert!(radius(&bent) >= 6.0, "{}", radius(&bent));
+        assert!(tips(&bent, &stations(&bent)).is_empty(), "{bent:?}");
+        let rung = bent.windows(2).map(|w| distance(w[0], w[1])).fold(0.0, f64::max);
+        assert!(rung >= RUNG, "{rung}");
     }
 
     #[test]

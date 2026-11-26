@@ -17,16 +17,27 @@
 //!   from the water) and draw the lock gate.
 //! - Feeding: where natural water touches the town, canals open onto it through mouths of at most
 //!   `mouthM` (through the town wall as a water gate); else a culture with `feederM` digs at most two
-//!   straight level feeders; else a culture with `basin` digs a basin at the junction nearest the centre
-//!   with a smaller internal network, and the others dig nothing. Nothing is drawn across the countryside.
-//!   Every water piece is connected to a mouth, a feeder or a basin.
-//! - Dead ends shorter than 40 m from a junction are pruned; longer ones end in a pool.
+//!   straight level feeders to water within that reach; a town with no water in reach digs nothing.
+//!   Every water piece is connected to a mouth or a feeder.
+//! - Network cultures (`branchSpacingM`) lay a hierarchy instead of a fringe along the shore: few openings,
+//!   far apart; a through canal between each pair of neighbouring openings, by the canal street nearest the
+//!   centre (the first `mains` are main canals); branches spaced `branchSpacingM` apart, a coarse pass at
+//!   twice the spacing first, so every quarter is served before the share (here a cap) runs out. Branches
+//!   run on to the next street junction, then close onto other water when a short dry way exists.
+//!   The roads that cross the town (`regional`, `outbound`, `road`) stay land: a network canal only passes
+//!   them, running along one for the few metres between two staggered side streets, never branching on it.
+//!   With `rii` the lanes too narrow for quays carry the network into the quarters they alone serve.
+//! - Dead ends shorter than 40 m from a junction are pruned; longer ones end in a pool, or in a terminal
+//!   basin for a culture with `basin`, which also digs one where its main canal reaches the centre.
 //! - Junctions get a round pool of the widest incident channel. Bridges stand where streets meet the
 //!   water and where an opening crosses a street, merged within 8 m: always over water.
 //!
 //! Cost: one pass over the street segments and their blocks (a 64 m bucket grid), a shore search from
 //! candidate nodes bounded by `max(mouthM, feederM)`, one Dijkstra over the candidate graph, a sort, and
 //! union-find repairs: linear or n log n in the street segments, a few ms for a 20 000-inhabitant town.
+//! The spacing of a network culture is a bucket grid of the laid water (cells of `branchSpacingM`), its
+//! closures a Dijkstra bounded to 1.5 spacings from each branch end. Mouths are sought first, feeders
+//! (longer rays, sampled every 3 m) only by a town without a mouth and from its street ends and junctions.
 use crate::urban::warnings;
 use super::{Layout,LayoutConfig,Point,Shape,Surface,geometry as g};
 use serde::{Serialize,Deserialize};
@@ -41,7 +52,8 @@ pub struct Waterway {
     pub level_m:f64,
     /// Bridge decks over this piece of water.
     pub crossings:Vec<Shape>,
-    /// `canal`, `rio`, `pool` (junction or end), `mouth` (opening onto natural water), `feeder` or `basin`.
+    /// `canal`, `rio`, `pool` (junction or end), `mouth` (opening onto natural water), `feeder` or `basin`
+    /// (terminal basin of a branch or of the main canal at the centre).
     #[serde(default="canal_kind")]
     pub kind:String,
     /// 0 main canal, 1 secondary canal, 2 rio.
@@ -81,7 +93,9 @@ const CELL:f64=64.;
 
 #[derive(Clone,Copy,Debug)]
 struct Params { share:f64, quay:f64, width:f64, main_width:f64, mouth:f64, feeder:f64, rise:f64, freeboard:f64,
-    locks:bool, lock_step:f64, max_locks:usize, basin:bool, spacing:f64, rii:bool, rio_min:f64, connector:f64, mains:usize }
+    locks:bool, lock_step:f64, max_locks:usize, basin:bool, spacing:f64, rii:bool, rio_min:f64, connector:f64, mains:usize,
+    /// Spacing of the branches of a network culture (m); 0 grows the water from the shore inward to the share.
+    branch:f64 }
 
 fn params(culture:&str,cfg:&LayoutConfig)->Option<Params> {
     let c=&super::catalogue()["cultures"][culture]["render"]["canals"];
@@ -95,7 +109,7 @@ fn params(culture:&str,cfg:&LayoutConfig)->Option<Params> {
         locks:c["locks"].as_bool()==Some(true), lock_step:f("lockStepM",2.).max(0.5), max_locks:f("maxLocks",0.).max(0.) as usize,
         basin:c["basin"].as_bool()==Some(true), spacing:f("outletSpacingM",60.).max(10.),
         rii:c["rii"].as_bool()==Some(true), rio_min:f("rioMinM",2.4).max(MIN_CONNECTOR), connector:f("connectorM",150.).max(0.),
-        mains:f("mains",2.).clamp(0.,2.) as usize,
+        mains:f("mains",2.).clamp(0.,2.) as usize, branch:f("branchSpacingM",0.).max(0.),
     })
 }
 
@@ -199,16 +213,20 @@ fn block_frontage(layout:&Layout,st:&Streets)->Vec<Vec<usize>> {
 }
 
 /// Candidate water segment. `class`: 0 main-canal street, 1 canal street, 2 rio, 3 connector only.
-struct Seg { a:usize, b:usize, width:f64, room:f64, class:u8, len:f64, mid_h:f64 }
+/// `avenue`: a road crossing the town, which a network canal may pass but never takes as a branch.
+struct Seg { a:usize, b:usize, width:f64, room:f64, class:u8, len:f64, mid_h:f64, avenue:bool }
 #[derive(Clone,Copy)]
 struct Reach { base:f64, locks:usize }
 struct Outlet { node:usize, to:Point, feeder:bool }
 fn weight(class:u8)->f64 {match class {0=>1.,1=>1.3,2=>2.,_=>6.}}
+/// Cost of a metre of water along a candidate: an avenue costs as much as a connector.
+fn cost(s:&Seg)->f64 {if s.avenue {6.} else {weight(s.class)}}
+/// Roads crossing the town: land for every culture, passed by the canals of a network culture.
+const AVENUE_ROLES:&[&str]=&["regional","outbound","road"];
 
 /// Shortest weighted paths from the water over the candidates not kept as streets, with level reaches and locks.
 struct Tree { reaches:Vec<Reach>, reach_of:Vec<usize>, cost:Vec<f64>, prev:Vec<Option<(usize,usize)>>, root_of:Vec<usize>, child:Vec<usize> }
-#[allow(clippy::too_many_arguments)]
-fn tree(segs:&[Seg],adj:&[Vec<(usize,usize)>],h:&[f64],p:&Params,roots:&[usize],limit:f64,basin:bool,pinned:&[bool])->Tree {
+fn tree(segs:&[Seg],adj:&[Vec<(usize,usize)>],h:&[f64],p:&Params,roots:&[usize],pinned:&[bool])->Tree {
     let n=adj.len();
     let mut t=Tree{reaches:vec![],reach_of:vec![usize::MAX;n],cost:vec![f64::INFINITY;n],prev:vec![None;n],root_of:vec![usize::MAX;n],child:vec![usize::MAX;segs.len()]};
     let mut conn=vec![0f64;n]; let mut heap=BinaryHeap::new();
@@ -222,9 +240,9 @@ fn tree(segs:&[Seg],adj:&[Vec<(usize,usize)>],h:&[f64],p:&Params,roots:&[usize],
         let r=t.reaches[t.reach_of[i]];
         for &(j,e) in &adj[i] {
             let s=&segs[e];
-            if pinned[e] || (s.class==3 && basin) {continue;}
-            let next=c+s.len*weight(s.class);
-            if next>=t.cost[j] || next>limit {continue;}
+            if pinned[e] {continue;}
+            let next=c+s.len*cost(s);
+            if next>=t.cost[j] {continue;}
             let run=conn[i]+if s.class==3 {s.len} else {0.};
             if run>p.connector {continue;}
             let hi=h[i].max(h[j]).max(s.mid_h); let lo=h[i].min(h[j]).min(s.mid_h);
@@ -260,7 +278,7 @@ fn add_path(t:&Tree,segs:&[Seg],e:usize,in_w:&mut [bool],pinned:&[bool],grown:&m
     for &te in path.iter().rev() {in_w[te]=true; grown[te]=*step; *step+=1; *length+=segs[te].len;}
     true
 }
-/// Removes the water not joined to a root (mouth, feeder or basin); returns the length removed.
+/// Removes the water not joined to a root (mouth or feeder); returns the length removed.
 fn drop_unfed(segs:&[Seg],roots:&[usize],in_w:&mut [bool])->f64 {
     let n=segs.iter().map(|s|s.a.max(s.b)+1).chain(roots.iter().map(|&r|r+1)).max().unwrap_or(0);
     let mut wet:Vec<usize>=(0..n).collect();
@@ -271,6 +289,42 @@ fn drop_unfed(segs:&[Seg],roots:&[usize],in_w:&mut [bool])->f64 {
         if in_w[e] && !fed.contains(&find(&mut wet,s.a)) {in_w[e]=false; removed+=s.len;}
     }
     removed
+}
+
+/// Points of the laid water in buckets of `size` (m): the spacing of the branches of a network culture.
+struct Laid { size:f64, cells:BTreeMap<(i64,i64),Vec<Point>>, done:Vec<bool> }
+impl Laid {
+    fn key(&self,q:Point)->(i64,i64) {((q.x/self.size).floor() as i64,(q.y/self.size).floor() as i64)}
+    /// Records one water segment, sampled every 20 m or less.
+    fn mark(&mut self,s:&Seg,points:&[Point]) {
+        let steps=(s.len/20.).ceil().max(1.) as usize;
+        for k in 0..=steps {
+            let q=lerp(points[s.a],points[s.b],k as f64/steps as f64); let key=self.key(q);
+            self.cells.entry(key).or_default().push(q);
+        }
+    }
+    /// Records the water segments not recorded yet.
+    fn record(&mut self,segs:&[Seg],points:&[Point],in_w:&[bool]) {
+        for (e,s) in segs.iter().enumerate() {
+            if in_w[e] && !self.done[e] {self.done[e]=true; self.mark(s,points);}
+        }
+    }
+    /// Records a segment just laid with its path to the water already recorded.
+    fn record_path(&mut self,t:&Tree,segs:&[Seg],points:&[Point],in_w:&[bool],e:usize) {
+        if in_w[e] && !self.done[e] {self.done[e]=true; self.mark(&segs[e],points);}
+        for end in [segs[e].a,segs[e].b] {
+            let mut j=end;
+            while let Some((k,te))=t.prev[j] {
+                if !in_w[te] || self.done[te] {break;}
+                self.done[te]=true; self.mark(&segs[te],points); j=k;
+            }
+        }
+    }
+    /// Whether some laid water lies within `d` of `q`.
+    fn near(&self,q:Point,d:f64)->bool {
+        let (cx,cy)=self.key(q); let r=(d/self.size).ceil() as i64;
+        (cx-r..=cx+r).any(|x|(cy-r..=cy+r).any(|y|self.cells.get(&(x,y)).is_some_and(|c|c.iter().any(|&w|dist(w,q)<d))))
+    }
 }
 
 /// Lengths (m) at each stage of canal growth, logged for profiling.
@@ -292,21 +346,23 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
     let mut segs:Vec<Seg>=vec![]; let mut seen=BTreeSet::new();
     let mut street_of:BTreeMap<(usize,usize),usize>=BTreeMap::new();
     for s in &layout.streets {
-        if s.rank>4 || !CANAL_ROLES.contains(&s.role.as_str()) {continue;}
+        let avenue=p.branch>0. && AVENUE_ROLES.contains(&s.role.as_str());
+        if s.rank>4 || !(avenue || CANAL_ROLES.contains(&s.role.as_str())) {continue;}
         for (i,w) in s.path.windows(2).enumerate() {
             let (a,b)=(w[0],w[1]); let len=dist(a,b); if len<1. {continue;}
             let width=s.widths.get(i).or(s.widths.first()).copied().unwrap_or(3.);
             let (Some(&ia),Some(&ib))=(st.ids.get(&cell(a)),st.ids.get(&cell(b))) else {continue};
             if ia==ib || !seen.insert(pair(ia,ib)) {continue;}
             let room=width-2.*p.quay;
-            let class:u8=if room>=MIN_WIDTH {if s.rank<=1 || room>=p.main_width {0} else {1}}
+            let class:u8=if avenue {if room>=MIN_WIDTH {1} else {continue}}
+                else if room>=MIN_WIDTH {if s.rank<=1 || room>=p.main_width {0} else {1}}
                 else if p.rii && width>=p.rio_min {2} else if width>=MIN_CONNECTOR {3} else {continue};
             let mid=lerp(a,b,0.5); let nrm=left(unit(a,b)); let side=width/2.+4.;
             if surface.wet(a) || surface.wet(b) || surface.wet(mid) || !inside(mid) {continue;}
             // A street along a shore already has its water: no canal beside the river or the sea.
             if surface.wet(add(mid,nrm,side)) || surface.wet(add(mid,nrm,-side)) {continue;}
             street_of.insert(pair(ia,ib),segs.len());
-            segs.push(Seg{a:ia,b:ib,width,room,class,len,mid_h:surface.height_at(mid)});
+            segs.push(Seg{a:ia,b:ib,width,room,class,len,mid_h:surface.height_at(mid),avenue});
         }
     }
     stats.town=town;
@@ -319,7 +375,7 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
     for s in &segs {union(&mut comp,s.a,s.b);}
     let comp_of:Vec<usize>=(0..n).map(|i|find(&mut comp,i)).collect();
 
-    // Feeding: mouths where water touches the town (a wall is passed by a water gate), else feeders, else a basin.
+    // Feeding: mouths where water touches the town (a wall is passed by a water gate), else feeders, else nothing.
     let walls:Vec<(Point,Point)>=layout.enclosures.iter().flat_map(|e|e.path.windows(2).map(|w|(w[0],w[1])).collect::<Vec<_>>()).collect();
     let on_map=|q:Point|q.x>=0. && q.y>=0. && q.x<surface.width && q.y<surface.width;
     let reach=p.mouth.max(p.feeder);
@@ -340,57 +396,64 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
         if cx-k<0 || cy-k<0 || cx+k>=m || cy+k>=m {return true;}
         ((cy-k)..=(cy+k)).any(|y|((cx-k)..=(cx+k)).any(|x|surface.water[(y*m+x) as usize]!=0))
     };
-    let mut found:Vec<(f64,Outlet)>=vec![];
-    for i in 0..n {
-        if adj[i].is_empty() || !near_water(points[i]) {continue;}
-        let o=points[i]; let mut candidates=vec![];
-        for k in 0..24_i32 {
-            let a=f64::from(k)*std::f64::consts::TAU/24.;
-            for d in [4.,6.,8.,12.,16.,20.,25.,30.,40.,50.,60.,75.,90.,110.,130.] {
-                if d>reach {break;}
-                let q=Point{x:o.x+d*a.cos(),y:o.y+d*a.sin()};
-                if !on_map(q) {break;}
-                if surface.wet(q) {candidates.push((d,q));break;}
+    // A network culture opens its canals only where a canal street or a rio comes to the water.
+    let spaced=p.branch>0.;
+    // Rays are sampled every 3 m beyond a mouth's length, so a feeder finds a stream a few metres wide.
+    let mut ladder:Vec<f64>=vec![4.,6.,8.,12.,16.,20.,25.,30.];
+    while ladder[ladder.len()-1]<reach {let d=ladder[ladder.len()-1]+3.; ladder.push(d);}
+    // Openings within `max` of a node; `heads` keeps the street ends and junctions only (feeders of a network).
+    let search=|max:f64,heads:bool|->Vec<(f64,Outlet)> {
+        let mut found:Vec<(f64,Outlet)>=vec![];
+        for i in 0..n {
+            if adj[i].is_empty() || (heads && degree[i]==2) || (spaced && !adj[i].iter().any(|&(_,e)|segs[e].class<=2 && !segs[e].avenue)) || !near_water(points[i]) {continue;}
+            let o=points[i]; let mut candidates=vec![];
+            for k in 0..24_i32 {
+                let a=f64::from(k)*std::f64::consts::TAU/24.;
+                for &d in &ladder {
+                    if d>max {break;}
+                    let q=Point{x:o.x+d*a.cos(),y:o.y+d*a.sin()};
+                    if !on_map(q) {break;}
+                    if surface.wet(q) {candidates.push((d,q));break;}
+                }
+            }
+            candidates.sort_by(|a,b|a.0.total_cmp(&b.0));
+            if let Some(&(d,q))=candidates.iter().take(6).find(|&&(d,q)|link_ok(i,q,d)) {
+                found.push((d,Outlet{node:i,to:q,feeder:d>p.mouth}));
             }
         }
-        candidates.sort_by(|a,b|a.0.total_cmp(&b.0));
-        if let Some(&(d,q))=candidates.iter().take(6).find(|&&(d,q)|link_ok(i,q,d)) {
-            found.push((d,Outlet{node:i,to:q,feeder:d>p.mouth}));
-        }
-    }
+        found
+    };
+    // Mouths first; feeders are sought only by a town no mouth serves (they would be dropped otherwise).
+    let mut found=search(p.mouth,false);
+    if found.is_empty() && p.feeder>p.mouth {found=search(p.feeder,spaced);}
     found.sort_by(|a,b|a.0.total_cmp(&b.0));
     let mouths=found.iter().any(|(_,o)|!o.feeder);
+    // A network culture keeps few openings, far apart (half the extent of the town, three branch spacings at most):
+    // an intake and its returns to the water, not a mouth at every street end.
+    let extent:f64=layout.quarters.iter().flat_map(|q|q.shape.outer.iter()).map(|&q|dist(q,layout.center)).fold(0.,f64::max);
+    let spacing=if spaced {(0.5*extent).clamp(p.spacing,(3.*p.branch).max(p.spacing))} else {p.spacing};
     let mut outlets:Vec<Outlet>=vec![];
     for (_,o) in found {
         if o.feeder==mouths || (o.feeder && outlets.len()>=2) {continue;}
         // Spacing within one connected street network: a separate network keeps its own mouth.
-        if outlets.iter().any(|k|comp_of[k.node]==comp_of[o.node] && (dist(points[k.node],points[o.node])<p.spacing || dist(k.to,o.to)<p.spacing)) {continue;}
+        if outlets.iter().any(|k|comp_of[k.node]==comp_of[o.node] && (dist(points[k.node],points[o.node])<spacing || dist(k.to,o.to)<spacing)) {continue;}
         outlets.push(o);
     }
 
-    let mut limit=f64::INFINITY; let mut share=p.share; let mut basin=None;
-    let mut roots:Vec<usize>=outlets.iter().map(|o|o.node).collect();
-    if roots.is_empty() {
-        if !p.basin {return vec![];}
-        // A basin fed by a spring or a cistern at the junction nearest the centre, with a smaller network.
-        let c=layout.center;
-        let Some(root)=(0..n).filter(|&i|adj[i].iter().filter(|&&(_,e)|segs[e].class<=2).count()>=2)
-            .min_by(|&a,&b|dist(points[a],c).total_cmp(&dist(points[b],c))) else {return vec![];};
-        let radius:f64=layout.quarters.iter().flat_map(|q|q.shape.outer.iter()).map(|&q|dist(q,c)).fold(0.,f64::max);
-        limit=if radius>0. {(0.6*radius).max(80.)} else {200.};
-        share*=0.6; basin=Some(root); roots.push(root);
-    }
+    // No water in reach, no canals: nothing is dug without a source.
+    let roots:Vec<usize>=outlets.iter().map(|o|o.node).collect();
+    if roots.is_empty() {return vec![];}
     let roots_set:BTreeSet<usize>=roots.iter().copied().collect();
-    let target=share*town;
+    let target=p.share*town;
     let mut in_w=vec![false;segs.len()]; let mut pinned=vec![false;segs.len()];
     let mut grown=vec![usize::MAX;segs.len()]; let mut step=0usize; let mut length=0f64;
     let mut main_edge=vec![false;segs.len()];
-    let mut t=tree(&segs,&adj,&h,&p,&roots,limit,basin.is_some(),&pinned);
+    let mut t=tree(&segs,&adj,&h,&p,&roots,&pinned);
     stats.openings=outlets.len();
     stats.reachable=segs.iter().filter(|s|s.class<=2 && t.cost[s.a].is_finite() && t.cost[s.b].is_finite()).map(|s|s.len).sum();
 
     // Main canals first: from the water to the canal junction nearest the centre, the second from another water front.
-    let canal_node=|t:&Tree,i:usize|t.cost[i].is_finite() && adj[i].iter().any(|&(_,e)|segs[e].class<=1);
+    let canal_node=|t:&Tree,i:usize|t.cost[i].is_finite() && adj[i].iter().any(|&(_,e)|segs[e].class<=1 && !segs[e].avenue);
     let c=layout.center;
     let by_centre=|a:&usize,b:&usize|dist(points[*a],c).total_cmp(&dist(points[*b],c));
     let mut mains:Vec<usize>=vec![];
@@ -402,6 +465,30 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
         let mut j=m;
         while let Some((k,e))=t.prev[j] {if segs[e].class<=1 {main_edge[e]=true;} j=k;}
         if let Some((_,e))=t.prev[m] {let before=length; add_path(&t,&segs,e,&mut in_w,&pinned,&mut grown,&mut step,&mut length); stats.laid+=length-before;}
+    }
+    // A network town threads its canals from one opening to another: each pair of openings whose waters meet is
+    // joined by a through canal, along the canal street nearest the centre where both sides stand at one level.
+    // The first `mains` of them are main canals.
+    if spaced {
+        let mut links:Vec<(f64,usize)>=segs.iter().enumerate()
+            .filter(|&(e,s)|s.class<=2 && !s.avenue && t.cost[s.a].is_finite() && t.cost[s.b].is_finite() && t.root_of[s.a]!=t.root_of[s.b]
+                && fits(&t,&segs,&h,&p,e,t.reach_of[s.a]) && fits(&t,&segs,&h,&p,e,t.reach_of[s.b]))
+            .map(|(e,s)|(dist(lerp(points[s.a],points[s.b],0.5),c),e)).collect();
+        links.sort_by(|a,b|a.0.total_cmp(&b.0));
+        let mut joined:BTreeSet<(usize,usize)>=BTreeSet::new();
+        for &(_,e) in &links {
+            let s=&segs[e];
+            if !joined.insert(pair(t.root_of[s.a],t.root_of[s.b])) {continue;}
+            let main=joined.len()<=p.mains; let before=length;
+            for end in [s.a,s.b] {
+                let mut j=end;
+                while let Some((k,te))=t.prev[j] {if main && segs[te].class<=1 {main_edge[te]=true;} j=k;}
+                if let Some((_,te))=t.prev[end] {add_path(&t,&segs,te,&mut in_w,&pinned,&mut grown,&mut step,&mut length);}
+            }
+            if main {main_edge[e]=true;}
+            add_path(&t,&segs,e,&mut in_w,&pinned,&mut grown,&mut step,&mut length);
+            stats.laid+=length-before;
+        }
     }
     let frontage=block_frontage(layout,&st);
     // Lanes: the chains of candidate pieces between two street junctions. A rio is a whole lane or none: conversion,
@@ -450,16 +537,40 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
     // Rounds: grow to the share, give rii back for land access, drop water cut off from its feed. A later round
     // routes around the streets kept for land access (a new tree without them).
     for round in 0..3 {
-        if round>0 {t=tree(&segs,&adj,&h,&p,&roots,limit,basin.is_some(),&pinned);}
+        if round>0 {t=tree(&segs,&adj,&h,&p,&roots,&pinned);}
         let mut order:Vec<(f64,usize)>=segs.iter().enumerate()
-            .filter(|&(e,s)|t.cost[s.a].is_finite() && t.cost[s.b].is_finite() && s.class!=3 && (s.class!=2 || p.rii) && !pinned[e]
+            .filter(|&(e,s)|t.cost[s.a].is_finite() && t.cost[s.b].is_finite() && s.class!=3 && (s.class!=2 || p.rii) && !s.avenue && !pinned[e]
                 && (t.child[e]!=usize::MAX || fits(&t,&segs,&h,&p,e,t.reach_of[s.a]) && fits(&t,&segs,&h,&p,e,t.reach_of[s.b])))
             .map(|(e,s)|(t.cost[s.a].min(t.cost[s.b])+s.len*weight(s.class)/2.,e)).collect();
         order.sort_by(|a,b|a.0.total_cmp(&b.0));
-        for &(_,e) in &order {
-            if length>=target {break;}
-            let before=length; add_path(&t,&segs,e,&mut in_w,&pinned,&mut grown,&mut step,&mut length); stats.laid+=length-before;
+        // A network culture branches where no water lies within its spacing: first at twice the spacing, so the
+        // whole town is served, then at the spacing. The others fill from the water inward.
+        // The water of this round only: what an earlier round gave back no longer keeps a branch away.
+        let mut laid_water=Laid{size:p.branch.max(1.),cells:BTreeMap::new(),done:vec![false;segs.len()]};
+        if spaced {laid_water.record(&segs,points,&in_w);}
+        let passes:&[f64]=if spaced {&[2.,1.]} else {&[0.]};
+        for &pass in passes {
+            for &(_,e) in &order {
+                if length>=target {break;}
+                if pass>0. && (in_w[e] || laid_water.near(lerp(points[segs[e].a],points[segs[e].b],0.5),pass*p.branch)) {continue;}
+                let before=length; add_path(&t,&segs,e,&mut in_w,&pinned,&mut grown,&mut step,&mut length); stats.laid+=length-before;
+                if pass>0. && length>before {laid_water.record_path(&t,&segs,points,&in_w,e);}
+            }
         }
+        // A branch runs on to the next street junction: no basin in the middle of a street.
+        if spaced {
+            for lane in &lanes {
+                let wet=lane.iter().filter(|&&e|in_w[e]).count();
+                if wet==0 || wet==lane.len() {continue;}
+                for &e in lane {
+                    let s=&segs[e];
+                    if in_w[e] || pinned[e] || s.class>1 || s.avenue || t.reach_of[s.a]==usize::MAX || t.reach_of[s.b]==usize::MAX {continue;}
+                    if t.child[e]==usize::MAX && !(fits(&t,&segs,&h,&p,e,t.reach_of[s.a]) && fits(&t,&segs,&h,&p,e,t.reach_of[s.b])) {continue;}
+                    in_w[e]=true; grown[e]=step; step+=1; length+=s.len; stats.laid+=s.len;
+                }
+            }
+        }
+        let mut gave=false;
         let (added,removed)=settle(&mut in_w,&pinned,&mut grown,&mut step,&t,true);
         length+=added-removed; stats.laid+=added; stats.given_back+=removed;
         // Land access: rii cut their street; every block keeps a land frontage, the land streets one network.
@@ -474,6 +585,7 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
             let latest=at[i].iter().filter_map(|&si|cut(si,&in_w)).max_by_key(|&e|grown[e]);
             if let Some(e)=latest {
                 for &x in &lanes[lane_of[e]] {if in_w[x] {in_w[x]=false; length-=segs[x].len; stats.given_back+=segs[x].len;} pinned[x]=true;}
+                gave=true;
             }
         }
         for f in &frontage {
@@ -482,6 +594,7 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
             // The whole lane goes back to the street, not one piece of it.
             if let Some(e)=latest {
                 for &x in &lanes[lane_of[e]] {if in_w[x] {in_w[x]=false; length-=segs[x].len; stats.given_back+=segs[x].len;} pinned[x]=true;}
+                gave=true;
             }
         }
         let mut land:Vec<usize>=(0..n).collect(); let mut land_deg=vec![0usize;n];
@@ -496,10 +609,59 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
             if land_deg[a]>0 && land_deg[b]>0 && find(&mut land,a)!=find(&mut land,b) {
                 union(&mut land,a,b);
                 for &e in &lanes[id] {in_w[e]=false; pinned[e]=true; length-=segs[e].len; stats.given_back+=segs[e].len;}
+                gave=true;
             }
         }
         let dropped=drop_unfed(&segs,&roots,&mut in_w); length-=dropped; stats.cut_off+=dropped;
-        if length>=target*0.98 {break;}
+        // The spacing, not the share, ends the growth of a network: with no street given back, a new round lays nothing.
+        if length>=target*0.98 || (spaced && !gave) {break;}
+    }
+    // Closures of a network: a branch end joins other water by the shortest dry canal street within 1.5 spacings,
+    // so water runs through instead of standing. Not onto its own branch (that would ring a single block).
+    if spaced {
+        let budget=1.5*p.branch;
+        let free=|e:usize,in_w:&[bool]|->bool {
+            let s=&segs[e];
+            !in_w[e] && !pinned[e] && s.class<=1 && !s.avenue && t.reach_of[s.a]!=usize::MAX && t.reach_of[s.b]!=usize::MAX
+                && (t.child[e]!=usize::MAX || fits(&t,&segs,&h,&p,e,t.reach_of[s.a]) && fits(&t,&segs,&h,&p,e,t.reach_of[s.b]))
+        };
+        let mut wdeg=vec![0usize;n];
+        for (e,s) in segs.iter().enumerate() {if in_w[e] {wdeg[s.a]+=1;wdeg[s.b]+=1;}}
+        let leaves:Vec<usize>=(0..n).filter(|&i|wdeg[i]==1 && !roots_set.contains(&i)).collect();
+        for leaf in leaves {
+            if wdeg[leaf]!=1 {continue;}
+            let mut own:BTreeSet<usize>=BTreeSet::from([leaf]);
+            let (mut at_node,mut from,mut acc)=(leaf,usize::MAX,0f64);
+            while acc<2.*p.branch {
+                let Some(&(k,e))=adj[at_node].iter().find(|&&(_,e)|in_w[e] && e!=from) else {break};
+                acc+=segs[e].len; own.insert(k); from=e; at_node=k;
+                if wdeg[at_node]!=2 {break;}
+            }
+            // Node -> (dry length from the leaf, previous node, edge).
+            let mut seen:BTreeMap<usize,(f64,usize,usize)>=BTreeMap::from([(leaf,(0.,usize::MAX,usize::MAX))]);
+            let mut heap=BinaryHeap::from([Reverse((0f64.to_bits(),leaf))]);
+            let mut landing=None;
+            while let Some(Reverse((bits,i)))=heap.pop() {
+                let d=f64::from_bits(bits);
+                if d>seen[&i].0 {continue;}
+                if i!=leaf && wdeg[i]>0 {
+                    if !own.contains(&i) && dist(points[i],points[leaf])>=0.4*p.branch {landing=Some(i); break;}
+                    continue;
+                }
+                for &(j,e) in &adj[i] {
+                    if !free(e,&in_w) {continue;}
+                    let next=d+segs[e].len;
+                    if next>budget || seen.get(&j).is_some_and(|x|x.0<=next) {continue;}
+                    seen.insert(j,(next,i,e)); heap.push(Reverse((next.to_bits(),j)));
+                }
+            }
+            let Some(mut j)=landing else {continue};
+            while j!=leaf {
+                let (_,k,e)=seen[&j];
+                in_w[e]=true; grown[e]=step; step+=1; stats.laid+=segs[e].len;
+                wdeg[segs[e].a]+=1; wdeg[segs[e].b]+=1; j=k;
+            }
+        }
     }
     // Dead ends, once grown: a branch shorter than DEAD_END from its junction goes back to the street.
     for _ in 0..4 {
@@ -556,7 +718,7 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
     let mut width=vec![0f64;segs.len()]; let mut wmax=vec![0f64;n];
     for &e in &chosen {
         let s=&segs[e];
-        width[e]=if s.class>=2 {s.width.max(MIN_CONNECTOR)} else {s.room.min(if main_edge[e] {p.main_width} else {p.width}).max(MIN_WIDTH)};
+        width[e]=if s.class>=2 {s.width.max(MIN_CONNECTOR)} else {s.room.min(if main_edge[e] && !s.avenue {p.main_width} else {p.width}).max(MIN_WIDTH)};
         for end in [s.a,s.b] {wmax[end]=wmax[end].max(width[e]);}
     }
     let outlet_at:BTreeMap<usize,&Outlet>=outlets.iter().filter(|o|wdeg[o.node]>0).map(|o|(o.node,o)).collect();
@@ -581,7 +743,7 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
         water.push(Waterway{shape:ribbon(from,to,w),level_m:level(r),crossings:vec![],kind,rank,path:vec![from,to],width_m:w,bank_m:bank,locks});
         index_of[e]=water.len()-1;
     }
-    // Pools at junctions and dead ends, the basin, mouths and feeders.
+    // Pools at junctions and dead ends, terminal basins, mouths and feeders.
     let main_centre=mains.first().copied().filter(|&m|wdeg[m]>0);
     for i in 0..n {
         if wdeg[i]==0 {continue;}
@@ -595,7 +757,8 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
             let (d1,d2)=(unit(c,o2(e2[0])),unit(c,o2(e2[1])));
             d1.x*d2.x+d1.y*d2.y < -0.985 && (width[e2[0]]-width[e2[1]]).abs()<0.05
         };
-        if Some(i)==basin || p.basin && Some(i)==main_centre {
+        // A basin culture ends its main canal at the centre, and every branch, in a basin as wide as the street.
+        if p.basin && (Some(i)==main_centre || (wdeg[i]==1 && outlet.is_none())) {
             water.push(Waterway{shape:disc(c,wide/2.),level_m:level(r),crossings:vec![],kind:"basin".into(),rank:0,path:vec![c],width_m:wide,bank_m:h[i],locks:vec![]});
         } else if !through {
             water.push(Waterway{shape:disc(c,wmax[i]/2.),level_m:level(r),crossings:vec![],kind:"pool".into(),rank:1,path:vec![c],width_m:wmax[i],bank_m:h[i],locks:vec![]});
@@ -757,18 +920,21 @@ mod tests {
     }
 
     #[test]
-    fn without_water_a_lagoon_town_digs_nothing_and_an_engineered_town_digs_a_basin() {
+    fn without_a_water_source_no_town_digs_canals() {
         let height=vec![1.;N*N]; let dry=vec![0;N*N];
         let mut lagoon=town("venetian-lagoon");
         apply(&mut lagoon,&LayoutConfig::default(),surface(&height,&dry));
         assert!(ways(&lagoon).is_empty(),"a lagoon town away from water digs no canals");
+        // An engineered town neither: no basin, no ditch fed by nothing, whatever the density asked.
         let mut gnomes=town("gnomish");
-        apply(&mut gnomes,&full(),surface(&height,&dry));
-        let w=ways(&gnomes);
-        assert_eq!(w.iter().filter(|x|x.kind=="basin").count(),1);
-        assert!(w.iter().any(|x|x.kind=="canal"));
-        assert!(!w.iter().any(|x|matches!(x.kind.as_str(),"mouth"|"feeder")));
-        for x in w {for q in &x.shape.outer {assert!(q.x>280. && q.x<620. && q.y>280. && q.y<620.);}}
+        for cfg in [LayoutConfig::default(),full()] {
+            apply(&mut gnomes,&cfg,surface(&height,&dry));
+            assert!(ways(&gnomes).is_empty(),"a gnomish town away from water digs no canals");
+        }
+        // Water beyond the reach of a feeder is no source either.
+        let far:Vec<u8>=(0..N*N).map(|i|u8::from(i%N>90)).collect();
+        apply(&mut gnomes,&LayoutConfig::default(),surface(&height,&far));
+        assert!(ways(&gnomes).is_empty(),"water 300 m away is out of reach");
         // The density parameter at zero keeps every street dry.
         apply(&mut gnomes,&LayoutConfig{lagoon_canals:Some(0.),..Default::default()},surface(&height,&east_water()));
         assert!(ways(&gnomes).is_empty());
@@ -807,14 +973,31 @@ mod tests {
         let before=served(&BTreeSet::new()); let after=served(&rio);
         (town,water,before.iter().zip(&after).filter(|(b,a)|**b && !**a).count())
     }
-    /// Water pieces joined to no mouth, feeder or basin through shared ends.
-    fn unfed(w:&[Waterway])->usize {
+    /// The network each water piece belongs to: pieces sharing an end are one network.
+    fn networks(w:&[Waterway])->Vec<usize> {
         let mut parent:Vec<usize>=(0..w.len()).collect(); let mut at:BTreeMap<(i64,i64),usize>=BTreeMap::new();
         for (i,x) in w.iter().enumerate() {
             for &q in &x.path {let k=cell(q); if let Some(&j)=at.get(&k) {union(&mut parent,i,j);} else {at.insert(k,i);}}
         }
-        let fed:BTreeSet<usize>=(0..w.len()).filter(|&i|matches!(w[i].kind.as_str(),"mouth"|"feeder"|"basin")).map(|i|find(&mut parent,i)).collect();
-        (0..w.len()).filter(|&i|!fed.contains(&find(&mut parent,i))).count()
+        (0..w.len()).map(|i|find(&mut parent,i)).collect()
+    }
+    /// Water pieces joined to no mouth or feeder through shared ends.
+    fn unfed(w:&[Waterway])->usize {
+        let net=networks(w);
+        let fed:BTreeSet<usize>=(0..w.len()).filter(|&i|matches!(w[i].kind.as_str(),"mouth"|"feeder")).map(|i|net[i]).collect();
+        net.iter().filter(|r|!fed.contains(r)).count()
+    }
+    /// Channel ends left open: an end no other channel, mouth or feeder joins, and without a terminal basin.
+    fn loose_ends(w:&[Waterway])->usize {
+        let mut ends:BTreeMap<(i64,i64),usize>=BTreeMap::new(); let mut closed:BTreeSet<(i64,i64)>=BTreeSet::new();
+        for x in w {
+            match x.kind.as_str() {
+                "canal"|"rio" => for &q in &x.path {*ends.entry(cell(q)).or_insert(0)+=1;},
+                "mouth"|"feeder"|"basin" => {closed.insert(cell(x.path[0]));},
+                _ => {}
+            }
+        }
+        ends.iter().filter(|&(k,&count)|count==1 && !closed.contains(k)).count()
     }
     /// A generated port town on flat ground whose east side runs into the sea (16 m cells, as a V2 town's raster).
     fn by_water(culture:&str,population:u32)->Layout {
@@ -845,15 +1028,72 @@ mod tests {
         }
     }
 
+    /// A gnomish town on the water is one network: openings far apart joined by through canals, branches over the
+    /// whole grid, every branch end in a basin.
     #[test]
-    fn a_gnomish_town_by_the_water_reaches_its_canal_share() {
+    fn a_gnomish_town_on_the_water_lays_one_through_network() {
+        let height=vec![1.;N*N]; let water=east_water();
+        let mut layout=town("gnomish");
+        apply(&mut layout,&LayoutConfig::default(),surface(&height,&water));
+        let w=ways(&layout);
+        let mouths=w.iter().filter(|x|x.kind=="mouth").count();
+        assert!((2..=3).contains(&mouths),"an intake and its returns, not a mouth per street: {mouths} mouths");
+        assert!(w.iter().filter(|x|x.kind=="canal").count()>=12,"a canal town reads as one");
+        assert_eq!(networks(w).iter().collect::<BTreeSet<_>>().len(),1,"the water is not one network");
+        assert_eq!(unfed(w),0);
+        assert_eq!(loose_ends(w),0,"a branch ends without its basin");
+        // The network crosses the town: it reaches the side away from the water.
+        assert!(w.iter().filter(|x|x.kind=="canal").any(|x|x.path.iter().any(|q|q.x<370.)),"the network stays on the shore");
+    }
+
+    /// Roads crossing the town stay land, yet the network passes them: the quarters beyond are served.
+    #[test]
+    fn a_gnomish_network_passes_the_roads_that_cross_the_town() {
+        let height=vec![1.;N*N]; let water=east_water();
+        let mut layout=town("gnomish");
+        // The two streets at x = 420 and x = 480 are regional roads: the west of the town lies beyond them.
+        for s in layout.streets.iter_mut().filter(|s|s.path.iter().all(|q|(q.x-420.).abs()<0.01 || (q.x-480.).abs()<0.01)) {s.role="regional".into();}
+        apply(&mut layout,&LayoutConfig::default(),surface(&height,&water));
+        let w=ways(&layout);
+        let canals:Vec<&Waterway>=w.iter().filter(|x|x.kind=="canal").collect();
+        assert!(canals.iter().any(|x|x.path.iter().all(|q|q.x<419.)),"no canal west of the roads");
+        // Along a road: no water but where a canal passes from one side street to the next.
+        let along=canals.iter().filter(|x|[420.,480.].iter().any(|&r|x.path.iter().all(|q|(q.x-r).abs()<0.01))).count();
+        assert!(along<=2,"{along} canal pieces run along the roads");
+        assert_eq!(networks(w).iter().collect::<BTreeSet<_>>().len(),1,"the water is not one network");
+        assert_eq!(unfed(w),0);
+    }
+
+    /// Lanes too narrow for quays may carry the network of a gnomish town as rii: every block keeps its land access.
+    #[test]
+    fn a_gnomish_town_with_lanes_keeps_its_land_access_in_one_fed_network() {
+        let height=vec![1.;N*N]; let water:Vec<u8>=(0..N*N).map(|i|u8::from(i%N>62)).collect();
+        let mut layout=town_with_lanes("gnomish");
+        apply(&mut layout,&LayoutConfig::default(),surface(&height,&water));
+        let (_,_,lost)=audit(&layout);
+        let w=ways(&layout);
+        assert_eq!(lost,0,"a block lost its land access");
+        assert!(w.iter().any(|x|x.kind=="canal"),"no canal");
+        assert_eq!(unfed(w),0);
+        assert_eq!(loose_ends(w),0,"a branch ends without its basin");
+    }
+
+    #[test]
+    fn a_gnomish_town_by_the_water_is_a_dense_fed_canal_network() {
         let layout=by_water("gnomish",6000);
         let (town,water,lost)=audit(&layout);
         let w=ways(&layout);
-        assert!(water>=0.09*town,"{water:.0} m of water for {town:.0} m of streets");
-        assert!(w.iter().any(|x|x.kind=="basin"),"the engineered town has its basin");
-        assert_eq!(unfed(w),0);
+        let p=params("gnomish",&LayoutConfig::default()).unwrap();
+        assert!(water>=0.12*town,"{water:.0} m of water for {town:.0} m of streets");
+        assert!(w.iter().any(|x|matches!(x.kind.as_str(),"mouth"|"feeder")),"no opening on the water");
+        assert_eq!(unfed(w),0,"water joined to no opening");
+        assert_eq!(loose_ends(w),0,"a branch ends without its basin");
         assert_eq!(lost,0);
+        // Most blocks have a canal within 2.5 branch spacings: the network serves the town, not its shore only.
+        let ends:Vec<Point>=w.iter().filter(|x|x.kind=="canal").flat_map(|x|x.path.clone()).collect();
+        let blocks:Vec<Point>=layout.blocks.iter().filter(|b|b.kind=="block").map(|b|g::centroid(&b.shape)).collect();
+        let served=blocks.iter().filter(|&&c|ends.iter().any(|&q|dist(q,c)<=2.5*p.branch)).count();
+        assert!(served*10>=blocks.len()*7,"{served} of {} blocks have a canal nearby",blocks.len());
     }
 
     /// A 4 x 4 grid town of 80 m cells (8 m streets) with a 2.6 m lane down the middle of each cell, drawn in 4 m pieces.

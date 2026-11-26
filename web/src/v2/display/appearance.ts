@@ -20,7 +20,7 @@ import type { V2Settings } from '../contracts';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import type { ExportLayers } from '../../render/exportLayers';
 import { roadSoilOf, roadGroundTones, setRoadGround } from '../../render/roadStyle';
-import { setMapClimateZone, setMapSeason } from '../../render/seasonPalette';
+import { setMapClimateZone, setMapSeason, setMapSnowRelief, snowReliefOf } from '../../render/seasonPalette';
 import { climatePalette } from '../../render/biomes';
 import { terrainStyle } from '../../render/terrainStyle';
 import { displayBiomeName, displayTerrainSettings } from '../displayBiome';
@@ -68,6 +68,8 @@ export class AppearancePasses {
       const effective = displayTerrainSettings(settings, world.mapSize);
       setMapSeason(r.ground.season, effective.climateZone, r.ground.calendar);
       setMapClimateZone(effective.climateZone, effective.climateValues);
+      // Streets, roads and squares take the snow of the land they cross (seasonPalette mapLandSnow).
+      setMapSnowRelief(snowReliefOf(scene.terrain));
       setRoadGround(
         world.landuse,
         world.mapSize,

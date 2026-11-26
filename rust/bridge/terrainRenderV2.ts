@@ -124,9 +124,11 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
   V2Env e=v2Evaluate(vec3(world,0.),s.x,s.yz,tpi,annual+amplitude,annual-amplitude-year.y,rain*.5*(1.+year.x),rain*.5*(1.-year.x),.15+.50*arid,bank,fract(uV2Season+1.-V2_SEASON_LAG),footprint,uMaterialSeed);
   // A thawing zone raises its snow line; the perennial floor of the summits stays.
   float thaw=v2Zoned()?v2SeasonThaw():0.;
+  float warmest=annual+amplitude,coldest=annual-amplitude-year.y,supply=clamp(rain/max(120.,10.*(warmest+coldest)+280.),0.,5.);
+  float valley=sstep(0.,-.10,tpi),ridge=sstep(0.,.10,tpi);
   if(thaw!=0.){
-    float warmest=annual+amplitude,coldest=annual-amplitude-year.y,supply=clamp(rain/max(120.,10.*(warmest+coldest)+280.),0.,5.),slope=length(s.yz);
-    e.snow=max(v2Snow(e.temperature+thaw,supply,slope,sstep(0.,-.10,tpi)),v2PerennialSnow(warmest+.65*(e.exposure-.5),supply,slope));
+    float slope=length(s.yz);
+    e.snow=max(v2Snow(e.temperature+thaw,supply,slope,valley),v2PerennialSnow(warmest+.65*(e.exposure-.5),supply,slope));
   }
   // Snow is a continuous coverage, not a mask: thin snow is a translucent dusting, then a full cover, with soft
   // transitions. Relief draws its large-scale pattern at the terrain's own scale: altitude and season (e.snow),
@@ -137,6 +139,10 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
   // filtered out before it aliases, and the threshold narrows by the variance they bring. From far the soft band is
   // unchanged; from near the same band is a crisp ragged edge with detached patches and bare spots, rougher over
   // rock. The octaves are zero-mean and the threshold stays centred, so the cover of the band is conserved.
+  // A town clears, treads and warms its ground: its pack is the land's own, lowered from its limit inward (at most 40 m,
+  // within the 8 cells the occupation distance encodes), so the same drift and relief patterns break it into patches
+  // where open land of the same site lies whole. Never more snow than the land; the wear of v2TownSnow comes on top.
+  if(e.snow>0.&&v2OccupationShare.z>0.)e.snow=max(0.,e.snow-.35*v2OccupationShare.z*sstep(0.,min(40.,6.*uOccupationRect.z/uOccupationN),groundOccupation(world).x));
   float slope=length(s.yz),steep=sstep(.35,.9,slope);
   float window=sstep(0.,.2,e.snow)*(1.-sstep(.85,1.,e.snow)),bend=0.,spread=0.;
   if(window>0.){
@@ -157,12 +163,38 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
         }
       }
     }
-    float relief=mix(.16,.24,steep)*(sstep(0.,-.10,tpi)-sstep(0.,.10,tpi))-.08*s.z/max(.2,slope)*(1.-sstep(.35,.8,slope));
+    float relief=mix(.16,.24,steep)*(valley-ridge)-.08*s.z/max(.2,slope)*(1.-sstep(.35,.8,slope));
     bend=(mix(.12,.30,v2SeasonSnowPatches())*drift+relief+fine)*window;
   }
   // Half-width of the cover threshold: .125 from far, .02 once the fine octaves are resolved.
   float cut=sqrt(max(.015625-4.6*spread,.0004)),pack=e.snow+bend;
   e.snow=sstep(.45-cut,.45+cut,pack);
+  // Steep faces shed most of their snow, never all of it: wherever the level ground of this altitude is snowed, a cliff
+  // keeps patches on its ledges, in its gullies and on its gentler facets. The kept share of the level cover takes over
+  // as the slope retention of v2Snow runs out (a third of it from about 50°, an eighth on a sheer face), more in hollows
+  // and on shaded faces, less on spurs. The patches are the part of a zero-mean field (90, 36 and 14 m octaves) above
+  // the level of that share (v2GroundQuantile); what the zoom has not resolved is the mean share. A far face is evenly
+  // flecked, a near one breaks into ragged patches, with the same cover; never more than the level ground.
+  float shed=sstep(.6,1.25,slope);
+  if(shed>0.){
+    float levelCover=v2WinterCover(max(v2Snow(e.temperature+thaw,supply,0.,valley),v2PerennialSnow(warmest+.65*(e.exposure-.5),supply,0.)));
+    float share=levelCover*mix(.34,.12,sstep(1.25,2.8,slope))*clamp(1.+.9*valley-.6*ridge-.5*(e.exposure-.5),.3,1.8);
+    if(share>.002){
+      float patches=0.,variance=0.;
+      if(uQuality==0)for(int k=0;k<3;k++){
+        float scale=k==0?90.:k==1?36.:14.,a=k==0?.75:k==1?.5:.3,keep=1.-sstep(scale*.12,scale*.3,footprint);
+        if(keep>0.){
+          vec2 r=k==0?vec2(.62,.78):k==1?vec2(-.83,.56):vec2(.17,-.99);
+          patches+=a*v2Pattern(vec3(r.x*world.x-r.y*world.y,r.y*world.x+r.x*world.y,0.),scale,footprint,uMaterialSeed+1841u+uint(k));
+          variance+=a*a*keep*keep;
+        }
+      }
+      // .95: deviation of the three octaves once all are resolved.
+      float sd=sqrt(variance),above=v2GroundQuantile(share)*sd,edge=.01+.12*sd;
+      float ledges=mix(share,sstep(above-edge,above+edge,patches),sd/.95);
+      e.snow=max(e.snow,min(ledges*shed,levelCover));
+    }
+  }
   // Just past the threshold the snow is a dusting; only resolved zooms show the ground through it.
   v2WinterThin=(1.-sstep(.45,.56,pack))*(1.-sstep(2.,12.,footprint));
   v2SnowTread=e.snow>0.&&v2OccupationShare.z>0.?v2TownSnow(world,e.temperature,footprint):vec2(1.,0.);

@@ -132,6 +132,8 @@ export class WorldVolumes {
     heights: TerrainHeights;
     terraces: boolean;
     levelled: boolean;
+    /** The regional roads cut into the slopes (ui/urbanGroundShape.ts `RoadLedges`), as City Bench gets them. */
+    ledgeRoads: ReturnType<typeof cityRegionalStreets>;
     city?: NativeCityMap;
     /** The ground shaped for the towns, which their meshes stand on. */
     shape: GroundShape | undefined;
@@ -341,13 +343,15 @@ export class WorldVolumes {
     }
     let meshes = this.townMeshes;
     // The caves keep their own floors.
-    const levelled = r.city.groundShaping && !r.underdark;
+    const levelled = r.city.groundShaping && !r.underdark,
+      ledgeRoads = cityRegionalStreets(r, townRoadStreets(world));
     const sameTown =
       !!meshes &&
       meshes.world === world &&
       meshes.heights === heights &&
       meshes.terraces === r.city.terraces &&
       meshes.levelled === levelled &&
+      meshes.ledgeRoads === ledgeRoads &&
       sameV2NativeInputs(meshes.cities, cities, 'scene') &&
       sameV2NativeInputs(meshes.cities, cities, 'layouts') &&
       sameV2NativeInputs(meshes.cities, cities, 'partitions');
@@ -385,12 +389,14 @@ export class WorldVolumes {
           pads = yield* city3dPadSteps([...(native ?? []), ...farms], ground),
           lots = groundShapeLots(source && !native ? [] : cities.flatMap(city => city.partitions ?? []), pads, levelled);
         yield;
-        shape = yield* groundShapeSteps(heights.width, [lots], new UrbanGroundCuts(layouts.flatMap(l => l.enclosures ?? [])), naturalAt);
+        // The regional roads are cut into the steep slopes they cross, as in City Bench (view3d/cityBuildings.ts).
+        const ledges = levelled ? ledgeRoads.filter(road => road.role === 'regional') : [];
+        shape = yield* groundShapeSteps(heights.width, [lots], new UrbanGroundCuts(layouts.flatMap(l => l.enclosures ?? [])), naturalAt, ledges);
       }
       // Everything below stands on this ground, the terrain mesh included.
       heights.shape = shape;
       const display = yield* city3dBuildingsSteps(source, { heightAt, ground, terraces: r.city.terraces });
-      meshes = this.townMeshes = { cities, world, heights, terraces: r.city.terraces, levelled, city, shape, display, farms: city3dFarmBuildings(farms, { heightAt, ground }), scenes: new Map() };
+      meshes = this.townMeshes = { cities, world, heights, terraces: r.city.terraces, levelled, ledgeRoads, city, shape, display, farms: city3dFarmBuildings(farms, { heightAt, ground }), scenes: new Map() };
     }
     const display = meshes!.display;
     yield;

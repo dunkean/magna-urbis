@@ -1,12 +1,13 @@
 /**
- * The street lamps of the towns in the map drape of a tilted night view: their pools of light on the ground, added
- * over the dark map once per baked tile. Placed as the top view places them (cityNight.ts nightLamps).
+ * The night lights of the towns in the map drape of a tilted night view: the pools of the street lamps and camp fires
+ * and those of the lit doors, windows and courtyards of the houses, on the ground under the volumes, added over the dark
+ * map once per baked tile. Placed as the top view places them (cityNight.ts nightLamps, nightHouseLights).
  *
  * Owns its program and its buffer; built and driven by townLayer.ts (link and upload from `work`, one instanced draw
- * per tile). A frame pays nothing: the drape tile it samples holds the light.
+ * per tile, one buffer per plan and buildings). A frame pays nothing: the drape tile it samples holds the light.
  */
-import { nightLamps } from '../../cityNight';
-import type { CityScene } from '../model/contract';
+import { nightHouseLights, nightLamps } from '../../cityNight';
+import type { CityBuildings, CityScene } from '../model/contract';
 import type { DrapeCanvas } from '../../world/contract';
 import { finishProgram, programLinked, startProgram, type PendingProgram, type Program } from '../gl/programs';
 
@@ -41,13 +42,14 @@ export class NightLamps {
   private pending: PendingProgram | undefined;
   private lamps: { vbo: WebGLBuffer; vao: WebGLVertexArrayObject; count: number } | undefined;
   private source: CityScene | undefined;
+  private houses: readonly CityBuildings[] | undefined;
   constructor(private readonly gl: WebGL2RenderingContext) {}
-  /** The lamps of this plan are ready to draw. */
-  ready(plan: CityScene | undefined): boolean {
-    return !!plan && this.source === plan;
+  /** The lights of this plan and these towns' buildings are ready to draw. */
+  ready(plan: CityScene | undefined, houses: readonly CityBuildings[]): boolean {
+    return !!plan && this.source === plan && this.houses === houses;
   }
-  /** One step of the link and the upload for a plan; true once its lamps are ready. */
-  step(plan: CityScene, parallel: boolean): boolean {
+  /** One step of the link and the upload for a plan and its towns' buildings; true once their lights are ready. */
+  step(plan: CityScene, houses: readonly CityBuildings[], parallel: boolean): boolean {
     const gl = this.gl;
     if (!this.program) {
       this.pending ??= startProgram(gl, LAMP_VS, LAMP_FS);
@@ -57,7 +59,14 @@ export class NightLamps {
     }
     this.deleteLamps();
     this.source = plan;
-    const data = nightLamps(plan);
+    this.houses = houses;
+    const streets = nightLamps(plan),
+      lights: number[] = [],
+      emit = (x: number, y: number, reach: number, strength: number): void => void lights.push(x, y, reach, strength);
+    for (const town of houses) for (const item of town.items) nightHouseLights(item.building, emit);
+    const data = new Float32Array(streets.length + lights.length);
+    data.set(streets);
+    data.set(lights, streets.length);
     if (!data.length) return true;
     const vbo = gl.createBuffer()!,
       vao = gl.createVertexArray()!;
@@ -92,7 +101,7 @@ export class NightLamps {
       this.gl.deleteBuffer(this.lamps.vbo);
       this.gl.deleteVertexArray(this.lamps.vao);
     }
-    this.lamps = this.source = undefined;
+    this.lamps = this.source = this.houses = undefined;
   }
   /** Forgets everything; `deleteHandles` false when the context is lost (the handles are dead). */
   drop(deleteHandles: boolean): void {
@@ -100,6 +109,6 @@ export class NightLamps {
       this.deleteLamps();
       for (const p of [this.program, this.pending]) if (p) this.gl.deleteProgram(p.program);
     }
-    this.lamps = this.source = this.program = this.pending = undefined;
+    this.lamps = this.source = this.houses = this.program = this.pending = undefined;
   }
 }

@@ -264,6 +264,7 @@ export function cityGroundOf(world: World): CityGroundRaster {
  * crossings and ranked by class, exactly as City Bench sends it (`cityTownRoads`). A TypeScript region has no
  * native network and keeps its projected roads. */
 const townRoads = new WeakMap<object, Street[]>();
+const NO_ROADS: NonNullable<World['roads']> = [];
 export function townRoadStreets(world: World): Street[] {
   const native = (world.debug?.v2RustRegion as RustRegionSnapshot | undefined)?.roads;
   if (native) {
@@ -271,7 +272,11 @@ export function townRoadStreets(world: World): Street[] {
     if (!streets) townRoads.set(native, (streets = cityTownRoads({ ...native, segments: native.segments.filter((_, i) => !world.roads?.[i]?.urban) })));
     return streets;
   }
-  return (world.roads ?? []).filter(r => !r.urban).map(road => ({ path: road.path, widths: road.path.map(() => road.width), rank: road.kind === 'major' ? 1 : road.kind === 'minor' ? 2 : 3, role: 'regional' }));
+  const roads = world.roads ?? NO_ROADS;
+  let streets = townRoads.get(roads);
+  // Cached per road list: the 3D ground ledges compare this array by identity.
+  if (!streets) townRoads.set(roads, (streets = roads.filter(r => !r.urban).map(road => ({ path: road.path, widths: road.path.map(() => road.width), rank: road.kind === 'major' ? 1 : road.kind === 'minor' ? 2 : 3, role: 'regional' }))));
+  return streets;
 }
 /** Site archetype of a V2 town (layout `siteArchetypes`), from its native placement record as City Bench reads it. */
 export function townSiteArchetypes(world: World, key: string, explicit?: Record<string, string>): Record<string, string> {

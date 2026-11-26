@@ -8,8 +8,12 @@
  * and quays stand on; `drawn` is that ground with the moats dug, what the terrain mesh shows and what the camera, picking
  * and the trees read. The terrain shader reads the same nodes with the same interpolation (groundShapeTexture.ts), so
  * everything seated on the relief stands on the ground as it is drawn.
+ *
+ * The regional roads are cut into the steep slopes they cross (ui/urbanGroundShape.ts `RoadLedges`, the rule of both views),
+ * so the map draped on the terrain (mapDrape.ts, a projection from above) lays the road on a level ledge at its width
+ * instead of smearing it down the slope.
  */
-import { UrbanGroundShape, type GroundShapeLot } from '../../ui/urbanGroundShape';
+import { RoadLedges, UrbanGroundShape, type GroundShapeLot, type LedgeRoad } from '../../ui/urbanGroundShape';
 import type { UrbanGroundCuts } from '../../ui/urbanGroundCuts';
 
 /** Side of a block and spacing of its nodes (m). A block holds the nodes of its four edges: neighbours repeat them. */
@@ -100,13 +104,17 @@ export class GroundShape {
   }
 }
 
-/** The shaped ground of the lots to level (per town) and of the moats, over a map of `width` metres whose natural ground
- * is `natural` (m); undefined when no ground moves. In steps of a few milliseconds. */
-export function* groundShapeSteps(width: number, towns: Iterable<readonly GroundShapeLot[]>, cuts: UrbanGroundCuts, natural: (x: number, y: number) => number): Generator<void, GroundShape | undefined> {
+/** The shaped ground of the lots to level (per town), of the ledges of the regional `roads` and of the moats, over a map
+ * of `width` metres whose natural ground is `natural` (m); undefined when no ground moves. In steps of a few milliseconds. */
+export function* groundShapeSteps(width: number, towns: Iterable<readonly GroundShapeLot[]>, cuts: UrbanGroundCuts, natural: (x: number, y: number) => number, roads: readonly LedgeRoad[] = []): Generator<void, GroundShape | undefined> {
   const shape = new GroundShape(width),
-    last = Math.floor(width / SHAPE_STEP);
-  for (const lots of towns) {
-    const platforms = new UrbanGroundShape([], natural),
+    last = Math.floor(width / SHAPE_STEP),
+    all = [...towns],
+    // Shaped with the first town, whose lots keep their own ground where a ledge crosses them.
+    ledges = roads.length ? new RoadLedges(roads, natural, all.flat()) : undefined;
+  for (let t = 0; t < all.length; t++) {
+    const lots = all[t],
+      platforms = new UrbanGroundShape([], natural, t === 0 ? ledges : undefined),
       // Overlapping boxes: each node is shaped once.
       seen = new Map<number, Uint8Array>();
     for (let k = 0; k < lots.length; k++) {

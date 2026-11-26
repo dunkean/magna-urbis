@@ -10,7 +10,7 @@ import { moonlightSvg } from '../render/materialLook';
 import { benchSettlementTextWorld, benchTextLayer } from './benchComposition';
 import { createTerrainSettlements } from './terrainSettlements';
 import { decorBiome, decorClimate, decorClimateZone } from './decorClimate';
-import { setMapClimateZone } from '../render/seasonPalette';
+import { setMapClimateZone, setMapSnowRelief, snowReliefOf } from '../render/seasonPalette';
 import { loadRenderGeometry } from '../../../rust/bridge/renderGeometry';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
 import { buildForestField, type ForestField } from '../../../rust/bridge/terrainForest';
@@ -493,6 +493,8 @@ async function drawBackground(d: Decor): Promise<void> {
   await groundReady;
   if (ticket !== backgroundTicket || decor !== d || !terrain) return;
   setMapClimateZone(decorClimateZone(d.meta), decorClimate(d.meta));
+  // Streets and squares take the snow of the land they cross, as in the V2 (seasonPalette mapLandSnow).
+  setMapSnowRelief(snowReliefOf(terrain));
   const r = resolveBenchAppearance(),
     c = r.composition,
     t = terrain,

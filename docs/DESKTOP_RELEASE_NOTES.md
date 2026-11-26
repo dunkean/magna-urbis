@@ -10,6 +10,8 @@
 - Mushrooms, stalactites and stalagmites stay inside the map boundary in the 3D Underdark view.
 - Stilt towns reuse boardwalks that connect both riverbanks when planning bridges and their approach roads.
 - Giant homes use 3.5× human dimensions for their floor plans, storey height and doorways.
+- At night, camps have no street lamps: lit tent doors, glowing yurt crowns and fires among the tents light them. Towns are lit by their houses: more lit doors and windows, light spilling before them and from courtyards. Street lamps shrink to small, sparse spots.
+- Gnomish canal towns dig canals only from real water (river, lake, sea or a stream within reach) and none otherwise. Their canals form one network: a few openings joined by through canals, regular branches into every quarter along streets and narrow lanes, locks on slopes, and a basin at each branch end.
 
 - Kraal thorn enclosures now stand in 3D with open entrances. Detailed architecture adds woven fences, split boards, pasture rails, hedge crowns, pointed palisades and regional masonry to yards and town defences.
 
@@ -165,6 +167,9 @@ The Apple Silicon DMG is signed ad hoc and distributed without Apple notarizatio
 - Moats are dug with their own form by culture (V ditch, revetted, double, ceremonial, bastioned) and fill: dry grass, gardens, marsh, stagnant, low or full water, ice. Water stays level, held by dams on slopes, and meets the sea through a sluice.
 - Harbours stand on the town's own shore with a yard, warehouses, jetties and boats outside the wall; away from them the wall stands back from the beach, and older rings no longer run beside the outer one.
 - Bridges never cross or overlap. Gates seldom fold the wall into sharp corners. Hairpin bends are rounded.
+- In winter, cliffs and steep slopes keep snow patches on their ledges and in their gullies instead of standing bare, in 2D and 3D.
+- Snowy streets, country roads and squares now take the snow of the land they cross: no more white roads over bare slopes. Town ground is cleared and trodden into patches, never whiter than the land around the town.
+- Mountain roads climb cliffs in clean switchbacks: every turn is a single rounded hairpin, with no doubled or notched tip at a corner. In 3D they run on a smooth shelf cut into the slope at their true width instead of a band smeared down the face.
 
 ## Alpha 0.3.10
 

@@ -47,15 +47,19 @@ export interface GroundSnowSettings {
   calendar?: SeasonCalendar;
 }
 export function mapGroundSnow(altitude = 0, settings?: GroundSnowSettings): number {
+  return smooth(0.405, 0.465, groundSnowSupply(altitude, settings));
+}
+const smooth = (a: number, b: number, x: number): number => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+/** Climatic snow of level ground at an altitude, before its cover threshold (v2Snow / v2PerennialSnow at slope 0). */
+function groundSnowSupply(altitude: number, settings?: GroundSnowSettings): number {
   const snowZone = settings?.climateZone ?? zone;
   if (!snowZone) return 0;
   const c = settings?.climate ?? climate ?? CLIMATE_ZONE_VALUES[snowZone],
     year = calendarSeason(snowZone, settings ? settings.calendar : calendar),
     date = settings?.season ?? season;
-  const smooth = (a: number, b: number, x: number): number => {
-    const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
-    return t * t * (3 - 2 * t);
-  };
   const annual = c.temperature - 0.0065 * Math.max(0, altitude),
     amplitude = 6 + 0.5 * Math.max(0, 10 - c.temperature);
   const warm = annual + amplitude,
@@ -64,8 +68,100 @@ export function mapGroundSnow(altitude = 0, settings?: GroundSnowSettings): numb
   const w = seasonWeights(date),
     thaw = (year.thaw ?? [0, 0, 0, 0]).reduce((sum, v, i) => sum + v * w[i], 0);
   const supply = smooth(0.12, 0.7, c.precipitation / Math.max(120, 10 * (warm + cold) + 280));
-  const cover = Math.max(smooth(2, -5, cold + (warm - cold) * phase + thaw), smooth(2.5, -2.5, warm)) * supply;
-  return smooth(0.405, 0.465, cover);
+  return Math.max(smooth(2, -5, cold + (warm - cold) * phase + thaw), smooth(2.5, -2.5, warm)) * supply;
+}
+
+/** The relief the land snow reads: B-spline control heights (m), row by row from the north-west corner, `n` per side
+ * over the square of side `width` at (`x`, `y`). */
+export interface SnowRelief {
+  readonly data: Float32Array;
+  readonly n: number;
+  readonly width: number;
+  readonly x?: number;
+  readonly y?: number;
+}
+let snowRelief: (SnowRelief & { top: number; id: number }) | undefined,
+  snowReliefId = 0;
+/** The relief of a terrain for the land snow: its display field, else its height grid. The map's terrain spans
+ * [0, width]² in world metres, as for the tilted relief (render/world/heights.ts). */
+export const snowReliefOf = (t: { field?: { n: number; data: Float32Array }; resolution: number; height: Float32Array; width: number } | undefined): SnowRelief | undefined =>
+  t && (t.field ? { data: t.field.data, n: t.field.n, width: t.width } : t.height.length ? { data: t.height, n: t.resolution, width: t.width } : undefined);
+/** Set with the map: the land snow follows its relief (none: the level ground at sea level, mapGroundSnow()). */
+export function setMapSnowRelief(relief: SnowRelief | undefined): void {
+  if (relief?.data === snowRelief?.data && relief?.n === snowRelief?.n && relief?.width === snowRelief?.width && relief?.x === snowRelief?.x && relief?.y === snowRelief?.y) return;
+  let top = 0;
+  if (relief) for (let i = 0; i < relief.data.length; i++) if (relief.data[i] > top) top = relief.data[i];
+  snowRelief = relief && { ...relief, top, id: ++snowReliefId };
+}
+/** Height (m) and slope (m/m) of the relief at a world point: bilinear control heights, centred differences. */
+function reliefAt(r: SnowRelief, x: number, y: number): [number, number] {
+  const cell = r.width / r.n,
+    at = (i: number, j: number): number => r.data[Math.max(0, Math.min(r.n - 1, j)) * r.n + Math.max(0, Math.min(r.n - 1, i))];
+  const gx = (x - (r.x ?? 0)) / cell - 0.5,
+    gy = (y - (r.y ?? 0)) / cell - 0.5,
+    i = Math.floor(gx),
+    j = Math.floor(gy),
+    fx = gx - i,
+    fy = gy - j;
+  const h = (at(i, j) * (1 - fx) + at(i + 1, j) * fx) * (1 - fy) + (at(i, j + 1) * (1 - fx) + at(i + 1, j + 1) * fx) * fy;
+  const ci = Math.round(gx),
+    cj = Math.round(gy),
+    dx = (at(ci + 1, cj) - at(ci - 1, cj)) / (2 * cell),
+    dy = (at(ci, cj + 1) - at(ci, cj - 1)) / (2 * cell);
+  return [h, Math.hypot(dx, dy)];
+}
+/** Snow cover of the land at a world point (0-1): the mean cover of the satellite ground there (terrainRenderV2 v2Local)
+ * with its drift and exposure patterns averaged out. The level-ground snow of the point's altitude, shed by the slope as
+ * v2Snow sheds it, and the ledge patches a steep face keeps. Without a relief: the level ground at sea level. What lies on
+ * the ground (streets, roads, squares) takes this snow, so a way is never whiter than the land around it. */
+export function mapLandSnow(x: number, y: number, urban = 0): number {
+  if (snowRelief) return landSnowAt(snowRelief, x, y, groundSnowSupply, urban);
+  return urban > 0 ? smooth(0.325, 0.575, groundSnowSupply(0) - urban) : mapGroundSnow();
+}
+/** Lowering of the snow pack in a town (terrainRenderV2 v2Local): cleared, trodden and warmed ground. */
+export const URBAN_SNOW = 0.35;
+/** `urban`: the town's lowering of the pack (URBAN_SNOW); its cover is then the mean of the patches the drifts draw
+ * across the threshold (v2WinterCover's band), as the town ground shows it. */
+function landSnowAt(r: SnowRelief, x: number, y: number, supplyAt: (altitude: number) => number, urban = 0): number {
+  const [h, slope] = reliefAt(r, x, y),
+    supply = supplyAt(h);
+  if (!(supply > 0)) return 0;
+  const pack = supply * (1 - smooth(0.45, 1.25, slope)),
+    level = smooth(0.405, 0.465, supply),
+    held = urban > 0 ? smooth(0.325, 0.575, pack - urban) : smooth(0.405, 0.465, pack),
+    ledges = level * (0.34 - 0.22 * smooth(1.25, 2.8, slope)) * smooth(0.6, 1.25, slope);
+  return Math.max(held, Math.min(ledges, level));
+}
+/** Snow anywhere on the land of the map (0-1): the level-ground snow at its highest point. */
+export const mapSnowPossible = (): number => (snowRelief ? mapGroundSnow(snowRelief.top) : mapGroundSnow());
+/** Part of the cache keys of what follows the land snow: the date's snow and the relief. */
+export const mapLandSnowKey = (): string => `${roofSeasonKey()}|${snowRelief?.id ?? 0}`;
+const landGrids = new Map<string, Float32Array>();
+/** Land snow over `n` x `n` cells covering the square [0, size]² (mean of four samples per cell), kept for the date and
+ * the relief. The climatic snow is read from a table by 10 m of altitude. */
+export function mapLandSnowGrid(n: number, size: number, urban = 0): Float32Array {
+  const key = `${mapLandSnowKey()}|${n}|${size}|${urban}`,
+    kept = landGrids.get(key);
+  if (kept) return kept;
+  const grid = new Float32Array(n * n),
+    r = snowRelief;
+  if (!r) grid.fill(mapLandSnow(0, 0, urban));
+  else if (mapSnowPossible() > 0) {
+    const STEP = 10,
+      table = Float32Array.from({ length: Math.ceil(Math.max(0, r.top) / STEP) + 2 }, (_, k) => groundSnowSupply(k * STEP)),
+      supplyAt = (altitude: number): number => table[Math.max(0, Math.min(table.length - 1, Math.round(altitude / STEP)))],
+      cell = size / n;
+    for (let j = 0; j < n; j++)
+      for (let i = 0; i < n; i++) {
+        let sum = 0;
+        for (let q = 0; q < 4; q++) sum += landSnowAt(r, (i + 0.25 + 0.5 * (q & 1)) * cell, (j + 0.25 + 0.5 * (q >> 1)) * cell, supplyAt, urban);
+        grid[j * n + i] = sum / 4;
+      }
+  }
+  // The ways of the open land and those of the towns: two grids per date and relief.
+  if (landGrids.size >= 4) landGrids.delete(landGrids.keys().next().value!);
+  landGrids.set(key, grid);
+  return grid;
 }
 /** Snow of the paper ground at an altitude (0-1): the low-ground snow of the zone's calendar, more where the climate
  * keeps it. */

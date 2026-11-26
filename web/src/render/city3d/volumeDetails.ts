@@ -79,7 +79,8 @@ export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: numb
     const hw = f.kind === 'stair' ? 0.4 : 0.3,
       sx = f.w / 2 + 0.04,
       sy = f.d / 2 + 0.04;
-    roof.face([at(sx, -hw, z0), at(sx, hw, z0), at(sx, hw, z1), at(sx, -hw, z1)], OPENING);
+    // One stair head in two stands open on a lit house at night: flat-roofed towns show their light on the roofs too.
+    roof.face([at(sx, -hw, z0), at(sx, hw, z0), at(sx, hw, z1), at(sx, -hw, z1)], f.kind === 'stair' && (hash(id) >>> 13) % 2 ? LIT_WINDOW : OPENING);
     if (f.kind === 'windcatcher')
       for (const [s, t] of [
         [-sx, 0],
@@ -93,9 +94,11 @@ export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: numb
       top = eave + v.rise_m,
       r = 0.07,
       form = d.form,
-      DARK = 'city3d:wall:wood@393126';
+      DARK = 'city3d:wall:wood@393126',
+      // Two tents in three have their hearth lit at night: the door flap (and a yurt's crown) glows; by day it is as dark.
+      hearth = (hash(id) >>> 9) % 3 ? LIT_WINDOW : DARK;
     if (form) {
-      // Door on the longest facet: a dark flap rising up the slope.
+      // Door on the longest facet: a flap rising up the slope.
       const e = ring.map((a, i) => ({ a, b: ring[(i + 1) % n] })).sort((x, y) => Math.hypot(y.b.x - y.a.x, y.b.y - y.a.y) - Math.hypot(x.b.x - x.a.x, x.b.y - x.a.y))[0];
       const m = { x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 },
         l = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y) || 1,
@@ -105,13 +108,13 @@ export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: numb
         ox = ((m.x - c.x) / ol) * 0.04,
         oy = ((m.y - c.y) / ol) * 0.04,
         w = Math.min(0.5, l * 0.3);
-      if (form === 'yurt') facadeDoor(roof, e.a, e.b, out, l / 2 - w, l / 2 + w, ground + 0.02, ground + Math.min(1.4, v.eave_m - 0.1), 0.04, DARK);
+      if (form === 'yurt') facadeDoor(roof, e.a, e.b, out, l / 2 - w, l / 2 + w, ground + 0.02, ground + Math.min(1.4, v.eave_m - 0.1), 0.04, hearth);
       else {
         const t = 0.4,
           lift = (p: Point, k: number): Vertex3 => ({ x: p.x + (c.x - p.x) * k + ox, y: p.y + (c.y - p.y) * k + oy, z: ground + 0.02 + (top - ground - 0.02) * k });
         const b0 = { x: m.x - ux * w, y: m.y - uy * w },
           b1 = { x: m.x + ux * w, y: m.y + uy * w };
-        roof.face([lift(b0, 0), lift(b1, 0), lift({ x: b1.x - ux * w * 0.5, y: b1.y - uy * w * 0.5 }, t), lift({ x: b0.x + ux * w * 0.5, y: b0.y + uy * w * 0.5 }, t)], DARK);
+        roof.face([lift(b0, 0), lift(b1, 0), lift({ x: b1.x - ux * w * 0.5, y: b1.y - uy * w * 0.5 }, t), lift({ x: b0.x + ux * w * 0.5, y: b0.y + uy * w * 0.5 }, t)], hearth);
       }
     }
     if (form === 'yurt') {
@@ -131,9 +134,10 @@ export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: numb
           DARK,
         );
       }
+      // The smoke hole over a lit hearth glows.
       roof.face(
         Array.from({ length: 8 }, (_, i) => ({ x: c.x + Math.cos((i * Math.PI) / 4) * cr * 0.7, y: c.y + Math.sin((i * Math.PI) / 4) * cr * 0.7, z: top + 0.1 })),
-        DARK,
+        hearth,
       );
       return;
     }
@@ -190,7 +194,8 @@ export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: numb
       const a = v.shape.outer[i],
         b = v.shape.outer[(i + 1) % n],
         w = Math.hypot(b.x - a.x, b.y - a.y);
-      if (w > 0.2 && Math.abs((b.x - a.x) * (x1 - x0) + (b.y - a.y) * (y1 - y0)) < 0.2 * w * l) facadeDoor(roof, a, b, out, 0.18 * w, 0.82 * w, ground + 0.02, eave + 0.55 * v.rise_m, 0.04, OPENING);
+      // One snow house in two shows its lamp at the mouth.
+      if (w > 0.2 && Math.abs((b.x - a.x) * (x1 - x0) + (b.y - a.y) * (y1 - y0)) < 0.2 * w * l) facadeDoor(roof, a, b, out, 0.18 * w, 0.82 * w, ground + 0.02, eave + 0.55 * v.rise_m, 0.04, (hash(id) >>> 9) % 2 ? LIT_WINDOW : OPENING);
     }
     return;
   }
@@ -244,7 +249,7 @@ export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: numb
     const door = !raised && (k === 0 || !doors || (h >>> 5) % 3 === 0) && (step === ground || lintel - step >= Math.min(LEAST_DOOR_M, doorH));
     if (door) {
       doors++;
-      facadeDoor(roof, e.a, e.b, out, doorAt, doorAt + doorW, step + 0.02, lintel, 0.04, (h >>> 9) % 2 ? LIT_WINDOW : OPENING, batter); // one door in two stands open on a lit room at night
+      facadeDoor(roof, e.a, e.b, out, doorAt, doorAt + doorW, step + 0.02, lintel, 0.04, (h >>> 9) % 4 ? LIT_WINDOW : OPENING, batter); // three doors in four stand open on a lit room at night
     }
     if (hut || d.openings === 'door') return;
     // Openness (culture data): massive warm-climate walls get fewer, smaller windows, spaced by 1/openness and thinned on the street floor.
@@ -263,8 +268,8 @@ export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: numb
         if (f === 0 && open < 1 && ((h >>> (c + 7 * k)) % 100) / 100 >= open * open) continue;
         if (f === 0 && !raised && s < doorAt + doorW + 0.3 && s + ww > doorAt - 0.3) continue;
         if (groundAt && (outside(e, s + ww / 2) > foot + z0 - CLEAR_M || (door && foot + z0 < lintel + 0.2 && s < doorAt + doorW + 0.3 && s + ww > doorAt - 0.3))) continue;
-        // Two windows in five are lit at night, the same ones at every redraw.
-        const lit = (Math.imul(h ^ (c * 73 + f * 151 + k * 283 + 1), 2654435761) >>> 0) % 5 < 2;
+        // One window in two is lit at night, the same ones at every redraw.
+        const lit = (Math.imul(h ^ (c * 73 + f * 151 + k * 283 + 1), 2654435761) >>> 0) % 2 === 0;
         facadeQuad(roof, e.a, e.b, out, s, s + ww, foot + z0, foot + z0 + wh, 0.04, lit ? LIT_WINDOW : OPENING, batter);
         windows++;
       }

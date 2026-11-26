@@ -132300,7 +132300,7 @@
       "render": {
         "towerShape": "square",
         "lagoon": true,
-        "canals": { "share": 0.12, "quayM": 1.6, "widthM": 4, "mainWidthM": 8, "mains": 2, "rii": false, "connectorM": 150, "mouthM": 30, "feederM": 90, "riseM": 1.5, "freeboardM": 0.8, "locks": true, "lockStepM": 2, "maxLocks": 4, "basin": true, "outletSpacingM": 60 }
+        "canals": { "share": 0.4, "quayM": 1.1, "widthM": 3.2, "mainWidthM": 8, "mains": 2, "rii": true, "rioMinM": 2, "connectorM": 0, "mouthM": 30, "feederM": 200, "riseM": 1.5, "freeboardM": 0.8, "locks": true, "lockStepM": 2, "maxLocks": 40, "basin": true, "outletSpacingM": 60, "branchSpacingM": 60 }
       },
       "growth": null
     },

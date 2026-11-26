@@ -553,6 +553,9 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
    * town's buildings as the exact draw hands them to drawFarTown. */
   let liveFarTowns: { plan: CityScene; buildings: CityBuildings }[] | undefined;
   const farTowns = () => (liveFarTowns ??= entries.filter(entry => !entry.houses).map(entry => ({ plan: entry.plan, buildings: entry.large?.base ?? entry.buildings })));
+  /** Every town's whole buildings, for the live layer's night lights. */
+  let liveHouses: CityBuildings[] | undefined;
+  const houses = () => (liveHouses ??= entries.map(entry => entry.large?.base ?? entry.buildings));
   /** The buildings of a resting view for the live layer: each large town's tier for that view (largeTownBuildings), the
    * others as they are. Builds a detail tier on this thread when the view needs one, as the exact draw does. */
   function liveBuildings(viewport: Box, mpp: number): CityBuildings | undefined {
@@ -694,6 +697,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
         buildingsFor: entries.some(entry => entry.large) ? liveBuildings : undefined,
         layers: townLayers,
         farTowns,
+        houses,
         refused: () => (liveRefused ??= new Set(entries.flatMap(entry => [...entry.refused]))),
         sites: () => sites.length > 0,
         housePlans: () => entries.some(entry => !!entry.houses),
@@ -746,7 +750,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       for (const live of [...liveLayers]) live.dispose();
       liveTier = undefined;
       liveRefused = undefined;
-      liveFarTowns = undefined;
+      liveFarTowns = liveHouses = undefined;
       disposed = true;
       offRenderMode();
       gl?.dispose();

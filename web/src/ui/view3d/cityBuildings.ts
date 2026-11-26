@@ -6,7 +6,7 @@ import { updateYardEnclosures } from '../../render/cityLotEnclosures';
 import { city3dLotEnclosures } from '../../render/city3dMeshes';
 import { city3dBuildings, city3dFarmBuildings, city3dFarmSources, city3dPadSteps, city3dStructures, city3dWithExtras } from '../../render/city3d/display';
 import { UrbanGroundCuts } from '../urbanGroundCuts';
-import { UrbanGroundShape, blockOutlines, groundShapeLots } from '../urbanGroundShape';
+import { RoadLedges, UrbanGroundShape, blockOutlines, groundShapeLots } from '../urbanGroundShape';
 import { city3dStairs } from '../../render/city3dStairs';
 import { stairStreetColor, type StairPaintOptions } from '../../render/cityCanvas';
 import { roadGroundKey } from '../../render/roadStyle';
@@ -52,7 +52,7 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
   const cut = !cityContext.options.getGroundSettings?.(cityContext.ground)?.underdark,
     shaped = !flat && cut && !(scene && 'projection' in scene),
     partitions = shaped ? cityContext.options.getPartitions?.() : undefined,
-    nextShape = [partitions, shaped && scene, shaped && farmsteads, shaped && placeholders, shaped && cityContext.groundShaping, layouts, shaped && cityContext.surfaceDecor, shaped && cityContext.options.getSurface?.()?.height.data, t];
+    nextShape = [partitions, shaped && scene, shaped && farmsteads, shaped && placeholders, shaped && cityContext.groundShaping, layouts, shaped && cityContext.surfaceDecor, shaped && cityContext.options.getSurface?.()?.height.data, t, shaped && regional];
   if (nextShape.some((input, i) => input !== cityContext.groundShapeInputs[i])) {
     cityContext.groundShapeInputs = nextShape;
     const started = performance.now(),
@@ -61,7 +61,10 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     const steps = city3dPadSteps(shaped ? [...((scene as PlacementBatch | undefined)?.buildings ?? []), ...city3dFarmSources(farmsteads, placeholders, ground.at)] : [], ground, cityContext.stiltWaterAt);
     let pads = steps.next();
     while (!pads.done) pads = steps.next();
-    const shape = new UrbanGroundShape(groundShapeLots(partitions ?? [], pads.value, cityContext.groundShaping), ground.at);
+    // The regional roads are cut into the steep slopes they cross, as on the tilted map (worldVolumes.ts).
+    const lots = groundShapeLots(partitions ?? [], pads.value, cityContext.groundShaping),
+      roads = shaped && cityContext.groundShaping ? (regional ?? []).filter(road => road.role === 'regional') : [],
+      shape = new UrbanGroundShape(lots, ground.at, roads.length ? new RoadLedges(roads, ground.at, lots) : undefined);
     t.setGroundShape(shape.empty ? undefined : shape);
     cityContext.groundShapeStats = { lots: shape.size, ms: Math.round(performance.now() - started) };
     if (cityContext.surfaceDecor) cityContext.seatSamplers(cityContext.surfaceDecor);

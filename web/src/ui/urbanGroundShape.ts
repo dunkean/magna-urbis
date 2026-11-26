@@ -119,12 +119,13 @@ const smooth = (s: number): number => (s <= 0 ? 0 : s >= 1 ? 1 : s * s * (3 - 2 
 /** Lots by 8 m cell of their bounding box. */
 class LotGrid {
   private readonly cells = new Map<number, number[]>();
+  constructor(private readonly cell = CELL) {}
   private static key(x: number, y: number): number {
     return (x + 32768) * 65536 + (y + 32768);
   }
   add(lot: number, b: Box): void {
-    for (let y = Math.floor(b.y0 / CELL); y <= Math.floor(b.y1 / CELL); y++)
-      for (let x = Math.floor(b.x0 / CELL); x <= Math.floor(b.x1 / CELL); x++) {
+    for (let y = Math.floor(b.y0 / this.cell); y <= Math.floor(b.y1 / this.cell); y++)
+      for (let x = Math.floor(b.x0 / this.cell); x <= Math.floor(b.x1 / this.cell); x++) {
         const k = LotGrid.key(x, y),
           list = this.cells.get(k);
         if (list) list.push(lot);
@@ -132,7 +133,7 @@ class LotGrid {
       }
   }
   candidates(x: number, y: number): readonly number[] | undefined {
-    return this.cells.get(LotGrid.key(Math.floor(x / CELL), Math.floor(y / CELL)));
+    return this.cells.get(LotGrid.key(Math.floor(x / this.cell), Math.floor(y / this.cell)));
   }
   find(x: number, y: number, ring: (lot: number) => readonly Point[]): number {
     for (const lot of this.candidates(x, y) ?? []) if (ringContains(ring(lot), x, y)) return lot;
@@ -145,10 +146,12 @@ export class UrbanGroundShape {
   private readonly pads: Pad[] = [];
   private readonly yardGrid = new LotGrid();
   private readonly padGrid = new LotGrid();
-  /** `natural`: the drawn ground before shaping (no footing or moat cut), m. */
+  /** `natural`: the drawn ground before shaping (no footing or moat cut), m. `ledges`: the regional roads cut into the
+   * slopes, the ground the lots they cross are shaped from. */
   constructor(
     lots: readonly GroundShapeLot[],
     private readonly natural: (x: number, y: number) => number | undefined,
+    private readonly ledges?: RoadLedges,
   ) {
     for (const lot of lots) this.add(lot);
   }
@@ -168,12 +171,13 @@ export class UrbanGroundShape {
     }
   }
   get empty(): boolean {
-    return !this.yards.length && !this.pads.length;
+    return !this.yards.length && !this.pads.length && !(this.ledges && !this.ledges.empty);
   }
-  /** What the levelled lots and the sunk buildings cover, banks included. */
+  /** What the levelled lots, the sunk buildings and the road ledges cover, banks included. */
   *boxes(): Generator<Box> {
     yield* this.yards;
     yield* this.pads;
+    if (this.ledges) yield* this.ledges.boxes;
   }
   /** Number of levelled lots (diagnostics). */
   get size(): number {
@@ -182,6 +186,8 @@ export class UrbanGroundShape {
   /** The shaped ground at (x, y), given the natural `height` there. Strictly under a building its own floor alone: the bank of
    * a neighbour reaching under the walls is hidden by them. */
   shape(x: number, y: number, height: number): number {
+    // A road ledge is the ground the lots it crosses are shaped from.
+    if (this.ledges) height = this.ledges.at(x, y, height);
     const pads = this.padGrid.candidates(x, y),
       yards = this.yardGrid.candidates(x, y);
     if (!pads && !yards) return height;
@@ -282,4 +288,110 @@ function ringArea(ring: readonly Point[]): number {
   let s = 0;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) s += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
   return s / 2;
+}
+
+/** Cross slope (rise over run) from which a regional road runs on a ledge cut level across, the level ground kept beyond
+ * its edges and the bank that brings the ledge back to the slope (m): below that slope the road draped from above widens
+ * by 3 % at most. The bank is wider than the cells of the terrain mesh that draws a far slope, so a ledge is a smooth
+ * shelf there and not a row of steps. */
+const LEDGE_SLOPE = 0.25,
+  LEDGE_MARGIN = 1.5,
+  LEDGE_BANK = 8;
+/** Ledges are cut nearest the town first, over this many squares of LEDGE_AREA metres at most; found by LEDGE_CELL metre cell. */
+const LEDGE_BLOCKS = 256,
+  LEDGE_AREA = 256,
+  LEDGE_CELL = 32;
+
+/** A road cut into the slopes it crosses: its centreline and its width at each point (m). */
+export interface LedgeRoad {
+  path: readonly Point[];
+  widths: readonly number[];
+}
+
+/** The regional roads cut into the steep slopes they cross, the rule of both 3D views (the tilted map,
+ * render/world/groundShape.ts, and the separate 3D view, view3d/terrain/surface.ts, through `UrbanGroundShape`): across a
+ * piece whose cross slope reaches LEDGE_SLOPE, the ground within its half width and LEDGE_MARGIN of the centreline is level
+ * at the height of the centreline, that of the nearest piece, and eases back to the slope over LEDGE_BANK. The map draped
+ * from above then lays the road on it at its width instead of smearing it down the slope. */
+export class RoadLedges {
+  private readonly pieces: { a: Point; b: Point; half: number }[] = [];
+  private readonly grid = new LotGrid(LEDGE_CELL);
+  /** What each ledge covers. */
+  readonly boxes: Box[] = [];
+
+  /** `natural`: the ground before shaping, m; `lots`: the town's, around whose centre the nearest ledges are kept. */
+  constructor(
+    roads: readonly LedgeRoad[],
+    private readonly natural: (x: number, y: number) => number | undefined,
+    lots: readonly GroundShapeLot[],
+  ) {
+    const steep: { a: Point; b: Point; half: number; mx: number; my: number }[] = [],
+      around = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity },
+      cover = (p: Point): void => {
+        around.x0 = Math.min(around.x0, p.x);
+        around.y0 = Math.min(around.y0, p.y);
+        around.x1 = Math.max(around.x1, p.x);
+        around.y1 = Math.max(around.y1, p.y);
+      };
+    for (const road of roads)
+      for (let k = 1; k < road.path.length; k++) {
+        const a = road.path[k - 1],
+          b = road.path[k],
+          length = Math.hypot(b.x - a.x, b.y - a.y);
+        if (length < 1e-6) continue;
+        const half = 0.5 * Math.max(road.widths[k - 1] ?? 0, road.widths[k] ?? 0) + LEDGE_MARGIN,
+          mx = (a.x + b.x) / 2,
+          my = (a.y + b.y) / 2,
+          nx = (-(b.y - a.y) / length) * half,
+          ny = ((b.x - a.x) / length) * half,
+          up = natural(mx + nx, my + ny),
+          down = natural(mx - nx, my - ny);
+        if (up === undefined || down === undefined || !(Math.abs(up - down) >= 2 * half * LEDGE_SLOPE)) continue;
+        steep.push({ a, b, half, mx, my });
+      }
+    for (const lot of lots) for (const ring of [lot.ring ?? [], ...lot.pads.map(pad => pad.ring)]) ring.forEach(cover);
+    if (around.x0 > around.x1) steep.forEach(piece => cover({ x: piece.mx, y: piece.my }));
+    const cx = (around.x0 + around.x1) / 2,
+      cy = (around.y0 + around.y1) / 2,
+      blocks = new Set<number>();
+    steep.sort((p, q) => Math.hypot(p.mx - cx, p.my - cy) - Math.hypot(q.mx - cx, q.my - cy));
+    for (const { a, b, half } of steep) {
+      if (blocks.size >= LEDGE_BLOCKS) break;
+      const out = half + LEDGE_BANK,
+        reach: Box = { x0: Math.min(a.x, b.x) - out, y0: Math.min(a.y, b.y) - out, x1: Math.max(a.x, b.x) + out, y1: Math.max(a.y, b.y) + out };
+      for (let y = Math.floor(reach.y0 / LEDGE_AREA); y <= Math.floor(reach.y1 / LEDGE_AREA); y++)
+        for (let x = Math.floor(reach.x0 / LEDGE_AREA); x <= Math.floor(reach.x1 / LEDGE_AREA); x++) blocks.add((x + 32768) * 65536 + (y + 32768));
+      this.grid.add(this.pieces.push({ a, b, half }) - 1, reach);
+      this.boxes.push(reach);
+    }
+  }
+  get empty(): boolean {
+    return !this.pieces.length;
+  }
+  /** The ground at (x, y) with the ledges cut, m, given the natural `height` there. */
+  at(x: number, y: number, height: number): number {
+    const near = this.grid.candidates(x, y);
+    if (!near) return height;
+    // The nearest piece, measured from the edge of its ledge.
+    let best = LEDGE_BANK,
+      px = 0,
+      py = 0;
+    for (const k of near) {
+      const { a, b, half } = this.pieces[k],
+        dx = b.x - a.x,
+        dy = b.y - a.y,
+        t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy))),
+        qx = a.x + t * dx,
+        qy = a.y + t * dy,
+        beyond = Math.max(0, Math.hypot(x - qx, y - qy) - half);
+      if (beyond < best) {
+        best = beyond;
+        px = qx;
+        py = qy;
+      }
+    }
+    if (best >= LEDGE_BANK) return height;
+    const level = this.natural(px, py);
+    return level !== undefined && Number.isFinite(level) ? height + (level - height) * (1 - smooth(best / LEDGE_BANK)) : height;
+  }
 }

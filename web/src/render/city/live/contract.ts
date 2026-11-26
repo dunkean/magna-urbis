@@ -20,6 +20,9 @@ export interface LiveCityTowns {
   layers(appearance: ResolvedAppearance, visibility: Partial<ExportLayers>): CityLayers;
   /** Towns drawn as a far raster on satellite grounds, with the whole town's buildings (drawFarTown's key). */
   farTowns(): readonly { plan: CityScene; buildings: CityBuildings }[];
+  /** Each town's whole buildings (a tiered town's base), in entry order, for their night lights in the drape (also when
+   * the buildings stand as volumes): the same array while the towns do not change. */
+  houses(): readonly CityBuildings[];
   /** Each town's lot enclosures as the Canvas town last derived them (`scene.lotEnclosures`), in entry order. */
   enclosures(): readonly (readonly YardBoundary[] | undefined)[];
   /** Each town's canopy (finishCityFrame: cityCanopy of its layouts and buildings), in entry order. */

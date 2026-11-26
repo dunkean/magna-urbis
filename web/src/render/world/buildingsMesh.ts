@@ -173,7 +173,7 @@ const ELECTRIC_WALLS = new Set(['concrete', 'glass', 'steel']);
 /** Night light of the doors and windows of a house, 0 (dark) to 10: whether its people are up (its use and its own draw),
  * and its size. Nobody lives in monuments, halls and stores: their walls stay dark. */
 function nightGlow(fn: string | undefined, height: number, draw: number, monument: boolean): number {
-  const up = monument ? 0 : fn === 'mixed' ? 0.85 : fn === 'domestic' ? 0.65 : fn === 'workshop' ? 0.4 : 0;
+  const up = monument ? 0 : fn === 'mixed' ? 0.9 : fn === 'domestic' ? 0.85 : fn === 'workshop' ? 0.45 : 0;
   return draw < up ? Math.round(10 * Math.min(1, 0.55 + 0.04 * height) * (0.6 + (0.4 * draw) / up)) : 0;
 }
 /** A wall triangle written this building, waiting for the lit opening nearest it, and those openings. */
@@ -338,9 +338,10 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
         tm = materialTint(raw);
       const id = tm ? raw.slice(0, tm.index) : raw;
       // The massing uses the same aperture ID for ordinary windows and entry doors. Both
-      // triangles of the door reach its threshold, including volumes on a lower terrace.
+      // triangles of the door reach its threshold, including volumes on a lower terrace. A tipi's flap, up the slope of its
+      // cover, is no joinery: it keeps its plain colour.
       let aperture: 'door' | 'window' | undefined;
-      if (craftedHouse && (id === 'city3d:wall:opening' || id === 'city3d:wall:lit')) {
+      if (craftedHouse && (id === 'city3d:wall:opening' || id === 'city3d:wall:lit') && Math.abs(face.normal[2]) < 0.5 * Math.hypot(face.normal[0], face.normal[1], face.normal[2])) {
         const threshold = (face.ground?.[0] ?? ground) + 0.3;
         aperture = face.entrance || face.points.some(p => p[2] <= threshold) ? 'door' : 'window';
       }

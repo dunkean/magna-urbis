@@ -12,7 +12,7 @@ import { groundRoadLook, type RoadLook } from '../composition';
 import { blendLine, blendTone, blendsGround, groundWash, isBlended, naturalGroundWash, type BlendTone, type Wash, type WashKind } from '../groundBlend';
 import { washAt } from '../groundTone';
 import { nightRoof } from '../cityNight';
-import { mapGroundSnow } from '../seasonPalette';
+import { URBAN_SNOW, mapGroundSnow, mapLandSnow } from '../seasonPalette';
 import { funeraryLandFill } from '../cityRoles';
 import { urbanFunctionColor } from '../urbanBuildingStyle';
 import { harbourPaint, harbourShown, type HarbourPaint } from '../harbourStyle';
@@ -144,6 +144,19 @@ export interface PaintOp {
   /** Paved square of the render background (planPath): the paved pass draws setts over the fill. */ paved?: boolean;
 }
 
+/** The trodden snow of a square: as much as the town ground under its middle holds (mapLandSnow), never more. */
+function pushSlush(ops: PaintOp[], outer: readonly { x: number; y: number }[]): void {
+  if (!outer.length) return;
+  let x = 0,
+    y = 0;
+  for (const q of outer) {
+    x += q.x;
+    y += q.y;
+  }
+  const snow = mapLandSnow(x / outer.length, y / outer.length, URBAN_SNOW);
+  if (snow > 0) ops.push({ fill: SLUSH, alpha: 0.3 * snow });
+}
+
 // ---------------------------------------------------------------- frame state
 interface PlanFrameInput {
   view: CityView;
@@ -171,7 +184,7 @@ interface PlanFrame extends PlanFrameInput {
   softLine: Wash;
   outline: string;
   /** Plan line width, CSS px. */ lineWidthPx: number;
-  /** Snow on the ground of a natural ground by day (0: none): squares and markets are trodden. */ slush: number;
+  /** Natural ground by day: squares and markets are trodden where the land under them is snowed (pushSlush). */ slush: boolean;
   wash(kind: WashKind, shape: Shape): Wash;
 }
 /** Plan line width for the width setting (CSS px). */
@@ -197,7 +210,7 @@ export function planFrame(o: PlanFrameInput): PlanFrame {
     outline: night ? NIGHT_PLAN.ink : o.palette === 'ink' ? '#3c3024' : parchment ? PARCH.inkSoft : '#655847',
     lineWidthPx: planLineWidthPx(o.width),
     // Squares and markets of a snowed town are trodden like its main streets (natural grounds only).
-    slush: naturalGround && !night && !o.planPath ? mapGroundSnow() : 0,
+    slush: naturalGround && !night && !o.planPath,
     wash(kind, shape) {
       if (material) {
         const w = groundWash(kind, 'earth');
@@ -255,7 +268,7 @@ export function blockOps(f: PlanFrame, b: CityBlock, hideLotLines: boolean | und
       ops: PaintOp[] = [];
     if (!f.textured || !isPlaza(b.kind)) ops.push({ stroke: w.color, widthPx: 2.2, alpha: a * 0.4, cap: 'round', feather: true });
     ops.push({ fill: w.color, plaza: isPlaza(b.kind), alpha: a });
-    if (f.slush && b.kind === 'place') ops.push({ fill: SLUSH, alpha: 0.3 * f.slush });
+    if (f.slush && b.kind === 'place') pushSlush(ops, b.shape.outer);
     if (lod === 'close' && !f.material && blockLine) ops.push({ stroke: f.softLine.color, widthPx: 0.5, alpha: f.softLine.alpha });
     return ops;
   }
@@ -322,7 +335,7 @@ export function parcelOps(f: PlanFrame, p: CityParcel, hideLotLines: boolean | u
       ground = kind === 'parcel' || kind === 'reserve';
     // Plain lots add no wash over the block's (the buildings stand on it); gardens, commons and squares stack theirs.
     if (!(view === 'buildings' && ground)) ops.push({ fill: burialFill ?? w.color, plaza: !burialFill && isPlaza(use), alpha: burialFill ? 0.85 : a });
-    if (f.slush && isPlaza(use)) ops.push({ fill: SLUSH, alpha: 0.3 * f.slush });
+    if (f.slush && isPlaza(use)) pushSlush(ops, p.shape.outer);
     if (lod === 'close' && !f.material && lotLine) ops.push({ stroke: f.softLine.color, widthPx: 0.5, alpha: f.softLine.alpha * (ground ? 0.8 : 1) });
   } else if (view === 'parcels') {
     const fill = palette === 'terrain' ? undefined : night ? (openFill ?? C.lot) : palette === 'ink' ? '#eee0c9' : parchment ? (openFill ?? C.lot) : (openFill ?? (palette === 'atlas' ? ATLAS[p.index % ATLAS.length] : growthColor(p.zone)));

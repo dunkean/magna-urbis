@@ -41,7 +41,7 @@ import { FAR_TOWN_FADE, farTownAlpha } from '../farTown';
 import { townRestGaps, type RestState, type TownContent } from '../restCoverage';
 import { townOpacity } from '../look';
 import { groundRoadLook } from '../../composition';
-import { mapGroundSnow } from '../../seasonPalette';
+import { mapSnowPossible } from '../../seasonPalette';
 import type { CityGlDrawOptions, CityGlSharedRenderer } from '../gl/contract';
 import { createCityGlRendererOn } from '../gl/renderer';
 import { cityBuildingAppearance } from '../../cityDrawOptions';
@@ -144,7 +144,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   function restGaps(frame: LiveFrame, l: Look, level: CityLod, held: TownContent): readonly string[] {
     const mpp = 1 / frame.view.scale,
       farRaster = l.farTown && mpp > FAR_TOWN_FADE[0],
-      snow = mapGroundSnow();
+      snow = mapSnowPossible();
     if (rest && rest.look === l && rest.level === level && rest.dpr === frame.dpr && rest.farRaster === farRaster && rest.snow === snow && rest.content === held) return rest.gaps;
     const o = l.base,
       a = l.appearance,
@@ -432,7 +432,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       // Nothing to paint (a failed layer, a look the layer does not cover, a hidden town) is ready.
       if (disposed || broken) return true;
       const l = lookNow();
-      if (l.reason || l.opacity <= 0) return !l.lamps || lamps.ready(requested);
+      if (l.reason || l.opacity <= 0) return !l.lamps || lamps.ready(requested, towns.houses());
       // The plan is all the drape draws: a building tier being packed or uploaded does not hold it back.
       if (!renderer || !renderer.programsLinked || !requested || !renderer.ready) return false;
       if (!grainReady(l)) return false;
@@ -600,8 +600,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       if (!frame) return building > 0;
       const l = lookNow(),
         water = env.water?.();
-      if (l.lamps && !lamps.ready(requested)) {
-        if (lamps.step(requested, parallelLink)) {
+      if (l.lamps && !lamps.ready(requested, towns.houses())) {
+        if (lamps.step(requested, towns.houses(), parallelLink)) {
           drapeRevision++;
           env.invalidate();
         }
