@@ -3,7 +3,7 @@
  * camera and left back to it, moved by held keys and turned by the pointer. Pure math on views; the viewer
  * (ui/viewer.ts) holds the mode and the input, the camera (camera.ts) makes the pose of a free eye.
  *
- * The keys and speeds are those of the separate 3D view (ui/view3d/terrain/navigation.ts): walking keeps the eye at a
+ * The keys and speeds match City Bench's separate 3D view (ui/view3d/terrain/navigation.ts): walking keeps the eye at a
  * person's height over the ground; flying moves along the look, its vertical keys change the altitude, which is kept
  * when the ground falls away and lifted when it rises.
  */

@@ -47,13 +47,19 @@ function same(previous: unknown, next: unknown, budget: { left: number }, seen: 
   return true;
 }
 
+/** Deep content equality within a budget of visited objects (a spent budget answers false); keys present only on
+ * `previous` are ignored. */
+export function sameContent(previous: unknown, next: unknown, budget: { left: number } = { left: BUDGET }): boolean {
+  return same(previous, next, budget, new WeakMap());
+}
+
 /** `next` with `previous.terrain` when both carry the same terrain content (else `next` unchanged). */
 export function internTerrain(previous: World | null | undefined, next: World): World {
   if (!previous?.terrain || !next.terrain || previous.terrain === next.terrain) return next;
   const key = (w: World): string => JSON.stringify([w.stats?.['v2.terrainKey'] ?? null, w.stats?.['v2.waterEditRevision'] ?? 0, w.mapSize, w.seed, w.stats?.decor ?? null]);
   if (previous.stats?.['v2.terrainKey'] === undefined || key(previous) !== key(next)) return next;
   const started = performance.now();
-  const equal = same(previous.terrain, next.terrain, { left: BUDGET }, new WeakMap());
+  const equal = sameContent(previous.terrain, next.terrain);
   performance.measure('v2:terrain-intern', { start: started });
   return equal ? { ...next, terrain: previous.terrain } : next;
 }

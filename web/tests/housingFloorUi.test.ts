@@ -14,6 +14,8 @@ import { DerivedTestBackend } from './helpers/urbanDerivedTestBackend';
 vi.mock('../src/ui/methodNotes', () => ({ openMethodNote: vi.fn() }));
 vi.mock('../src/ui/benchHistory', () => ({ openBench: vi.fn() }));
 vi.mock('../src/ui/cityShapeEditor', () => ({ ensureEditStyles: vi.fn() }));
+// The inspector translates its host through a DOM MutationObserver (f18553c1); this node test reads the French source text.
+vi.mock('../src/ui/cityInspectorLocale', async importOriginal => ({ ...(await importOriginal<typeof import('../src/ui/cityInspectorLocale')>()), localizeCityInspector: vi.fn(() => () => {}) }));
 import { urbanBuildingPanelProgrammeOutcomeHtml } from '../src/ui/urbanBuildingsPanel';
 import { renderCityInspector, type CityInspectorHooks } from '../src/ui/cityInspector';
 import type { CityScene } from '../src/render/cityCanvas';

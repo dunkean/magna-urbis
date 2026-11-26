@@ -2,20 +2,19 @@
  * The host of the live overlay layer (render/live/overlayLayer.ts): the region a view needs (a margin, edges on a
  * lattice, the half-octave scale, horizontal bands), its key, and the recording of one band with the crisp mark that
  * splits the baked area prefix from the replayed layers. The layer itself owns its regions, their uploads and bakes.
- * Reads: everything drawVector reads, the host's semantic and road keys. Writes: stepwise, activeLight, activeDpr
- * and markCrisp for the duration of a recording.
+ * Reads: everything drawVector reads, the host's semantic and road keys. Writes: stepwise, activeLight, activeDpr,
+ * recordingClip, markCrisp and recordingNow for the duration of a recording step (restored after it).
  */
 import { roadCanopyRevision } from '../roadStyle';
 import { whiteWaterRevision } from '../whiteWater';
 import { View, Rect4 } from '../view';
-import type { DisplayList } from '../gpu/contract';
 import type { LiveLayer } from '../live/contract';
 import { createOverlayLayer, type OverlayBand, type OverlayPlan } from '../live/overlayLayer';
 import { liveVectorEngine, noteGpuFallback } from '../vectorEngine';
 import { noteLiveUnit } from '../live/liveStats';
 import { CanvasLike } from './contract';
 import type { CartographyContext } from './context';
-import { drawVector, drawVectorSteps } from './vector';
+import { drawVectorSteps } from './vector';
 import { growRect } from './geometry';
 import { releaseDrapeTemps, warmTreeMarks } from './woods';
 import { createMapRecording } from './mapRecording';
@@ -27,7 +26,7 @@ export function createLiveHost(c: CartographyContext) {
   /** Live overlay layer: a new detail level or region is recorded this long after the view rests, or once the need is this old. */
   const REGION_SETTLE_MS = 150,
     REGION_MAX_WAIT_MS = 1500;
-  /** Live overlay layer: a region is recorded in this many horizontal bands, one per idle step. */
+  /** Live overlay layer: a region is recorded in this many horizontal bands, each over idle work slices. */
   const REGION_BANDS = 4;
   const fixedRaster = (): boolean => c.pal.name === 'cadastre';
   /** A recording of the map for the live overlay layer has failed under this key: not tried again until it changes. */
@@ -57,42 +56,21 @@ export function createLiveHost(c: CartographyContext) {
     for (let i = 0; i < REGION_BANDS; i++) bands.push({ minX: rect.minX, maxX: rect.maxX, minY: rect.minY + ((rect.maxY - rect.minY) * i) / REGION_BANDS, maxY: rect.minY + ((rect.maxY - rect.minY) * (i + 1)) / REGION_BANDS });
     return { key, rect, scale, dpr, bands };
   }
-  /** Records one band with the crisp mark; undefined (and the key marked failed) when the recorder cannot represent it. */
-  function recordBand(plan: OverlayPlan, band: Rect4, retainedInk: boolean): OverlayBand | undefined {
+  /** Records one band with the crisp mark, one drawVector step (a layer family) per resumption: the recorder stays
+   * private across yields and the renderer flags are borrowed only during a step, so the exact tiles and the furniture
+   * can draw between two steps, and `return()` cancels the job. A drape tile (`drape`) clips its paths to the band
+   * before construction; an overlay band keeps them whole for the GPU clip. `ink`: the layer retains the world ink.
+   * Undefined (and the key marked failed) when the recorder cannot represent the band. */
+  function* recordSteps(plan: OverlayPlan, band: Rect4, light: boolean, ink: boolean, drape: boolean): Generator<void, OverlayBand | undefined> {
     const cx = (band.minX + band.maxX) / 2,
       cy = (band.minY + band.maxY) / 2;
     const w = Math.max(1, Math.ceil((band.maxX - band.minX) * plan.scale * plan.dpr)),
       h = Math.max(1, Math.ceil((band.maxY - band.minY) * plan.scale * plan.dpr));
-    const rec = createMapRecording(w, h, retainedInk);
-    const provisional = deps.semantic?.provisional() ?? 0;
-    let list: DisplayList | undefined;
-    c.markCrisp = true;
-    try {
-      drawVector(c, { cx, cy, scale: plan.scale }, rec as unknown as CanvasLike, 'map', band);
-      list = rec.finish();
-    } catch (error) {
-      noteGpuFallback(`record: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      c.markCrisp = false;
-      releaseDrapeTemps(c);
-    }
-    if (!list || list.unsupported) {
-      if (list?.unsupported) noteGpuFallback(list.unsupported);
-      regionFailed = plan.key;
-      return undefined;
-    }
-    return { list, rect: band, cx, cy, w, h, provisional: (deps.semantic?.provisional() ?? 0) !== provisional };
-  }
-  /** Keep the recorder private across yields; renderer flags are borrowed only during a single step. */
-  function* recordDrapeSteps(plan: OverlayPlan, band: Rect4, light: boolean): Generator<void, OverlayBand | undefined> {
-    const cx = (band.minX + band.maxX) / 2,
-      cy = (band.minY + band.maxY) / 2;
-    const w = Math.max(1, Math.ceil((band.maxX - band.minX) * plan.scale * plan.dpr)),
-      h = Math.max(1, Math.ceil((band.maxY - band.minY) * plan.scale * plan.dpr));
-    const rec = createMapRecording(w, h),
-      provisional = deps.semantic?.provisional() ?? 0;
+    const rec = createMapRecording(w, h, ink),
+      provisional = deps.semantic?.provisional() ?? 0,
+      unit = drape ? 'record:drape' : 'record:band';
     // Nearby tiles share their clipped paths across bands. Coarse map-wide tiles must cut to the band itself.
-    const clip = growRect(plan.rect.maxX - plan.rect.minX <= 4 * c.scene.tileSize ? plan.rect : band, Math.max(16, 4 / (plan.scale * plan.dpr)));
+    const clip = drape ? growRect(plan.rect.maxX - plan.rect.minX <= 4 * c.scene.tileSize ? plan.rect : band, Math.max(16, 4 / (plan.scale * plan.dpr))) : undefined;
     const steps = drawVectorSteps(c, { cx, cy, scale: plan.scale }, rec as unknown as CanvasLike, 'map', band);
     try {
       for (;;) {
@@ -114,7 +92,7 @@ export function createLiveHost(c: CartographyContext) {
           c.recordingClip = before.clip;
           c.markCrisp = before.crisp;
           c.recordingNow = before.recording;
-          noteLiveUnit('record:drape', t);
+          noteLiveUnit(unit, t);
         }
         if (done) break;
         yield;
@@ -131,7 +109,7 @@ export function createLiveHost(c: CartographyContext) {
       releaseDrapeTemps(c);
     }
   }
-  /** The overlay layer of the live compositor: regions of the map recorded here (regionPlan, recordBand) and replayed
+  /** The overlay layer of the live compositor: regions of the map recorded here (regionPlan, recordSteps) and replayed
    * in the compositor's context. */
   function createLiveLayer(gl: WebGL2RenderingContext): LiveLayer | undefined {
     if (deps.raster === false || !deps.invalidate) return undefined;
@@ -147,25 +125,14 @@ export function createLiveHost(c: CartographyContext) {
       plan: regionPlan,
       arrivals: () => deps.semantic?.arrivals() ?? 0,
       warm: deadline => c.disposed || warmTreeMarks(c, deadline),
+      // Recorded at the region's quality and at the compositor's pixel ratio; `record` runs every step in one call.
       record(plan, band, light) {
-        // One band is one step: recorded at the region's quality and at the compositor's pixel ratio.
-        const stepwise = c.stepwise,
-          wasLight = c.activeLight,
-          dprBefore = c.activeDpr,
-          t = now();
-        c.stepwise = true;
-        c.activeLight = light;
-        c.activeDpr = plan.dpr;
-        try {
-          return recordBand(plan, band, !!ink);
-        } finally {
-          c.stepwise = stepwise;
-          c.activeLight = wasLight;
-          c.activeDpr = dprBefore;
-          noteLiveUnit('record:band', t);
-        }
+        const steps = recordSteps(plan, band, light, !!ink, false);
+        let step = steps.next();
+        while (!step.done) step = steps.next();
+        return step.value;
       },
-      recordSteps: recordDrapeSteps,
+      recordSteps: (plan, band, light, drape) => recordSteps(plan, band, light, !drape && !!ink, drape),
       invalidate: () => {
         if (!c.disposed) deps.invalidate?.();
       },

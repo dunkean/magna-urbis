@@ -4,7 +4,8 @@ import { TerrainHeights } from '../src/render/world/heights';
 import { patchLevels, shapedPatchLevels } from '../src/render/world/patches';
 import { UrbanGroundCuts } from '../src/ui/urbanGroundCuts';
 import { ROAD_SQUEEZE, RoadSqueeze, squeezePush } from '../src/render/steepRoads';
-import type { GroundShapeLot } from '../src/ui/urbanGroundShape';
+import { UrbanGroundShape, type GroundShapeLot } from '../src/ui/urbanGroundShape';
+import { STREET_LEVEL } from '../src/ui/urbanStreetLevel';
 
 const rect = (x: number, y: number, w: number, d: number) => [
   { x, y },
@@ -15,7 +16,7 @@ const rect = (x: number, y: number, w: number, d: number) => [
 // A 20 % slope rising to the east.
 const slope = (x: number): number => 50 + 0.2 * x;
 const shapeOf = (lots: GroundShapeLot[], cuts = new UrbanGroundCuts()): GroundShape | undefined => {
-  const steps = groundShapeSteps(1024, [lots], cuts, slope);
+  const steps = groundShapeSteps(1024, [{ lots }], cuts, slope);
   let step = steps.next();
   while (!step.done) step = steps.next();
   return step.value;
@@ -30,6 +31,36 @@ describe('shaped ground of the tilted map', () => {
     expect(shape.groundAt(600, 600)).toBe(0);
     expect(shape.groundAt(SHAPE_BLOCK - 1e-6, 108)).toBeCloseTo(shape.groundAt(SHAPE_BLOCK, 108), 4);
     expect(shapeOf([])).toBeUndefined();
+  });
+
+  it('levels a street across its width, keeps its long profile continuous through a bend, and fades to the hill', () => {
+    // A hill rising 20 % to the east and 5 % to the north; a street of 6 m going north, then north-east.
+    const hill = (x: number, y: number): number => 50 + 0.2 * x + 0.05 * y,
+      street = {
+        path: [
+          { x: 500, y: 100 },
+          { x: 500, y: 250 },
+          { x: 600, y: 350 },
+        ],
+        widths: [6, 6, 6],
+        rank: 2,
+        role: 'street',
+      },
+      platforms = new UrbanGroundShape([], hill, [street]),
+      ground = (x: number, y: number): number => platforms.shape(x, y, hill(x, y));
+    // Flat across the width, at the ground of its axis; the hill beyond the margin.
+    for (const x of [497, 498.5, 501.5, 503]) expect(ground(x, 180)).toBeCloseTo(ground(500, 180), 6);
+    // (within a tenth of a millimetre: the far piece beyond the bend still weighs a few micrometres here)
+    expect(ground(500, 180)).toBeCloseTo(hill(500, 180), 4);
+    expect(ground(500 + 3 + STREET_LEVEL.margin + 0.5, 180)).toBe(hill(500 + 3 + STREET_LEVEL.margin + 0.5, 180));
+    // No step along the axis and the two edges, through the bend.
+    for (const dx of [-2.5, 0, 2.5]) for (let y = 200; y < 300; y += 0.02) expect(Math.abs(ground(500 + dx, y + 0.02) - ground(500 + dx, y))).toBeLessThan(0.02);
+    // The tilted map holds it on its nodes.
+    const steps = groundShapeSteps(1024, [{ lots: [], streets: [street] }], new UrbanGroundCuts(), hill);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    const shape = step.value!;
+    for (const x of [498, 502]) expect(hill(x, 180) + shape.groundAt(x, 180)).toBeCloseTo(hill(500, 180), 1);
   });
 
   it('digs a moat in the drawn ground only', () => {
@@ -74,7 +105,7 @@ describe('shaped ground of the tilted map', () => {
     expect(squeezePush(field[0], field[1], field[2], field[3], 0)).toBe(0);
     expect(squeeze.at(250, 702, field)).toBe(false);
     // The tilted map holds the field on its blocks; the ground stays natural.
-    const steps = groundShapeSteps(1024, [[]], new UrbanGroundCuts(), cliff, roads);
+    const steps = groundShapeSteps(1024, [{ lots: [] }], new UrbanGroundCuts(), cliff, roads);
     let step = steps.next();
     while (!step.done) step = steps.next();
     const shape = step.value!,

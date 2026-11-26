@@ -72,6 +72,18 @@ describe('near trees: stand structure', () => {
       for (let k = 8; k < 11; k++) if (youngStand[i + k] <= oldStand[i + k]) throw new Error('Field tone did not brighten the crown');
     }
   });
+
+  it('grades conifers against broadleaves as the painted crowns do (forestGrade)', () => {
+    const meanGreen = (trees: Float32Array, form: number): number => {
+      const greens = column(trees, 9).filter((_, i) => trees[i * TREE_STRIDE + 6] === form);
+      expect(greens.length).toBeGreaterThan(100);
+      return greens.reduce((s, g) => s + g, 0) / greens.length;
+    };
+    // Temperate summer: painted grades .76 (conifer) and 1.04 (broadleaf) on pigments .25 and .31, a ratio of about .59.
+    const ratio = meanGreen(buildNearTrees(stand(235, 110, 230), view), 1) / meanGreen(buildNearTrees(stand(235, 110, 20), view), 0);
+    expect(ratio).toBeGreaterThan(0.51);
+    expect(ratio).toBeLessThan(0.67);
+  });
 });
 
 describe('near trees: biomes and giants', () => {

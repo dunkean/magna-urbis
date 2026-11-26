@@ -70,6 +70,8 @@ export interface CityGlBuildStats {
 export interface CityGlStats {
   plan?: { vertices: number; triangles: number; edges: number; features: number };
   buildings?: { vertices: number; triangles: number; edges: number; features: number };
+  /** Spatial pages of the plan and building fills (gl/pages.ts), each with its own buffers and colour tables. */
+  pages?: number;
   streets: number;
   walls: number;
   towers: number;

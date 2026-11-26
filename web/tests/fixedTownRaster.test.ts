@@ -56,4 +56,19 @@ describe('fixed cadastral town sheets', () => {
     for (const t of fine) t.ready = true;
     expect(raster.shown(t => t.ready)).toEqual(fine);
   });
+  it('frees the drafts of a town once its fine sheet is complete, and keeps showing that sheet alone', () => {
+    const raster = new FixedTownRaster((w, h) => ({ width: w, height: h, getContext: () => ({}) }) as unknown as OffscreenCanvas);
+    raster.ensure('town', [{ minX: 0, minY: 0, maxX: 300, maxY: 100 }]);
+    const drafts = raster.tiles.filter(t => !t.fine),
+      fine = raster.tiles.filter(t => t.fine);
+    for (const t of drafts) t.ready = true;
+    fine[0].ready = true;
+    expect(raster.retire(0)).toBe(false);
+    for (const t of fine) t.ready = true;
+    expect(raster.retire(0)).toBe(true);
+    expect(raster.tiles).toEqual(fine);
+    expect(drafts.every(t => t.canvas.width === 1 && t.canvas.height === 1)).toBe(true);
+    // A tile of the fine sheet still to upload (a lost context): the others stay shown, no draft comes back.
+    expect(raster.shown(t => t !== fine[0])).toEqual(fine.slice(1));
+  });
 });

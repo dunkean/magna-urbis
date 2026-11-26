@@ -18,6 +18,7 @@ const UNIFORMS = [
   'uEye',
   'uLevel',
   'uGrid',
+  'uShore',
   'uHeights',
   'uTiles',
   'uTreeIds',

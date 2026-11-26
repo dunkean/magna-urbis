@@ -128,30 +128,33 @@ export function mountToolbar(state: PageState, actions: PageActions): void {
       actions.toast('Position saved. Run placement to apply it.');
       return;
     }
+    // A click on a volume means the place it stands on: its lot, block, quarter and town, wherever the ray met its box.
+    const at = picked.site ?? p,
+      owner = picked.building?.settlement;
     const target = $<HTMLSelectElement>('#inspect-target').value;
     if (target === 'any') {
-      actions.inspectEntity(p, picked.building);
+      actions.inspectEntity(at, picked.building, picked.metresPerPixel);
       return;
     }
     if (state.parcelMerge && target === 'parcel') {
-      state.parcelMerge.add(p);
+      state.parcelMerge.add(at);
       return;
     }
     if (target === 'quarter' || target === 'block' || target === 'parcel') {
-      if (!actions.inspectSubdivision(target, p)) actions.toast('No geometry at this location. Build this stage first.');
+      if (!actions.inspectSubdivision(target, at, owner)) actions.toast('No geometry at this location. Build this stage first.');
       return;
     }
     if (target === 'settlement') {
-      const town = nearestSettlement(state.world, p);
-      if (town) actions.showInspector(town.key);
+      const key = owner ?? nearestSettlement(state.world, at)?.key;
+      if (key) actions.showInspector(key);
       return;
     }
-    const hit = picked.building ?? buildingAt(state.world, p);
+    const hit = picked.building ?? buildingAt(state.world, at);
     if (hit) {
       actions.showBuilding(hit);
       return;
     }
-    const town = nearestSettlement(state.world, p);
+    const town = nearestSettlement(state.world, at);
     if (town) actions.showInspector(town.key);
     else actions.toast('Select a settlement or a house. Zoom in to reach the buildings.');
   });

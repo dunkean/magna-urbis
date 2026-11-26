@@ -8,6 +8,7 @@ import { settlementDisplayName } from '../mapPresentation';
 import { localFactsHtml, type LocalFactsInput } from '../localFacts';
 import { activitySitesOf } from '../activitySites';
 import { isolatedPlacesOf } from '../isolatedPlaces';
+import { activityKindLabel, activitySiteLabel, urbanCultureLabel } from '../urbanLabelNames';
 import { DEMOGRAPHIC_CLASSES } from '../../../../rust/bridge/settlementDemography';
 import { nativeCityRecords } from '../nativeProducts';
 import { cityReachedPopulation, populationText, populationShortfallText } from '../../render/cityPopulation';
@@ -170,7 +171,7 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
         'beforeend',
         `<h3 class="settlement-group">Isolated buildings · ${activities.length}</h3>${[...activities]
           .sort((a, b) => b.buildings.length - a.buildings.length)
-          .map(site => `<button class="activity-place" data-activity="${esc(site.id)}"><strong>${esc(site.template)}</strong><small>${esc(site.kind)} · ${site.buildings.length}</small></button>`)
+          .map(site => `<button class="activity-place" data-activity="${esc(site.id)}"><strong>${esc(translate(activitySiteLabel(site.template)))}</strong><small>${esc(translate(activityKindLabel(site.kind)))} · ${site.buildings.length}</small></button>`)
           .join('')}`,
       );
     // Inhabited farms outside every listed place (land use): listed as farmsteads and hamlets of their nearest place.
@@ -202,7 +203,10 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
           if (!site) return;
           state.client.viewer.setView({ cx: site.x, cy: site.y, scale: 2 });
           actions.showInspector(site.parent);
-          setHTML($('#building-inspector'), `<div class="edit-building"><h3>${esc(site.template)}</h3><p>${esc(site.kind)} · ${site.buildings.length} buildings · ${site.residents} inhabitants</p><p class="hint">${esc(site.resource)} · ${esc(site.culture)}</p></div>`);
+          setHTML(
+            $('#building-inspector'),
+            `<div class="edit-building"><h3>${esc(translate(activitySiteLabel(site.template)))}</h3><p>${esc(translate(activityKindLabel(site.kind)))} · ${site.buildings.length} buildings · ${site.residents} inhabitants</p><p class="hint">${esc(site.resource)} · ${esc(translate(urbanCultureLabel(site.culture)))}</p></div>`,
+          );
         }),
     );
     document.querySelectorAll<HTMLButtonElement>('[data-town]').forEach(

@@ -1,5 +1,8 @@
 /** Fractal shoreline below the cells of the physical field: the one definition of it, for the traced sea polygon
- * (v2/shoreline.ts: towns, harbours, vector maps, 3D water) and for the 2D ground shader (ui/terrain/gl/shaders.ts).
+ * (v2/shoreline.ts: towns, harbours, vector maps, 3D water), the 2D ground shader (ui/terrain/gl/shaders.ts), the 3D mesh
+ * and its CPU heights (render/world/terrainShader.ts, heights.ts), the sea distance (render/terrainWater.ts) and the
+ * town's ground and the river mouths, through its Rust mirror rust/crates/terrain/src/shore_detail.rs. The two must stay
+ * in step (octaves, rotations, seeds, noise): both pin the same values (web/tests/v2/shoreline.test.ts, the Rust module's tests).
  *
  * The coast plan (terrain/src/coast.rs) cuts the shore down to the cells of the field; a spline of 30 m cells then draws
  * smooth round coves. Here the height near the zero line gets an offset worth a displacement of that line: a few octaves
@@ -61,6 +64,38 @@ export function shoreOffset(x: number, y: number, height: number, slope: number,
   }
   return slope * cell * rough * sum * smoothstep(0, 1, 1 - Math.abs(height) / (slope * cell * SHORE_DETAIL_REACH));
 }
+
+/** The same offset for a vertex of the 3D mesh (render/world/terrainShader.ts): every octave, since the mesh has no pixel
+ * scale and a vertex shared by two squares must compute the same bits, with its own copy of the ground shader's noise.
+ * `h`, `slope`: the spline's value and slope (m, m/m); `cell`: the field cell (m). */
+export const SHORE_DETAIL_VERTEX_GLSL = `
+float shoreNoise(vec2 p, uint seed) {
+  vec2 i = floor(p), f = p - i;
+  uvec2 c = uvec2(ivec2(i));
+  float v[4];
+  for (int k = 0; k < 4; k++) {
+    uvec2 q = c + uvec2(k & 1, k >> 1);
+    uint h = (q.x * 374761393u) ^ (q.y * 668265263u) ^ seed;
+    h = (h ^ (h >> 13u)) * 1274126177u; h ^= h >> 16u;
+    float angle = float(h) / 4294967296.0 * 6.283185307179586;
+    vec2 d = f - vec2(float(k & 1), float(k >> 1));
+    v[k] = cos(angle) * d.x + sin(angle) * d.y;
+  }
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  return mix(mix(v[0], v[1], u.x), mix(v[2], v[3], u.x), u.y) * 1.4;
+}
+float shoreHeightOffset(vec2 world, float h, float slope, float cell) {
+  float reach = slope * cell * ${SHORE_DETAIL_REACH.toFixed(2)};
+  if (abs(h) >= reach) return 0.0;
+  float rough = clamp(0.15 + 0.6 * smoothstep(0.03, 0.22, slope) + 0.45 * shoreNoise(world / (cell * ${STRETCH.toFixed(1)}), ${STRETCH_SEED}u), 0.08, 1.0);
+  float sum = 0.0;
+${OCTAVES.map(([wavelength, amplitude], k) => {
+  const c = Math.cos(FRACTAL_ROTATIONS[k]).toPrecision(9),
+    s = Math.sin(FRACTAL_ROTATIONS[k]).toPrecision(9);
+  return `  sum += ${amplitude.toFixed(2)} * shoreNoise(vec2(world.x * ${c} - world.y * ${s}, world.x * ${s} + world.y * ${c}) / (${wavelength.toFixed(1)} * cell), ${OCTAVE_SEED * (k + 1)}u);`;
+}).join('\n')}
+  return slope * cell * rough * sum * smoothstep(0.0, 1.0, 1.0 - abs(h) / reach);
+}`;
 
 const vec4 = (index: 0 | 1): string => `vec4(${OCTAVES.map(o => o[index].toFixed(2)).join(', ')})`;
 /** The same offset for a fragment (`s`: height and gradient). Octaves under two pixels fade out, as in `detail`. */

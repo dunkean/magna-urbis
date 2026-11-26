@@ -7,7 +7,7 @@
  * picture is drawn squeezed instead: at the plan distance d from the centreline, the surface shows the picture of the
  * distance k * d, k = sqrt(1 + s^2), so the road keeps its width measured on the surface. The squeeze is whole over the
  * road and its margin, and the picture eases back to its place over a bank. It is evaluated per pixel, whatever the mesh,
- * by the terrain shaders of both views: the tilted map (render/world/terrainShader.ts) and the separate 3D view
+ * by the terrain shaders of the tilted map (render/world/terrainShader.ts, V2) and of City Bench's separate 3D view
  * (ui/view3d/gl/shaders.ts).
  *
  * `RoadSqueeze` is the field: built once per roads and relief, sampled once onto the nodes of a texture

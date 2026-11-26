@@ -7,7 +7,7 @@ import { isKinded } from './townbridges';
 import type { World, LandArea, LandKind, Farmstead, PolyH } from '../gen/types';
 import { farmRidges } from './farms';
 import { fieldBoundaryStyle, fieldHedges, fieldHedgeStyle } from './hedges';
-import { furrowDegrees, furrowOffset, furrowSpacing, holdingTone } from './furrows';
+import { furrowDegrees, furrowStripe, holdingTone } from './furrows';
 import type { Vec2 } from '../gen/core/geom';
 import type { RenderColors } from './customColors';
 import { type Palette, ruralInk } from './styles';
@@ -132,11 +132,12 @@ function patterns(world: Pick<World, 'options' | 'mapSize' | 'landuse'> & { seed
     if (a.kind !== 'field' || a.stripAngle === undefined) continue;
     seen.add(furrowDegrees(a.stripAngle));
   }
-  const sp = furrowSpacing(world.mapSize);
+  // The pattern's axes are the stripe's (rotate(deg)): along x, the lines at y = offset modulo the period.
+  const { period: sp, offset } = furrowStripe(world.mapSize, 0, 0);
   const orchardAngles = new Set((world.landuse?.areas ?? []).filter(a => a.kind === 'orchard').map(a => furrowDegrees(a.stripAngle ?? 0)));
   for (const deg of orchardAngles) out.push(`<pattern id="p-orchard-${deg}" href="#p-orchard" xlink:href="#p-orchard" patternTransform="rotate(${deg})"/>`);
   for (const deg of seen) {
-    pat(`p-fur-${deg}`, 40, sp, `<path d="M0 ${f1(furrowOffset(world.mapSize))}H40" stroke="${pal.furrow}" ${svgMapStroke(MAP_STROKES.furrow, scale)} opacity="${pal.furrowAlpha}"/>`, ` patternTransform="rotate(${deg})"`);
+    pat(`p-fur-${deg}`, 40, sp, `<path d="M0 ${f1(offset)}H40" stroke="${pal.furrow}" ${svgMapStroke(MAP_STROKES.furrow, scale)} opacity="${pal.furrowAlpha}"/>`, ` patternTransform="rotate(${deg})"`);
   }
   return `<defs>${out.join('')}</defs>`;
 }
@@ -378,7 +379,7 @@ export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgB
     }
     out += '</g>';
   }
-  if (world.landuse) out += ruralDetailsSvg(world.landuse, pal, world.options.culture);
+  if (world.landuse) out += ruralDetailsSvg(world.landuse, pal);
   for (const k of layers.roads ? kinds : []) {
     const d = by(k);
     if (!d) continue;

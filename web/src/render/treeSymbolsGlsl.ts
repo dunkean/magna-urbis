@@ -9,6 +9,14 @@ export const TREE_SYMBOL_SIZE = 128,
 /** Keep the engraved crowns legible as individual marks instead of a nearly solid canopy. */
 export const TREE_SYMBOL_DENSITY = 0.5,
   TREE_SYMBOL_LIGHT_DENSITY = 0.3;
+/** Drawn reach of a symbol from its centre, as a share of its sprite half-side (`ext`, 10 glyph units): the engraved
+ * crown (about 6.5 units) and its cast shadow (1.3 units, canopy.ts paintEngraved). A symbol is rooted only that far
+ * inside the forest land of the occupation, so its whole crown lies on the woods: the overlay keeps its copy of the land
+ * outside them (treeSymbols.ts punchWoods) and the ink water above the ground; a crown overhanging either was cut along
+ * a straight land-use edge or covered by the river band. */
+export const TREE_SYMBOL_REACH = 0.8,
+  /** Largest sprite half-side (m): `ext` = 10 r with r at most 1.2. */
+  TREE_SYMBOL_EXT_MAX = 12;
 /**
  * Map program, mode 0 with the paper tree variant (uForestBrushes 1): `treeWash` multiplies the wash of the woods into
  * the ground colour (the shade they cast on the open land around is the overlay's), `treeSymbols` returns the premultiplied symbols of the
@@ -24,6 +32,27 @@ export const TREE_SYMBOL_DENSITY = 0.5,
  */
 export const TREE_SYMBOLS_GLSL = `
 uniform vec4 uTreeWash;uniform vec4 uTreeSeason;uniform vec4 uTreeSpecies;uniform int uHasLandBackdrop;
+// The date on the lit land (seasonPalette.ts mapLandSeason): the tint of the open ground with the calendar's low-ground
+// snow in a, and the snow terms of the date at sea level (date and warm-season temperatures, supply divisor, precipitation).
+uniform vec4 uLandTint;uniform vec4 uLandSnow;
+float landSnowHash(ivec2 p,uint salt){uvec2 q=uvec2(p);uint h=(q.x*374761393u)^(q.y*668265263u)^salt;h=(h^(h>>13u))*1274126177u;h^=h>>16u;return float(h>>8u)/16777216.;}
+float landSnowOctave(vec2 q,uint salt){
+  vec2 i=floor(q),u=q-i;u=u*u*(3.-2.*u);ivec2 c=ivec2(i);
+  return mix(mix(landSnowHash(c,salt),landSnowHash(c+ivec2(1,0),salt),u.x),mix(landSnowHash(c+ivec2(0,1),salt),landSnowHash(c+ivec2(1,1),salt),u.x),u.y);
+}
+// Smooth ramp from a to b, also downwards (a > b).
+float landRamp(float a,float b,float x){float t=clamp((x-a)/(b-a),0.,1.);return t*t*(3.-2.*t);}
+// The summer sheet of the lit land at the date of the map, as the overlay's canvas copy lays it (v1Landscape.ts
+// seasonLand): the tint of the open ground, then the snow of the altitude h, ragged near its line.
+vec3 landSeason(vec3 lit,vec2 world,float h){
+  vec2 g=(world/uMapW*512.-.5)/14.;
+  float ragged=min(max(0.,max(h,0.)+260.*(.65*landSnowOctave(g,0x2f6b1d35u)+.35*landSnowOctave(g*3.1,0x7c15a4e9u)-.5)),max(uMaxH,1.));
+  float lapse=.0065*ragged;
+  float supply=landRamp(.12,.7,uLandSnow.w/max(120.,uLandSnow.z-20.*lapse));
+  float cover=max(uLandTint.a,landRamp(.405,.465,max(landRamp(2.,-5.,uLandSnow.x-lapse),landRamp(2.5,-2.5,uLandSnow.y-lapse))*supply));
+  // .86: LAND_SNOW_ALPHA (seasonPalette.ts).
+  return mix(lit*uLandTint.rgb,vec3(246.,247.,243.)/255.,.86*cover);
+}
 // Occupation classes that root no tree symbol: orchards, gardens, construction, lanes, road corridors, covered ways.
 bool treeSymbolBarred(int cls){return cls==4||cls==5||cls==8||cls==9||cls==11||cls==12;}
 vec3 treeWash(vec3 color,vec2 world){
@@ -61,8 +90,8 @@ vec4 treeSymbols(vec2 world){
   // From .3 CSS pixels per metre, as the overlay's woods (lod.ts NEAR_SCALE).
   float vis=1.-smoothstep(1./.32,1./.25,uPx*uDpr);
   bool light=uQuality>0;const float s=6.;
-  // Nothing reaches a fragment farther than 2.15 cells from the woods.
-  if(vis<=0.||groundOccupation(world).y<-2.2*s)return vec4(0.);
+  // Every crown lies inside the woods: only the transparent margin of a sprite reaches past their edge.
+  if(vis<=0.||groundOccupation(world).y<-${((1 - TREE_SYMBOL_REACH) * TREE_SYMBOL_EXT_MAX).toFixed(1)})return vec4(0.);
   ivec2 cell=ivec2(floor(world/s));vec4 acc=vec4(0.);uint seed=uMaterialSeed^0x51ed270bu;
   for(int j=-2;j<=2;j++)for(int i=-2;i<=2;i++){
     ivec2 k=cell+ivec2(i,j);
@@ -75,8 +104,10 @@ vec4 treeSymbols(vec2 world){
     uint h2=groundHash(ivec3(k,1202),seed);
     // Both tiers keep the same nested seeded stand; rejected marks cost no texture read.
     if(forestU8(h2,0u)>(light?${TREE_SYMBOL_LIGHT_DENSITY}:${TREE_SYMBOL_DENSITY}))continue;
+    // Rooted only where the whole crown lies on forest land: never cut by the land-use edge of the overlay, never under
+    // the river band, the roads or the clearings, whose ground the forest distance already leaves out.
     vec3 o=groundOccupation(c);
-    if(o.y<=0.||treeSymbolBarred(int(o.z))||forestClearingAt(c)>=0.)continue;
+    if(o.y<${TREE_SYMBOL_REACH}*ext||treeSymbolBarred(int(o.z))||forestClearingAt(c)>=0.)continue;
     // Stands thin toward the edge and open in the glades of the satellite stand mosaic.
     if(forestPatchThreshold(c).x>=mix(.78,.95,smoothstep(0.,24.,o.y)))continue;
     bool needle=uTreeSpecies.x>0.&&forestU8(h2,8u)<clamp(uTreeSpecies.x+.9*forestGlade(c).x,0.,1.);

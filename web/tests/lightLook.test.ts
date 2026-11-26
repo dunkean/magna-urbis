@@ -13,6 +13,12 @@ import { cityOverlayLandKinds, cityCountrysideCanvasOptions } from '../src/rende
 import { presetComposition } from '../src/render/composition';
 import { resolveAppearance } from '../src/render/appearanceRecipe';
 import { PALETTES } from '../src/render/styles';
+import type { PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
+import { city3dBuildings } from '../src/render/city3d/display';
+import { BlockGrouping, TownAltitudes, blockHidden, blockLevel, blockPart, lookBoxing, worldPaint, worldSeat } from '../src/render/world/buildingsBlocks';
+import { buildingBatches } from '../src/render/world/buildingsMesh';
+import { TerrainHeights } from '../src/render/world/heights';
+import { ROOF_MODES } from '../src/render/roofMode';
 
 const lookOf = (style: TerrainLook['style']): TerrainLook => ({
   style,
@@ -41,13 +47,62 @@ afterEach(() => {
 });
 
 describe('paper map tree symbols on the ground', () => {
-  it('draw in the shaded paper ground at both qualities, on the brush atlas variant, never on other modes', () => {
+  it('draw in the full shaded paper ground, on the brush atlas variant, never in the light one or on other modes', () => {
     const paper = { ...lookOf('parchment'), groundCover: false, treeSymbols: { palette: PALETTES.parchment, conifer: 0.14, palm: 0, larch: 0 } };
     setDisplayQualityPreference('full');
     expect(lookVariant(paper, false)).toEqual({ mode: 0, v2: 0, forest: false, brushes: true });
-    setDisplayAppearanceQuality('light');
-    expect(lookVariant(paper, false)).toEqual({ mode: 0, v2: 0, forest: false, brushes: true });
     expect(lookVariant({ ...paper, style: 'copernicus' }, false).brushes).toBe(false);
+    setDisplayAppearanceQuality('light');
+    expect(lookVariant(paper, false)).toEqual({ mode: 0, v2: 0, forest: false, brushes: false });
+    expect(lookVariant(captureLook(paper, false), false).brushes).toBe(true);
+  });
+});
+
+describe('fast look buildings', () => {
+  it('draws every building the full look draws, elven tree dwellings with their own mesh', () => {
+    const ring = Array.from({ length: 16 }, (_, i) => ({ x: 300 + 6 * Math.cos((i * Math.PI) / 8), y: 300 + 6 * Math.sin((i * Math.PI) / 8) })),
+      footprint = [{ outer: ring, holes: [] }];
+    const dwelling = {
+      id: 'elven-1',
+      parcel_id: 'elven-1',
+      function: 'domestic',
+      culture: { culture: 'elven', pack: '', mode: 'inspired', borrowing: null },
+      recipe_id: 'silhouette',
+      variant_id: '',
+      ground_z_m: 0,
+      footprint,
+      roof_footprint: footprint,
+      volumes: [],
+      structural_features: [],
+      transform: { origin: { x: 0, y: 0 }, orientation_deg: 0 },
+      programme: {
+        role: 'dwelling.house',
+        massing: [{ floors: 1, eave_m: 11.5, rise_m: 5.7, roof: 'dome', ridges: [], cover: 'turf', wall: 'wood', volumes: [{ ring: ring.map(p => [p.x, p.y]), eave_m: 11.5, rise_m: 5.7, roof: 'dome', ridges: [], form: 'tree', tree_seed: 'elven-1' }] }],
+      },
+    } as unknown as PlacedBuilding;
+    const scene = city3dBuildings({ schema_version: '1', generator_version: 'silhouette', buildings: [dwelling], refusals: [], open_spaces: [] }, { heightAt: () => 0 })!,
+      heights = new TerrainHeights(new Float32Array(16 * 16), 16, 4000, 0, 1),
+      grouping = new BlockGrouping(scene, heights, 1);
+    expect(grouping.step(Infinity)).toBe(true);
+    const tree = scene.buildings.find(b => b.volumes?.some(v => v.envelope === 'open'))!;
+    expect(tree).toBeDefined();
+    const block = grouping.blocks.find(b => b.buildings.includes(tree))!,
+      seat = worldSeat(heights, 1),
+      hidden = blockHidden(block);
+    for (const roof of ROOF_MODES) {
+      const paint = worldPaint(scene, { style: 'cartographic', diagnostic: 'none', roof }, new TownAltitudes()),
+        own = roof === 'minimal' ? 0 : buildingBatches([tree], block.origin, paint, false, undefined, undefined, seat).reduce((n, batch) => n + batch.data.length, 0);
+      for (const pixels of [40, 8, 4, 2, 0.5]) {
+        const full = blockLevel(block, pixels, lookBoxing(roof, false)),
+          light = blockLevel(block, pixels, lookBoxing(roof, true));
+        expect(light === hidden).toBe(full === hidden);
+        if (light === hidden) continue;
+        const drawn = blockPart(block, light, paint, seat, 0, block.buildings.length).length;
+        expect(drawn).toBeGreaterThan(0);
+        // At the box level a tree dwelling keeps its own mesh, never a solid column.
+        if (light === 2) expect(drawn).toBeGreaterThanOrEqual(own);
+      }
+    }
   });
 });
 
@@ -59,13 +114,15 @@ describe('flat light look policy', () => {
       expect(cityCountrysideCanvasOptions(appearance, 4000).urbanPlan()).toBe(false);
     }
   });
-  it('keeps the satellite terrain and vegetation passes in the fast preset', () => {
+  it('keeps the satellite material and water pass in the fast preset, without forest crowns or brushes', () => {
     const look = lookOf('render-v2');
     setDisplayQualityPreference('full');
     const full = lookVariant(look, true);
+    expect(full.forest).toBe(true);
     setDisplayAppearanceQuality('light');
-    expect(lookVariant(look, true)).toEqual(full);
+    expect(lookVariant(look, true)).toEqual({ ...full, forest: false, brushes: false });
     expect(mapPasses(lookVariant(look, true))).toEqual(['aux', 'map']);
+    expect(lookVariant(captureLook(look, false), true)).toEqual(full);
   });
   it('keeps satellite ground uniforms identical across full and fast quality', () => {
     const values = new Map<string, unknown>(),

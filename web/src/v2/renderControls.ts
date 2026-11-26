@@ -33,8 +33,8 @@ import { worldCapabilities } from './nativeProducts';
 import { markStyleCustomized } from '../ui/renderStyleCustomization';
 import { applySceneClock } from './sceneClock';
 import { setDisplayQualityPreference } from '../render/displayQuality';
-import { getVectorEnginePreference, onVectorEngineChange, setVectorEnginePreference } from '../render/vectorEngine';
-import type { VectorEngineChoice } from '../render/vectorEngine';
+import { getVectorEnginePreference, onVectorEngineChange, setVectorEnginePreference, vectorEngineWarning } from '../render/vectorEngine';
+import type { VectorEngineChoice, VectorEngineWarning } from '../render/vectorEngine';
 
 export interface RenderControlBindings {
   getSettings(): V2Settings;
@@ -68,6 +68,21 @@ const ui = {
   vectorGpu: copy('GPU', 'GPU'),
   // Not plain "CPU": that key is already registered (compute choice) with a different French label.
   vectorCpu: copy('CPU (processor)', 'Processeur'),
+};
+/** The note under the select while a forced choice is wrong here (vectorEngineWarning). */
+const vectorWarningText: Record<VectorEngineWarning, string> = {
+  'gpu-unavailable': copy(
+    'The graphics card path is not available on this page (no hardware WebGL2, lost context, or turned off after a failure): the processor draws the map instead. Auto is recommended.',
+    'Le moteur de la carte graphique n’est pas disponible sur cette page (pas de WebGL2 matériel, contexte perdu, ou coupé après une erreur) : le processeur dessine la carte à la place. Auto est recommandé.',
+  ),
+  'gpu-software': copy(
+    'This browser draws WebGL2 in software, without the graphics card: the GPU engine still draws the map, but it may be very slow. Auto is recommended: it uses the processor here.',
+    'Ce navigateur dessine WebGL2 en logiciel, sans la carte graphique : le moteur GPU dessine encore la carte, mais peut être très lent. Auto est recommandé : il utilise le processeur ici.',
+  ),
+  'cpu-forced': copy(
+    'The processor engine is the slow fallback for machines without a usable graphics card, and the graphics card works here. Auto is recommended.',
+    'Le moteur processeur est le recours lent des machines sans carte graphique utilisable, et la carte graphique fonctionne ici. Auto est recommandé.',
+  ),
 };
 /** Browser preference, not a render setting: it never enters the saved recipe. */
 const vectorEngineField: ParameterField = {
@@ -223,11 +238,24 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
   {
     const body = document.createElement('div');
     levels.general.advanced.append(body);
+    const warning = document.createElement('small');
+    warning.className = 'v2-vector-engine-warning';
+    warning.style.cssText = NOTE_STYLE;
+    const showWarning = (): void => {
+      const reason = vectorEngineWarning();
+      warning.hidden = !reason;
+      setText(warning, reason ? vectorWarningText[reason] : '');
+    };
+    // Setting the preference notifies the listener below, which refreshes the note.
     const engineForm = mountParameterForm(body, [vectorEngineField], { getValue: () => getVectorEnginePreference(), setValue: (_path, value) => setVectorEnginePreference(value as VectorEngineChoice) });
+    body.append(warning);
     forms.push(engineForm);
-    // The engine can also change by itself (a demotion) or from another control: keep the select true.
-    const offEngine = onVectorEngineChange(() => engineForm.sync());
-    unlistenEngine = offEngine;
+    showWarning();
+    // The engine can also change by itself (a demotion) or from another control: keep the select and its note true.
+    unlistenEngine = onVectorEngineChange(() => {
+      engineForm.sync();
+      showWarning();
+    });
   }
   const forestLabel = copy('Satellite trees', 'Arbres satellite');
   registerMessages(renderControlMessages);

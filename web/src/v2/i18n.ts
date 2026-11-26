@@ -6,6 +6,7 @@ import { onUnitsChange } from './units';
 import { editingMessages } from './editingMessages';
 import { roadEditorMessages } from './roadEditorMessages';
 import { isolatedPlaceMessages } from './isolatedPlaceMessages';
+import { activityKindNames, urbanActivityNames, urbanCultureNames } from './urbanLabelNames';
 
 export type { Language } from './languages';
 export { LANGUAGES } from './languages';
@@ -44,6 +45,8 @@ export function registeredEnglishMessages(): string[] {
 registerMessages(Object.fromEntries(editingMessages.map(row => [row[0], { en: row[0], fr: row[1] }])));
 registerMessages(Object.fromEntries(roadEditorMessages.map(row => [row[0], { en: row[0], fr: row[1] }])));
 registerMessages(Object.fromEntries(isolatedPlaceMessages.map(row => [row[0], { en: row[0], fr: row[1] }])));
+// Activity-site and culture names: the Places panel, the entity sheet and the urban controls read the same tables.
+registerMessages(Object.fromEntries([...Object.values(urbanActivityNames), ...Object.values(activityKindNames), ...Object.values(urbanCultureNames)].map(([en, fr]) => [en, { en, fr }])));
 registerMessages({
   'Magna Urbis: Fantasy & Historical Map and City Generator': { en: 'Magna Urbis: Fantasy & Historical Map and City Generator', fr: 'Magna Urbis : générateur de cartes et de villes fantasy et historiques' },
   'Free fantasy and historical map generator in your browser: regions, rivers and towns down to streets, parcels and buildings, in 2D and 3D, across many cultures.': {

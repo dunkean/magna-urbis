@@ -142,7 +142,8 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
       slider.className = 'parameter-slider';
       slider.min = String(field.min);
       slider.max = String(field.max);
-      slider.step = String((!field.toInput && levelStep(field)) || (field.step ?? 'any'));
+      // Code levels are in the control's units (after toInput), like the slider: every position is one shared level.
+      slider.step = String(levelStep(field) || (field.step ?? 'any'));
       slider.id = `${input.id}-slider`;
       slider.setAttribute('aria-label', field.label);
       slider.dataset.sliderPath = field.path;

@@ -311,6 +311,7 @@ const atlas = derive('atlas', 'Atlas', {
     ],
     bandFraction: 0.016,
   },
+  waterEdge: '#4f8fc2',
   ripple: '#e9f4fb',
   rippleOpacity: [0, 0, 0, 0],
   riverEdge: '#4a86b3',
@@ -1042,8 +1043,8 @@ const minimal = derive('minimal', 'Minimal', {
   seaFill: '#bfd9e8',
   lakeFill: '#bfd9e8',
   waterEdge: '#9fc3d8',
-  water: waterRamp('#9fc3d8', '#bfd9e8'),
-  riverFill: '#a9cde2',
+  // Rivers are slightly brighter than the shore line: the ramp starts at the river colour, so a mouth joins without a seam.
+  water: waterRamp('#a9cde2', '#bfd9e8'),
   riverEdge: '#a9cde2',
   shade: 0.3,
   hatch: 0,
@@ -1064,9 +1065,6 @@ const minimal = derive('minimal', 'Minimal', {
   urban: { street: '#ffffff', streetEdge: '#cfc8bb', yard: '#eee6d8', mass: '#cdb99b', massEdge: '#725c47', landmark: '#b28755', landmarkEdge: '#624b35', wall: '#6f655b', wallFill: '#6f655b', shadow: null, lit: null },
   lab: { town: '#4a443d', halo: '#f4f1ea', water: '#4a443d', wood: '#4a443d' },
 });
-
-// Rivers are slightly brighter than the shore; the generic derivation uses the shore token.
-minimal.riverFill = '#a9cde2';
 
 export const PALETTES: Record<MapStyle, Palette> = { minimal, parchment: PARCHMENT, atlas, watabou, engraving, cadastre, blueprint, illuminated, topographic, white, night };
 

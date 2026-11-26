@@ -1,5 +1,5 @@
 /** A town sheet baked at fixed physical resolutions: a draft, shown as soon as it is complete, then the fine sheet, which
- * replaces it town by town. Zooming only samples retained tiles. The map drape waits for the draft alone: while a source
+ * replaces it town by town (the GPU layer then frees the draft). Zooming only samples retained tiles. The map drape waits for the draft alone: while a source
  * of it is not ready, no tile of any layer is shown on a tilted map. */
 import type { Rect4, View } from '../../view';
 import type { LiveFrame, LiveLayer } from '../../live/contract';
@@ -55,6 +55,8 @@ export function townRasterLayout(bounds: readonly Rect4[]): { rect: Rect4; scale
 export class FixedTownRaster {
   key = '';
   tiles: TownRasterTile[] = [];
+  /** Towns whose drafts were dropped (retire): only their fine sheet remains. */
+  private readonly retired = new Set<number>();
   private job?: { tile: TownRasterTile; steps: Generator<void, void> };
   constructor(private canvas: (w: number, h: number) => Surface | undefined) {}
   ensure(key: string, bounds: readonly Rect4[]): void {
@@ -70,11 +72,27 @@ export class FixedTownRaster {
   get ready(): boolean {
     return this.tiles.every(t => t.fine || t.ready);
   }
+  /** The town has only its fine sheet left: it is shown by it alone, even while a tile of it is not `there`. */
+  isRetired(town: number): boolean {
+    return this.retired.has(town);
+  }
   /** The tiles that make the picture: of a town, its fine sheet once every tile of it is `there`, else its draft. */
   shown(there: (tile: TownRasterTile) => boolean): TownRasterTile[] {
     const fine = new Set(this.tiles.filter(t => t.fine).map(t => t.town));
-    for (const t of this.tiles) if (t.fine && !there(t)) fine.delete(t.town);
+    for (const t of this.tiles) if (t.fine && !there(t) && !this.retired.has(t.town)) fine.delete(t.town);
     return this.tiles.filter(t => t.fine === fine.has(t.town) && there(t));
+  }
+  /** Drops the drafts of a town whose fine sheet is painted, canvases included: a draft is never shown again once its
+   * fine sheet replaced it, and holds up to DRAFT_PIXELS of canvas (and of texture in the GPU layer). False when the
+   * fine sheet is not complete (or the town has none). The drafts come first in `tiles`, so none is being painted then. */
+  retire(town: number): boolean {
+    if (this.retired.has(town)) return true;
+    const fine = this.tiles.filter(t => t.town === town && t.fine);
+    if (!fine.length || !fine.every(t => t.ready)) return false;
+    for (const t of this.tiles) if (t.town === town && !t.fine) t.canvas.width = t.canvas.height = 1;
+    this.tiles = this.tiles.filter(t => t.town !== town || t.fine);
+    this.retired.add(town);
+    return true;
   }
   work(paint: (ctx: CanvasRenderingContext2D, tile: TownRasterTile) => Generator<void, void>, budget = Infinity): boolean {
     const start = performance.now();
@@ -109,6 +127,7 @@ export class FixedTownRaster {
     this.job = undefined;
     for (const t of this.tiles) t.canvas.width = t.canvas.height = 1;
     this.tiles = [];
+    this.retired.clear();
     this.key = '';
   }
 }
@@ -143,7 +162,8 @@ export function fixedTownRasterLayer(gl: WebGL2RenderingContext, raster: FixedTo
     vao = null;
     key = '';
   };
-  const ready = (): boolean => key === raster.key && !!program && raster.tiles.every(t => t.fine || textures.has(t));
+  /** Every town can be shown: its tiles uploaded, but for the fine sheet of a town that still has its draft. */
+  const ready = (): boolean => key === raster.key && !!program && raster.tiles.every(t => textures.has(t) || (t.fine && !raster.isRetired(t.town)));
   const stats = { drawCalls: 0, triangles: 0, ms: 0 };
   return {
     name: 'city',
@@ -186,6 +206,13 @@ export function fixedTownRasterLayer(gl: WebGL2RenderingContext, raster: FixedTo
             shown = next;
             revision++;
           }
+          // A town now shown by its fine sheet frees its drafts, canvases and textures.
+          if (tile.fine && next.includes(tile) && raster.retire(tile.town))
+            for (const [t, draft] of textures)
+              if (t.town === tile.town && !t.fine) {
+                gl.deleteTexture(draft);
+                textures.delete(t);
+              }
           return true;
         }
       return more || !ready();

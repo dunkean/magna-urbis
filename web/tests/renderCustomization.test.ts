@@ -10,9 +10,10 @@ import { terrainCacheKey } from '../src/v2/engine';
 import { appearanceDisplayOptions, resolveSettingsAppearance, svgOptionsForDisplay } from '../src/v2/appearance';
 import { sameDisplay } from '../src/v2/displayState';
 import { readRenderColorsQuery, writeRenderColorsQuery } from '../src/ui/benchRenderColors';
-import { v2DisplayForest } from '../src/v2/displayForest';
+import { v2DisplayForest, v2DisplayForestAsync } from '../src/v2/displayForest';
 import type { World } from '../src/gen/types';
 import { displayWorld } from '../src/render/displayWorld';
+import { presetComposition } from '../src/render/composition';
 
 describe('shared render customization', () => {
   it('hides buildings independently of streets, parcels and gardens without changing the retained city', () => {
@@ -56,7 +57,11 @@ describe('shared render customization', () => {
   it('persists all tokens and visibility in V2 projects and exports without changing the terrain identity', () => {
     const settings = defaultSettings(),
       key = terrainCacheKey(settings);
-    settings.appearance = { style: 'atlas', colors: Object.fromEntries(COLOR_KEYS.map(key => [key, '#12aBcD'])), roads: false, buildings: false, forest: { density: 0.5, clearings: 0.8 } };
+    // Road and building visibility live in the composition (composition.ts applyComposition), which the V2 always renders.
+    const composition = presetComposition('atlas');
+    composition.networks.roads.visible = false;
+    composition.buildings.visible = false;
+    settings.appearance = { style: 'atlas', colors: Object.fromEntries(COLOR_KEYS.map(key => [key, '#12aBcD'])), composition, forest: { density: 0.5, clearings: 0.8 } };
     expect(() => validateSettings(settings)).not.toThrow();
     expect(parseProject(serializeProject(settings)).settings.appearance).toEqual(settings.appearance);
     expect(terrainCacheKey(settings)).toBe(key);
@@ -87,7 +92,7 @@ describe('shared render customization', () => {
     expect(supportsRenderColor('river', 'render-v2')).toBe(false);
     expect(supportsRenderColor('contour', 'render-v2')).toBe(true);
   });
-  it('repaints satellite canopy over retained heights and caches it without changing terrain or generation settings', () => {
+  it('repaints satellite canopy over retained heights and caches it without changing terrain or generation settings', async () => {
     const settings = defaultSettings();
     settings.terrain = { forest: { enabled: true, density: 1, clearings: 0.45 } };
     const n = 8,
@@ -97,11 +102,15 @@ describe('shared render customization', () => {
     const before = height.slice(),
       recipe = structuredClone(settings.terrain),
       key = terrainCacheKey(settings);
-    settings.appearance = { style: 'atlas', terrainStyle: 'render-v2', forest: { density: 0.3 } };
-    const field = v2DisplayForest(world, settings, resolveSettingsAppearance(settings, undefined, 'view2d'));
+    // The V2 renders a composition (d1865677): the satellite one carries the procedural canopy.
+    const satellite = presetComposition('satellite');
+    settings.appearance = { style: 'atlas', composition: satellite, forest: { density: 0.3 } };
+    // The field is built in Rust (native or WASM), hence asynchronously; the synchronous accessor then serves the cached one.
+    const field = await v2DisplayForestAsync(world, settings, resolveSettingsAppearance(settings, undefined, 'view2d'));
     expect(field?.clearingProfile).toBe('progressive');
     expect(v2DisplayForest(world, settings, resolveSettingsAppearance(settings, undefined, 'view2d'))).toBe(field);
-    settings.appearance.forest = { enabled: false };
+    // Switching the canopy off is a vegetation look of the composition.
+    settings.appearance.composition = { ...satellite, vegetation: { ...satellite.vegetation, look: 'none' } };
     expect(v2DisplayForest(world, settings, resolveSettingsAppearance(settings, undefined, 'view2d'))).toBeUndefined();
     expect(height).toEqual(before);
     expect(settings.terrain).toEqual(recipe);

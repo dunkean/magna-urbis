@@ -68,6 +68,34 @@ export class BuildingBlockCache {
     this.blocks = blocks;
     this.slots = blocks.map(block => ({ block, levels: new Array<BuildingLevel | undefined>(block.levels).fill(undefined), need: 0, depth: Infinity, seen: -1, yardLevel: 0 }));
   }
+  /** setBlocks for the blocks of a new scene of the same town, relief and geometry, taking the built levels of
+   * `previous`'s blocks that hold the same buildings (same objects, same order): only the blocks a local edit changed
+   * are built again. `previous` is cleared (what it keeps is not adopted). Returns the blocks kept. */
+  adoptBlocks(blocks: BuildingBlock[], previous: BuildingBlockCache): number {
+    const held = new Map<string, BuildingSlot>();
+    for (const slot of previous.slots) held.set(`${slot.block.origin}${slot.block.yard ? '/yard' : ''}`, slot);
+    this.setBlocks(blocks);
+    let kept = 0;
+    for (const slot of this.slots) {
+      const was = held.get(`${slot.block.origin}${slot.block.yard ? '/yard' : ''}`),
+        a = was?.block.buildings,
+        b = slot.block.buildings;
+      if (!was || !a || a.length !== b.length || was.levels.length !== slot.levels.length || a.some((building, i) => building !== b[i])) continue;
+      for (let i = 0; i < was.levels.length; i++) {
+        const level = was.levels[i];
+        if (!level) continue;
+        slot.levels[i] = level;
+        was.levels[i] = undefined;
+        previous.bytes -= level.bytes;
+        this.bytes += level.bytes;
+      }
+      slot.planGround = was.planGround;
+      slot.yardLevel = was.yardLevel;
+      kept++;
+    }
+    previous.clear();
+    return kept;
+  }
   clear(): void {
     for (const slot of this.slots) for (let i = 0; i < slot.levels.length; i++) this.dropLevel(slot, i);
     this.slots = [];
@@ -160,10 +188,14 @@ export class BuildingBlockCache {
     return true;
   };
 
+  /** The GPU bytes this cache may hold. Extended depth retains more detail between views; an explicit memory limit
+   * still takes precedence. */
+  budget(): number {
+    return this.budgetBytes() ?? BUDGET_BYTES * Math.min(4, this.depth());
+  }
   /** Over budget: the levels drawn least recently go, never one of the last frame. */
   private readonly evict = (tick: number): void => {
-    // Extended depth retains more detail between views; an explicit memory limit still takes precedence.
-    const budget = this.budgetBytes() ?? BUDGET_BYTES * Math.min(4, this.depth());
+    const budget = this.budget();
     if (this.bytes <= budget) return;
     // Most overflows need at most one eviction, or every candidate is still in use. Keep those cases allocation-free.
     let oldest: BuildingSlot | undefined,

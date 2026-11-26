@@ -19,7 +19,7 @@ import { farmPlacedBuildings } from '../farmRoofs';
 import type { Building3dVisual } from '../urbanBuildingGeometry';
 import { city3dBridges } from './bridges';
 import { groundShapePads, type GroundShapePad } from '../../ui/urbanGroundShape';
-import { buildingSeats, city3dProjectionScene, city3dScene, type City3dDisplayScene, type City3dSceneOptions } from './scene';
+import { buildingSeats, city3dProjectionScene, city3dScene, drawnKind, type City3dDisplayScene, type City3dKind, type City3dSceneOptions } from './scene';
 import type { SeatGround } from './terrainSeat';
 import type { City3dHeight } from './types';
 import { city3dWalls } from './walls';
@@ -101,32 +101,47 @@ const isTreeDwelling = (b: PlacedBuilding): boolean => {
   return Array.isArray(massing) && massing.some(m => m?.volumes?.some(v => v.form === 'tree'));
 };
 
+/** The display mesh a source building was last given, for a caller that composes the same buildings again on the same
+ * ground (a local edit keeps the objects of the buildings it did not change, v2/localEditIntern.ts). */
+export type City3dReuse = WeakMap<PlacedBuilding, { building: PlacedBuilding; kind: City3dKind; light: boolean }>;
+
 /** city3dBuildings in steps of a few buildings, for a caller that spreads a large town over idle slices: the same
  * buildings, kinds and materials, in the same order. city3dScene decides light tree meshes from the number of tree
  * dwellings it is given; above the threshold the tree dwellings go in steps of more than it, so each step decides as
- * the whole town would. */
-export function* city3dBuildingsSteps(scene: PlacementBatch | NativeBuildingProjectionScene | Parent3dScene | undefined, options: City3dSceneOptions): Generator<void, City3dDisplayScene | undefined> {
+ * the whole town would. `reuse` (the caller's, valid for one ground and options) gives back the meshes of the source
+ * buildings already made, and keeps those made here; light tree dwellings are always made again (their steps count them). */
+export function* city3dBuildingsSteps(scene: PlacementBatch | NativeBuildingProjectionScene | Parent3dScene | undefined, options: City3dSceneOptions, reuse?: City3dReuse): Generator<void, City3dDisplayScene | undefined> {
   if (!scene || 'projection' in scene) return city3dBuildings(scene, options);
   const trees = scene.buildings.filter(isTreeDwelling),
     light = trees.length > LIGHT_TREES_FROM,
     order = new Map(scene.buildings.map((b, i) => [b, i]));
   const chunks: PlacedBuilding[][] = [];
-  const rest = light ? scene.buildings.filter(b => !isTreeDwelling(b)) : scene.buildings;
+  const made: { source: PlacedBuilding; building: PlacedBuilding }[] = [],
+    kinds = { silhouette: 0, compact: 0, detailed: 0 };
+  const reused = (b: PlacedBuilding): boolean => {
+    const hit = reuse?.get(b);
+    if (!hit || hit.light !== light || options.details?.has(b.id)) return false;
+    made.push({ source: b, building: hit.building });
+    kinds[hit.kind]++;
+    return true;
+  };
+  const rest = (light ? scene.buildings.filter(b => !isTreeDwelling(b)) : scene.buildings).filter(b => !reused(b));
   for (let i = 0; i < rest.length; i += BUILDINGS_PER_STEP) chunks.push(rest.slice(i, i + BUILDINGS_PER_STEP));
   if (light) {
     const size = LIGHT_TREES_FROM + 1,
       steps = Math.floor(trees.length / size);
     for (let k = 0; k < steps; k++) chunks.push(trees.slice(k * size, k === steps - 1 ? trees.length : (k + 1) * size));
   }
-  const made: { source: PlacedBuilding; building: PlacedBuilding }[] = [],
-    kinds = { silhouette: 0, compact: 0, detailed: 0 };
   let materials: City3dDisplayScene['materials'];
   for (const chunk of chunks) {
     if (!chunk.length) continue;
     const part = city3dScene({ ...scene, buildings: chunk }, options);
     materials ??= part.materials;
     for (const kind of ['silhouette', 'compact', 'detailed'] as const) kinds[kind] += part.kinds[kind];
-    part.buildings.forEach((building, i) => made.push({ source: chunk[i], building }));
+    part.buildings.forEach((building, i) => {
+      made.push({ source: chunk[i], building });
+      if (reuse && !options.details?.has(chunk[i].id)) reuse.set(chunk[i], { building, kind: drawnKind(chunk[i]), light });
+    });
     yield;
   }
   made.sort((a, b) => order.get(a.source)! - order.get(b.source)!);

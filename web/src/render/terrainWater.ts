@@ -8,6 +8,7 @@ import { freshWaterRamp } from './waterPalette';
 import { waterSampler, waterFunctionGlsl, type WaterStyle } from './waterStyle';
 import { productKey, measureDisplayProduct } from './displayProduct';
 import { floatPyramid } from './floatPyramid';
+import { SHORE_DETAIL_REACH, shoreOffset } from './shoreDetail';
 
 // Compatibility for the Neural Earth material adapter; displayed water uses the style ramp.
 export const RENDER_WATER_SHORE = terrainStyle('render').water.stops[0][1];
@@ -149,8 +150,30 @@ export interface WaterSurface {
   y: number;
   referenceWidth: number;
 }
+/** The resampled spline (`n` pixels over `width` from `x0`, `y0`) with the fractal shore detail of the drawn coastline
+ * (render/shoreDetail.ts) near its zero line: the slope from the neighbouring pixels, the offset only where it is not
+ * zero (1.5 field cells of the line), so the cost follows the length of the coast. */
+function withShoreDetail(surface: Float32Array, n: number, width: number, x0: number, y0: number, fieldCell: number): Float32Array {
+  const refined = surface.slice(),
+    pixel = width / n;
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      const i = y * n + x,
+        h = surface[i];
+      const gx = (surface[y * n + Math.min(n - 1, x + 1)] - surface[y * n + Math.max(0, x - 1)]) / ((Math.min(n - 1, x + 1) - Math.max(0, x - 1)) * pixel),
+        gy = (surface[Math.min(n - 1, y + 1) * n + x] - surface[Math.max(0, y - 1) * n + x]) / ((Math.min(n - 1, y + 1) - Math.max(0, y - 1)) * pixel),
+        slope = Math.hypot(gx, gy);
+      if (Math.abs(h) < slope * fieldCell * SHORE_DETAIL_REACH) refined[i] = h + shoreOffset(x0 + (x + 0.5) * pixel, y0 + (y + 0.5) * pixel, h, slope, fieldCell);
+    }
+  return refined;
+}
 const seaSurfaces = new WeakMap<Float32Array, Map<string, WaterSurface>>();
-export function seaDistanceSurface(data: { height: Float32Array; resolution: number; width: number; x: number; y: number; field?: { data: Float32Array; n: number }; waterSurface?: WaterSurface }, referenceWidth = data.width): WaterSurface {
+/** Distance to the coast (metres, positive at sea) for the sea colours, swell and surf. A coastal field (no cave, no
+ * floor) measures it to the drawn, refined coastline. */
+export function seaDistanceSurface(
+  data: { height: Float32Array; resolution: number; width: number; x: number; y: number; field?: { data: Float32Array; n: number; floor?: number; cave?: ArrayLike<number> }; waterSurface?: WaterSurface },
+  referenceWidth = data.width,
+): WaterSurface {
   if (data.waterSurface) return data.waterSurface;
   const field = data.field ?? { data: data.height, n: data.resolution };
   const key = productKey(field.n, data.x, data.y, data.width, referenceWidth);
@@ -168,10 +191,11 @@ export function seaDistanceSurface(data: { height: Float32Array; resolution: num
     const land = field.data[0] > 0;
     let uniform = true;
     for (let i = 0; i < field.data.length && uniform; i++) uniform = land ? field.data[i] > 0 : field.data[i] < 0;
-    const distance = uniform
-      ? new Float32Array(n * n).fill(land ? -referenceWidth : referenceWidth)
-      : coastDistances(resampleTerrainSurface({ w: field.n, data: field.data }, n), n, data.width / n, referenceWidth);
-    return { distance, n, width: data.width, x: data.x, y: data.y, referenceWidth };
+    if (uniform) return { distance: new Float32Array(n * n).fill(land ? -referenceWidth : referenceWidth), n, width: data.width, x: data.x, y: data.y, referenceWidth };
+    const spline = resampleTerrainSurface({ w: field.n, data: field.data }, n),
+      coastal = data.field && !data.field.cave?.length && !((data.field.floor ?? 0) > 0),
+      surface = coastal ? withShoreDetail(spline, n, data.width, data.x, data.y, data.width / field.n) : spline;
+    return { distance: coastDistances(surface, n, data.width / n, referenceWidth), n, width: data.width, x: data.x, y: data.y, referenceWidth };
   });
   entries.set(key, result);
   return result;

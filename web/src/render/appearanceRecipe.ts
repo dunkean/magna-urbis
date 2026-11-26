@@ -427,18 +427,8 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
       composition.vegetation.crownDetail,
     ),
     terrainBase: key(ground.style, ground.layers.relief, groundTraits.fantasy ? vegetation.fantasy : 0),
-    water: key(
-      ground.style,
-      ground.season,
-      ground.calendar,
-      pick(palette.applicableColors, ['waterShore', 'waterDeep', 'river']),
-      ground.layers.water,
-      ground.lakes,
-      ground.oxbows,
-      composition.networks.water,
-      diagnostic,
-      diagnostic === 'res-potential' ? (a?.resourcePotential ?? 'arable') : null,
-    ),
+    // The date reaches the water pass through its drawn regime only (passKeys, waterRegime.ts drawnWaterKey).
+    water: key(ground.style, pick(palette.applicableColors, ['waterShore', 'waterDeep', 'river']), ground.layers.water, ground.lakes, ground.oxbows, composition.networks.water, diagnostic, diagnostic === 'res-potential' ? (a?.resourcePotential ?? 'arable') : null),
     forest: key(vegetation.forest, groundTraits.forestClearingProfile, groundTraits.forestBrushes, ground.layers.water),
     cartography: key(
       mapStyle,

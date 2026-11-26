@@ -7,7 +7,8 @@
 import { isUnderdarkBiome } from '../../gen/biomes';
 import { Palette, ruralInk } from '../styles';
 import { fieldBoundaryStyle, fieldHedgeStyle } from '../hedges';
-import { furrowSpacing } from '../furrows';
+import { furrowDegrees, furrowSpacing, furrowStripe } from '../furrows';
+import { RecordingContext } from '../gpu/recorder';
 import { CANVAS_MAP_STROKES as MAP_STROKES, mapStrokeWidth } from '../strokes';
 import { trackInk } from '../roadStyle';
 import { WAY_SCALE, FURROW_MIN_PX, FURROW_HOLDER_BUDGET } from '../lod';
@@ -18,7 +19,8 @@ export function paintFieldTexture(c: CartographyContext, f: VectorFrame, kind: k
   if (c.activeLight) return;
   const { pal, furrowSize, furrowPaths } = c;
   const { ctx, sc, lod, rect, budgetRect, fs, fillPolys, strokePolys, multiply } = f;
-  // Actual parallel plough lines, anchored like the SVG pattern. Suppress subpixel moire at far zoom.
+  // Parallel plough lines anchored in the world like the SVG pattern (furrowStripe): stroked by Canvas, a stripe fill
+  // in the GPU recording. Suppress subpixel moire at far zoom.
   if (kind === 'field' && !isUnderdarkBiome(c.world.options.biome) && lod.strips && pal.furrowAlpha > 0 && c.scene.furrows && furrowSpacing(furrowSize) * sc >= 1.5) {
     const fade = Math.min(1, (furrowSpacing(furrowSize) * sc - 1.5) / 1.5);
     const visible: number[] = [],
@@ -31,21 +33,47 @@ export function paintFieldTexture(c: CartographyContext, f: VectorFrame, kind: k
       if (visible.length > FURROW_HOLDER_BUDGET) break;
     }
     // Skip the entire plough texture over budget rather than rendering an arbitrary subset of fields.
-    if (visible.length <= FURROW_HOLDER_BUDGET)
-      for (const i of visible) {
-        if (!c.scene.furrows.index.boxHits(i, rect)) continue;
-        const { holder, strips, lines } = furrowPaths(i);
+    if (visible.length <= FURROW_HOLDER_BUDGET) {
+      const areas = c.scene.furrows.areas,
+        width = mapStrokeWidth(MAP_STROKES.furrow, sc),
+        drawn = visible.filter(i => c.scene.furrows!.index.boxHits(i, rect));
+      if (ctx instanceof RecordingContext) {
+        // GPU: each holding is one stripe fill of its strips (same stripes as the Canvas lines and the SVG pattern).
+        // Holdings sorted by direction, so consecutive fills with one stripe merge into one op.
+        drawn.sort((p, q) => furrowDegrees(areas[p].angle) - furrowDegrees(areas[q].angle) || p - q);
         ctx.save();
-        ctx.clip(holder);
-        ctx.clip(strips);
-        ctx.strokeStyle = pal.furrow;
-        ctx.lineWidth = mapStrokeWidth(MAP_STROKES.furrow, sc);
+        ctx.fillStyle = pal.furrow;
         ctx.globalAlpha = pal.furrowAlpha * fade;
-        ctx.lineCap = 'butt';
-        ctx.stroke(lines);
+        for (const i of drawn) {
+          const a = areas[i],
+            { holder, strips } = furrowPaths(i),
+            stripe = furrowStripe(furrowSize, a.angle, width);
+          // A parcel is its own strip: its outline carries the holes. Strips cut by a hole are clipped to the outline.
+          if (a.strips.length === 1 && a.strips[0] === a.poly) ctx.fillStripes(holder, stripe);
+          else if (!a.holes?.length) ctx.fillStripes(strips, stripe);
+          else {
+            ctx.save();
+            ctx.clip(holder);
+            ctx.fillStripes(strips, stripe);
+            ctx.restore();
+          }
+        }
         ctx.restore();
-        fs.furrowsDrawn = (fs.furrowsDrawn ?? 0) + 1;
-      }
+      } else
+        for (const i of drawn) {
+          const { holder, strips, lines } = furrowPaths(i, true);
+          ctx.save();
+          ctx.clip(holder);
+          ctx.clip(strips);
+          ctx.strokeStyle = pal.furrow;
+          ctx.lineWidth = width;
+          ctx.globalAlpha = pal.furrowAlpha * fade;
+          ctx.lineCap = 'butt';
+          ctx.stroke(lines!);
+          ctx.restore();
+        }
+      fs.furrowsDrawn = (fs.furrowsDrawn ?? 0) + drawn.length;
+    }
   }
   if (kind === 'field' && lod.strips && !isUnderdarkBiome(c.world.options.biome)) {
     // SVG tints the ploughed strips after their furrow texture; retain that compositing order.

@@ -567,7 +567,7 @@ describe('V2 and City Bench stay in sync', () => {
     expect(bench).toContain('terraces: r.city.terraces,');
     expect(bench).toContain("'groundShaping', 'terraces'] as const) setBenchAppearanceField");
     expect(v2).toContain('const levelled = r.city.groundShaping && !r.underdark,');
-    expect(v2).toContain('city3dBuildingsSteps(source, { heightAt, ground, terraces: r.city.terraces })');
+    expect(v2).toContain('city3dBuildingsSteps(source, { heightAt, ground, terraces: r.city.terraces }');
     expect(v2).toContain('heights.groundAt(x, y)');
     expect(buildings).toContain('t.setGroundShape(');
     expect(buildings).toContain('terraces: cityContext.builtTerraces');

@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import * as ts from 'typescript';
 import fixture from './fixtures/city-retained-placement.json';
 import { retainCityPlacement } from '../src/ui/cityRetainedPlacement';
+import { cityPlacementRequest } from '../src/ui/cityPlacementRule';
+import { CLIMATE_VALUES } from '../../rust/bridge/terrainClimate';
 import { urbanText } from '../src/ui/urbanPanelLocale';
 import { demographicClass } from '../../rust/bridge/settlementDemography';
 import { defaultSettlementConfig, defaultRoadConfig, type Settlement, type SettlementSpec, type SettlementOutput, type SettlementConfig, type SettlementRequest, type SettlementResponse } from '../../rust/bridge/settlements';
@@ -88,6 +90,9 @@ function harness(city = true, initialOutput: SettlementOutput | null = retained(
     el,
     clone,
     retainCityPlacement,
+    // Imports the production bodies read since 5dc3edf3 (placement rule and climate presets of the request).
+    cityPlacementRequest,
+    CLIMATE_VALUES,
     sites: (out: SettlementOutput) => out.settlements.map(s => ({ key: s.key, center: s.center, population: s.population, culture: s.culture, radius: s.radius })),
     prefs: (s: SettlementSpec) => s,
     runSettlementRequest: vi.fn(async (request: SettlementRequest): Promise<SettlementResponse> => {
@@ -103,7 +108,7 @@ function harness(city = true, initialOutput: SettlementOutput | null = retained(
     },
   };
   const body = `function create(env) {
-    const { options, roads, urban, el, clone, retainCityPlacement, sites, prefs, runSettlementRequest, window, CustomEvent, urbanText, recordStageMs } = env;
+    const { options, roads, urban, el, clone, retainCityPlacement, cityPlacementRequest, CLIMATE_VALUES, sites, prefs, runSettlementRequest, window, CustomEvent, urbanText, recordStageMs } = env;
     const executionRuntime = { profile: 'local', server: 'http://placement-ui-transport-mock.test' };
     const controls = () => {}, list = () => {}, editor = () => {}, draw = () => {}, syncLanduse = () => {}, publishOptions = () => {};
     let config=env.config, output=env.output, worker=env.worker, selection=config.list[0]?.key ?? '', enabled=true, showPoints=true;
@@ -237,7 +242,8 @@ it('ACTUAL explicit search button path is the only CityBench automatic-search ar
   expect(ui.requests[0].place!.list[0].culture).toBe(before.culture);
   expect(source).toContain("el('setGenerate').hidden = false");
   expect(source).toContain("el('setGenerate').onclick = requestPlacementSearch");
-  expect(source).toContain("el('setAutoPosition').onclick = () => { if (options.city) requestPlacementSearch()");
+  // Whitespace-insensitive: Prettier (e37f9a76) wraps the handler body.
+  expect(source).toMatch(/el\('setAutoPosition'\)\.onclick = \(\) => \{\s*if \(options\.city\) requestPlacementSearch\(\)/);
 });
 it('ACTUAL non-CityBench legacy terrain still permits automatic placement', () => {
   const ui = harness(false, null);

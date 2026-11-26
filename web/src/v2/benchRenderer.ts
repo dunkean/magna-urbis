@@ -25,7 +25,6 @@ import type { World } from '../gen/types';
 import type { V2Settings } from './contracts';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import type { View } from '../render/view';
-import type { Building3dVisual } from '../render/urbanBuildingGeometry';
 import type { WorldRelief } from '../render/world/contract';
 import type { Terrain3dCollisions } from '../render/world/terrain3dCollisions';
 import type { ExportLayers } from '../render/exportLayers';
@@ -39,6 +38,7 @@ import { ExactFrame } from './display/exactFrame';
 import { GroundProducts } from './display/groundProducts';
 import { MapState } from './display/mapState';
 import { MapView } from './display/mapView';
+import type { MapPick } from './display/composedView';
 import { Miniature } from './display/miniature';
 import { DisplayReadiness } from './display/readiness';
 import { TownProducts } from './display/townProducts';
@@ -170,8 +170,12 @@ export class BenchRenderer {
     return this.view.captureView();
   }
   /** The ground point under a CSS pixel of `view`, and in a tilted view the building volume in front of it. */
-  pick(view: View, w: number, h: number, sx: number, sy: number, accept: (building: Building3dVisual) => boolean): { x: number; y: number; building?: Building3dVisual } | undefined {
-    return this.view.pick(view, w, h, sx, sy, accept);
+  pick(view: View, w: number, h: number, sx: number, sy: number): MapPick | undefined {
+    return this.view.pick(view, w, h, sx, sy);
+  }
+  /** Tints the volume of the selected building in the tilted view (its volume id; undefined: none). */
+  highlightBuilding(id: string | undefined): void {
+    this.view.highlightBuilding(id);
   }
 
   dispose(): void {

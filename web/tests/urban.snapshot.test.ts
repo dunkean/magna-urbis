@@ -6,6 +6,7 @@ import type { WorkshopState } from '../src/ui/testbenchUrban';
 import type { Decor } from '../src/ui/decor';
 import { encodeDecor, decodeDecor, encodeDecorAsync, decodeDecorAsync } from '../src/ui/decor';
 import { cropCityDecor, terrainFromDecor } from '../src/ui/benchTerrainTransfer';
+import { encodeWaterField } from '../src/render/terrainWater';
 import { applyWorkshopPopulation, appliedWorkshopSnapshot, buildingSettings, cityWorkshopState, mergeCityWorkshop, mergeWorkshopCities, translateWorkshopState, workshopSettings } from '../src/ui/urbanSnapshot';
 import { portableRecipe } from '../src/ui/recipeSharing';
 import { captureDecor, captureDecorData } from '../src/ui/decorCapture';
@@ -293,8 +294,10 @@ describe('applied urban scene transfers', () => {
     expect(translateWorkshopState(moved, -100, -200)).toEqual(original);
   });
   it('crops a city with its exact scene and merges it back without changing the other city', () => {
-    const source = decor(),
-      cropped = cropCityDecor(source, 'city'),
+    const source = decor();
+    // A crop carries the retained water material (benchTerrainTransfer.ts cropTerrain, required since 2684a88c): a dry one here.
+    source.meta.waterMaterial = { field: encodeWaterField(new Float32Array(32 * 32).fill(1)), n: 32, width: 3200, referenceWidth: 3200, path: '' };
+    const cropped = cropCityDecor(source, 'city'),
       crop = cropped.meta.pipeline!.crop!,
       local = cropped.meta.pipeline!.urban!;
     expect(local.buildingState!.scene!.buildings.map(b => b.parcel_id)).toEqual(['city/a']);

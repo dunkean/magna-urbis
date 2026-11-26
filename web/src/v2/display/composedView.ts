@@ -38,7 +38,7 @@ import { createLiveCompositor, type LiveCompositor } from '../../render/live/com
 import { liveStats, noteLiveUnit } from '../../render/live/liveStats';
 import { createLiveGroundLayer } from '../../render/live/groundLayer';
 import { createLiveTextLayer, tiltedNamesOpacity } from '../../render/live/textLayer';
-import type { LiveCityEnv } from '../../render/live/contract';
+import type { LiveCityEnv, LiveLayer } from '../../render/live/contract';
 import type { CanvasRenderer } from '../../render/canvas';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import type { View } from '../../render/view';
@@ -68,6 +68,14 @@ import { volumeTownBuildings } from '../../render/cityDrawOptions';
 
 /** Why the composed view waits (`blocked`): the ground layer has no tile yet. Its baking goes on while it waits. */
 export const GROUND_WARMING = 'ground warming';
+/** What a CSS pixel of the map shows: the point (map metres), in a tilted view the building volume in front of the
+ * ground, and the metres a CSS pixel spans at the depth of what it shows (1 / scale in the top view). */
+export interface MapPick {
+  x: number;
+  y: number;
+  building?: Building3dVisual;
+  metresPerPixel: number;
+}
 /** Exact layer canvases stacked above the compositor's: hidden until their exact paint is complete. */
 const EXACT_LAYER_CSS = 'position:absolute;left:0;top:0;visibility:hidden';
 /** The furniture canvas of a moving view (frame, cartouche, legend, scale bar) is redrawn at most this often. */
@@ -150,10 +158,14 @@ export class ComposedView {
   private readonly tiltedNames = { cx: 0, cy: 0, scale: 0, side: 0, revision: -1 };
 
   private readonly cityEnv: LiveCityEnv;
+  /** The town layer last handed to the compositor, which the next town map may adopt. */
+  private liveCity?: LiveLayer;
   /** The town in volume and the trees of the tilted map, for the two volume layers. */
   private readonly volumes: WorldVolumes;
-  /** The buildings layer on the compositor, for picking. */
+  /** The buildings layer on the compositor, for picking and the selection tint. */
   private buildings?: WorldBuildingsLayer;
+  /** The volume id of the selected building (highlightBuilding), kept for a layer made later. */
+  private highlighted?: string;
   private trees?: WorldTreesLayer;
   private volumeBuildings = false;
   private exactPlan = false;
@@ -205,7 +217,9 @@ export class ComposedView {
         section = kept ? kept.section : field && { field, raw: new TerrainHeights(grid.data, grid.n, terrain.width, -Infinity, 1) },
         data = kept?.data ?? (field ? cavernSectionHeights(grid.data, field) : grid.data);
       // The sea covers what lies below its level; the Underdark is drawn down to its floors.
-      const relief = new TerrainHeights(data, grid.n, terrain.width, underdark ? -Infinity : 0, exaggeration);
+      // A coast traced from the field (v2/terrainProjection.ts) carries its shore detail in the mesh too.
+      const shore = !underdark && !!terrain.field && !terrain.caveMask.length && !(terrain.field.floor > 0) && (this.map.world?.terrain.seaFraction ?? 0) > 0;
+      const relief = new TerrainHeights(data, grid.n, terrain.width, underdark ? -Infinity : 0, exaggeration, shore);
       // The cave's rock is solid for a flyer: only it stops him (render/world/navigation.ts).
       if (section) relief.solidAt = (x, y) => cavernTexelAt(section.field, x, y, 0) > 0.5;
       this.heights = { terrain, roof, data, section, relief };
@@ -311,6 +325,7 @@ export class ComposedView {
     if (!owners.volumes) {
       owners.volumes = true;
       live.setLayer('buildings', (this.buildings = createWorldBuildingsLayer(gl, this.volumes.buildings)));
+      this.buildings.highlight(this.highlighted);
       live.setLayer('trees', (this.trees = createWorldTreesLayer(gl, this.volumes.trees)));
       live.setLayer('banks', createWorldBankPlantsLayer(gl, this.volumes.trees));
       live.setLayer('cave', createWorldCaveLayer(gl, { cave: this.volumes.cave, terrain: () => this.relief(), invalidate: map.compose }));
@@ -322,14 +337,25 @@ export class ComposedView {
     }
     const volumeBuildings = !!map.native && machineDecision().tier === 'capable' && volumeTownBuildings(map.resolved);
     map.volumeBuildings = volumeBuildings;
-    if (owners.city !== town.city || this.volumeBuildings !== volumeBuildings) {
+    // Another building tier (city volumes or flat buildings) is a look of the same town: the town layer keeps its meshes
+    // and draws the other tier (townLayer.ts planOnly); only other towns make a new layer.
+    const newTown = owners.city !== town.city;
+    if (newTown || this.volumeBuildings !== volumeBuildings) {
       this.volumeBuildings = volumeBuildings;
       live.setStandIn('city', undefined, WHOLE_VIEW, 1, 1);
       this.shownFrom = undefined;
       this.rest = 'due';
       this.applyVisibility();
       owners.city = town.city;
-      live.setLayer('city', town.city?.createLiveLayer(gl, this.cityEnv));
+      if (newTown) {
+        // A local edit: the new map adopts the layer of the previous one (the same object), which keeps its GPU data
+        // and draws the previous towns until the edited scene is uploaded.
+        const layer = town.city?.createLiveLayer(gl, this.cityEnv, this.liveCity);
+        if (layer && layer === this.liveCity) live.invalidateLayer('city');
+        else live.setLayer('city', layer);
+        this.liveCity = layer;
+      }
+      else live.invalidateLayer('city');
     }
   }
 
@@ -715,19 +741,26 @@ export class ComposedView {
 
   // --- picking and captures of a tilted view --------------------------------------------------------------------------
 
-  /** What lies under the CSS pixel (sx, sy) of a tilted view: the ground point, and the building volume in front of the
-   * ground there among those `accept` takes (with the point where the ray meets its box). Undefined when the pixel
-   * shows neither (the sky). CPU only, for a click. */
-  pick(view: View, w: number, h: number, sx: number, sy: number, accept: (building: Building3dVisual) => boolean): { x: number; y: number; building?: Building3dVisual } | undefined {
+  /** What lies under the CSS pixel (sx, sy) of a tilted view: the building volume in front of the ground there (with
+   * the point where the ray meets its box), else the ground point. Every volume stops the ray, a town building or not:
+   * a click on a farm roof never selects the ground behind it. Undefined when the pixel shows neither (the sky). CPU
+   * only, for a click. */
+  pick(view: View, w: number, h: number, sx: number, sy: number): MapPick | undefined {
     const relief = this.relief(),
       pose = poseCamera(createCameraPose(), view, h, relief),
       point: [number, number] = [0, 0],
       ground = groundHit(pose, sx, sy, w, h, relief, point);
     const ray = new Float64Array(3);
     pixelRay(pose, sx, sy, w, h, ray);
-    const hit = this.map.exportLayers.city !== false ? this.buildings?.pick(pose.eye, ray, pose.rise, ground, accept) : undefined;
-    if (hit) return { x: pose.eye[0] + ray[0] * hit.t, y: pose.eye[1] + ray[1] * hit.t, building: hit.building };
-    return ground < Infinity ? { x: point[0], y: point[1] } : undefined;
+    const hit = this.map.exportLayers.city !== false ? this.buildings?.pick(pose.eye, ray, pose.rise, ground, () => true) : undefined;
+    // `t` is the depth along the view axis (pixelRay): a CSS pixel there spans t / focal metres across the view.
+    if (hit) return { x: pose.eye[0] + ray[0] * hit.t, y: pose.eye[1] + ray[1] * hit.t, building: hit.building, metresPerPixel: hit.t / pose.focal };
+    return ground < Infinity ? { x: point[0], y: point[1], metresPerPixel: ground / pose.focal } : undefined;
+  }
+  /** Tints the volume of the selected building (its volume id; undefined: none). */
+  highlightBuilding(id: string | undefined): void {
+    this.highlighted = id;
+    this.buildings?.highlight(id);
   }
   /** The tilted view as a picture, the compositor's frame at `dpr` (LiveCompositor.capture). */
   capture(view: View, w: number, h: number, dpr: number, out: HTMLCanvasElement): boolean {

@@ -55,8 +55,11 @@ export function readParamId(text: string, at: number): [number, number] {
 export const MAX_LEVELS = CODE_BASE * CODE_BASE;
 export const valueWidth = (levels: number): number => (levels <= CODE_BASE ? 1 : 2);
 
+/** Values of a free slider (step 'any'): one code digit, CODE_BASE (32) positions. 64 would cost a second digit per
+ * parameter; a field that needs it (a fine physical scale) takes a numeric step, which already gives 2-digit domains. */
+export const FREE_LEVELS = CODE_BASE;
 /** Number domain: a bounded slider of `levels` steps. A numeric step gives span/step + 1 steps (capped);
- * a free step ('any') gives CODE_BASE steps. */
+ * a free step ('any') gives FREE_LEVELS steps. The UI slider steps on the same levels (levelStep, snapParameter). */
 export interface QuantisedRange {
   min?: number;
   max?: number;
@@ -67,7 +70,7 @@ const clean = (value: number): number => Number(value.toPrecision(12));
 export function parameterLevels(field: QuantisedRange): number {
   if (!bounded(field)) return 0;
   const span = field.max - field.min;
-  const steps = typeof field.step === 'number' && field.step > 0 ? Math.floor(span / field.step + 1e-9) + 1 : CODE_BASE;
+  const steps = typeof field.step === 'number' && field.step > 0 ? Math.floor(span / field.step + 1e-9) + 1 : FREE_LEVELS;
   return Math.max(2, Math.min(MAX_LEVELS, steps));
 }
 export function levelValue(field: QuantisedRange, level: number): number {

@@ -159,13 +159,19 @@ const definitions = new Map<TerrainStyle, TerrainStyleDefinition>([
 
 export const TERRAIN_STYLE_LIST = [...definitions.values()].filter(style => style.traits.family !== 'diagnostic');
 const waterPalettes = new Map<TerrainStyle, Palette>();
+/** One definition per style and palette object: renderers compare styles by identity. */
+const derivedStyles = new Map<TerrainStyle, WeakMap<Palette, TerrainStyleDefinition>>();
 export const terrainStyle = (id: TerrainStyle, colors?: RenderColors): TerrainStyleDefinition => {
   const base = definitions.get(id)!;
   let authored = waterPalettes.get(id);
   if (!authored) waterPalettes.set(id, (authored = base.water === base.palette.water ? base.palette : { ...base.palette, water: base.water }));
   const palette = seasonalWaterPalette(colors && Object.keys(colors).length ? applyRenderColors(authored, colors) : authored);
   if (palette === base.palette) return base;
-  return { ...base, palette, water: palette.water };
+  let derived = derivedStyles.get(id);
+  if (!derived) derivedStyles.set(id, (derived = new WeakMap()));
+  let style = derived.get(palette);
+  if (!style) derived.set(palette, (style = { ...base, palette, water: palette.water }));
+  return style;
 };
 export const isTerrainStyle = (id: string | null | undefined): id is TerrainStyle => !!id && (isMapStyle(id) || definitions.has(id as TerrainStyle));
 export const waterShoreColor = (id: TerrainStyle): string => terrainStyle(id).water.stops[0][1];

@@ -53,7 +53,9 @@ const paletteIdOf = (pal: Palette): number => {
   if (id === undefined) paletteIds.set(pal, (id = ++paletteCount));
   return id;
 };
-type FurrowPaths = { holder: Path2D; strips: Path2D; lines: Path2D };
+/** A holder's outline (with its holes), its strips, and the Canvas plough lines (built on the first Canvas paint only:
+ * the GPU recording fills the strips with world stripes instead). */
+type FurrowPaths = { holder: Path2D; strips: Path2D; lines?: Path2D };
 export type DrawMode = 'all' | 'map' | 'overlays' | 'ground';
 
 export const emptyStats = (): FrameStats => ({ band: 0, scale: 0, ms: 0, tilesDrawn: 0, bigDrawn: 0, pathsBuilt: 0, pathCache: 0, buildingsCandidate: 0, buildingsDrawn: false, textureTiles: 0 });
@@ -315,31 +317,35 @@ export class CartographyContext {
   };
 
   /** One bounded LRU record per holder, so plough textures never evict paths used by other map layers. */
-  readonly furrowPaths = (i: number): FurrowPaths => {
+  readonly furrowPaths = (i: number, withLines = false): FurrowPaths => {
     const furrowCache = this.furrowCache;
     let paths = furrowCache.get(i);
     if (paths) {
       furrowCache.delete(i);
       furrowCache.set(i, paths);
-      return paths;
+    } else {
+      const a = this.scene.furrows!.areas[i],
+        holder = new this.P(),
+        strips = new this.P();
+      addRing(holder, orientPos(a.poly));
+      for (const hole of a.holes ?? []) addRing(holder, orientPos(hole).slice().reverse());
+      for (const strip of a.strips) addRing(strips, orientPos(strip));
+      paths = { holder, strips };
+      this.built += 2;
+      furrowCache.set(i, paths);
+      if (furrowCache.size > FURROW_CACHE_MAX) {
+        const oldest = furrowCache.keys().next().value;
+        if (oldest !== undefined) furrowCache.delete(oldest);
+      }
     }
-    const a = this.scene.furrows!.areas[i],
-      holder = new this.P(),
-      strips = new this.P(),
-      lines = new this.P();
-    addRing(holder, orientPos(a.poly));
-    for (const hole of a.holes ?? []) addRing(holder, orientPos(hole).slice().reverse());
-    for (const strip of a.strips) addRing(strips, orientPos(strip));
-    for (const line of furrowLines(a.poly, this.furrowSize, a.angle)) {
-      lines.moveTo(line[0].x, line[0].y);
-      lines.lineTo(line[1].x, line[1].y);
-    }
-    paths = { holder, strips, lines };
-    this.built += 3;
-    furrowCache.set(i, paths);
-    if (furrowCache.size > FURROW_CACHE_MAX) {
-      const oldest = furrowCache.keys().next().value;
-      if (oldest !== undefined) furrowCache.delete(oldest);
+    if (withLines && !paths.lines) {
+      const a = this.scene.furrows!.areas[i],
+        lines = (paths.lines = new this.P());
+      for (const line of furrowLines(a.poly, this.furrowSize, a.angle)) {
+        lines.moveTo(line[0].x, line[0].y);
+        lines.lineTo(line[1].x, line[1].y);
+      }
+      this.built++;
     }
     return paths;
   };

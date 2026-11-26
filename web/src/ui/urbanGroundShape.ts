@@ -1,11 +1,14 @@
 import type { Point, Surface } from '../../../rust/bridge/housesContract';
-import type { Layout, Partition } from '../../../rust/bridge/urban';
+import type { Layout, Partition, Street } from '../../../rust/bridge/urban';
 import type { PieceSeat } from '../render/city3d/terrainSeat';
 import { CITY3D_PLINTH_M, edgeDistance } from '../render/city3d/terrainSeat';
 import { ringContains } from '../render/ringRows';
+import { moved, StreetLevel } from './urbanStreetLevel';
 
-/** Ground shaping under the buildings of a hillside. Two things move the displayed 3D ground:
+/** Ground shaping under the buildings of a hillside. Three things move the displayed 3D ground:
  *
+ * - its streets (with the lots, urbanStreetLevel.ts): level across their width along a smoothed long profile; the lots and
+ *   buildings beside them are shaped from that ground, so a lot meets its street at the street's edge;
  * - every building sunk into the slope (render/city3d/terrainSeat.ts): the ground under its walls and in a strip around them
  *   is cut to its floor, and rises from there to the hill by a bank. Beyond its block (a street) the bank is steep and starts
  *   at the wall, so a street keeps its profile. The ground at its downhill walls is held: neither the
@@ -145,12 +148,23 @@ export class UrbanGroundShape {
   private readonly pads: Pad[] = [];
   private readonly yardGrid = new LotGrid();
   private readonly padGrid = new LotGrid();
+  /** The streets levelled across their width (urbanStreetLevel.ts): the lots and buildings beside them take that ground as theirs. */
+  private readonly streets: StreetLevel;
+  /** StreetLevel.at at the last point. */
+  private readonly street = new Float64Array(3);
   /** `natural`: the drawn ground before shaping (no footing or moat cut), m. */
   constructor(
     lots: readonly GroundShapeLot[],
     private readonly natural: (x: number, y: number) => number | undefined,
+    streets: Iterable<Street> = [],
   ) {
+    this.streets = new StreetLevel(natural);
+    for (const street of streets) this.streets.add(street);
     for (const lot of lots) this.add(lot);
+  }
+  /** Levels a street (urbanStreetLevel.ts). */
+  addStreet(street: Street): void {
+    this.streets.add(street);
   }
   add(lot: GroundShapeLot): void {
     const yard = lot.ring ? shapeYard(lot.ring, lot.pads, this.natural) : undefined;
@@ -168,20 +182,33 @@ export class UrbanGroundShape {
     }
   }
   get empty(): boolean {
-    return !this.yards.length && !this.pads.length;
+    return !this.yards.length && !this.pads.length && this.streets.empty;
   }
-  /** What the levelled lots and the sunk buildings cover, banks included. */
+  /** What the levelled lots, the sunk buildings and the levelled streets cover, banks and margins included. */
   *boxes(): Generator<Box> {
     yield* this.yards;
     yield* this.pads;
+    yield* this.streets.boxes;
   }
   /** Number of levelled lots (diagnostics). */
   get size(): number {
     return this.yards.length;
   }
-  /** The shaped ground at (x, y), given the natural `height` there. Strictly under a building its own floor alone: the bank of
-   * a neighbour reaching under the walls is hidden by them. */
-  shape(x: number, y: number, height: number): number {
+  /** The shaped ground at (x, y), given the `natural` ground there. Strictly under a building its own floor alone: the bank of
+   * a neighbour reaching under the walls is hidden by them. A street is level across its width and the lots meet it at its
+   * edge: they are shaped from the ground the streets levelled, and the street holds its height over whatever reaches it. */
+  shape(x: number, y: number, natural: number): number {
+    const street = this.street;
+    if (!this.streets.at(x, y, street)) return this.lots(x, y, natural);
+    const level = natural + moved(street[0], natural),
+      ground = this.lots(x, y, natural + street[1] * (level - natural));
+    return this.underBuilding ? ground : ground + street[2] * (level - ground);
+  }
+  /** The last `lots` point was strictly under a building. */
+  private underBuilding = false;
+  /** The ground of the lots and buildings at (x, y) over the ground `height` there. */
+  private lots(x: number, y: number, height: number): number {
+    this.underBuilding = false;
     const pads = this.padGrid.candidates(x, y),
       yards = this.yardGrid.candidates(x, y);
     if (!pads && !yards) return height;
@@ -222,7 +249,10 @@ export class UrbanGroundShape {
         holdFrom = Math.max(0, d - STRIP_M);
       }
     }
-    if (under < Infinity) return Math.min(height, under);
+    if (under < Infinity) {
+      this.underBuilding = true;
+      return Math.min(height, under);
+    }
     ground = Math.max(ground, hold);
     if (cut >= ground) return ground;
     // Between the wall of a building and the footing of one standing higher, the ground falls from one to the other.

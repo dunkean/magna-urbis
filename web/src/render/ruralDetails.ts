@@ -2,7 +2,6 @@ import type { World, LandUseLayer, Polyline } from '../gen/types';
 import { polygonCentroid, polygonContains } from '../gen/core/geom';
 import type { Palette } from './styles';
 import { pathD } from './util';
-import { cultureEnclosure } from './hedges';
 
 export interface RuralRenderOptions {
   visiblePaddocks?: boolean;
@@ -11,7 +10,7 @@ export interface RuralRenderOptions {
 export type RuralRenderLayer = LandUseLayer & { ruralDetails?: RuralRenderOptions };
 interface Mark {
   line: Polyline;
-  kind: 'fence' | 'wall' | 'stock' | 'stable' | 'hedge' | 'drain' | 'track';
+  kind: 'fence' | 'stock' | 'stable' | 'drain' | 'track';
   closed?: boolean;
 }
 const cache = new WeakMap<LandUseLayer, { key: string; marks: Mark[] }>();
@@ -21,56 +20,21 @@ const edgeKey = (a: { x: number; y: number }, b: { x: number; y: number }): stri
   return p < q ? `${p}/${q}` : `${q}/${p}`;
 };
 
-/** Marks follow existing holdings and buildings; no new usable land or stable is invented by rendering. */
-export function ruralDetails(lu: LandUseLayer, culture?: string): Mark[] {
+/** Marks follow existing holdings and buildings; no new usable land, stable or enclosure is invented by rendering: a
+ * farmyard is closed only by the walls its farm holds (`walls`), and a pen or paddock fence is the rail fence the 3D
+ * view raises on it (farmRoofs.ts farmPlacedBuildings). */
+export function ruralDetails(lu: LandUseLayer): Mark[] {
   const opts = (lu as RuralRenderLayer).ruralDetails;
-  const profile = culture === undefined ? undefined : cultureEnclosure(culture);
-  if (!profile && !opts?.visiblePaddocks && !opts?.concreteFieldBoundaries) return [];
-  const key = `${culture}:${!!opts?.visiblePaddocks}:${!!opts?.concreteFieldBoundaries}`,
+  if (!opts?.visiblePaddocks && !opts?.concreteFieldBoundaries) return [];
+  const key = `${!!opts?.visiblePaddocks}:${!!opts?.concreteFieldBoundaries}`,
     saved = cache.get(lu);
   if (saved?.key === key) return saved.marks;
   const marks: Mark[] = [];
-  if (profile && profile.plot > 0)
-    for (const [index, farm] of lu.farmsteads.entries()) {
-      if (!farm.buildings.length || farm.cultivation === 'fungal' || farm.walls?.length || (Math.imul(index + 1, 2654435761) >>> 0) / 4294967296 >= profile.plot) continue;
-      // Farm layouts already provide a simple yard, with its entrance facing the drive.
-      const ring = farm.yard,
-        gate = farm.gate ?? farm.entry ?? farm.pos;
-      let front = 0,
-        nearest = Infinity;
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i],
-          b = ring[(i + 1) % ring.length],
-          d = Math.hypot((a.x + b.x) / 2 - gate.x, (a.y + b.y) / 2 - gate.y);
-        if (d < nearest) {
-          nearest = d;
-          front = i;
-        }
-      }
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i],
-          b = ring[(i + 1) % ring.length],
-          len = Math.hypot(b.x - a.x, b.y - a.y);
-        if (len < 0.5) continue;
-        const at = (t: number) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-        // A building can itself close the court: never stroke a fence through its footprint.
-        if (farm.buildings.some(r => [0.1, 0.5, 0.9].some(t => polygonContains(r, at(t))))) continue;
-        if (i === front) {
-          const half = Math.min(0.5, 1.75 / len);
-          for (const line of [
-            [a, at(0.5 - half)],
-            [at(0.5 + half), b],
-          ])
-            if (Math.hypot(line[1].x - line[0].x, line[1].y - line[0].y) > 0.3) marks.push({ line, kind: profile.material });
-        } else marks.push({ line: [a, b], kind: profile.material });
-      }
-    }
   if (opts?.concreteFieldBoundaries) {
     const seen = new Set<string>();
     for (const area of lu.areas) {
       if (area.kind !== 'field') continue;
       if ((area as { enclosed?: boolean }).enclosed) continue; // already carried once by fieldHedges, with its material
-      const kind = (area as { enclosed?: boolean }).enclosed ? 'hedge' : 'drain';
       for (const ring of [area.poly, ...(area.holes ?? [])])
         for (let i = 0; i < ring.length; i++) {
           const a = ring[i],
@@ -78,19 +42,19 @@ export function ruralDetails(lu: LandUseLayer, culture?: string): Mark[] {
             key = edgeKey(a, b);
           if (seen.has(key)) continue;
           seen.add(key);
-          marks.push({ line: [a, b], kind });
-          if (kind === 'drain') {
-            const l = Math.hypot(b.x - a.x, b.y - a.y) || 1,
-              dx = (-(b.y - a.y) / l) * 0.9,
-              dy = ((b.x - a.x) / l) * 0.9;
-            marks.push({
+          const l = Math.hypot(b.x - a.x, b.y - a.y) || 1,
+            dx = (-(b.y - a.y) / l) * 0.9,
+            dy = ((b.x - a.x) / l) * 0.9;
+          marks.push(
+            { line: [a, b], kind: 'drain' },
+            {
               line: [
                 { x: a.x + dx, y: a.y + dy },
                 { x: b.x + dx, y: b.y + dy },
               ],
-              kind,
-            });
-          }
+              kind: 'drain',
+            },
+          );
         }
     }
     for (const way of lu.ways ?? []) marks.push({ line: way, kind: 'track' });
@@ -102,7 +66,7 @@ export function ruralDetails(lu: LandUseLayer, culture?: string): Mark[] {
         if (p.kind === 'paddock' || p.kind === 'pen') {
           const ring = p.poly,
             center = polygonCentroid(ring);
-          // Gate on the side nearest the farmyard, with fence posts at physical intervals.
+          // The rail fence of the 3D view: gate on the side nearest the farmyard, posts at physical intervals.
           let gate = 0,
             score = Infinity;
           const yard = farm.entry ?? polygonCentroid(farm.yard);
@@ -120,12 +84,10 @@ export function ruralDetails(lu: LandUseLayer, culture?: string): Mark[] {
               b = ring[(i + 1) % ring.length],
               l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
             const at = (t: number) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-            if (!profile || profile.plot > 0) {
-              if (i === gate && l > 3) marks.push({ line: [a, at(0.5 - 1.2 / l)], kind: profile?.material ?? 'fence' }, { line: [at(0.5 + 1.2 / l), b], kind: profile?.material ?? 'fence' });
-              else marks.push({ line: [a, b], kind: profile?.material ?? 'fence' });
-            }
+            if (i === gate && l > 3) marks.push({ line: [a, at(0.5 - 1.2 / l)], kind: 'fence' }, { line: [at(0.5 + 1.2 / l), b], kind: 'fence' });
+            else marks.push({ line: [a, b], kind: 'fence' });
             for (let t = 0; t < l; t += 4) {
-              if ((profile?.material !== undefined && profile.material !== 'fence') || profile?.plot === 0 || (i === gate && Math.abs(t - l / 2) < 1.4)) continue;
+              if (i === gate && Math.abs(t - l / 2) < 1.4) continue;
               const q = at(t / l),
                 nx = (-(b.y - a.y) / l) * 0.6,
                 ny = ((b.x - a.x) / l) * 0.6;
@@ -169,16 +131,16 @@ export function ruralDetails(lu: LandUseLayer, culture?: string): Mark[] {
   return marks;
 }
 
-const styles = (pal: Palette) => ({ fence: [pal.farmInk, 0.6], wall: ['#6f6254', 0.8], stock: [pal.farmInk, 0.85], stable: [pal.farmInk, 0.9], hedge: [pal.hedge, 1.1], drain: [pal.furrow, 0.85], track: [pal.trackFill, 2.2] }) as const;
-export function ruralDetailsSvg(lu: LandUseLayer, pal: Palette, culture?: string): string {
-  const marks = ruralDetails(lu, culture);
+const styles = (pal: Palette) => ({ fence: [pal.farmInk, 0.6], stock: [pal.farmInk, 0.85], stable: [pal.farmInk, 0.9], drain: [pal.furrow, 0.85], track: [pal.trackFill, 2.2] }) as const;
+export function ruralDetailsSvg(lu: LandUseLayer, pal: Palette): string {
+  const marks = ruralDetails(lu);
   if (!marks.length) return '';
   const style = styles(pal);
   return '<g class="rural-details" fill="none" stroke-linejoin="round">' + marks.map(m => `<path d="${pathD(m.line, !!m.closed)}" stroke="${style[m.kind][0]}" stroke-width="${style[m.kind][1]}"/>`).join('') + '</g>';
 }
-export function drawRuralDetails(ctx: CanvasRenderingContext2D, world: Pick<World, 'landuse'> & Partial<Pick<World, 'options'>>, pal: Palette): void {
+export function drawRuralDetails(ctx: CanvasRenderingContext2D, world: Pick<World, 'landuse'>, pal: Palette): void {
   if (!world.landuse) return;
-  const marks = ruralDetails(world.landuse, world.options?.culture);
+  const marks = ruralDetails(world.landuse);
   if (!marks.length) return;
   const style = styles(pal);
   ctx.save();

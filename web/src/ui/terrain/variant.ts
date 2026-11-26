@@ -39,24 +39,28 @@ export const lookMode = (look: TerrainLook): number => (styleTraits(look.style).
  * the forest-on pair, two heavy compilations for one look. Without its field the forest code finds no stand.
  * `forestUploaded`: a forest field is on the GPU. */
 export const lightTerrainAllowed = (look: TerrainLook): boolean => styleTraits(look.style).satelliteVariant === 0 || mapGpuLight();
-/** A Satellite fast recipe simplifies buildings, while its complete ground and water keep full quality.
- * Pass selection and shader uniforms must use the same value or encoded river regimes reach the screen as RGB. */
+/** A Satellite fast recipe keeps its ground material and water (uniforms at full quality) and drops its forest crowns
+ * and brushes at compile time (lookVariant). Pass selection and shader uniforms must use the same value or encoded
+ * river regimes reach the screen as RGB. */
 export const terrainDrawQuality = (look: TerrainLook, quality: number): number => (lightTerrainAllowed(look) ? quality : 0);
-export const lightTerrainLook = (look: TerrainLook): boolean => (look.displayLight ?? (!look.mesh3d && getDisplayQuality() === 'light')) && lightTerrainAllowed(look);
+/** The live view asks for the light display (captures pin displayLight=false). */
+const displayLight = (look: TerrainLook): boolean => look.displayLight ?? (!look.mesh3d && getDisplayQuality() === 'light');
+export const lightTerrainLook = (look: TerrainLook): boolean => displayLight(look) && lightTerrainAllowed(look);
 export function lookVariant(look: TerrainLook, forestUploaded: boolean): TerrainVariant {
-  // Mode zero eliminates the entire natural-material shader and the auxiliary crown/water pass at compile time.
+  // Mode zero eliminates the entire natural-material shader and the auxiliary crown/water pass at compile time; the
+  // light paper map draws no tree symbols either (its woods are the overlay's flat land-use fills).
   // Captures pin displayLight=false; live world tiles use the same policy as the view, not capture quality.
-  if (lightTerrainLook(look)) {
-    const mode = styleTraits(look.style).elevation ? 1 : 0;
-    return { mode, v2: 0, forest: false, brushes: treeSymbolsOn(look, mode) };
-  }
-  const mode = lookMode(look);
+  if (lightTerrainLook(look)) return { mode: styleTraits(look.style).elevation ? 1 : 0, v2: 0, forest: false, brushes: false };
+  const mode = lookMode(look),
+    // Satellite fast: the material and its water pass stay, the procedural crowns (most of the fragment work, and of
+    // the auxiliary pass) and the brushes go; the forest floor of the occupation stays as the woods' tone.
+    light = displayLight(look);
   return lightVariant({
     mode,
     v2: styleTraits(look.style).satelliteVariant,
-    forest: !look.underdark && !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && (look.groundCover === true || forestUploaded),
+    forest: !light && !look.underdark && !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && (look.groundCover === true || forestUploaded),
     // Mode 3: the painted forest brushes; mode 0: the paper map's tree symbols on the same atlas binding.
-    brushes: (styleTraits(look.style).forestBrushes && mode === 3) || treeSymbolsOn(look, mode),
+    brushes: !light && ((styleTraits(look.style).forestBrushes && mode === 3) || treeSymbolsOn(look, mode)),
   });
 }
 /** The variant draws the paper map's woods (render/treeSymbols.ts): only the shaded paper ground, mode 0. */

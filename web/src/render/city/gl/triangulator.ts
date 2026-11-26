@@ -1,9 +1,11 @@
 /**
  * Triangulation of the GPU town's polygons over a pool of workers (cityGlWorker.ts), on this thread for small
- * scenes or without workers. Owned by renderer.ts.
+ * scenes or without workers. Owned by renderer.ts. Each kind of packing (the plan, the buildings) keeps its last
+ * triangulation: a new packing triangulates only the polygons it does not repeat (triangulationCache.ts).
  */
 import { mergeTriangulations, slicePolygons, splitPolygons, triangulatePolygons, type CityGlFillSource, type CityGlTriangulation } from '../../cityGlBuild';
 import { countWork } from '../../workCount';
+import { assembleTriangulation, polygonHashes, reusePlan, type HeldTriangulation } from './triangulationCache';
 // walls hook (cityWalls.ts)
 
 export class Triangulator {
@@ -11,6 +13,7 @@ export class Triangulator {
   private next = 1;
   private pending = new Map<number, (r: CityGlTriangulation) => void>();
   private broken = false;
+  private readonly held = new Map<string, HeldTriangulation>();
   private pool(n: number): Worker[] {
     if (this.broken || typeof Worker === 'undefined' || n <= 0) return [];
     try {
@@ -32,11 +35,29 @@ export class Triangulator {
     }
     return this.workers.slice(0, n);
   }
-  /** Parallel when the packing is large and workers are available; otherwise on this thread. */
-  async run(source: CityGlFillSource, workers: number): Promise<{ result: CityGlTriangulation; workers: number }> {
-    countWork('town.triangulate');
+  /** The triangulation of `source`: the polygons the last packing of this `kind` held taken from it, the others
+   * triangulated (`triangulated`: how many). */
+  async run(source: CityGlFillSource, workers: number, kind: string): Promise<{ result: CityGlTriangulation; workers: number; triangulated: number }> {
     const p = source.polygons,
-      polys = p.polys.length - 1;
+      held = this.held.get(kind);
+    // The first packing of a kind is triangulated whole; the hashes are only computed when a later one compares.
+    if (!held) {
+      const whole = await this.triangulate(p, workers);
+      this.held.set(kind, { polygons: p, result: whole.result });
+      return { ...whole, triangulated: p.polys.length - 1 };
+    }
+    held.hashes ??= polygonHashes(held.polygons);
+    const hashes = polygonHashes(p),
+      plan = reusePlan(held, p, hashes);
+    const fresh = plan.missingCount ? await this.triangulate(plan.missing, workers) : { result: { triangles: new Uint32Array(0), lines: new Uint32Array(0), polyTriangles: new Uint32Array(0), polyLines: new Uint32Array(0) }, workers: 0 };
+    const result = plan.missingCount === hashes.length ? fresh.result : assembleTriangulation(held, p, plan.from, plan.missing, fresh.result);
+    this.held.set(kind, { polygons: p, result, hashes });
+    return { result, workers: fresh.workers, triangulated: plan.missingCount };
+  }
+  /** Parallel when the packing is large and workers are available; otherwise on this thread. */
+  private async triangulate(p: CityGlFillSource['polygons'], workers: number): Promise<{ result: CityGlTriangulation; workers: number }> {
+    countWork('town.triangulate');
+    const polys = p.polys.length - 1;
     const pool = polys > 3000 ? this.pool(workers) : [];
     if (!pool.length) return { result: triangulatePolygons(p), workers: 0 };
     const ranges = splitPolygons(p, pool.length);
@@ -71,5 +92,6 @@ export class Triangulator {
     this.workers.forEach(w => w.terminate());
     this.workers = [];
     this.pending.clear();
+    this.held.clear();
   }
 }

@@ -8,8 +8,7 @@ import { biomePalette } from './biomes';
 import type { BiomeName } from '../gen/biomes';
 import { PALETTES, ruralInk } from './styles';
 import { regionalRoadSurface } from './roadSurfaces';
-import { mapHerbTint, mapSeasonKey, mapSnowCover } from './seasonPalette';
-import { clumpNoise } from './cartography/geometry';
+import { LAND_SNOW_ALPHA, landSnowRagged, mapLandSeason, mapSeasonKey, mapSnowCover } from './seasonPalette';
 
 export type V1LandscapeStyle = 'parchment' | 'atlas';
 export function v1RoadPaint(kind: 'major' | 'minor' | 'track', width: number, scale: number, style: V1LandscapeStyle) {
@@ -177,11 +176,10 @@ export function v1LandCanvas(r: SettlementRaster, style: V1LandscapeStyle, biome
   return canvas;
 }
 
-/** Opacity of a full snow cover on the paper: the relief reads through it. */
-const SNOW_ALPHA = 0.86,
-  SNOW_STEPS = 128,
+const SNOW_STEPS = 128,
   SNOW_SIDE = 512;
-/** Snow of the date by altitude (white, alpha = cover), ragged near its line; undefined: none anywhere. */
+/** Snow of the date by altitude (white, alpha = cover), ragged near its line; undefined: none anywhere. The ground's
+ * shader lays the same snow on its own copy of the land (treeSymbolsGlsl.ts landSeason). */
 function snowSheet(r: SettlementRaster): HTMLCanvasElement | undefined {
   let top = 1;
   for (const h of r.height) if (h > top) top = h;
@@ -195,12 +193,12 @@ function snowSheet(r: SettlementRaster): HTMLCanvasElement | undefined {
   for (let y = 0; y < n; y++)
     for (let x = 0; x < n; x++) {
       const h = Math.max(0, r.height[Math.floor((y * r.n) / n) * r.n + Math.floor((x * r.n) / n)]),
-        ragged = even ? h : Math.max(0, h + 260 * (clumpNoise(x, y, 14, 7) - 0.5)),
+        ragged = even ? h : Math.max(0, h + 260 * (landSnowRagged(((x + 0.5) / n) * SNOW_SIDE - 0.5, ((y + 0.5) / n) * SNOW_SIDE - 0.5) - 0.5)),
         i = (y * n + x) * 4;
       image.data[i] = 246;
       image.data[i + 1] = 247;
       image.data[i + 2] = 243;
-      image.data[i + 3] = 255 * SNOW_ALPHA * table[Math.min(SNOW_STEPS, Math.round((ragged / top) * SNOW_STEPS))];
+      image.data[i + 3] = 255 * LAND_SNOW_ALPHA * table[Math.min(SNOW_STEPS, Math.round((ragged / top) * SNOW_STEPS))];
     }
   ctx.putImageData(image, 0, 0);
   return sheet;
@@ -212,9 +210,7 @@ export function seasonLand(land: HTMLCanvasElement, r: SettlementRaster): HTMLCa
   const key = mapSeasonKey(),
     found = seasonSheets.get(land);
   if (found?.key === key) return found.canvas;
-  const herb = mapHerbTint(),
-    brightest = Math.max(...herb),
-    tint = herb.map(v => 1 - 0.5 * (1 - v / brightest)),
+  const tint = mapLandSeason().tint.slice(0, 3),
     snow = snowSheet(r),
     plain = !snow && tint.every(v => v > 0.995);
   const canvas = plain ? land : Object.assign(document.createElement('canvas'), { width: land.width, height: land.height });

@@ -94,7 +94,7 @@ describe('sea ice display calendar', () => {
     expect(calendarSeason('arctic', { seaIceSummer: 0.2 }).seaIce[2]).toBe(0.2);
   });
 
-  it('retains all bilingual controls in recipes and invalidates water and ground appearance', () => {
+  it('retains all bilingual controls in recipes and invalidates the ground appearance', () => {
     const settings = defaultSettings(),
       composition = settings.appearance!.composition!;
     const resolved = resolveAppearance(settings.appearance, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d');
@@ -109,7 +109,7 @@ describe('sea ice display calendar', () => {
     const restored = parseProject(serializeProject(settings)).settings;
     expect(restored.appearance!.composition!.effects.calendar!.seaIceSummer).toBe(0.2);
     const changed = resolveAppearance(restored.appearance, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d');
-    expect(changed.keys.water).not.toBe(resolved.keys.water);
+    // Sea ice is the ground shader's: the water pass reads the date through its drawn regime only (waterRegime.ts).
     expect(changed.keys.terrainLook).not.toBe(resolved.keys.terrainLook);
   });
 });

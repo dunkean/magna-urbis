@@ -37,7 +37,9 @@ export function createGenerationActions(state: PageState, actions: PageActions) 
     await actions.generate('town', state.world.settlements.find(place => place.main)?.key ?? 'main');
   }
 
-  async function generate(action: Action, key?: string, townStage?: V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string, keepCustom = false): Promise<boolean> {
+  /** `local`: an edit made from a selection inside the built town `key` (quarter, block, parcel, building). Only that
+   * town is rebuilt: its neighbours, the countryside, the terrain and the land use are kept. */
+  async function generate(action: Action, key?: string, townStage?: V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string, keepCustom = false, local = false): Promise<boolean> {
     if (state.busy) return false;
     // A new placement keeps or drops the settlements the user added or moved.
     if (!keepCustom && ['all', 'region', 'settlements'].includes(action) && state.world && !terrainStage) {
@@ -80,7 +82,10 @@ export function createGenerationActions(state: PageState, actions: PageActions) 
     try {
       const retainedSelection = state.selectedBuilding ? { ...state.selectedBuilding } : undefined,
         retainedSubdivision = state.selectedSubdivision;
-      const result = await state.client.run(action, state.settings, state.previewBase?.pristine ?? state.previewBase?.world ?? state.pristine ?? state.world, key, townStage, terrainStage, keys, cityOutput);
+      const base = state.previewBase?.pristine ?? state.previewBase?.world ?? state.pristine ?? state.world,
+        localEdit = local && action === 'town' && !!key;
+      // A local edit comes back with the objects of `base` it did not change (localEditIntern.ts): the display redoes that town only.
+      const result = await state.client.run(action, state.settings, base, key, townStage, terrainStage, keys, cityOutput, undefined, false, undefined, localEdit);
       if (state.cancelled) return false;
       if (terrainStage && terrainStage !== 'cover-climate') {
         if (!state.world?.stats['v2.previewStage']) state.previewBase = { world: state.world, pristine: state.pristine };
@@ -99,7 +104,8 @@ export function createGenerationActions(state: PageState, actions: PageActions) 
       await displayedOrHidden(state.client.show(state.world, action === 'town' || action === 'towns'));
       state.canvas.hidden = false;
       $('#empty-map').hidden = true;
-      actions.updateWorld();
+      // A local edit reopens its inspector below: the open one is not closed in between.
+      actions.updateWorld(localEdit);
       // The town-name spinners complement this card: generation owns it until the new picture is presented.
       await displayedOrHidden(state.client.displaySettled());
       performance.measure('v2:show', { start: showStart });

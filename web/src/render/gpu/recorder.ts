@@ -5,7 +5,7 @@
  * renderer and turns the calls into a `DisplayList` (displayList.ts). Anything it cannot represent sets `unsupported`
  * (first reason wins) and recording continues cheaply; the caller then falls back to the CPU engine.
  */
-import { IDENTITY, SPRITE_STRIDE, type ClipNode, type Composite, type DisplayList, type DrawOp, type FillRule, type ImageSource, type LineCap, type LineJoin, type Mat, type Paint, type RecordedPath, type Repeat, type Rgba } from './contract';
+import { IDENTITY, SPRITE_STRIDE, type ClipNode, type Composite, type DisplayList, type DrawOp, type FillRule, type ImageSource, type LineCap, type LineJoin, type Mat, type Paint, type RecordedPath, type Repeat, type Rgba, type Stripe } from './contract';
 import { PlainPath, RecPath2D, matFromInit, pAppend, pArcTo, pClose, pCopy, pCubic, pEllipse, pLineTo, pMoveTo, pQuad, pRect, pReset, pRoundRect, pTransform, type PathData } from './path';
 
 const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -168,7 +168,9 @@ function colorEntry(s: string): ColorEntry {
 
 const BLACK: ColorPaint = { kind: 'color', rgba: [0, 0, 0, 1] };
 
-const samePaint = (a: Paint, b: Paint): boolean => a === b || (a.kind === 'color' && b.kind === 'color' && a.rgba[0] === b.rgba[0] && a.rgba[1] === b.rgba[1] && a.rgba[2] === b.rgba[2] && a.rgba[3] === b.rgba[3]);
+const sameRgba = (a: Rgba, b: Rgba): boolean => a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+const sameStripe = (a: Stripe, b: Stripe): boolean => a === b || (a.nx === b.nx && a.ny === b.ny && a.period === b.period && a.offset === b.offset && a.width === b.width);
+const samePaint = (a: Paint, b: Paint): boolean => a === b || (a.kind === 'color' && b.kind === 'color' && sameRgba(a.rgba, b.rgba)) || (a.kind === 'stripes' && b.kind === 'stripes' && sameRgba(a.rgba, b.rgba) && sameStripe(a.stripe, b.stripe));
 
 // ---------------------------------------------------------------------------------------------------- patterns
 
@@ -358,7 +360,7 @@ interface SpriteRec {
 
 type AnyPath = RecordedPath & PathData;
 const ruleOf = (r: unknown): FillRule => (r === 'evenodd' ? 'evenodd' : 'nonzero');
-const isClear = (p: Paint): boolean => p.kind === 'color' && p.rgba[3] <= 0;
+const isClear = (p: Paint): boolean => (p.kind === 'color' && p.rgba[3] <= 0) || (p.kind === 'stripes' && (p.rgba[3] <= 0 || !(p.stripe.width > 0)));
 
 // ---------------------------------------------------------------------------------------------------- canvas
 
@@ -838,11 +840,11 @@ export class RecordingContext {
     if (op.type !== 'clear') this.drawn = true;
   }
 
-  private emitFill(path: AnyPath, t: Mat, rule: FillRule, isDefault: boolean): void {
+  private emitFill(path: AnyPath, t: Mat, rule: FillRule, isDefault: boolean, given?: Paint): void {
     const comp = this.composite();
     if (!comp) return;
     const s = this.s,
-      paint = s.fillPattern ? s.fillPattern.paint(s.smoothing) : s.fillPaint;
+      paint = given ?? (s.fillPattern ? s.fillPattern.paint(s.smoothing) : s.fillPaint);
     if (!paint) {
       this.fail(s.fillReason || 'fill style');
       return;
@@ -903,6 +905,24 @@ export class RecordingContext {
     }
     const p = this.userPath(a);
     if (p) this.emitFill(p, this.matNow(), ruleOf(b), false);
+  }
+
+  /**
+   * Fills `path` with `stripe` lines (user space of the current transform) in the current fill colour, transparent
+   * between the lines. Not a Canvas call (furrows: render/cartography/fields.ts): one fill op, merged like `fill`, whose
+   * paint is the colour paint of `fillStyle` extended by the stripe, so whatever applies to colour paints applies here.
+   */
+  fillStripes(path: Path2D, stripe: Stripe, rule?: CanvasFillRule): void {
+    this.nCalls++;
+    if (this.reason !== undefined) return;
+    const p = this.userPath(path),
+      base = this.s.fillPaint;
+    if (!p) return;
+    if (!base || base.kind !== 'color') {
+      this.fail(this.s.fillReason || 'stripe colour');
+      return;
+    }
+    this.emitFill(p, this.matNow(), ruleOf(rule), false, { ...base, kind: 'stripes', stripe });
   }
 
   stroke(a?: Path2D): void {

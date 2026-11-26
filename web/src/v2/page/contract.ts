@@ -216,7 +216,7 @@ export interface PageActions {
   // generation
   generateMainOnly(): Promise<void>;
   /** `keepCustom`: a run that places the settlements keeps the custom places without asking. */
-  generate(action: Action, key?: string, townStage?: V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string, keepCustom?: boolean): Promise<boolean>;
+  generate(action: Action, key?: string, townStage?: V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string, keepCustom?: boolean, local?: boolean): Promise<boolean>;
   smallPlaceRecipeKey(): string;
   // inspectors
   showInspector(key: string, focus?: boolean): void;
@@ -224,7 +224,8 @@ export interface PageActions {
   showBuilding(hit: NonNullable<ReturnType<typeof buildingAt>>): void;
   inspectSubdivision(kind: 'quarter' | 'block' | 'parcel', p: { x: number; y: number }, settlementKey?: string, selectedId?: string): boolean;
   // entity sheet
-  inspectEntity(point: { x: number; y: number }, picked?: NonNullable<ReturnType<typeof buildingAt>>): void;
+  /** `metresPerPixel`: what a CSS pixel spans where the click landed (the pick distance in a tilted view). */
+  inspectEntity(point: { x: number; y: number }, picked?: NonNullable<ReturnType<typeof buildingAt>>, metresPerPixel?: number): void;
   refreshEntitySheet(): void;
   // projects
   loadProject(project: { settings: V2Settings; mods: unknown[]; world?: World }): Promise<void>;

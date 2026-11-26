@@ -945,8 +945,9 @@ export async function generateTownStage(regionWorld: World, settings: V2Settings
   return world;
 }
 
-/** Direct outline edits stay inside the chosen settlement; do not replan neighbouring towns or the countryside. */
-export async function updateContourTown(source: World, settings: V2Settings, key: string, onProgress?: ProgressCallback): Promise<World> {
+/** Edits inside one built town (outline, quarter, block, parcel, building) stay inside it: neither the neighbouring
+ * towns nor the countryside are replanned, and the terrain and land use are kept. */
+export async function updateLocalTown(source: World, settings: V2Settings, key: string, onProgress?: ProgressCallback): Promise<World> {
   validateSettings(settings);
   assertRegion(source, settings);
   const world = cloneV2WorldForGeneration(source),

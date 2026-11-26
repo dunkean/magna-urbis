@@ -1,6 +1,7 @@
 /**
- * The ground of the towns of the tilted map, shaped for what stands on it: buildings sunk into the slopes and hillside lots
- * levelled (ui/urbanGroundShape.ts) and moats dug by their depth (ui/urbanGroundCuts.ts), the rules of the separate 3D view.
+ * The ground of the towns of the tilted map, shaped for what stands on it: buildings sunk into the slopes, hillside lots
+ * and streets levelled (ui/urbanGroundShape.ts, ui/urbanStreetLevel.ts) and moats dug by their depth (ui/urbanGroundCuts.ts),
+ * the rules of the separate 3D view.
  *
  * One product per town content, made in steps by v2/display/worldVolumes.ts and hung on the relief (heights.ts
  * `TerrainHeights.shape`): a grid of SHAPE_STEP metres over the blocks of SHAPE_BLOCK metres where the ground moves, two
@@ -14,6 +15,7 @@
  * keeps its width on a cliff. Its field is linear across a road: nodes of SQUEEZE_STEP metres hold it.
  */
 import { RoadSqueeze, type SteepRoad } from '../steepRoads';
+import type { Street } from '../../../../rust/bridge/urban';
 import { UrbanGroundShape, type GroundShapeLot } from '../../ui/urbanGroundShape';
 import type { UrbanGroundCuts } from '../../ui/urbanGroundCuts';
 
@@ -30,8 +32,9 @@ export const SQUEEZE_SIDE = SQUEEZE_CELLS + 1;
 const MAX_BLOCKS = 1024;
 /** A node that moves less is left on the natural ground (m). */
 const LEAST = 0.01;
-/** Lots and buildings shaped, and moat nodes dug, between two steps. */
+/** Lots and buildings shaped, streets profiled, and moat nodes dug, between two steps. */
 const LOTS_PER_STEP = 8,
+  STREETS_PER_STEP = 32,
   NODES_PER_STEP = 1024;
 
 export class GroundShape {
@@ -48,10 +51,54 @@ export class GroundShape {
   /** Deepest cut and highest fill of the drawn ground (m). */
   low = 0;
   high = 0;
+  /** A shape made from `base` by a local edit (groundShapeRegionSteps): it shares the blocks it did not touch with
+   * it, and `touched` lists its layers that differ, so the GPU updates only those (groundShapeTexture.ts). */
+  base?: GroundShape;
+  readonly touched = new Set<number>();
+  /** Layers shared with `base`, copied before a write. */
+  private readonly shared = new Set<number>();
 
   constructor(width: number) {
     this.side = Math.max(1, Math.ceil(width / SHAPE_BLOCK));
     this.index = new Int16Array(this.side * this.side).fill(-1);
+  }
+  /** A shape holding the blocks of `previous`, to be changed in places. */
+  static from(previous: GroundShape): GroundShape {
+    const shape = new GroundShape(previous.side * SHAPE_BLOCK);
+    shape.index.set(previous.index);
+    shape.ground.push(...previous.ground);
+    shape.drawn.push(...previous.drawn);
+    shape.squeeze.push(...previous.squeeze);
+    shape.squeezed = previous.squeezed;
+    shape.low = previous.low;
+    shape.high = previous.high;
+    for (let layer = 0; layer < previous.ground.length; layer++) shape.shared.add(layer);
+    // One step back only: an older shape is not kept alive through a chain of edits.
+    previous.base = undefined;
+    shape.base = previous;
+    return shape;
+  }
+  /** Puts node (i, j) of the map's grid back on the natural ground, in the blocks that already hold it. */
+  reset(i: number, j: number): void {
+    const bx = Math.floor(i / CELLS),
+      by = Math.floor(j / CELLS);
+    for (let y = j === by * CELLS ? by - 1 : by; y <= by; y++)
+      for (let x = i === bx * CELLS ? bx - 1 : bx; x <= bx; x++) {
+        if (x < 0 || y < 0 || x >= this.side || y >= this.side) continue;
+        const layer = this.index[y * this.side + x];
+        if (layer < 0) continue;
+        const at = (j - y * CELLS) * SHAPE_SIDE + i - x * CELLS;
+        if (!this.ground[layer][at] && !this.drawn[layer][at]) continue;
+        this.own(layer);
+        this.ground[layer][at] = this.drawn[layer][at] = 0;
+      }
+  }
+  /** The layer is this shape's own before it is written. */
+  private own(layer: number): void {
+    this.touched.add(layer);
+    if (!this.shared.delete(layer)) return;
+    this.ground[layer] = this.ground[layer].slice();
+    this.drawn[layer] = this.drawn[layer].slice();
   }
   get empty(): boolean {
     return !this.ground.length;
@@ -108,6 +155,7 @@ export class GroundShape {
       for (let x = i === bx * CELLS ? bx - 1 : bx; x <= bx; x++) {
         const layer = this.layer(x, y);
         if (layer < 0) continue;
+        this.own(layer);
         const at = (j - y * CELLS) * SHAPE_SIDE + i - x * CELLS;
         if (!dug) this.ground[layer][at] = this.drawn[layer][at] = value;
         else this.drawn[layer][at] = this.ground[layer][at] - value;
@@ -127,18 +175,28 @@ export class GroundShape {
   }
 }
 
-/** The shaped ground of the lots to level (per town) and of the moats, and the squeeze of the regional `roads` on steep
- * slopes, over a map of `width` metres whose natural ground is `natural` (m); undefined when no ground moves and no road
- * is squeezed. In steps of a few milliseconds. */
-export function* groundShapeSteps(width: number, towns: Iterable<readonly GroundShapeLot[]>, cuts: UrbanGroundCuts, natural: (x: number, y: number) => number, roads: readonly SteepRoad[] = []): Generator<void, GroundShape | undefined> {
+/** What a town shapes: its lots to level and its streets to level across their width (ui/urbanStreetLevel.ts). */
+export interface GroundShapeTown {
+  lots: readonly GroundShapeLot[];
+  streets?: readonly Street[];
+}
+
+/** The shaped ground of the towns (lots and streets levelled) and of the moats, and the squeeze of the regional `roads` on
+ * steep slopes, over a map of `width` metres whose natural ground is `natural` (m); undefined when no ground moves and no
+ * road is squeezed. In steps of a few milliseconds. */
+export function* groundShapeSteps(width: number, towns: Iterable<GroundShapeTown>, cuts: UrbanGroundCuts, natural: (x: number, y: number) => number, roads: readonly SteepRoad[] = []): Generator<void, GroundShape | undefined> {
   const shape = new GroundShape(width),
     last = Math.floor(width / SHAPE_STEP),
     all = [...towns];
   for (let t = 0; t < all.length; t++) {
-    const lots = all[t],
+    const { lots, streets = [] } = all[t],
       platforms = new UrbanGroundShape([], natural),
       // Overlapping boxes: each node is shaped once.
       seen = new Map<number, Uint8Array>();
+    for (let k = 0; k < streets.length; k++) {
+      platforms.addStreet(streets[k]);
+      if (k % STREETS_PER_STEP === STREETS_PER_STEP - 1) yield;
+    }
     for (let k = 0; k < lots.length; k++) {
       platforms.add(lots[k]);
       if (k % LOTS_PER_STEP === LOTS_PER_STEP - 1) yield;
@@ -173,13 +231,91 @@ export function* groundShapeSteps(width: number, towns: Iterable<readonly Ground
   return shape.empty ? undefined : shape;
 }
 
+/** A box of the map (m). */
+export interface ShapeRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+/** Reach of a street or a lot beyond its outline on the shaped ground (m): the bank of a sunk building, a lot's bank. */
+const SHAPE_REACH = 24;
+const meets = (a: ShapeRect, rects: readonly ShapeRect[]): boolean => rects.some(r => a.x0 <= r.x1 && r.x0 <= a.x1 && a.y0 <= r.y1 && r.y0 <= a.y1);
+function pointsBox(rings: Iterable<readonly { x: number; y: number }[]>, pad: number): ShapeRect {
+  const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+  for (const ring of rings)
+    for (const p of ring) {
+      box.x0 = Math.min(box.x0, p.x - pad);
+      box.y0 = Math.min(box.y0, p.y - pad);
+      box.x1 = Math.max(box.x1, p.x + pad);
+      box.y1 = Math.max(box.y1, p.y + pad);
+    }
+  return box;
+}
+
+/** `previous` changed only inside `rects` (a local edit, v2/localEditRegion.ts): the nodes there are shaped again from
+ * the streets, lots and moats that reach them, every other block is kept. The road squeeze is kept: the regional roads
+ * did not change. The shape made is a new object whose `touched` layers alone differ from `previous`. */
+export function* groundShapeRegionSteps(previous: GroundShape, rects: readonly ShapeRect[], width: number, towns: Iterable<GroundShapeTown>, cuts: UrbanGroundCuts, natural: (x: number, y: number) => number): Generator<void, GroundShape | undefined> {
+  const shape = GroundShape.from(previous),
+    last = Math.floor(width / SHAPE_STEP),
+    span = (r: ShapeRect) => ({ i0: Math.max(0, Math.ceil(r.x0 / SHAPE_STEP)), i1: Math.min(last, Math.floor(r.x1 / SHAPE_STEP)), j0: Math.max(0, Math.ceil(r.y0 / SHAPE_STEP)), j1: Math.min(last, Math.floor(r.y1 / SHAPE_STEP)) });
+  for (const rect of rects) {
+    const { i0, i1, j0, j1 } = span(rect);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) shape.reset(i, j);
+    yield;
+  }
+  const inside = (i: number, j: number): boolean => rects.some(r => i * SHAPE_STEP >= r.x0 && i * SHAPE_STEP <= r.x1 && j * SHAPE_STEP >= r.y0 && j * SHAPE_STEP <= r.y1);
+  for (const { lots, streets = [] } of towns) {
+    const platforms = new UrbanGroundShape([], natural);
+    let added = 0;
+    for (const street of streets)
+      if (meets(pointsBox([street.path], SHAPE_REACH + Math.max(0, ...street.widths) / 2), rects)) {
+        platforms.addStreet(street);
+        if (++added % STREETS_PER_STEP === 0) yield;
+      }
+    for (const lot of lots)
+      if (meets(pointsBox([lot.ring ?? [], ...lot.pads.map(pad => pad.ring)], SHAPE_REACH), rects)) {
+        platforms.add(lot);
+        if (++added % LOTS_PER_STEP === 0) yield;
+      }
+    const seen = new Set<number>();
+    let shaped = 0;
+    for (const box of platforms.boxes()) {
+      for (const rect of rects) {
+        if (box.x1 < rect.x0 || box.x0 > rect.x1 || box.y1 < rect.y0 || box.y0 > rect.y1) continue;
+        const { i0, i1, j0, j1 } = span({ x0: Math.max(box.x0, rect.x0), y0: Math.max(box.y0, rect.y0), x1: Math.min(box.x1, rect.x1), y1: Math.min(box.y1, rect.y1) });
+        for (let j = j0; j <= j1; j++)
+          for (let i = i0; i <= i1; i++) {
+            const node = j * (last + 1) + i;
+            if (seen.has(node)) continue;
+            seen.add(node);
+            const x = i * SHAPE_STEP,
+              y = j * SHAPE_STEP,
+              height = natural(x, y);
+            shape.level(i, j, platforms.shape(x, y, height) - height);
+          }
+      }
+      if (++shaped % LOTS_PER_STEP === 0) yield;
+    }
+  }
+  for (const nodes of cuts.nodes(SHAPE_STEP)) {
+    for (let k = 0; k < nodes.length; k++) {
+      const [i, j] = nodes[k];
+      if (i >= 0 && j >= 0 && i <= last && j <= last && inside(i, j)) shape.dig(i, j, -cuts.lower(i * SHAPE_STEP, j * SHAPE_STEP, 0));
+    }
+    yield;
+  }
+  return shape.empty ? undefined : shape;
+}
+
 /** Writes the squeeze of the steep `roads` into `shape`, nearest the towns first: each node once. */
-function* squeezeSteps(shape: GroundShape, width: number, roads: readonly SteepRoad[], natural: (x: number, y: number) => number, towns: readonly (readonly GroundShapeLot[])[]): Generator<void, void> {
+function* squeezeSteps(shape: GroundShape, width: number, roads: readonly SteepRoad[], natural: (x: number, y: number) => number, towns: readonly GroundShapeTown[]): Generator<void, void> {
   let x0 = Infinity,
     y0 = Infinity,
     x1 = -Infinity,
     y1 = -Infinity;
-  for (const lots of towns)
+  for (const { lots } of towns)
     for (const lot of lots)
       for (const ring of [lot.ring ?? [], ...lot.pads.map(pad => pad.ring)])
         for (const p of ring) {

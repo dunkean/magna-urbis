@@ -18,11 +18,12 @@
  * its buildings at a time), with the deadline checked between chunks.
  */
 import { building3dHeight, isBuildingProjection, isYardMesh, yardLod, type Building3dScene, type Building3dVisual, type FootedProjection } from '../urbanBuildingGeometry';
-import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
-import { buildingBatches, buildingBounds, buildingGround, type BuildingBounds, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
+import { showsCraftedHouses, type UrbanBuildingAppearance } from '../urbanBuildingStyle';
+import { buildingBatches, buildingBounds, buildingGround, type BuildingBounds, type BuildingColorSlots, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
 import type { WorldRelief } from './contract';
 import type { VolumeTownLook } from '../city/buildingLook';
 import { VIEW_DEPTH_MAX } from './viewDepth';
+import type { RoofMode } from '../roofMode';
 
 export const BUILDING_BLOCK = 256;
 /** Cells of a block per side (64 m): the parts of a near block that take their own level. */
@@ -131,6 +132,8 @@ export class BlockGrouping {
       if (this.next % GROUP_CHUNK === 0 && performance.now() > deadline) return false;
     }
     if (this.next === buildings.length) {
+      // The cell sort of every block takes a slice of its own when the last chunk used this one up.
+      if (performance.now() > deadline) return false;
       for (const block of this.blocks) {
         block.width /= block.ground;
         // Cell order (counting sort): each level then holds a cell's buildings as one range of its vertices.
@@ -194,11 +197,26 @@ export class TownAltitudes {
   }
 }
 
-/** What paints a scene's buildings in the world view: the flat-colour program (the textured one is the 3D view's), and
- * the top view's town look where the page gives it. */
-export function worldPaint(scene: Building3dScene, appearance: UrbanBuildingAppearance, altitudes: TownAltitudes, look?: VolumeTownLook): BuildingPaint {
-  return { appearance: { ...appearance, textured: false, ambience: undefined, lightsOn: undefined }, materials: scene.materials ?? [], collectPalette: false, planRoofs: !!look && appearance.roof !== 'v1', roofInk: appearance.roof === 'v1', yardStrips: true, snowAltitudes: altitudes, look };
+/** What paints a scene's buildings in the world view: the flat-colour program (the textured one is City Bench's separate 3D view's), and
+ * the top view's town look where the page gives it. With `slots`, the meshes carry colour slots and the look goes to
+ * the look table (buildingsLookTable.ts). */
+export function worldPaint(scene: Building3dScene, appearance: UrbanBuildingAppearance, altitudes: TownAltitudes, look?: VolumeTownLook, slots?: BuildingColorSlots): BuildingPaint {
+  return {
+    appearance: { ...appearance, textured: false, ambience: undefined, lightsOn: undefined },
+    materials: scene.materials ?? [],
+    collectPalette: false,
+    planRoofs: !!look && appearance.roof !== 'v1',
+    roofInk: appearance.roof === 'v1',
+    yardStrips: true,
+    snowAltitudes: altitudes,
+    look,
+    slots,
+  };
 }
+/** What the meshes of the world view read of an appearance (with colour slots): the roof mode, the diagnostic, and the
+ * season of crafted houses, whose snowed faces leave the surface atlas. Every other choice (style, colours, season of
+ * other roofs, ambience, the town look) is the look table's: looks with one key share their meshes. */
+export const meshKey = (appearance: UrbanBuildingAppearance, season: string): string => JSON.stringify([appearance.roof ?? '', appearance.diagnostic, showsCraftedHouses(appearance) ? [appearance.style, appearance.roofSnow ?? null, season] : 0]);
 
 /** The vertices of the buildings `from` to `to` of a block at a level, all groups in one array: a block of a dense town
  * is built in parts over several work slices, then copied part by part into one buffer (one draw). */
@@ -306,3 +324,7 @@ export function blockLevel(block: BuildingBlock, pixels: number, boxed: boolean 
   for (let i = boxed === 'overview' ? 1 : boxed ? BOX_LEVEL : 0; i < LEVEL_PIXELS.length; i++) if (pixels * depth >= LEVEL_PIXELS[i]) return i;
   return keepFar || depth >= VIEW_DEPTH_MAX ? BOX_LEVEL : hidden;
 }
+/** blockLevel's `boxed` for a roof mode and a look: minimal roofs are always boxes; a fast look (`light`) draws boxes, or
+ * overviews for the roofs a box would flatten (flat, V1, crafted). It changes how buildings are drawn, never which:
+ * blockLevel hides a block at the same size in every look, and open volumes keep their mesh at the box level (blockPart). */
+export const lookBoxing = (roof: RoofMode | undefined, light: boolean): boolean | 'overview' => roof === 'minimal' || (light ? (roof === 'flat' || roof === 'v1' || roof === 'crafted' ? 'overview' : true) : false);

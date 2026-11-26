@@ -5,12 +5,14 @@
  */
 import type { PageActions, PageState } from './contract';
 import type { Vec2 } from '../../gen/types';
-import { entitiesAt, type Entity, type TownHit } from '../entityPick';
+import { entitiesAt, type Entity, type EntityKind, type TownHit } from '../entityPick';
 import { entityFacts, entityLabel, type EntityFacts, type EntityFactsInput } from '../entityFacts';
 import { lineIcon } from '../editorIcons';
 import { onLanguageChange, registerMessages, translate } from '../i18n';
 import { renameToponym, TOPONYM_MAX_LENGTH } from '../toponymOverrides';
 import { onUnitsChange } from '../units';
+import { atTopView } from './editingToolbar';
+import { buildingVolumeId } from './worldPicking';
 import { $ } from './dom';
 import '../entitySheet.css';
 
@@ -35,12 +37,57 @@ const PICK_PX = 6;
 /** Edit modes that keep the sheet: the selection itself and the runs it starts. */
 const KEEPING_MODES = new Set(['buildings', 'selection', 'busy', 'family']);
 
+/** The editors Edit opens, one per edited level; each says whether it opened. */
+export interface EntityEditors {
+  building(entity: Entity): boolean;
+  subdivision(entity: Entity): boolean;
+  settlement(entity: Entity): boolean;
+  road(entity: Entity): boolean;
+  river(entity: Entity): boolean;
+  walls(entity: Entity): boolean;
+}
+/** The editor of each kind; a kind without one shows no Edit. */
+const EDITORS: Partial<Record<EntityKind, keyof EntityEditors>> = { building: 'building', block: 'subdivision', quarter: 'subdivision', settlement: 'settlement', road: 'road', river: 'river', wall: 'walls' };
+export const entityEditor = (kind: EntityKind): keyof EntityEditors | undefined => EDITORS[kind];
+
+/** The existing inspectors and map editors, opened on the picked entity: the road tool with the road selected, the river
+ * tool with the river's deletion plan, the town's fortification settings for a wall (there is no per-enclosure edit). */
+export function entityEditors(state: PageState, actions: PageActions): EntityEditors {
+  /** The map editors work on the top view: a tilted camera comes down over the entity first. */
+  const onTopView = (entity: Entity): Entity => {
+    if (!atTopView(state)) state.client.viewer.setView({ cx: entity.point.x, cy: entity.point.y, scale: state.client.viewer.getView().scale, pitch: 0, yaw: 0 });
+    return entity;
+  };
+  return {
+    building: entity => {
+      actions.showBuilding(entity.hit!);
+      return true;
+    },
+    subdivision: entity => actions.inspectSubdivision(entity.kind as 'block' | 'quarter', entity.point, entity.town),
+    settlement: entity => {
+      actions.showInspector(entity.town!);
+      return true;
+    },
+    road: entity => state.roadEditor.start('roads', onTopView(entity).point),
+    river: entity => state.riverEditor.start('rivers', onTopView(entity).point),
+    walls: entity => {
+      if (!entity.town) return false;
+      actions.showInspector(entity.town);
+      const field = document.querySelector<HTMLSelectElement>('#local-walls');
+      field?.scrollIntoView({ block: 'center' });
+      field?.focus();
+      return true;
+    },
+  };
+}
+
 export function createEntitySheet(state: PageState, actions: PageActions) {
   let sheet: HTMLElement | undefined,
     /** The shown entity, then those that hold it. */
     chain: Entity[] = [],
     tolerance = 0;
-  const input = (): EntityFactsInput => ({ world: state.world!, settings: state.settings, reachedPopulation: actions.reachedPopulation });
+  const input = (): EntityFactsInput => ({ world: state.world!, settings: state.settings, reachedPopulation: actions.reachedPopulation }),
+    editors = entityEditors(state, actions);
 
   function host(): HTMLElement {
     if (sheet) return sheet;
@@ -64,7 +111,7 @@ export function createEntitySheet(state: PageState, actions: PageActions) {
   }
   function outline(): void {
     const [entity] = chain;
-    if (entity) state.selectionOutline.set(entity.rings, entityLabel(entity, input()));
+    if (entity) state.selectionOutline.set(entity.rings, entityLabel(entity, input()), entity.hit && buildingVolumeId(entity.hit.building));
   }
   function button(label: string, run: () => void, title = label): HTMLButtonElement {
     const node = document.createElement('button');
@@ -101,13 +148,12 @@ export function createEntitySheet(state: PageState, actions: PageActions) {
     field.focus();
     field.select();
   }
-  /** Opens the inspector of the entity, on the level it edits. */
+  /** Opens the editor of the entity, on the level it edits. A map editor closes the sheet (its own mode). */
   function edit(entity: Entity): boolean {
-    if (entity.kind === 'building') actions.showBuilding(entity.hit!);
-    else if (entity.kind === 'block' || entity.kind === 'quarter') return actions.inspectSubdivision(entity.kind, entity.point, entity.town);
-    else if (entity.kind === 'settlement') actions.showInspector(entity.town!);
-    else return false;
-    outline();
+    const editor = entityEditor(entity.kind);
+    if (!editor || !editors[editor](entity)) return false;
+    // The subdivision inspector outlines its own selection.
+    if (editor !== 'subdivision' && chain[0] === entity) outline();
     return true;
   }
   function redraw(entity: Entity): void {
@@ -191,7 +237,7 @@ export function createEntitySheet(state: PageState, actions: PageActions) {
     }
     const bar = document.createElement('div');
     bar.className = 'entity-sheet-actions';
-    if (['building', 'block', 'quarter', 'settlement'].includes(entity.kind)) bar.append(button('Edit', () => void edit(entity)));
+    if (entityEditor(entity.kind)) bar.append(button('Edit', () => void edit(entity)));
     if (['block', 'quarter', 'settlement'].includes(entity.kind)) bar.append(button('Redraw', () => redraw(entity), 'Redraw this place or area differently'));
     bar.append(
       button('Centre', () => centre(entity)),
@@ -201,10 +247,11 @@ export function createEntitySheet(state: PageState, actions: PageActions) {
   }
 
   /** The map click of the selection tool: the sheet of what lies at the point. */
-  function inspectEntity(point: Vec2, picked?: TownHit): void {
+  function inspectEntity(point: Vec2, picked?: TownHit, metresPerPixel = 1 / state.client.viewer.getView().scale): void {
     if (!state.world) return;
     host();
-    tolerance = PICK_PX / state.client.viewer.getView().scale;
+    // In a tilted view a pixel spans what it does at the depth the click landed, not at the view's centre.
+    tolerance = PICK_PX * metresPerPixel;
     const found = entitiesAt(state.world, point, tolerance, picked);
     if (!found.length) {
       close();

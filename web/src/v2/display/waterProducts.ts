@@ -16,6 +16,7 @@ import { vectorWhiteWater } from '../../render/whiteWaterCourses';
 import { terrainStyle } from '../../render/terrainStyle';
 import { moonlightSvg } from '../../render/materialLook';
 import { displayTerrainSettings } from '../displayBiome';
+import { drawnWaterKey } from '../../render/waterRegime';
 import { riverSegments, vectorWaterSvg, vectorOverlaySvg, vectorOverlayPixels, type WaterDisplay, type VectorOverlay } from '../../ui/vectorWaterRender';
 import { renderHydrology, hydrologySegments, hydrologyWaterColour } from '../../../../rust/bridge/hydrologyRender';
 import type { HydrologyOverlay } from '../../../../rust/bridge/hydrology';
@@ -64,6 +65,8 @@ export class WaterProducts implements Water {
       season: { zone: effective.climateZone, season: r.ground.season, calendar: r.ground.calendar },
     };
   }
+  /** Drawn regime of the date the water was last drawn for (waterRegime.ts drawnWaterKey). */
+  regime = '';
   /** GPU water/overlay textures, plus the vector water and hydrology diagnostics (rasterized per view). */
   async waterPass(): Promise<void> {
     performance.mark('mu:water-2d-requested');
@@ -75,6 +78,7 @@ export class WaterProducts implements Water {
       colors = r.palette.colors,
       layers = this.map.layers(),
       water = this.waterDisplay();
+    this.regime = water.season ? drawnWaterKey(water.season) : '';
     const ink = r.composition.networks.water.look === 'ink',
       visible = layers.water && r.composition.networks.water.visible;
     // The next frame that draws this water marks `mu:water-2d-shown` (ExactFrame.paint, ComposedView.composeFrame).

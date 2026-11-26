@@ -34,7 +34,8 @@ export function buildingAt(w: World, p: Vec2): { settlement: string; index: numb
 }
 export function applyBuildingEdits(source: World, edits: unknown[]): { world: World; applied: number; skipped: number } {
   if (!edits.length) return { world: source, applied: 0, skipped: 0 };
-  const world: World = { ...source, settlements: source.settlements?.map(s => ({ ...s })) };
+  // Only the edited towns' settlements are copied: the others keep their identity, which the display caches use.
+  const world: World = { ...source, settlements: source.settlements?.slice() };
   let applied = 0,
     skipped = 0;
   const copied = new Map<string, UrbanLayer>(),
@@ -45,14 +46,10 @@ export function applyBuildingEdits(source: World, edits: unknown[]): { world: Wo
     if (!original) return;
     const layer = { ...original, buildings: original.buildings.slice() };
     copied.set(key, layer);
-    if (key === 'main' || source.settlements?.some(s => s.key === key && s.main)) {
-      world.urban = layer;
-      const main = world.settlements?.find(s => s.main || s.key === 'main');
-      if (main) main.urban = layer;
-    } else {
-      const place = world.settlements?.find(s => s.key === key);
-      if (place) place.urban = layer;
-    }
+    const main = key === 'main' || source.settlements?.some(s => s.key === key && s.main);
+    if (main) world.urban = layer;
+    const index = world.settlements?.findIndex(s => (main ? s.main || s.key === 'main' : s.key === key)) ?? -1;
+    if (index >= 0) world.settlements![index] = { ...world.settlements![index], urban: layer };
     return layer;
   }
   for (const value of edits) {

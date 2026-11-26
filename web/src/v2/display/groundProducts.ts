@@ -11,6 +11,7 @@ import type { MaterialRasterContext } from '../../../../rust/bridge/terrainMater
 import type { World } from '../../gen/types';
 import { setRoadCanopy } from '../../render/roadStyle';
 import { v2DisplayForestAsync, v2ForestOccupationParts, withBuildingOccupationAsync } from '../displayForest';
+import { localEditRegions } from '../localEditRegion';
 import type { ForestOccupation } from '../../../../rust/bridge/terrainForest';
 import { activityScene } from '../activitySites';
 import { terrainStyle } from '../../render/terrainStyle';
@@ -315,7 +316,7 @@ export class GroundProducts implements Ground {
     const biome = displayBiomeName(this.map.settings, world);
     return { palette: applyRenderColors(biomePalette(r.palette.mapStyle, biome), r.palette.colors), ...treeMix(biome) };
   }
-  private occupationCache?: { world: World; revision: string; data: Promise<ForestOccupation | undefined> };
+  private occupationCache?: { world: World; revision: string; data: Promise<ForestOccupation | undefined>; merged?: ForestOccupation };
   /** Accepted footprints exclude vegetation independently of building visibility. Both rasters run in the
    * occupation worker; concurrent passes share one job. */
   private groundOccupation(): Promise<ForestOccupation | undefined> {
@@ -323,19 +324,28 @@ export class GroundProducts implements Ground {
       v = this.map.scene!.revisions;
     const revision = JSON.stringify([v.roads, v.landuse, v.cities, v.settlements]);
     if (this.occupationCache?.world !== world || this.occupationCache.revision !== revision) {
+      // A local town edit merges the buildings again only where it changed them (localEditRegion.ts).
+      const held = this.occupationCache,
+        rects = held?.merged ? localEditRegions(held.world, world) : undefined,
+        region = rects && held?.merged ? { previous: held.merged, rects } : undefined;
       // The building merge needs only the occupation raster; the holdings detail joins at the end.
       const parts = v2ForestOccupationParts(world);
       const data = Promise.all([
         parts.occupation.then(base => {
           const buildings = [...nativeCitiesOf(world).flatMap(city => city.scene?.buildings ?? []), ...(activityScene(world)?.buildings ?? [])];
-          return withBuildingOccupationAsync(base, { buildings });
+          return withBuildingOccupationAsync(base, { buildings }, region);
         }),
         parts.occupation,
         parts.detail,
       ]).then(([occupation, base, detail]) => occupation && { ...occupation, detail: base ? detail : undefined });
-      data.catch(() => {
-        if (this.occupationCache?.data === data) this.occupationCache = undefined;
-      });
+      data.then(
+        merged => {
+          if (this.occupationCache?.data === data) this.occupationCache.merged = merged;
+        },
+        () => {
+          if (this.occupationCache?.data === data) this.occupationCache = undefined;
+        },
+      );
       this.occupationCache = { world, revision, data };
     }
     return this.occupationCache.data;

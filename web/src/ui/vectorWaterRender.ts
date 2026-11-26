@@ -13,7 +13,7 @@ import { hydrologyWaterColour, riverBank } from '../../../rust/bridge/hydrologyR
 import { lakeMaterialSvg } from '../render/terrainWater';
 import { waterBedInk } from '../render/waterPalette';
 import { headwaterGeometry, isHeadwater, type HeadwaterGeometry } from '../render/riverHeadwaters';
-import { BANKFULL_RUNOFF, dischargeSize, meanDischarge, regimeRgb, riverState, riverSymbol, threadShare, waterClimate, waterRegimeActive, type RiverState, type RiverSymbol, type WaterClimate, type WaterSeason } from '../render/waterRegime';
+import { BANKFULL_RUNOFF, dischargeSize, drawnWaterClimate, meanDischarge, regimeRgb, riverState, riverSymbol, threadShare, type RiverState, type RiverSymbol, type WaterClimate, type WaterSeason } from '../render/waterRegime';
 import { styleTraits } from '../render/terrainStyle';
 
 export { VECTOR_OVERLAYS, VECTOR_LEGENDS } from '../render/displayDiagnostics';
@@ -133,13 +133,12 @@ export interface WaterDisplay {
   thread?: boolean;
 }
 
-/** Climate of the display when it changes anything; undefined keeps every course perennial and open.
- * The painted water of a satellite ground carries no ice: its shader freezes the water from the land's snow. */
+/** Drawn climate of the display (`drawnWaterClimate`) when it changes anything; undefined keeps every course perennial
+ * and open. The painted water of a satellite ground carries no ice: its shader freezes the water from the land's snow. */
 function displayClimate(display: Pick<WaterDisplay, 'season' | 'overlay' | 'material' | 'style'>): WaterClimate | undefined {
   if (!display.season?.zone || display.overlay === 'v-styles') return;
   const landIce = display.season.landIce ?? (!!display.material && styleTraits(display.style).satelliteVariant > 0);
-  const c = waterClimate({ ...display.season, landIce });
-  return waterRegimeActive(c) ? c : undefined;
+  return drawnWaterClimate({ ...display.season, landIce });
 }
 /** Sea-level runoff of a network (mm/yr); a network without one is taken as running bankfull. */
 const runoffOf = (water: VectorWater): number => water.runoff?.r0 ?? BANKFULL_RUNOFF;
@@ -244,7 +243,8 @@ const groupMemo = new WeakMap<VectorWater, Map<string, RegimeGroup[]>>();
 /** River runs of one symbol and colour: bank outline (with joins and caps), the inset ice sheet and the axis. A genuine
  * headwater keeps its taper in every state (no cap at the source). Memoized per network and display. */
 function regimeGroups(water: VectorWater, display: WaterDisplay): RegimeGroup[] {
-  const key = JSON.stringify([display.style, display.colors, display.showLakes, display.showOxbows, display.riverArea, display.overlay, display.season]);
+  const climate = displayClimate(display),
+    key = JSON.stringify([display.style, display.colors, display.showLakes, display.showOxbows, display.riverArea, display.overlay, climate ?? null]);
   let memo = groupMemo.get(water);
   if (!memo) groupMemo.set(water, (memo = new Map()));
   const found = memo.get(key);
@@ -252,8 +252,7 @@ function regimeGroups(water: VectorWater, display: WaterDisplay): RegimeGroup[] 
   const network = water.rivers!,
     { colourOf } = waterInk(display);
   const groups = new Map<string, RegimeGroup>();
-  const climate = displayClimate(display),
-    threshold = display.riverArea * 1e6;
+  const threshold = display.riverArea * 1e6;
   const lines: [RiverLine, number][] = [
     ...(display.showOxbows ? network.oxbows.map(l => [l, 1] as [RiverLine, number]) : []),
     ...network.braids.map(l => [l, 0] as [RiverLine, number]),
@@ -389,8 +388,8 @@ function threadStrands(geo: DrawnCourse, states: readonly RiverState[], thread: 
     ny[k] = dx / l;
     // The low-water channel hugs the outside of bends, exposing a bar on the inside.
     // The signed sagitta in bed widths is bounded even at a sharp polyline joint.
-    const sagitta = (p[2 * k] - .5 * (p[2 * a] + p[2 * b])) * nx[k] + (p[2 * k + 1] - .5 * (p[2 * a + 1] + p[2 * b + 1])) * ny[k];
-    outerBend[k] = Math.max(-1, Math.min(1, 2 * sagitta / Math.max(1, geo.widths[k])));
+    const sagitta = (p[2 * k] - 0.5 * (p[2 * a] + p[2 * b])) * nx[k] + (p[2 * k + 1] - 0.5 * (p[2 * a + 1] + p[2 * b + 1])) * ny[k];
+    outerBend[k] = Math.max(-1, Math.min(1, (2 * sagitta) / Math.max(1, geo.widths[k])));
     if (k) along[k] = along[k - 1] + Math.hypot(p[2 * k] - p[2 * k - 2], p[2 * k + 1] - p[2 * k - 1]) / Math.max(2, (geo.widths[k] + geo.widths[k - 1]) / 2);
   }
   const main: Strand = { points: [], widths: [], kind: [], ice: [] },
@@ -559,7 +558,7 @@ export function riverSegments(water: VectorWater, display: WaterDisplay, mouthMi
         if (thread && geo.bankfullWidths && climate) {
           const bankfull = 0.5 * (geo.bankfullWidths[i - 1] + geo.bankfullWidths[i]);
           const wetSeason = Math.min(1, climate.rain / 1.4);
-          inversePoolWidth = (1 - smoothstep(0.78, 1, climate.aridity)) * (0.90 + 0.10 * wetSeason) * (1 - riffle / 0.45) / Math.max(2, bankfull);
+          inversePoolWidth = ((1 - smoothstep(0.78, 1, climate.aridity)) * (0.9 + 0.1 * wetSeason) * (1 - riffle / 0.45)) / Math.max(2, bankfull);
         }
         for (let k = 0; k < steps; k++) {
           const t0 = k / steps,
@@ -951,7 +950,7 @@ function dryBedProfile(water: VectorWater, line: RiverLine) {
     factor(x: number, y: number) {
       const broad = strandNoise(373, (0.83 * x + 0.56 * y) / span);
       const bar = strandNoise(941, (-0.44 * x + 0.9 * y) / (0.57 * span));
-      return 1 + strength * (0.20 * broad + 0.065 * bar + 0.025 * broad * broad);
+      return 1 + strength * (0.2 * broad + 0.065 * bar + 0.025 * broad * broad);
     },
   };
 }

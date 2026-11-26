@@ -18,6 +18,7 @@ import { featureDisplayName, settlementDisplayName } from './mapPresentation';
 import { nativeCityRecords } from './nativeProducts';
 import { displayUnit, formatDistance, getDistanceUnit, unitFactor } from './units';
 import { urbanRoleChoices } from './urbanRoleNames';
+import { activityKindLabel, activitySiteLabel, urbanCultureLabel } from './urbanLabelNames';
 
 registerMessages(
   Object.fromEntries(
@@ -291,10 +292,10 @@ export function entityFacts(entity: Entity, input: EntityFactsInput): EntityFact
     case 'isolated': {
       const site = activitySitesOf(world)[entity.index];
       if (!site) break;
-      title ||= humanise(site.template);
-      add('Class', humanise(site.kind));
+      title ||= translate(activitySiteLabel(site.template));
+      add('Class', translate(activityKindLabel(site.kind)));
       add('Resource', humanise(site.resource));
-      add('Culture', translate(site.culture));
+      add('Culture', translate(urbanCultureLabel(site.culture)));
       add('Buildings', site.buildings.length);
       add('Residents', site.residents || undefined);
       add('Near', placeName(site.parent));

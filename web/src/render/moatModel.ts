@@ -3,7 +3,8 @@
  *
  * - Form (how the ditch is cut) is data of the engine: the `moats` table of fortifications.json, whose id the engine sends
  *   per circuit (`enclosure.moat.form`): V-shaped dry ditch, earth-scarped moat, revetted flat-bottomed moat, double ditch...
- * - Supply is the engine's: a piece (a reach between two dams) is `wet` where water is near and the ground low enough, `dry` elsewhere.
+ * - Supply is the engine's: a piece (a reach between two dams) is `wet` where a river, the sea or canals feed it and the ground is low
+ *   enough, `pool` when a culture's wet moat has no source (rain water only), `dry` elsewhere.
  * - Fill is decided here, from supply, form, state of the town, climate zone and season of the map: a season change recolours
  *   the moat, it rebuilds no geometry. Pieces fall in stable buckets (their position), so one circuit mixes states.
  *
@@ -26,7 +27,8 @@ export interface MoatPiece {
 export interface MoatForm {
   /** Cross-section: to a point, rounded earth, or a level bottom. */
   profile: 'v' | 'u' | 'flat';
-  revetment: 'earth' | 'masonry' | 'timber' | 'stone';
+  /** `rock`: the bare faces of a ditch cut in the rock of its hill. */
+  revetment: 'earth' | 'masonry' | 'timber' | 'stone' | 'rock';
   /** Horizontal run of a scarp per metre of depth. */
   scarp: number;
   /** Depth from the lip to the bottom (m). */
@@ -106,16 +108,25 @@ const ARID = new Set<ClimateZone>(['desert', 'steppe', 'savanna', 'mediterranean
   SOAKED = new Set<ClimateZone>(['wetland', 'tropical']);
 type SeasonState = ReturnType<typeof mapSeasonState>;
 /** The state of a piece of ditch in the map's climate and season (a map without climate: brim-full or grassed).
- * `kind`: the engine's supply, `wet`, `dry` or `tidal` (a reach the sea fills and empties). */
+ * `kind`: the engine's supply, `wet`, `dry`, `pool` (no source: what rain and ground water leave) or `tidal` (a reach the sea fills and empties). */
 export function moatFill(kind: string, bucket: number, form: MoatForm, state: SeasonState = mapSeasonState(), town: MoatState = ''): MoatFill {
   const force = forced().fill;
   if (force) return force;
   const { zone, season, paint } = state,
     wet = kind !== 'dry';
-  if (!zone) return wet ? 'full' : 'grass';
+  if (!zone) return kind === 'pool' ? 'low' : wet ? 'full' : 'grass';
   const summer = Math.abs(season - 0.5) < 0.13,
     frozen = (paint?.snow ?? 0) > 0.35,
     pick = (...of: MoatFill[]): MoatFill => of[bucket % of.length];
+  if (kind === 'pool') {
+    // Between a dry ditch and a full moat: a pool in the wet season or a wet climate, mud or grass when it dries out.
+    if (zone === 'desert') return 'bare';
+    if (frozen) return pick('ice', 'marsh', 'ice');
+    if (town === 'ruined' || town === 'abandoned') return pick('marsh', 'grass', 'marsh');
+    if (SOAKED.has(zone)) return pick('stagnant', 'full', 'marsh');
+    if (ARID.has(zone)) return summer ? pick('bare', 'grass', 'low') : pick('low', 'marsh', 'low');
+    return summer ? pick('marsh', 'low', 'grass') : pick('stagnant', 'low', 'marsh');
+  }
   if (wet) {
     if (frozen) return 'ice';
     if (kind === 'tidal') return 'tidal';
@@ -164,7 +175,7 @@ const mix = (a: string, b: string, t: number): string => {
     y = rgb(b);
   return toHex(x.map((v, i) => v + (y[i] - v) * t));
 };
-const REVETMENT: Record<MoatForm['revetment'], string | undefined> = { earth: undefined, masonry: '#8f8778', timber: '#6f5b45', stone: '#a39a88' };
+const REVETMENT: Record<MoatForm['revetment'], string | undefined> = { earth: undefined, masonry: '#8f8778', timber: '#6f5b45', stone: '#a39a88', rock: '#8a8270' };
 /** Still water of a ditch: the map's water turned brown-green and dull, never the blue of a river or the sea. */
 const still = (water: string): string => mix(water, '#4f5a44', 0.68);
 /** Colour of the water of a piece (2D bed or channel, 3D sheet). `engraved`: on a plan in ink the water keeps the plan's wash. */

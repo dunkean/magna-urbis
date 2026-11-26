@@ -53,6 +53,7 @@ export function mountMapClient(state: PageState, actions: PageActions): void {
     $('#map'),
     () => state.client.viewer.getView(),
     () => state.client.viewer.projection(),
+    volume => state.client.highlightBuilding(volume),
   );
 
   window.addEventListener('v2-edit-mode', event => {

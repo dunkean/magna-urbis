@@ -242,7 +242,7 @@ export function createTownInspector(state: PageState, actions: PageActions) {
                 validateSettings(next);
                 state.settings = next;
                 actions.touchRecipe();
-                void actions.generate('town', key, 'buildings');
+                void actions.generate('town', key, 'buildings', undefined, undefined, undefined, false, true);
               } catch (e) {
                 actions.toast(String(e), true);
               }
@@ -282,7 +282,8 @@ export function createTownInspector(state: PageState, actions: PageActions) {
         state.settings = next;
         actions.touchRecipe();
         const stage = state.world?.stats[`v2.urbanStage:${key}`] as V2TownStage | undefined;
-        void actions.generate('town', key, stage ?? (kind === 'quarter' ? 'layout' : 'parcels'));
+        // A restored parcel stays inside the town; a restored quarter can change its outline and the countryside around it.
+        void actions.generate('town', key, stage ?? (kind === 'quarter' ? 'layout' : 'parcels'), undefined, undefined, undefined, false, kind === 'parcel');
       } catch (e) {
         actions.toast(String(e), true);
       }

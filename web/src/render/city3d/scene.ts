@@ -78,7 +78,7 @@ export interface City3dSceneOptions {
 }
 
 /** A building drawn from its silhouette: the activity sites (mills, farms, chapels: activitySites.ts) carry the city massing. */
-const drawnKind = (source: PlacedBuilding): City3dKind => (activityMassing(source) ? 'silhouette' : city3dKind(source));
+export const drawnKind = (source: PlacedBuilding): City3dKind => (activityMassing(source) ? 'silhouette' : city3dKind(source));
 
 /** Seats of the footprint pieces of a building on the natural ground, as city3dScene seats it: what the ground is shaped to
  * (ui/urbanGroundShape.ts). */

@@ -22,6 +22,7 @@ import { TREE_VOLUME_BLOCK } from '../../../../rust/bridge/treeOwnership';
 import { GROUND_LAMPS } from './cave';
 import { GROUND_SHAPE_GLSL, ROAD_SQUEEZE_FIELD_GLSL } from './groundShapeTexture';
 import { LATTICE } from './patches';
+import { SHORE_DETAIL_VERTEX_GLSL } from '../shoreDetail';
 
 export const TERRAIN_VS = `#version 300 es
 precision highp float; precision highp sampler2D;
@@ -44,6 +45,9 @@ uniform vec3 uLevel;
 // Height grid: cells per metre, cells per side, lowest height drawn (m), metres drawn per metre of height.
 uniform vec4 uGrid;
 uniform sampler2D uHeights;
+// 1 on a coastal map (TerrainHeights.shore).
+uniform float uShore;
+${SHORE_DETAIL_VERTEX_GLSL}
 ${GROUND_SHAPE_GLSL}
 out vec3 vUv; out vec3 vDrapeUv; out vec2 vSlope; out float vDistance; out vec3 vWorld;
 // Texture coordinates per metre of the ground tile and of the drape tile of the square.
@@ -71,6 +75,8 @@ void main() {
     height += row * wy[j]; slope += vec2(rowSlope * wy[j], row * sy[j]);
   }
   slope *= uGrid.x;
+  // A coastal map: the fractal shore detail of the drawn coastline (render/shoreDetail.ts), so the mesh meets the drape's shore.
+  if (uShore > 0.5) height += shoreHeightOffset(uTarget.xy + place, height, length(slope), 1.0 / uGrid.x);
   if (height < uGrid.z) { height = uGrid.z; slope = vec2(0.0); }
   if (uShapeSide > 0) {
     vec2 at = uTarget.xy + place;

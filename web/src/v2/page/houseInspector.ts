@@ -20,6 +20,7 @@ import { mountUrbanControls } from '../urbanControls';
 import { resetSubdivisionChildren } from '../subdivisionEdits';
 import { rerollSeed } from '../../../../rust/bridge/generationSeed';
 import { $, esc, options } from './dom';
+import { buildingVolumeId } from './worldPicking';
 
 export function createHouseInspector(state: PageState, actions: PageActions) {
   function showBuilding(hit: NonNullable<ReturnType<typeof buildingAt>>): void {
@@ -27,7 +28,7 @@ export function createHouseInspector(state: PageState, actions: PageActions) {
     state.selectedBuilding = hit;
     $('#inspector').dataset.scope = 'house';
     const b = hit.building;
-    state.selectionOutline.set([b.poly, ...(b.courtyards ?? [])]);
+    state.selectionOutline.set([b.poly, ...(b.courtyards ?? [])], undefined, buildingVolumeId(b));
     setHTML(
       $('#building-inspector'),
       `<div class="edit-building"><span class="eyebrow">House ${hit.index + 1}</span><h3>The last detail</h3><p class="hint">${esc(b.kind)} · ${esc(b.arch || 'generated typology')}</p><div class="control-grid"><div><label class="label">Storeys</label><input id="house-storeys" type="number" min="1" max="100" value="${b.storeys ?? 1}"></div><div><label class="label"><span data-i18n="Height">${translate('Height')}</span> (<span data-house-height-unit>${getDistanceUnit()}</span>)</label><input id="house-height" data-distance-unit="${getDistanceUnit()}" type="number" min="${0.5 / unitFactor(getDistanceUnit())}" max="${1000 / unitFactor(getDistanceUnit())}" step="any" value="${(b.height ?? 3) / unitFactor(getDistanceUnit())}"></div></div><label class="label">Roof</label><select id="house-roof">${options(['gable', 'hip', 'flat', 'dome', 'pyramidal', 'pagoda', 'thatch-round', 'none', 'tiled-hip', 'conical', 'barrel', 'terraced'])}</select><label class="label">Material</label><input id="house-material" type="text" maxlength="100" value="${esc(b.material ?? '')}"><details class="section"><summary>Building properties</summary><textarea id="house-json" spellcheck="false">${esc(JSON.stringify({ kind: b.kind, arch: b.arch, material: b.material }, null, 2))}</textarea><p class="hint">Architectural metadata is exported; its appearance depends on the renderer.</p></details><button id="house-apply">Save house</button><button id="house-undo" class="quiet small">Undo the last edit</button></div>`,
@@ -77,7 +78,7 @@ export function createHouseInspector(state: PageState, actions: PageActions) {
       const named = featureDisplayName(state.world!, nameId, state.settings);
       setHTML($('#building-inspector'), `<h3>${nameHTML(named, translate('House') + ' ' + (hit.index + 1))}</h3>`);
       if (named) {
-        state.selectionOutline.set([b.poly, ...(b.courtyards ?? [])], named);
+        state.selectionOutline.set([b.poly, ...(b.courtyards ?? [])], named, buildingVolumeId(b));
         insertHTML($('#building-inspector'), 'beforeend', '<label class="label"><input type="checkbox" id="house-name-pin"> <span data-i18n="Always show this name">' + translate('Always show this name') + '</span></label>');
         const pin = $<HTMLInputElement>('#house-name-pin');
         pin.checked = state.settings.naming?.labels?.[nameId]?.hidden === false;
@@ -117,7 +118,7 @@ export function createHouseInspector(state: PageState, actions: PageActions) {
           return JSON.stringify([buildingSignature(building), building.roof, building.storeys, building.height, building.kind, building.arch, native?.volumes?.map(volume => volume.roof_system), native?.programme?.massing?.map(piece => [piece.roof, piece.floors])]);
         };
         const before = identity(b);
-        void actions.generate('town', hit.settlement, 'buildings').then(done => {
+        void actions.generate('town', hit.settlement, 'buildings', undefined, undefined, undefined, false, true).then(done => {
           if (!done || !state.world) return;
           const after = townUrban(state.world, hit.settlement)?.buildings.find(building => (building as UrbanBuilding & { nativeRequestId?: string }).nativeRequestId === requestId);
           if (after && identity(after) === before) actions.toast('The building did not change. The engine kept the previous result for this edit.', true);
@@ -254,7 +255,7 @@ export function createHouseInspector(state: PageState, actions: PageActions) {
           }
           state.settings.urban = { ...state.settings.urban, backend: state.settings.urban?.backend ?? state.settings.runtime?.backend ?? 'rust', buildings };
           actions.touchRecipe();
-          void actions.generate('town', hit.settlement, 'buildings');
+          void actions.generate('town', hit.settlement, 'buildings', undefined, undefined, undefined, false, true);
         } catch (e) {
           actions.toast(String(e), true);
         }

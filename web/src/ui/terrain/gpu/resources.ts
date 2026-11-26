@@ -3,7 +3,7 @@
  * cover, as WebGL's generateMipmap does), height layers with their pyramid, render targets, and the per-view set of
  * intermediate targets and caches (world tiles keep their own, as TerrainGl's GlViewTargets).
  */
-import { rasterMips } from '../../boxMips';
+import { patchedRasterMips, rasterMips, type MipRect } from '../../boxMips';
 import { heightPyramid } from '../../terrainSurface';
 import { AuxPassKey } from '../redraw';
 import { RetainedWaterRaster } from '../retainedWater';
@@ -59,6 +59,15 @@ export function gpuArrayImage(device: GPUDevice, size: number, layers: number, l
 }
 /** RGBA8 world raster; box mipmaps keep the field's mean cover at coarse footprints (gl/forest.ts forestTexture). */
 export const rgbaImage = (device: GPUDevice, raster: { n: number; rgba: Uint8Array }, mipmaps: boolean): GpuImage => gpuImage(device, raster.n, raster.n, 'rgba8unorm', raster.rgba, 4, mipmaps ? rasterMips(raster.rgba, raster.n, raster.n, 4) : undefined);
+/** An rgbaImage (with mipmaps) of `previous` made the image of `next`, a raster of the same size whose texels differ only
+ * inside `rects`: those texels and the mip texels above them are written, nothing else (boxMips.ts patchedRasterMips). */
+export function patchRgbaImage(device: GPUDevice, image: GpuImage, previous: { n: number; rgba: Uint8Array }, next: { n: number; rgba: Uint8Array }, rects: readonly MipRect[]): void {
+  const { levels, changed } = patchedRasterMips(previous.rgba, next.rgba, next.n, next.n, 4, rects);
+  levels.forEach((level, mip) => {
+    const w = Math.max(1, next.n >> mip);
+    for (const r of changed[mip]) device.queue.writeTexture({ texture: image.texture, mipLevel: mip, origin: [r.x, r.y] }, level as BufferSource, { offset: (r.y * w + r.x) * 4, bytesPerRow: w * 4 }, [r.width, r.height]);
+  });
+}
 export const releaseImage = (image: GpuImage | undefined): void => image?.texture.destroy();
 
 export function gpuTarget(device: GPUDevice, width: number, height: number, format: GPUTextureFormat, previous?: Target): Target {

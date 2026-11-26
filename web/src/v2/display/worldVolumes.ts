@@ -23,7 +23,7 @@
  */
 import type { World } from '../../gen/types';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
-import { city3dBuildingsSteps, city3dFarmBuildings, city3dFarmSources, city3dPadSteps, city3dStructures, city3dWithExtras } from '../../render/city3d/display';
+import { city3dBuildingsSteps, city3dFarmBuildings, city3dFarmSources, city3dPadSteps, city3dStructures, city3dWithExtras, type City3dReuse } from '../../render/city3d/display';
 import type { City3dDisplayScene } from '../../render/city3d/scene';
 import type { City3dHeight } from '../../render/city3d/types';
 import { city3dLotEnclosures } from '../../render/city3d/yards';
@@ -41,7 +41,7 @@ import { city3dUnderdarkOrnaments, underdarkOrnaments } from '../../render/under
 import type { UrbanBuildingAppearance } from '../../render/urbanBuildingStyle';
 import type { WorldBuildingsOptions } from '../../render/world/buildingsLayer';
 import type { TerrainHeights } from '../../render/world/heights';
-import { groundShapeSteps, type GroundShape } from '../../render/world/groundShape';
+import { groundShapeRegionSteps, groundShapeSteps, type GroundShape } from '../../render/world/groundShape';
 import { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
 import type { WorldTreesOptions } from '../../render/world/treesLayer';
 import type { WorldCave } from '../../render/world/cave';
@@ -64,7 +64,27 @@ import { combineV2NativeScenes, sameV2NativeInputs, v2NativeCities, v2Resolved3d
 import type { DisplayParts } from './contract';
 import type { MapState } from './mapState';
 import { countWork } from '../../render/workCount';
+import { sameContent } from '../terrainIntern';
 import type { NativeCityMap } from '../nativeCityMap';
+import { localEditRegions, meetsRects, type EditRect } from '../localEditRegion';
+import { buildingOccupationSurfaces } from '../../ui/urbanBuildingProjection';
+
+/** Buildings this far from a local edit are seated again for the lots it shapes (m): a levelled lot is at most
+ * GROUND_SHAPE.maxArea (4000 m²), so its buildings stand within this of any of its points. */
+const REGION_LOT_REACH = 128;
+/** The box of a building's occupation, grown by `pad` metres. */
+function buildingBounds(building: Parameters<typeof buildingOccupationSurfaces>[0], pad: number): EditRect {
+  const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+  for (const surface of buildingOccupationSurfaces(building))
+    for (const shape of surface)
+      for (const p of shape.outer) {
+        box.x0 = Math.min(box.x0, p.x - pad);
+        box.y0 = Math.min(box.y0, p.y - pad);
+        box.x1 = Math.max(box.x1, p.x + pad);
+        box.y1 = Math.max(box.y1, p.y + pad);
+      }
+  return box;
+}
 
 type TreeSource = Omit<TreeInputs, 'height'>;
 /** The section cut of an Underdark map (render/underdarkCavern.ts) and its heights before the cut, in metres. */
@@ -77,6 +97,8 @@ const NO_LAMPS = new Float32Array(0);
 const FARM_LIGHT = 55;
 /** Composed town scenes kept per look (WorldVolumes.townMeshes). */
 const LOOK_SCENES = 3;
+/** Objects visited when the volumes of a new composition are compared with the previous ones (terrainIntern sameContent). */
+const VOLUME_COMPARE_BUDGET = 16e6;
 /** Water codes of the planning raster (gen/types.ts). */
 const WATER_SEA = 1,
   WATER_LAKE = 2,
@@ -141,6 +163,28 @@ export class WorldVolumes {
     farms: Building3dVisual[];
     scenes: Map<string, { display?: City3dDisplayScene; collisions?: Terrain3dCollisions }>;
   };
+  /** The meshes made for the buildings on one relief and ground options, kept across compositions: a local edit gives
+   * back the objects of the buildings it did not change (localEditIntern.ts), which keep their meshes, and the other
+   * volumes (structures, steps, groves, farms) take their previous objects where their content is the same, so the
+   * buildings layer keeps every block the edit did not touch (buildingsCache.ts adoptBlocks). */
+  private meshReuse?: { heights: TerrainHeights; terraces: boolean; levelled: boolean; underdark: boolean; buildings: City3dReuse; volumes: Map<string, Building3dVisual> };
+  private reuseFor(heights: TerrainHeights, terraces: boolean, levelled: boolean, underdark: boolean): NonNullable<WorldVolumes['meshReuse']> {
+    const held = this.meshReuse;
+    if (held && held.heights === heights && held.terraces === terraces && held.levelled === levelled && held.underdark === underdark) return held;
+    return (this.meshReuse = { heights, terraces, levelled, underdark, buildings: new WeakMap(), volumes: new Map() });
+  }
+  /** `made` with the previous object of each volume whose content is the same (by id). */
+  private sameVolumes(made: Building3dVisual[], reuse: NonNullable<WorldVolumes['meshReuse']>): Building3dVisual[] {
+    const held = reuse.volumes,
+      budget = { left: VOLUME_COMPARE_BUDGET };
+    if (held.size > 4 * made.length + 1024) held.clear();
+    return made.map(volume => {
+      const old = held.get(volume.id);
+      if (old && old !== volume && sameContent(old, volume, budget)) return old;
+      held.set(volume.id, volume);
+      return volume;
+    });
+  }
   /** Displayed water cover of the map the trees keep off, one function per world (the trees compare it by identity). */
   private waterOf?: { world: World; rivers?: Float32Array; at: (x: number, y: number) => number };
   /** The top view's town look the volumes take, and what it was made for (the town map, the look on screen, the
@@ -290,7 +334,17 @@ export class WorldVolumes {
       const a = cityBuildingAppearance(resolved),
         view = resolved.city.view;
       if (a.style !== 'silhouette' && roofPansShown({ view, footprint: false, diagnostic: a.diagnostic ?? 'none' }))
-        input = { palette: resolved.city.palette, mpp: 2 * RIM_DEVICE_MPP, dpr: 1, night: !!resolved.underdark || resolved.composition.ambience === 'night', cave: !!resolved.underdark, diagnostic: a.diagnostic ?? 'none', colors: a.colors, textured: resolved.city.textured };
+        input = {
+          palette: resolved.city.palette,
+          mpp: 2 * RIM_DEVICE_MPP,
+          dpr: 1,
+          night: !!resolved.underdark || resolved.composition.ambience === 'night',
+          cave: !!resolved.underdark,
+          diagnostic: a.diagnostic ?? 'none',
+          colors: a.colors,
+          textured: resolved.city.textured,
+          rendered: resolved.composition.networks.roads.look === 'rendered',
+        };
     }
     // Another style with the same roof frame keeps the look object: the buildings layer keeps its meshes.
     const key = JSON.stringify(input ?? null);
@@ -383,29 +437,45 @@ export class WorldVolumes {
         farms = city3dFarmSources(world.landuse?.farmsteads, placeholderPlacedBuildings(world), naturalAt);
       yield;
       let shape: GroundShape | undefined;
-      if (!r.underdark) {
+      // A local edit of the town on the same relief and ground options shapes the ground again only where it changed.
+      const held = meshes && meshes.heights === heights && meshes.terraces === r.city.terraces && meshes.levelled === levelled && meshes.steepRoads === steepRoads ? meshes : undefined,
+        region = held && !r.underdark ? localEditRegions(held.world, world) : undefined;
+      if (held && region && !region.length) shape = held.shape;
+      else if (!r.underdark) {
         // Projections of accepted plans keep their recorded heights: nothing is shaped to them.
         const native = source && !('projection' in source) ? source.buildings : undefined,
-          pads = yield* city3dPadSteps([...(native ?? []), ...farms], ground),
-          lots = groundShapeLots(source && !native ? [] : cities.flatMap(city => city.partitions ?? []), pads, levelled);
+          // A regional update seats only the buildings near the edit: the lots it shapes again hold no other.
+          near = region && held?.shape ? (building: (typeof farms)[number]) => meetsRects(buildingBounds(building, REGION_LOT_REACH), region) : undefined,
+          seated = [...(native ?? []), ...farms],
+          pads = yield* city3dPadSteps(near ? seated.filter(near) : seated, ground),
+          lots = groundShapeLots(source && !native ? [] : cities.flatMap(city => city.partitions ?? []), pads, levelled),
+          // The streets are levelled across their width with the lots.
+          streets = levelled && !(source && !native) ? layouts.flatMap(l => l.streets) : [],
+          cuts = new UrbanGroundCuts(layouts.flatMap(l => l.enclosures ?? []));
         yield;
         // The regional roads keep their width where they cross steep slopes: the terrain draws the map squeezed there.
-        shape = yield* groundShapeSteps(
-          heights.width,
-          [lots],
-          new UrbanGroundCuts(layouts.flatMap(l => l.enclosures ?? [])),
-          naturalAt,
-          steepRoads.filter(road => road.role === 'regional'),
-        );
+        shape =
+          near && held?.shape
+            ? yield* groundShapeRegionSteps(held.shape, region!, heights.width, [{ lots, streets }], cuts, naturalAt)
+            : yield* groundShapeSteps(
+                heights.width,
+                [{ lots, streets }],
+                cuts,
+                naturalAt,
+                steepRoads.filter(road => road.role === 'regional'),
+              );
       }
       // Everything below stands on this ground, the terrain mesh included.
       heights.shape = shape;
-      const display = yield* city3dBuildingsSteps(source, { heightAt, ground, terraces: r.city.terraces });
-      meshes = this.townMeshes = { cities, world, heights, terraces: r.city.terraces, levelled, steepRoads, city, shape, display, farms: city3dFarmBuildings(farms, { heightAt, ground }), scenes: new Map() };
+      const reuse = this.reuseFor(heights, r.city.terraces, levelled, !!r.underdark);
+      const display = yield* city3dBuildingsSteps(source, { heightAt, ground, terraces: r.city.terraces }, reuse.buildings);
+      meshes = this.townMeshes = { cities, world, heights, terraces: r.city.terraces, levelled, steepRoads, city, shape, display, farms: this.sameVolumes(city3dFarmBuildings(farms, { heightAt, ground }), reuse), scenes: new Map() };
     }
     const display = meshes!.display;
     yield;
-    const structures = buildingsOnly ? undefined : city3dStructures(layouts, cityRegionalStreets(r, townRoadStreets(world)), { height: heightAt, quayHeight: heightAt, causewayWater: this.stillWater(world, heightAt) }, plan.waterColor, false, r.composition.networks.water.look === 'ink');
+    const structures = buildingsOnly
+      ? undefined
+      : city3dStructures(layouts, cityRegionalStreets(r, townRoadStreets(world)), { height: heightAt, quayHeight: heightAt, causewayWater: this.stillWater(world, heightAt) }, plan.waterColor, false, r.composition.networks.water.look === 'ink');
     yield;
     // Stepped streets stand as flights of steps on the relief (city3dStairs.ts).
     const stairs = buildingsOnly ? [] : city3dStairs(layouts, heightAt, street => stairStreetColor(street, stairPaint));
@@ -419,7 +489,8 @@ export class WorldVolumes {
     // Published whole, once made: the buildings layer starts its blocks again for a new scene object.
     this.townOf = { cities, world, heights, city, key };
     this.appearance = appearance;
-    this.display = city3dWithExtras(display, [...(structures ? [...structures.bridges, ...structures.walls, ...structures.quays, ...structures.boardwalks] : []), ...stairs, ...enclosures, ...groves, ...ornaments, ...meshes!.farms]);
+    const extras = [...(structures ? [...structures.bridges, ...structures.walls, ...structures.quays, ...structures.boardwalks] : []), ...stairs, ...enclosures, ...groves, ...ornaments];
+    this.display = city3dWithExtras(display, [...(this.meshReuse?.heights === heights ? this.sameVolumes(extras, this.meshReuse) : extras), ...meshes!.farms]);
     this.walkCollisions = this.display ? new Terrain3dCollisions(this.display, heights, heights.exaggeration) : undefined;
     meshes!.scenes.set(key, { display: this.display, collisions: this.walkCollisions });
     if (meshes!.scenes.size > LOOK_SCENES) meshes!.scenes.delete(meshes!.scenes.keys().next().value!);

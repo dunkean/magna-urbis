@@ -149,13 +149,19 @@ interface RoofFrameInput {
   diagnostic: string;
   /** The user's building colours. */ colors?: RenderColors;
   /** Textured materials replace the procedural grain. */ textured?: boolean;
+  /** The ground paints rendered roads (the satellite family, RoadLook 'rendered'): see roofsGrained. */ rendered?: boolean;
 }
+/** Roofs take the cover grain on a natural ground (the terrain palette) and on the painted satellite ground (the
+ * parchment palette under rendered roads, Satellite painted): there the grain lies over the painted roof colours of its
+ * palette, which keep their tint (the grain is mean-centred). Ink plans, the paper map and night stay flat. */
+export const roofsGrained = (palette: CityPalette, rendered: boolean): boolean => palette === 'terrain' || (rendered && palette === 'parchment');
 export interface RoofFrame {
   palette: CityPalette;
   night: boolean;
   cave: boolean;
   /** One ink for every pan (the user's building colour, outside diagnostics). */ custom?: string;
   /** Natural ground by day: pan light capped per cover, weathering, grain, uneven snow. */ natural: boolean;
+  /** Painted satellite ground by day (roofsGrained): the cover grain over the palette's roof colours, nothing else. */ painted: boolean;
   /** Flat-roof rims on masonry are drawn as the wall top. */ rims: boolean;
   /** Level and strengths of the cover grain at this scale (natural, not textured). */ grain?: ReturnType<typeof coverGrainFrame>;
   /** Strength of the uneven snow mantle (0: the flat snow tint). */ unevenSnow: number;
@@ -165,22 +171,25 @@ export interface RoofFrame {
 export function roofFrame(o: RoofFrameInput): RoofFrame {
   const custom = (o.diagnostic === 'none' && o.colors?.building) || undefined,
     parchment = o.palette === 'parchment';
-  const natural = o.palette === 'terrain' && !o.night && !custom && o.diagnostic === 'none';
+  const day = !o.night && !custom && o.diagnostic === 'none',
+    natural = o.palette === 'terrain' && day,
+    painted = day && !natural && !o.cave && roofsGrained(o.palette, !!o.rendered);
   // A rim is about half a metre wide: under a device pixel it stays part of the roof.
   const device = o.mpp / (o.dpr || 1),
     rims = natural && !o.smoothRoofs && device <= RIM_DEVICE_MPP;
-  const grain = natural && !o.textured && o.roof !== 'flat' && o.roof !== 'minimal' ? coverGrainFrame(device) : undefined;
+  const grain = (natural || painted) && !o.textured && o.roof !== 'flat' && o.roof !== 'minimal' ? coverGrainFrame(device) : undefined;
   return {
     palette: o.palette,
     night: !!o.night,
     cave: !!o.cave,
     custom,
     natural,
+    painted,
     rims,
     grain,
-    unevenSnow: grain ? grain.alpha[0] : 0,
+    unevenSnow: natural && grain ? grain.alpha[0] : 0,
     edge: parchment ? PAN_EDGE.parchment : natural ? PAN_EDGE.natural : PAN_EDGE.plan,
-    key: toneStamp() + '|' + o.palette + '|' + roofSeasonKey() + '|' + (custom ?? '') + '|' + (o.cave ? 2 : o.night ? 1 : 0) + '|' + (rims ? 1 : 0) + '|' + (o.roof ?? ''),
+    key: toneStamp() + '|' + o.palette + '|' + roofSeasonKey() + '|' + (custom ?? '') + '|' + (o.cave ? 2 : o.night ? 1 : 0) + '|' + (rims ? 1 : 0) + '|' + (o.roof ?? '') + '|' + (painted ? 1 : 0),
   };
 }
 /** Snow on the ground of a building (0: none): a snow patch shows only with it. */
@@ -198,7 +207,7 @@ export function roofPanPaint(f: RoofFrame, item: CityBuilding, roofs: CityRoofs,
       : planRoofColor(item, roofs, k, f.palette, f.custom);
   const aged = f.natural && !roofs.snow?.[k] && !wallRim ? weatheredRoof(base, roofs.light[k], item.age ?? 0.5, roofs.cover[k]) : base;
   // Grade after snow/material colour: a custom night ink must not leave daylight snow above it.
-  return { color: f.cave ? caveRoof(aged) : f.night ? nightRoof(aged, f.palette === 'parchment') : aged, gain: f.natural && !wallRim ? grainGain(aged) : 0, wallRim };
+  return { color: f.cave ? caveRoof(aged) : f.night ? nightRoof(aged, f.palette === 'parchment') : aged, gain: (f.natural || f.painted) && !wallRim ? grainGain(aged) : 0, wallRim };
 }
 /** Opacity of the snow mantle of a patch holding `share` of a full mantle on a ground snowed at `ground`, before the
  * frame's uneven-snow strength. */
@@ -252,7 +261,7 @@ export function volumeRoofPaint(f: RoofFrame, item: CityBuilding, pan: VolumePan
   onePan.flat[0] = flat ? 1 : 0;
   onePan.tint[0] = pan.tint;
   const paint = roofPanPaint(f, item, onePan, 0, 0),
-    grain = f.natural ? roofGrain(pan.cover, flat, item.material?.culture ?? '') : undefined;
+    grain = f.natural || f.painted ? roofGrain(pan.cover, flat, item.material?.culture ?? '') : undefined;
   return { color: paint.color, gain: paint.gain, family: grain ? COVER_GRAINS.indexOf(grain) + 1 : 0 };
 }
 /** The wall colour of that volume as the top view tints it (the wall base under the pans). */

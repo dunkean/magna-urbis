@@ -12,7 +12,8 @@ import { buildForestField, type ForestField, type ForestOccupation, type LandDet
 import type { LandUseLayer, World } from '../gen/types';
 import type { V2Settings } from './contracts';
 import { effectiveTerrainSettings } from './terrainSettings';
-import { buildingOccupationShapes, forestOccupation, packOccupationShapes, withOccupationShapes, occupationMergeSlot } from '../ui/forestOccupation';
+import { buildingOccupationShapes, forestOccupation, forestOccupationRegion, packOccupationShapes, withOccupationShapes, withOccupationShapesRegion, occupationMergeSlot } from '../ui/forestOccupation';
+import { localEditRegions, type EditRect } from './localEditRegion';
 import type { Building3dScene } from '../render/urbanBuildingGeometry';
 import { landDetail, withLandDetail, worldLandCultures } from '../ui/landDetail';
 import { retainTerrainDisplayPreparation, runDisplayJob, registerDisplayLanduse, displayWorkerEpoch, type WorkerOccupation } from './displayPrep';
@@ -133,14 +134,38 @@ function occupationEntry(world: World): OccupationEntry {
   }
   return entry;
 }
+/** The last occupation made whole, and the world it was made for: a local town edit of that world rasterises again only
+ * the region it changed (localEditRegion.ts), on the page, in a few milliseconds. */
+let lastOccupation: { world: World; entry: OccupationEntry } | undefined;
+function noteOccupation(world: World, entry: OccupationEntry): void {
+  if (entry.complete) lastOccupation = { world, entry };
+}
+/** Completes `entry` from the last occupation when `world` is a local edit of its world; false otherwise. */
+function regionalOccupation(world: World, entry: OccupationEntry): boolean {
+  const held = lastOccupation,
+    previous = held?.entry.whole;
+  if (!held || !previous || held.world === world || held.world.landuse !== world.landuse) return false;
+  const rects = localEditRegions(held.world, world);
+  if (!rects) return false;
+  const ways = v2Corridors(world),
+    occupation = rects.length ? forestOccupationRegion(previous, world.landuse ?? emptyLanduse, rects, ways, fortificationClearings(nativeCitiesOf(world).flatMap(city => city.layouts ?? []))) : previous;
+  if (!occupation) return false;
+  // The holdings detail is a land-use product: the edit kept it.
+  entry.whole = { ...withWays(occupation, ways)!, detail: previous.detail };
+  entry.complete = true;
+  entry.parts = { occupation: Promise.resolve({ ...entry.whole, detail: undefined }), detail: Promise.resolve(previous.detail) };
+  noteOccupation(world, entry);
+  return true;
+}
 /** Land-use/corridor revision, independent from presentation and visibility. Synchronous consumers reuse the async product. */
 export function v2ForestOccupation(world: World): ForestOccupation | undefined {
   const entry = occupationEntry(world);
-  if (!entry.complete) {
+  if (!entry.complete && !regionalOccupation(world, entry)) {
     const ways = v2Corridors(world),
       landuse = world.landuse ?? emptyLanduse;
     entry.whole = withLandDetail(withWays(forestOccupation(landuse, undefined, undefined, ways, fortificationClearings(nativeCitiesOf(world).flatMap(city => city.layouts ?? []))), ways), landuse, worldLandCultures(world));
     entry.complete = true;
+    noteOccupation(world, entry);
   }
   return entry.whole;
 }
@@ -148,6 +173,7 @@ export function v2ForestOccupation(world: World): ForestOccupation | undefined {
 export function v2ForestOccupationParts(world: World): OccupationParts {
   const entry = occupationEntry(world),
     landuse = world.landuse ?? emptyLanduse;
+  if (!entry.complete && !entry.parts) regionalOccupation(world, entry);
   if (entry.complete || typeof Worker === 'undefined' || typeof document === 'undefined') {
     const whole = v2ForestOccupation(world);
     return (entry.parts ??= { occupation: Promise.resolve(whole && { ...whole, detail: undefined }), detail: Promise.resolve(whole?.detail) });
@@ -176,6 +202,7 @@ export function v2ForestOccupationParts(world: World): OccupationParts {
     void Promise.all([occupation, detail]).then(([o, d]) => {
       entry.whole = o && { ...o, detail: d };
       entry.complete = true;
+      noteOccupation(world, entry);
     });
   }
   return entry.parts;
@@ -185,14 +212,17 @@ export async function v2ForestOccupationAsync(world: World): Promise<ForestOccup
     [occupation, detail] = await Promise.all([parts.occupation, parts.detail]);
   return occupation && { ...occupation, detail };
 }
-/** One merge per base-plane/accepted-footprint revision; 3D's sync consumer reads the same slot. */
-export function withBuildingOccupationAsync(base: ForestOccupation | undefined, scene: Building3dScene): Promise<ForestOccupation | undefined> {
+/** One merge per base-plane/accepted-footprint revision; 3D's sync consumer reads the same slot. `region`: the merge
+ * of the world a local edit was made from and the boxes it changed (localEditRegion.ts): only those are merged again. */
+export function withBuildingOccupationAsync(base: ForestOccupation | undefined, scene: Building3dScene, region?: { previous: ForestOccupation; rects: readonly EditRect[] }): Promise<ForestOccupation | undefined> {
   if (!(scene.occupationBuildings ?? scene.buildings).length) return Promise.resolve(base);
   const slot = occupationMergeSlot(base, scene);
   if (slot.value) return Promise.resolve(slot.value.detail === base?.detail ? slot.value : { ...slot.value, detail: base?.detail });
   if (slot.pending) return slot.pending.then(value => value && (value.detail === base?.detail ? value : { ...value, detail: base?.detail }));
   const shapes = buildingOccupationShapes(scene);
   if (!shapes) return Promise.resolve(base);
+  const regional = region && withOccupationShapesRegion(region.previous, base, shapes, region.rects);
+  if (regional) return Promise.resolve((slot.value = { ...regional, detail: base?.detail, ways: base?.ways }));
   const local = (): ForestOccupation => withOccupationShapes(base, shapes);
   const packed = packOccupationShapes(shapes);
   const ref = base && workerOccupations.get(base.rgba),

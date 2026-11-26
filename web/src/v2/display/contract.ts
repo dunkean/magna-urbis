@@ -98,6 +98,8 @@ export interface Water {
   readonly waterShownDue: boolean;
   noteWaterShown(): void;
   waterDisplay(): WaterDisplay;
+  /** Drawn regime of the date the water was last drawn for (waterRegime.ts drawnWaterKey): the overlay's water cut follows it. */
+  readonly regime: string;
   /** The ink water must read above the land-use tints. */
   waterAboveLand(): boolean;
   /** The map on screen is tilted (set by the composed view): the map drape lays the whole-map raster as water, and the

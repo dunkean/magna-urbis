@@ -11,9 +11,19 @@
  */
 import type { WorldRelief } from './contract';
 import type { GroundShape } from './groundShape';
+import { shoreOffset } from '../shoreDetail';
 
 const wx = new Float64Array(4),
-  wy = new Float64Array(4);
+  wy = new Float64Array(4),
+  dx = new Float64Array(4),
+  dy = new Float64Array(4);
+/** Derivatives of the spline weights (per cell). */
+function splineSlopes(t: number, out: Float64Array): void {
+  out[0] = -0.5 * (1 - t) ** 2;
+  out[1] = 1.5 * t * t - 2 * t;
+  out[2] = -1.5 * t * t + t + 0.5;
+  out[3] = 0.5 * t * t;
+}
 /** Weights of the four control points around a position `t` (0..1) past the second one. */
 function splineWeights(t: number, out: Float64Array): void {
   const cube = t * t * t;
@@ -41,6 +51,8 @@ export class TerrainHeights implements WorldRelief {
     readonly floor: number,
     /** Vertical exaggeration of the appearance. */
     readonly exaggeration: number,
+    /** A coastal map: the relief carries the fractal shore detail of the drawn coastline (render/shoreDetail.ts). */
+    readonly shore = false,
   ) {
     let low = Infinity,
       high = -Infinity;
@@ -82,6 +94,23 @@ export class TerrainHeights implements WorldRelief {
       let sum = 0;
       for (let i = 0; i < 4; i++) sum += data[row + Math.max(0, Math.min(n - 1, bx + i - 1))] * wx[i];
       height += sum * wy[j];
+    }
+    if (this.shore) {
+      // The gradient from the same sixteen controls, for the offset that vanishes 1.5 cells off the zero line.
+      splineSlopes(gx - bx, dx);
+      splineSlopes(gy - by, dy);
+      let sx = 0,
+        sy = 0;
+      for (let j = 0; j < 4; j++) {
+        const row = Math.max(0, Math.min(n - 1, by + j - 1)) * n;
+        for (let i = 0; i < 4; i++) {
+          const h = data[row + Math.max(0, Math.min(n - 1, bx + i - 1))];
+          sx += h * dx[i] * wy[j];
+          sy += h * wx[i] * dy[j];
+        }
+      }
+      const cell = this.width / n;
+      height += shoreOffset(x, y, height, Math.hypot(sx, sy) / cell, cell);
     }
     return Math.max(height, this.floor);
   }

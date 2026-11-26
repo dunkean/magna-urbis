@@ -9,8 +9,9 @@ import { roofSeasonKey } from '../seasonPalette';
 import type { Building3dScene } from '../urbanBuildingGeometry';
 import { showsCraftedHouses, type UrbanBuildingAppearance } from '../urbanBuildingStyle';
 import type { LiveFrame, LiveLayerStats } from '../live/contract';
-import { BUILDING_STRIDE, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
-import { BLOCK_CELL, BLOCK_CELLS, BlockGrouping, YARD_HOUSE, blockHidden, blockLevel, worldPaint, worldSeat, yardBlockLevel, yardRise } from './buildingsBlocks';
+import { BUILDING_STRIDE, BuildingColorSlots, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
+import { BLOCK_CELL, BLOCK_CELLS, BlockGrouping, YARD_HOUSE, blockHidden, blockLevel, lookBoxing, meshKey, worldPaint, worldSeat, yardBlockLevel, yardRise } from './buildingsBlocks';
+import { BuildingLookTable, LOOK_TABLE_WIDTH } from './buildingsLookTable';
 import { WORLD_BUILDING_FS, WORLD_BUILDING_VS } from './buildingsShader';
 import type { TerrainHeights } from './heights';
 import { NIGHT_HAZE, VOLUME_HAZE, ViewVolume, hazeDistance, startVolumeProgram, volumeProgramLinked, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
@@ -55,6 +56,8 @@ export interface WorldBuildingsLayer extends VolumeLayer {
   /** The building first met by the ray from `origin` along `direction` (map metres, z as drawn) before `limit`, among
    * those `accept` takes; undefined before the town is grouped into blocks. CPU only, for a click. */
   pick(origin: ArrayLike<number>, direction: ArrayLike<number>, rise: number, limit: number, accept: (building: Building3dVisual) => boolean): BuildingPick | undefined;
+  /** Tints the faces of the building whose volume has this id (the page's selection); undefined: none. */
+  highlight(id: string | undefined): void;
 }
 
 /** Buildings spanning this many pixels keep their full volumes whatever the budget (the protected near field). */
@@ -68,11 +71,21 @@ const CELLS = BLOCK_CELLS * BLOCK_CELLS;
 const caveFog: [number, number] = [0, 1];
 /** Pixels per metre between which the lot boundaries of the frame rise from the ground, refilled in place. */
 const yardSizes: [number, number] = [0, 1];
-/** Block caches of other looks kept for a switch back (their GPU levels stay allocated). */
-const DORMANT_LOOKS = 2;
-const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uPlanRoof', 'uRoofInkDpr', 'uYard', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain', 'uCave', 'uHouseSurface', 'uHouseSurfaceReady'] as const;
+/** Look tables of a mesh set kept for a switch back, the shown one included (a few MiB each for a large town). */
+const LOOK_TABLES = 3;
+const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uPlanRoof', 'uRoofInkDpr', 'uYard', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain', 'uCave', 'uHouseSurface', 'uHouseSurfaceReady', 'uLook', 'uSelection', 'uSelected'] as const;
 
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
+/** The meshes of one geometry of a town (meshKey: roof mode, diagnostic, crafted season), their colour slots and the
+ * look tables made for them. */
+interface MeshSet {
+  key: string;
+  grouped: Pick<BlockGrouping, 'blocks' | 'altitudes'>;
+  cache: BuildingBlockCache;
+  slots: BuildingColorSlots;
+  tables: Map<string, BuildingLookTable>;
+  detailed: boolean;
+}
 
 export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: WorldBuildingsOptions): WorldBuildingsLayer {
   const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, bytes: 0 };
@@ -83,16 +96,68 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
   const volume = new ViewVolume();
   const newCache = (): BuildingBlockCache => new BuildingBlockCache(gl, () => options.budgetBytes, getViewDepth);
   let cache = newCache();
-  /** The block caches of other looks of the town on this relief, by appearance key, most recent last: a switch back to
-   * a look finds its meshes. The blocks (grouped) depend on the scene only, which a look may keep. */
-  const dormant = new Map<string, { scene: Building3dScene; heights: TerrainHeights; grouped: Pick<BlockGrouping, 'blocks' | 'altitudes'>; cache: BuildingBlockCache; detailed: boolean }>();
+  /** Every look of a mesh set shares its meshes: a look draws them through its table (buildingsLookTable.ts). The
+   * colour slots of the meshes, the look tables by appearance key (most recent last), the table of the look on screen
+   * and the one drawn: the previous look's until the new one is filled, so a switch never shows a face unpainted. */
+  let slots = new BuildingColorSlots(),
+    tables = new Map<string, BuildingLookTable>(),
+    table: BuildingLookTable | undefined,
+    shown: BuildingLookTable | undefined;
+  /** The mesh set of the other geometry last shown (another roof mode, crafted houses in another season), for a switch
+   * back. The blocks (grouped) depend on the scene only. */
+  let dormant: MeshSet | undefined;
   let grouped: Pick<BlockGrouping, 'blocks' | 'altitudes'> | undefined;
-  const dropDormant = (lost = false): void => {
-    for (const held of dormant.values()) {
-      if (lost) held.cache.contextLost();
-      else held.cache.clear();
+  const dropTables = (held: Map<string, BuildingLookTable>, lost = false): void => {
+    for (const t of held.values()) {
+      if (lost) t.lost();
+      else t.dispose(gl);
     }
-    dormant.clear();
+    held.clear();
+  };
+  const dropDormant = (lost = false): void => {
+    if (!dormant) return;
+    if (lost) dormant.cache.contextLost();
+    else dormant.cache.clear();
+    dropTables(dormant.tables, lost);
+    dormant = undefined;
+  };
+  /** The other geometry's meshes never take the shown ones past their budget: they go as the shown ones grow. */
+  const trimDormant = (): void => {
+    if (dormant && cache.bytes + dormant.cache.bytes > cache.budget()) dropDormant();
+  };
+  /** The table of the look on screen: kept, or made (filled in work slices); the oldest other tables go. */
+  const takeLook = (): void => {
+    paint = worldPaint(scene!, appearance!, grouped!.altitudes, look, slots);
+    let next = tables.get(appearanceKey);
+    if (next) {
+      tables.delete(appearanceKey);
+      next.paint = paint;
+    } else next = new BuildingLookTable(appearanceKey, paint);
+    tables.set(appearanceKey, next);
+    table = next;
+    for (const [key, old] of tables) {
+      if (tables.size <= LOOK_TABLES) break;
+      if (old === shown || old === table) continue;
+      old.dispose(gl);
+      tables.delete(key);
+    }
+  };
+  /** Paints the slots of the levels built since: the drawn table at once (a few slots), the table of a new look in
+   * slices until it is whole, then drawn. True while it fills. */
+  const colour = (deadline: number): boolean => {
+    if (!table) return false;
+    if (shown && shown !== table && shown.filled < slots.length) {
+      shown.fill(slots, Infinity);
+      shown.upload(gl);
+    }
+    if (!table.fill(slots, shown === table ? Infinity : deadline)) return true;
+    table.upload(gl);
+    if (shown !== table) {
+      shown = table;
+      countWork('volumes.lookTable');
+      options.invalidate();
+    }
+    return false;
   };
   // The blocks in view of a frame: slot, height centre and half range, radius.
   const visible: Slot[] = [],
@@ -117,78 +182,121 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
   let scene: Building3dScene | undefined,
     heights: TerrainHeights | undefined,
     appearanceKey = '',
+    shapeKey = '',
     night = 0;
   let paint: BuildingPaint | undefined, seat: BuildingSeat | undefined, appearance: UrbanBuildingAppearance | undefined, look: VolumeTownLook | undefined;
   const grain = new CoverGrainTexture(gl);
   let houseSurfaces: HouseSurfaceTexture | undefined;
   let grainFilled = false;
-  /** The grouping of a new scene into blocks, while it runs. */
-  let grouping: BlockGrouping | undefined;
-  /** The inputs of the page: a new scene, appearance or terrain starts the blocks again (grouped in later slices). */
+  /** The selected building (highlight): its colour slots marked in a mask laid out as the look table, which the vertex
+   * shader reads only while a building is selected. Made again when the selection or the mesh set changes, extended by
+   * rows as built levels add slots: nothing is uploaded in a frame where neither changed. */
+  let selected: string | undefined,
+    mask: WebGLTexture | undefined,
+    maskData = new Uint8Array(0),
+    maskSlots: BuildingColorSlots | undefined,
+    maskCount = 0,
+    maskRows = 0;
+  /** Brings the mask up to the slots of the meshes on screen; true when a building is selected and its mask is there. */
+  const syncMask = (): boolean => {
+    if (!selected) return false;
+    const count = slots.length;
+    if (mask && maskSlots === slots && maskCount === count) return true;
+    const rows = Math.max(1, 2 ** Math.ceil(Math.log2(Math.ceil(count / LOOK_TABLE_WIDTH)))),
+      whole = !mask || maskSlots !== slots || rows !== maskRows,
+      from = whole ? 0 : maskCount;
+    if (whole) maskData = new Uint8Array(rows * LOOK_TABLE_WIDTH);
+    for (let s = from; s < count; s++) maskData[s] = slots.list[s].building.id === selected ? 255 : 0;
+    gl.activeTexture(gl.TEXTURE3);
+    if (!mask) {
+      mask = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, mask);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    } else gl.bindTexture(gl.TEXTURE_2D, mask);
+    if (whole) gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, LOOK_TABLE_WIDTH, rows, 0, gl.RED, gl.UNSIGNED_BYTE, maskData);
+    else {
+      const first = Math.floor(from / LOOK_TABLE_WIDTH),
+        last = Math.ceil(count / LOOK_TABLE_WIDTH);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, first, LOOK_TABLE_WIDTH, last - first, gl.RED, gl.UNSIGNED_BYTE, maskData, first * LOOK_TABLE_WIDTH);
+    }
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.activeTexture(gl.TEXTURE0);
+    maskSlots = slots;
+    maskCount = count;
+    maskRows = rows;
+    return true;
+  };
+  /** The grouping of a new scene into blocks, while it runs; the cache of the scene it replaces when its blocks take
+   * the levels of the blocks it keeps (BuildingBlockCache.adoptBlocks). */
+  let grouping: BlockGrouping | undefined,
+    adopting: BuildingBlockCache | undefined;
+  /** The inputs of the page: another look of the same meshes takes its table; another geometry (meshKey) its own mesh
+   * set on the same blocks; a new scene or terrain starts the blocks again (grouped in later slices). */
   const sync = (): void => {
     const nextScene = options.scene(),
       nextHeights = options.terrain(),
       nextAppearance = options.appearance(),
       nextLook = options.look?.(),
-      key = JSON.stringify({ ...nextAppearance, ambience: undefined, lightsOn: undefined }) + roofSeasonKey() + (nextLook ? '|' + nextLook.frame.key : '');
+      season = roofSeasonKey(),
+      key = JSON.stringify({ ...nextAppearance, ambience: undefined, lightsOn: undefined }) + season + (nextLook ? '|' + nextLook.frame.key : ''),
+      shape = meshKey(nextAppearance, season);
     const isNight = nextAppearance.ambience === 'night';
     night = isNight ? ((nextAppearance.lightsOn ?? isNight) ? 1 : 2) : 0;
-    if (!dirty && nextScene === scene && nextHeights === heights && key === appearanceKey && nextLook === look) return;
-    // Another look of the same town: its meshes (vertex colours) are made again on the same blocks, and the current
-    // cache waits for a switch back.
-    const sameTown = !dirty && nextScene === scene && nextHeights === heights && !!grouped && !!scene && !!heights;
-    if (sameTown && paint && key === appearanceKey) {
-      // A new look object with the same frame: the same meshes.
-      appearance = nextAppearance;
-      look = nextLook;
-      paint = worldPaint(scene!, appearance, grouped!.altitudes, look);
+    if (!dirty && nextScene === scene && nextHeights === heights && key === appearanceKey && shape === shapeKey && nextLook === look) return;
+    const sameTown = !dirty && nextScene === scene && nextHeights === heights && !!scene && !!heights,
+      wasDetailed = showsCraftedHouses(appearance),
+      leavingDetailed = wasDetailed && !showsCraftedHouses(nextAppearance);
+    appearance = nextAppearance;
+    look = nextLook;
+    appearanceKey = key;
+    if (sameTown && shape === shapeKey) {
+      // Another look of the same meshes (or a new look object with the same frame): its table, no mesh.
+      if (grouped) takeLook();
       return;
     }
-    const leavingDetailed = showsCraftedHouses(appearance) && !showsCraftedHouses(nextAppearance);
     if (leavingDetailed) {
       houseSurfaces?.dispose();
       houseSurfaces = undefined;
-      for (const [saved, held] of dormant) if (held.detailed) {
-        held.cache.clear();
-        dormant.delete(saved);
-      }
     }
-    if (!leavingDetailed && !dirty && scene && heights && grouped && paint) {
-      dormant.delete(appearanceKey);
-      dormant.set(appearanceKey, { scene, heights, grouped, cache, detailed: showsCraftedHouses(appearance) });
-      if (dormant.size > DORMANT_LOOKS) {
-        const [oldest, held] = dormant.entries().next().value!;
-        held.cache.clear();
-        dormant.delete(oldest);
-      }
-    } else cache.clear();
-    if (dirty) dropDormant();
+    // The meshes of the geometry left wait for a switch back, one geometry at a time.
+    const left: MeshSet | undefined = sameTown && grouped && !leavingDetailed ? { key: shapeKey, grouped, cache, slots, tables, detailed: wasDetailed } : undefined;
+    // A new scene of the same town on the same relief, in the same geometry (a local edit, another look's extras): its
+    // blocks whose buildings are the same objects keep their levels, with the colour slots and the tables they index.
+    const carry = !sameTown && !dirty && !!scene && !!nextScene && nextHeights === heights && shape === shapeKey && !!grouped && !leavingDetailed;
+    adopting?.clear();
+    adopting = carry ? cache : undefined;
+    if (!left && !carry) {
+      cache.clear();
+      dropTables(tables);
+    }
+    if (!sameTown || (leavingDetailed && dormant?.detailed)) dropDormant();
     dirty = false;
     clearSelection();
     scene = nextScene;
     heights = nextHeights;
-    appearanceKey = key;
-    appearance = nextAppearance;
-    look = nextLook;
+    shapeKey = shape;
     seat = heights && worldSeat(heights, heights.exaggeration);
-    // Entries of another relief are stale.
-    for (const [k, held] of dormant)
-      if (held.heights !== heights) {
-        held.cache.clear();
-        dormant.delete(k);
-      }
-    const back = dormant.get(key);
-    dormant.delete(key);
-    if (back && back.scene !== scene) back.cache.clear();
-    const kept = back?.scene === scene ? back : undefined,
-      blocks = kept?.grouped ?? (sameTown ? grouped : [...dormant.values()].find(held => held.scene === scene)?.grouped);
-    cache = kept?.cache ?? newCache();
+    const back = dormant?.key === shape ? dormant : undefined;
+    if (back) dormant = undefined;
+    if (left) {
+      dropDormant();
+      dormant = left;
+    }
+    cache = back?.cache ?? newCache();
+    if (!carry) {
+      slots = back?.slots ?? new BuildingColorSlots();
+      tables = back?.tables ?? new Map();
+    }
+    table = shown = undefined;
+    const blocks = back?.grouped ?? (sameTown ? grouped : undefined);
     if (scene && heights && blocks) {
-      // The same key is the same look (its frame's key); the look object of the new appearance paints the levels still to build.
       grouped = blocks;
-      paint = worldPaint(scene, appearance, blocks.altitudes, look);
-      if (!kept) cache.setBlocks(blocks.blocks);
+      if (!back) cache.setBlocks(blocks.blocks);
       grouping = undefined;
+      takeLook();
       return;
     }
     grouped = undefined;
@@ -410,10 +518,12 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       }
       if (grouping) {
         if (!grouping.step(deadline)) return slice(started, true);
-        paint = worldPaint(scene!, appearance!, grouping.altitudes, look);
-        cache.setBlocks(grouping.blocks);
+        if (adopting) cache.adoptBlocks(grouping.blocks, adopting);
+        else cache.setBlocks(grouping.blocks);
+        adopting = undefined;
         grouped = grouping;
         grouping = undefined;
+        takeLook();
         return slice(started, true);
       }
       if (!cache.slots.length || !paint) return slice(started, false);
@@ -422,17 +532,24 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         warm();
         return slice(started, true);
       }
-      const more = cache.work(deadline, tick, paint, seat!, () => {
-        if (frame?.camera.tilted || options.topView?.()) options.invalidate();
-      });
+      // A new look fills its table first (every mesh it paints is there); then the levels just built take their paint
+      // before any frame draws them.
+      const switching = shown !== table && colour(deadline);
+      const more =
+        !switching &&
+        cache.work(deadline, tick, paint, seat!, () => {
+          if (frame?.camera.tilted || options.topView?.()) options.invalidate();
+        });
+      const filling = switching || colour(deadline);
+      trimDormant();
       if (showsCraftedHouses(appearance) && (houseSurfaces?.ready ?? 0) < houseSurfaceCount()) {
         houseSurfaces ??= new HouseSurfaceTexture(gl);
         const before = houseSurfaces.ready;
         const caughtUp = houseSurfaces.step();
         if (houseSurfaces.ready > before) options.invalidate();
-        return slice(started, more || !caughtUp);
+        return slice(started, more || filling || !caughtUp);
       }
-      return slice(started, more);
+      return slice(started, more || filling);
     },
     draw(frame: LiveFrame) {
       const started = performance.now(),
@@ -455,7 +572,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           focal = flat ? frame.view.scale : camera.focal / frame.dpr,
           roof = appearance?.roof,
           detailed = showsCraftedHouses(appearance),
-          boxed = roof === 'minimal' || (options.boxed?.() ? (roof === 'flat' || roof === 'v1' || roof === 'crafted' ? 'overview' : true) : false),
+          boxed = lookBoxing(roof, !!options.boxed?.()),
           depthSetting = getViewDepth();
         for (let s = 0; s < cache.slots.length && visibleCount < visibleZ.length; s++) {
           const slot = cache.slots[s],
@@ -467,7 +584,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           const x = (b.minX + b.maxX) / 2 - tx,
             y = (b.minY + b.maxY) / 2 - ty,
             z = (low + high) / 2 - tz,
-            radius = Math.hypot(b.maxX - b.minX, b.maxY - b.minY, high - low) / 2 + (detailed && !b.yard ? CRAFTED_BLOCK_MARGIN * Math.hypot(1,rise) : 0);
+            radius = Math.hypot(b.maxX - b.minX, b.maxY - b.minY, high - low) / 2 + (detailed && !b.yard ? CRAFTED_BLOCK_MARGIN * Math.hypot(1, rise) : 0);
           if (!volume.sees(x, y, z, radius)) continue;
           const depth = flat ? 1 : volume.depth(x, y, z);
           // The depth preference extends the subpixel cutoff; maximum depth retains every visible building block.
@@ -481,7 +598,9 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         }
         // The levels by screen size, the far end coarser while the frame passes its triangle budget.
         select(tx, ty, focal, boxed, keepFar, flat, rise * Math.abs(camera.up[2]));
-        if (drawTotal) {
+        // Nothing is drawn unpainted: the first table of a mesh set fills in the next work slices.
+        if (drawTotal && !shown?.texture) missingDraw = true;
+        else if (drawTotal) {
           const u = program.u;
           gl.useProgram(program.program);
           volumeDepth(gl);
@@ -517,6 +636,17 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
             gl.uniform1i(u.uHouseSurface, 1);
           }
           gl.uniform1f(u.uHouseSurfaceReady, detailed ? (houseSurfaces?.ready ?? 0) : 0);
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, shown!.texture!);
+          gl.uniform1i(u.uLook, 2);
+          // Without a selection the mask sampler reads the look table's unit (same sampler type), never sampled.
+          const marked = syncMask();
+          if (marked) {
+            gl.activeTexture(gl.TEXTURE3);
+            gl.bindTexture(gl.TEXTURE_2D, mask!);
+          }
+          gl.uniform1i(u.uSelection, marked ? 3 : 2);
+          gl.uniform1i(u.uSelected, marked ? 1 : 0);
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D_ARRAY, grain.texture ?? null);
           gl.uniform1i(u.uCoverGrain, 0);
@@ -526,8 +656,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
             if (slot !== block) {
               block = slot;
               const b = slot.block;
-              if (planRoof > 0 && !b.yard && slot.planGround?.key !== groundKey)
-                slot.planGround = { key: groundKey, lightness: mapGroundLightness((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2) };
+              if (planRoof > 0 && !b.yard && slot.planGround?.key !== groundKey) slot.planGround = { key: groundKey, lightness: mapGroundLightness((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2) };
               gl.uniform4f(u.uBlock, b.origin[0] - tx, b.origin[1] - ty, -tz, slot.planGround?.lightness ?? -1);
             }
             const level = drawLevel[i];
@@ -541,6 +670,12 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           if (detailed) {
             gl.activeTexture(gl.TEXTURE1);
             gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+          }
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, null);
+          if (marked) {
+            gl.activeTexture(gl.TEXTURE3);
+            gl.bindTexture(gl.TEXTURE_2D, null);
           }
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
@@ -558,9 +693,19 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     pick(origin, direction, rise, limit, accept) {
       return heights && cache.slots.length ? pickBuilding(cache.blocks, origin, direction, rise, heights, heights.exaggeration, limit, accept, showsCraftedHouses(appearance)) : undefined;
     },
+    highlight(id) {
+      if (id === selected) return;
+      selected = id;
+      maskSlots = undefined;
+      options.invalidate();
+    },
     contextLost() {
       // Every handle is dead: forget them without deleting.
       cache.contextLost();
+      adopting?.contextLost();
+      adopting = undefined;
+      // The tables keep their slots' paint: the next work slice uploads the drawn one again.
+      for (const t of tables.values()) t.lost();
       dropDormant(true);
       program = linking = undefined;
       clearSelection();
@@ -568,10 +713,15 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       grain.lost();
       houseSurfaces?.lost();
       grainFilled = false;
+      mask = maskSlots = undefined;
     },
     stats: () => stats,
     dispose() {
+      adopting?.clear();
+      adopting = undefined;
       cache.clear();
+      dropTables(tables);
+      table = shown = undefined;
       dropDormant();
       clearSelection();
       if (program) gl.deleteProgram(program.program);
@@ -583,6 +733,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       grain.dispose();
       houseSurfaces?.dispose();
       grainFilled = false;
+      if (mask) gl.deleteTexture(mask);
+      mask = maskSlots = undefined;
     },
   };
 }

@@ -20,23 +20,27 @@ describe('render passes', () => {
     expect(Object.keys(PASSES).sort()).toEqual([...PASS_ORDER].sort());
     for (const spec of Object.values(PASSES)) expect(spec.inputs.length).toBeGreaterThan(0);
   });
-  // The season also sets the water regime (dry beds, ice), so the water pass follows it. The vector map reads its
-  // seasonal palette when it paints (CanvasRendererDeps.palette): nothing of it is built again.
-  it('a season change repaints the ground and the water, a lighting change only the terrain look', async () => {
+  // The date reaches the water only through its drawn regime (waterRegime.ts drawnWaterKey): a date that keeps it
+  // leaves the water product key, so no water pass and no river upload. The vector map reads its seasonal palette when
+  // it paints (CanvasRendererDeps.palette): nothing of it is built again.
+  it('a season change repaints the ground, the water only when its drawn regime moves; a lighting change only the terrain look', async () => {
     const withEffects = (change: (c: CompositionRecipe) => void): AppearanceInput => {
       const composition = presetComposition('parchment');
       change(composition);
       return { ...v2, composition };
     };
-    const plain = withEffects(() => undefined);
-    expect(
-      await reruns(
-        plain,
-        withEffects(c => {
-          c.effects.season = 0.9;
-        }),
-      ),
-    ).toEqual(['terrainLook', 'water']);
+    const plain = withEffects(() => undefined),
+      autumn = withEffects(c => {
+        c.effects.season = 0.9;
+      });
+    expect(await reruns(plain, autumn)).toEqual(['terrainLook']);
+    const waterKey = (a: AppearanceInput, climateZone: 'temperate' | 'arctic'): string => passKeys({ r: resolveAppearance(a, base, { nativeCities: true }, 'view2d'), revisions, layers: {}, mode: 'gpu', effective: 'e', climateZone, forestEffective: 'f', worldSig: 'w' }).water;
+    expect(waterKey(autumn, 'temperate')).toBe(waterKey(plain, 'temperate'));
+    // A freeze is a new regime: the frozen rivers and lakes are drawn once, at the freeze.
+    const winter = withEffects(c => {
+      c.effects.season = 0;
+    });
+    expect(waterKey(winter, 'arctic')).not.toBe(waterKey(plain, 'arctic'));
     expect(
       await reruns(
         plain,

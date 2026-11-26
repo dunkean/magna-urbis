@@ -42,20 +42,44 @@ const optionFields: ParameterField[] = [
   { path: 'sprawl', label: 'sprawl', type: 'number', min: 0.25, max: 4 },
 ];
 const deleted: ParameterField = { path: 'deleted', label: 'deleted', type: 'boolean' };
-/** What the inspector sets on one quarter or block, outlines and house models apart (those stay in the project file). */
+/** What the inspector sets on one quarter or block as parameters. Their house model is a record (action "H"); their
+ * outlines stay in the project file (NOT_IN_CODE). */
 const subdivisionFields = (): Record<'quarter' | 'block', readonly ParameterField[]> => ({
-  quarter: [urbanField('tissue', 'culture', 'quarter'), urbanField('zone', '', 'quarter'), urbanField('density', 1, 'quarter'), urbanField('role', '', 'quarter'), { ...urbanField('wealth', 0.5, 'quarter'), max: 1 }, { ...urbanField('culture', '', 'house'), path: 'buildingCulture' }, deleted],
+  quarter: [
+    urbanField('tissue', 'culture', 'quarter'),
+    urbanField('zone', '', 'quarter'),
+    urbanField('density', 1, 'quarter'),
+    urbanField('role', '', 'quarter'),
+    { ...urbanField('wealth', 0.5, 'quarter'), max: 1 },
+    { ...urbanField('culture', '', 'house'), path: 'buildingCulture' },
+    deleted,
+  ],
   block: [urbanField('density', 1, 'block'), urbanField('operator', 'culture', 'block'), urbanField('role', '', 'parcel'), deleted],
 });
 /** Display-only biome repainting the kept relief (displayBiome.ts); absent = the generation biome. */
 const settingFields: ParameterField[] = [{ ...optionChoice('appearance.biome', CLIMATE_ZONES) }];
 /** The most changed parameters, given one-digit IDs (in this order) when the ID list is rebuilt. */
 export const FREQUENT = [
-  'options.culture', 'options.size', 'options.river', 'options.walls', 'options.wallStyle', 'options.port', 'options.suburbs', 'options.seaLevel', 'options.sprawl',
-  'appearance.biome', 'terrain.erosion', 'terrain.mountainMix', 'region.placement.density', 'region.placement.farmDensity', 'region.roads.density',
+  'options.culture',
+  'options.size',
+  'options.river',
+  'options.walls',
+  'options.wallStyle',
+  'options.port',
+  'options.suburbs',
+  'options.seaLevel',
+  'options.sprawl',
+  'appearance.biome',
+  'terrain.erosion',
+  'terrain.mountainMix',
+  'region.placement.density',
+  'region.placement.farmDensity',
+  'region.roads.density',
 ];
 /** Header-owned or non-generation paths. `options.biome` follows the header's climate: written only when it differs. */
 const excluded = new Set(['options.relief', 'options.coast', 'options.seed', 'terrain.relief', 'terrain.climate', 'terrain.coastMask', 'terrain.islandMode']);
+/** The house model travels whole, as a record with its catalogue choices (cityCodeRecords.ts, action "H"). */
+const HOUSE_MODEL = 'urban.houses.house_config.';
 export function eligible(field: ParameterField): boolean {
   if (field.type === 'boolean') return true;
   if (field.type === 'select') return !!field.options && field.options.length >= 2 && field.options.length <= MAX_LEVELS;
@@ -65,7 +89,7 @@ export function eligible(field: ParameterField): boolean {
 export function candidateParameters(): { key: string; scope: CodeParameter['scope']; path: string; field: ParameterField }[] {
   const out = new Map<string, { key: string; scope: CodeParameter['scope']; path: string; field: ParameterField }>();
   const add = (key: string, scope: CodeParameter['scope'], path: string, field: ParameterField) => {
-    if (!excluded.has(key) && !key.startsWith('runtime.') && eligible(field) && !out.has(key)) out.set(key, { key, scope, path, field });
+    if (!excluded.has(key) && !key.startsWith('runtime.') && !key.startsWith(HOUSE_MODEL) && eligible(field) && !out.has(key)) out.set(key, { key, scope, path, field });
   };
   for (const field of optionFields) add(`options.${field.path}`, 'options', field.path, field);
   for (const field of settingFields) add(field.path, 'settings', field.path, field);

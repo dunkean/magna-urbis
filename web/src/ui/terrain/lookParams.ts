@@ -8,7 +8,7 @@
  * Light cartographic grounds use palette/hillshade only. Satellite fast keeps the full material, vegetation and
  * refinement parameters; its performance tier simplifies the buildings.
  */
-import { waterSeasonUniforms } from '../../render/seasonPalette';
+import { mapLandSeason, waterSeasonUniforms } from '../../render/seasonPalette';
 import { renderV2GlacierSources } from '../../../../rust/bridge/terrainRenderV2';
 import { renderV2ZoneUniform, type SeasonCalendar } from '../../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../../rust/bridge/terrainClimate';
@@ -169,6 +169,9 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
   // The paper map's lit land takes the shore ring's binding (natural looks only, mode >= 2): uHasLandBackdrop.
   b.landBackdrop(!!symbols);
   if (symbols) {
+    const land = mapLandSeason();
+    b.floats('uLandTint', 4, land.tint);
+    b.floats('uLandSnow', 4, land.snow);
     b.floats('uTreeWash', 4, treeSymbolWash(symbols.palette));
     b.floats('uTreeSeason', 4, treeSymbolSeason(symbols.palette));
     b.floats('uTreeSpecies', 4, treeSymbolSpecies(symbols));

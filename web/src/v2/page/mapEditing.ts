@@ -143,7 +143,7 @@ async function applyContourEdit(state: PageState, actions: PageActions, edit: Co
     actions.setBusy(false);
   }
   state.settings = next;
-  await actions.applyDirectMapEdit({ ...updated, terrain: before.terrain, landuse: before.landuse });
+  await actions.applyDirectMapEdit(updated);
   const warningsOf = (world: World) => (world.debug?.v2RustCities as Record<string, RustTownSnapshot> | undefined)?.[edit.target.town]?.warnings ?? [];
   const warnings = warningsOf(updated),
     previous = warningsOf(before);

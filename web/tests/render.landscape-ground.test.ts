@@ -5,19 +5,20 @@ import { urbanLandscapeGround, currentLandscapeGround, landscapeCoverGround } fr
 import { groundAppearance } from '../src/gen/landuse/groundAppearance';
 import { intersectionS, differenceSafeS, mpArea } from '../src/gen/geo/bool';
 import { offsetRibbon, polygonContains, polygonArea } from '../src/gen/core/geom';
-import { orientPos } from '../src/gen/geo/poly';
 import { CULTURE_LIST } from '../src/gen/urban/cultures';
 import { PALETTES, type MapStyle } from '../src/render/styles';
 import { buildScene } from '../src/render/scene';
 import { renderSvg } from '../src/render/svg';
 import { createCanvasRenderer, type CanvasLike } from '../src/render/canvas';
 import { biomePalette } from '../src/render/biomes';
+import { forestLandPaint } from '../src/render/landuseForestTone';
 import { pathEarth } from '../src/render/urban';
 import { pathD } from '../src/render/util';
 import { generate } from '../src/gen/pipeline';
 import { makeOptions } from '../src/gen/options';
 import { megaQuarterDetail } from '../src/gen/urban/mega/detail';
 import { MEGA_KEY } from '../src/gen/urban/mega/types';
+import { LAB_OPEN } from '../src/gen/urban/streets';
 import { fakeWorld, mockCanvas, MockPath2D } from '../scripts/fakeworld';
 
 const rect = (x: number, y: number, w: number, h = w): Polygon => [
@@ -85,6 +86,10 @@ class RecordingPath extends MockPath2D {
     super.lineTo();
     this.rings.at(-1)?.push({ x, y });
   }
+  override addPath(path: RecordingPath): void {
+    super.addPath(path);
+    for (const ring of path.rings) this.rings.push(ring.slice());
+  }
   contains(x: number, y: number): boolean {
     return this.rings.reduce((n, ring) => (polygonContains(ring, { x, y }) ? n + Math.sign(polygonArea(ring)) : n), 0) !== 0;
   }
@@ -130,13 +135,17 @@ function landscapeCanvas(w: World) {
 function expectCanvasGround(w: World, ground: PolyH[], cx: number, cy: number): void {
   const canvas = landscapeCanvas(w);
   canvas.draw(cx, cy);
-  const rings = ground.flatMap(p => [orientPos(p.outer), ...p.holes.map(h => orientPos(h).slice().reverse())]);
-  // The clip now contains only viewport candidates. Every retained ring must still be exact,
-  // and its nonzero membership must match the complete ground throughout the displayed view.
-  const exactRings = new Set(rings.map(p => JSON.stringify(p)));
-  expect(canvas.bases.some(p => p.rings.length > 0 && p.rings.every(r => exactRings.has(JSON.stringify(r))))).toBe(true);
-  for (let y = cy - 700 / 1.2; y < cy + 700 / 1.2; y += 20)
-    for (let x = cx - 900 / 1.2; x < cx + 900 / 1.2; x += 20) {
+  // The base path is cut to the frame rectangle before it reaches Canvas (cartography/geometry.ts polyPath via
+  // visibleClip): rings crossing the frame gain cut vertices out there, but inside the displayed view every vertex is
+  // an exact ground vertex (no rounding, no simplification), and the nonzero membership matches the complete ground.
+  const hx = 900 / 1.2,
+    hy = 700 / 1.2,
+    eps = 1e-6;
+  const exact = new Set(ground.flatMap(p => [p.outer, ...p.holes]).flatMap(r => r.map(v => `${v.x},${v.y}`)));
+  const inView = (v: { x: number; y: number }) => v.x > cx - hx + eps && v.x < cx + hx - eps && v.y > cy - hy + eps && v.y < cy + hy - eps;
+  expect(canvas.bases.some(p => p.rings.length > 0 && p.rings.every(r => r.every(v => !inView(v) || exact.has(`${v.x},${v.y}`))))).toBe(true);
+  for (let y = cy - hy; y < cy + hy; y += 20)
+    for (let x = cx - hx; x < cx + hx; x += 20) {
       const inside = ground.some(p => polygonContains(p.outer, { x, y }) && !p.holes.some(h => polygonContains(h, { x, y })));
       expect(
         canvas.bases.some(p => p.contains(x, y)),
@@ -233,7 +242,8 @@ describe('opaque landscape ground across settlement models', () => {
       if (p) clip.push(p);
     };
     ctx.fill = (...args: unknown[]) => {
-      if (clip.length >= 2 && ctx.fillStyle === pal.land.forest && ctx.globalAlpha === 0.7) clips.push(clip.slice());
+      // The forest class is painted in its shared tone (landuseForestTone.ts), as a stepped wash of partial alphas.
+      if (clip.length >= 2 && ctx.fillStyle === forestLandPaint(pal).color && (ctx.globalAlpha as number) > 0) clips.push(clip.slice());
       fill(...args);
     };
     const r = createCanvasRenderer(m.canvas as unknown as CanvasLike, w, 'parchment', { Path2D: RecordingPath as never, dpr: 1, terrain: () => null });
@@ -311,7 +321,7 @@ describe('opaque landscape ground across settlement models', () => {
       garden = rect(1050, 350, 100);
     main.macro = { quarters: [{ id: 0, kind: 'quarter', district: 'town', pts: main.footprint[0], inset: [] }] } as unknown as UrbanLayer['macro'];
     const secondary: UrbanLayer = { ...main, footprint: [local], footprintH: [piece(local)], parcels: [], backLand: [], streets: [], macro: { quarters: [{ id: 0, kind: 'quarter', district: 'town', pts: local, inset: [] }] } as unknown as UrbanLayer['macro'] };
-    w.settlements = [{ main: false, index: 1, urban: secondary } as never];
+    w.settlements = [{ main: false, index: 1, center: { x: 1150, y: 450 }, radius: 250, urban: secondary } as never];
     const detail: UrbanLayer = { ...secondary, macro: undefined, footprint: [], footprintH: [], quarters: [], blocks: [local], blockInfo: [{ kind: 'block', quarter: 0, phase: 0, zone: 'middle' }], parcels: [{ poly: local, block: 0, use: 'plot' }], backLand: [piece(garden)] };
     const before = urbanLandscapeGround(w);
     w.megaDetail = { [MEGA_KEY]: detail };
@@ -327,19 +337,30 @@ describe('opaque landscape ground across settlement models', () => {
   });
 
   it('preserves dedicated gardens, paving and street gaps while exposing peripheral yards in actual footprint-free megaQuarterDetail output', () => {
-    const w = generate(makeOptions({ seed: '42', mapSize: 4000, population: 60000, coast: 'S', siteType: 'harbor', walls: 'none' }));
-    const plan = w.urban!.macro!,
-      id = 98,
-      detail = megaQuarterDetail(w, id)!;
-    // Actual seeded shoreline detail: 30 ordinary blocks and 256 garden pieces on the reviewed producer.
+    const w = generate(makeOptions({ seed: '42', mapSize: 4000, population: 60000, eagerPop: 1, coast: 'S', siteType: 'harbor', walls: 'none' }));
+    const plan = w.urban!.macro!;
+    expect(plan).toBeDefined();
+    // The first actual seeded quarter with an open edge whose detail holds ordinary blocks, gardens and peripheral yards
+    // (a fixed id breaks whenever the producer renumbers its quarters).
+    let found: { quarter: (typeof plan.quarters)[number]; detail: UrbanLayer } | undefined;
+    for (const q of plan.quarters) {
+      if (q.kind !== 'quarter' || !q.lab.includes(LAB_OPEN)) continue;
+      const d = megaQuarterDetail(w, q.id);
+      if (d && d.backLand.length > 0 && d.blockInfo.some(b => b.kind === 'block') && mpArea(d.openEdgeGround ?? []) > 0) {
+        found = { quarter: q, detail: d };
+        break;
+      }
+    }
+    expect(found).toBeDefined();
+    const { quarter, detail } = found!,
+      id = quarter.id;
     expect(detail.backLand.length).toBeGreaterThan(0);
     expect(detail.blockInfo.some(b => b.kind === 'block')).toBe(true);
     expect(detail.footprintH).toEqual([]);
     expect(detail.quarters).toEqual([]);
     const before = JSON.stringify(w.landuse!.landscapeGround);
     w.megaDetail = { [id]: detail };
-    const ground = currentLandscapeGround(w),
-      quarter = plan.quarters[id];
+    const ground = currentLandscapeGround(w);
     for (const poly of [...detail.backLand, ...detail.parcels.filter(p => p.use !== 'plot' && p.use !== 'hut-lot').map(p => piece(p.poly))]) {
       expect(mpArea(intersectionS(ground, poly))).toBeLessThan(0.01);
     }

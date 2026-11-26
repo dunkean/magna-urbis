@@ -4,8 +4,9 @@ import type { Vec2 } from '../gen/types';
 
 /** A screen-width outline, kept aligned while the map pans and zooms. In the top view the SVG's view box follows the
  * view (no point is moved); in a tilted view (`projection().tilted`) the rings are projected onto the relief again
- * whenever the projection changes, a point behind the eye breaking its ring. */
-export function createSelectionOverlay(map: HTMLElement, getView: () => View, projection: () => ScreenProjection) {
+ * whenever the projection changes, a point behind the eye breaking its ring. `highlight` tints the volume of a selected
+ * building in the tilted view (its volume id), cleared by every other selection. */
+export function createSelectionOverlay(map: HTMLElement, getView: () => View, projection: () => ScreenProjection, highlight: (volume: string | undefined) => void) {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg'),
     halo = document.createElementNS(ns, 'path'),
@@ -86,8 +87,10 @@ export function createSelectionOverlay(map: HTMLElement, getView: () => View, pr
     frame = requestAnimationFrame(update);
   }
   return {
-    set(rings?: readonly (readonly Vec2[])[], name?: string): void {
+    /** Outlines `rings` with an optional caption; `volume`: the volume id of the building selected, if any. */
+    set(rings?: readonly (readonly Vec2[])[], name?: string, volume?: string): void {
       cancelAnimationFrame(frame);
+      highlight(volume);
       svg.style.display = rings?.length ? '' : 'none';
       shown = (rings ?? []).filter(ring => ring.length >= 3);
       worldPath = shown.map(ring => `M${ring.map(p => `${p.x},${p.y}`).join('L')}Z`).join('');

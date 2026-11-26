@@ -161,6 +161,10 @@ export class MockPath2D {
   closePath(): void {
     /* no-op */
   }
+  /** Path2D.addPath: the renderers merge cached pieces into one path (cartography/roads.ts, woods.ts). */
+  addPath(path: MockPath2D): void {
+    this.ops += path.ops;
+  }
 }
 
 export interface CallLog {

@@ -272,10 +272,10 @@ export function* buildingColorsSteps(buildings: CityBuildings | undefined, s: Ci
     return { fill, line };
   }
   // The pan as a roof, and as the wall top where a rim shows (the frame's device scale decides, in the shader).
-  const state = { palette: s.palette, diagnostic: s.diagnostic, colors: s.colors, dpr: 1 },
+  const state = { palette: s.palette, diagnostic: s.diagnostic, colors: s.colors, dpr: 1, rendered: s.live?.roadLook === 'rendered' },
     f = roofFrame({ ...state, mpp: 2 * RIM_DEVICE_MPP }),
     rimmed = roofFrame({ ...state, mpp: RIM_DEVICE_MPP });
-  const out = f.natural && s.roof !== 'flat' && s.live?.grain ? { grain: new Uint8Array(count * 4), rim: new Uint8Array(count * 4), lay: new Uint8Array(count * 4) } : undefined;
+  const out = (f.natural || f.painted) && s.roof !== 'flat' && s.live?.grain ? { grain: new Uint8Array(count * 4), rim: new Uint8Array(count * 4), lay: new Uint8Array(count * 4) } : undefined;
   for (let k = 0; k < roofs.shapes.length; k++) {
     if ((k + 1) % COLOR_STEP === 0) yield;
     const item = items[roofs.owner[k]],

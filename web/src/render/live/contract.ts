@@ -171,6 +171,9 @@ export interface GroundTileRenderer {
   renderWorldTile(box: Rect4, px: number, treePlane?: 'floor' | 'keys'): TexImageSource | undefined;
   /** Changes whenever the pixels `renderWorldTile` would produce change (base, detail, look, season, water, forest, overlay). */
   contentRevision(): number;
+  /** The world boxes (map metres) whose pixels changed after revision `since` (a local forest edit): only the tiles
+   * meeting them are baked again. Undefined, or absent: any pixel may have changed. */
+  contentChanges?(since: number): readonly Rect4[] | undefined;
 }
 
 export interface LiveGroundOptions {

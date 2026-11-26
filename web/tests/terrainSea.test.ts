@@ -15,7 +15,12 @@ const distance = Float32Array.from({ length: n * n }, (_, i) => [0, 0.01, 1, 4, 
 const normals = { x: new Float32Array(n * n), y: new Float32Array(n * n), z: new Float32Array(n * n).fill(1) };
 const world = { mapSize: 80, terrain: { height: { w: n, h: n, cell: 10, data: height }, water: new Uint8Array(n * n) } } as unknown as World;
 const lighting = { ...DEFAULT_TERRAIN_LIGHTING, enabled: false };
-const render = (style: 'parchment' | 'atlas', overrides = {}) => renderTerrainPixels(world, { ...PALETTES[style], grain: 0 }, { pixels: n, surface: height, normals, sea: { distance, bandWidth: 8 }, heightRange: { min: 0, max: 20 }, lighting, ...overrides }).rgb;
+/** The offshore columns (4 to 6) start at the last stop of the style's ramp, in bands of 8 m: one band for a two-stop
+ * ramp, twenty for the atlas, which lightens its shallows and darkens offshore. */
+const lastStop = (style: 'parchment' | 'atlas') => PALETTES[style].water.stops[PALETTES[style].water.stops.length - 1][0];
+const seaDistance = (style: 'parchment' | 'atlas') => Float32Array.from(distance, (d, i) => (i % n >= 4 && i % n <= 6 ? d * lastStop(style) : d));
+const render = (style: 'parchment' | 'atlas', overrides = {}) =>
+  renderTerrainPixels(world, { ...PALETTES[style], grain: 0 }, { pixels: n, surface: height, normals, sea: { distance: seaDistance(style), bandWidth: 8 }, heightRange: { min: 0, max: 20 }, lighting, ...overrides }).rgb;
 const pixel = (rgb: Uint8Array, x: number) => Array.from(rgb.slice(x * 3, x * 3 + 3));
 
 // The ported geometry runs in the Rust WASM package (synchronous calls).
@@ -30,11 +35,21 @@ describe.each(['parchment', 'atlas'] as const)('%s coastal sea', style => {
     expect(pixel(rgb, 1)).toEqual(shore);
     expect(pixel(rgb, 4)).toEqual(sea);
     expect(pixel(rgb, 6)).toEqual(sea);
+    // In between, each colour lies between the two ramp stops around its band position and moves toward the next one.
+    const stops = PALETTES[style].water.stops,
+      segment = (x: number) => stops.findIndex(([t]) => t >= distance[x] / 8);
+    expect(segment(3)).toBe(segment(2));
+    const from = hexToRgb(stops[segment(2) - 1][1]),
+      to = hexToRgb(stops[segment(2)][1]);
     for (let channel = 0; channel < 3; channel++) {
-      expect(rgb[2 * 3 + channel]).toBeGreaterThan(shore[channel]);
-      expect(rgb[3 * 3 + channel]).toBeGreaterThan(rgb[2 * 3 + channel]);
-      expect(rgb[3 * 3 + channel]).toBeLessThan(sea[channel]);
+      for (const x of [2, 3]) {
+        expect(rgb[x * 3 + channel]).toBeGreaterThanOrEqual(Math.min(from[channel], to[channel]));
+        expect(rgb[x * 3 + channel]).toBeLessThanOrEqual(Math.max(from[channel], to[channel]));
+      }
+      expect((rgb[3 * 3 + channel] - rgb[2 * 3 + channel]) * Math.sign(to[channel] - from[channel])).toBeGreaterThanOrEqual(0);
     }
+    expect(pixel(rgb, 3)).not.toEqual(pixel(rgb, 2));
+    expect(pixel(rgb, 2)).not.toEqual(shore);
   });
 
   it('keeps water color independent of seabed lighting, like lakes', () => {
@@ -54,7 +69,8 @@ describe.each(['parchment', 'atlas'] as const)('%s coastal sea', style => {
     const terrain = { x: 0, y: 0, width: 80, resolution: n, height, normalX: normals.x, normalY: normals.y, normalZ: normals.z, caveMask: new Uint8Array(), globalMinHeight: -100, globalMaxHeight: 20, motifSize: 80 } as TerrainData;
     const scene = renderRustTerrain(terrain, style, false, { relief: 'hills', width: 80 }, true, 'test', lighting);
     const rendered = new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80">${scene.svg}</svg>`).render();
-    const p = (40 * 80 + 55) * 4;
+    // Mid-sea (about 33 m from the east shore, 26 bands of 1.28 m): past the last stop of every ramp.
+    const p = (40 * 80 + 40) * 4;
     expect(Array.from(rendered.pixels.slice(p, p + 3))).toEqual(hexToRgb(PALETTES[style].seaFill));
     expect(scene.svg.match(/<image /g)).toHaveLength(2);
   });

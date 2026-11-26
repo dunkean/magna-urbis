@@ -41,9 +41,24 @@ uniform vec2 uImageSize;
 uniform ivec2 uRepeat;
 uniform vec4 uColor;
 uniform float uAlpha;
+// Stripes (uPattern 2, replay.ts stripe): across = dot(uStripe.xy, device pixel) + uStripe.w in user units, lines where
+// across is a multiple of the period uStripe.z; uStripeLine = half line width, pixel footprint (user units).
+uniform vec4 uStripe;
+uniform vec2 uStripeLine;
+uniform vec2 uViewport;
 in vec2 vUser;
+// Share of the pixel footprint covered by a line at distance d (box filter): sub-pixel lines fade by their width,
+// as Canvas hairlines do.
+float lineCover(float d) {
+  float h = uStripeLine.x, f = uStripeLine.y * .5;
+  return max(0.0, min(d + f, h) - max(d - f, -h)) / uStripeLine.y;
+}
 vec4 paint() {
   if (uPattern == 0) return vec4(uColor.rgb * uColor.a, uColor.a) * uAlpha;
+  if (uPattern == 2) {
+    float q = mod(dot(uStripe.xy, vec2(gl_FragCoord.x, uViewport.y - gl_FragCoord.y)) + uStripe.w, uStripe.z), d = min(q, uStripe.z - q);
+    return vec4(uColor.rgb * uColor.a, uColor.a) * (uAlpha * min(1.0, lineCover(d) + lineCover(uStripe.z - d)));
+  }
   vec2 uv = (uPatternInverse * vec3(vUser, 1.0)).xy / uImageSize;
   // Gradients of the unwrapped coordinates: the mip level stays continuous across the fract() seam.
   vec2 gx = dFdx(uv), gy = dFdy(uv);

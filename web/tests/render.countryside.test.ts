@@ -117,7 +117,8 @@ describe('countryside ground at open settlement edges', () => {
         main = w.urban!;
       const other: UrbanLayer = { ...main, footprint: [rect(900, 200, 500)], footprintH: [{ outer: rect(900, 200, 500), holes: [] }] };
       main.renderHints = { towerShape: 'round', [mainKind]: true };
-      w.settlements = [{ urban: other, main: false } as never];
+      // Regional roads take the pavement of the nearest settlement centre (roadPavement.ts pavementSites).
+      w.settlements = [{ urban: other, main: false, center: { x: 1150, y: 450 }, radius: 250 } as never];
       const pal = biomePalette('parchment', w.options.biome),
         m = mockCanvas(900, 700);
       const r = createCanvasRenderer(m.canvas as unknown as CanvasLike, w, 'parchment', { Path2D: MockPath2D as never, dpr: 1, terrain: () => null });

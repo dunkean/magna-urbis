@@ -4,10 +4,10 @@
  *
  * The roof is the lid of the cave's section model (render/underdarkCavern.ts cavernRoofMesh): one mesh per map, cut
  * away around the target of the orbit camera so the chambers show, whole overhead for a walking or flying eye. The
- * mushrooms are the instance stream of the separate 3D view (ui/terrain3dFungi.ts), built around the target in work
- * slices and built again when the target has moved a third of the near radius.
+ * mushrooms are the instance stream of ui/terrain3dFungi.ts (shared with City Bench's separate 3D view), built around
+ * the target in work slices and built again when the target has moved a third of the near radius.
  *
- * Both draw with the programs of that view, whose space is east, up, south: the frame's projection is given to them
+ * Both draw with the programs of those modules, whose space is east, up, south: the frame's projection is given to them
  * with its up and south columns exchanged, and positions relative to the target as they expect.
  *
  * Cost: a frame issues one draw for the roof and at most three for the mushrooms, from buffers filled in work slices.
@@ -121,7 +121,18 @@ export function createWorldCaveLayer(gl: WebGL2RenderingContext, options: WorldC
         cave,
         heights,
         steps: buildFungiSteps(
-          { seed: cave.seed, cavern: cave.field, abundance: cave.settings.fungi, towns: cave.lamps.length ? cave.lamps : undefined, farms: cave.farms, craftedBeds: cave.craftedBeds, occupation: cave.occupation, raw: cave.raw, height: (px, py) => heights.heightAt(px, py) * unit, water: cave.water },
+          {
+            seed: cave.seed,
+            cavern: cave.field,
+            abundance: cave.settings.fungi,
+            towns: cave.lamps.length ? cave.lamps : undefined,
+            farms: cave.farms,
+            craftedBeds: cave.craftedBeds,
+            occupation: cave.occupation,
+            raw: cave.raw,
+            height: (px, py) => heights.heightAt(px, py) * unit,
+            water: cave.water,
+          },
           { x, y },
         ),
       };

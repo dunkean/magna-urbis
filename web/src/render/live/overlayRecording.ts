@@ -46,7 +46,15 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
     movedAt = -Infinity,
     needSince = -1;
   let moving = false;
+  /** The band of `pending` being recorded, one drawVector step per `advance`, and its longest step (the main-thread
+   * block it cost): a slice budget bounds the recording, the next slice resumes it, a drop of the region cancels it. */
+  let job: { steps: Generator<void, OverlayBand | undefined>; longest: number } | undefined;
+  const endJob = (): void => {
+    job?.steps.return(undefined);
+    job = undefined;
+  };
   const dropPending = (): void => {
+    endJob();
     if (pending) {
       retained.release(pending);
       pending = undefined;
@@ -100,9 +108,22 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
     if (p.parts.length >= p.bands.length) return complete(p);
     const b = p.building;
     if (!b) {
+      const band = p.bands[p.parts.length];
+      job ??= {
+        steps: host.recordSteps
+          ? host.recordSteps(p, band, p.light, false)
+          : (function* () {
+              return host.record(p, band, p.light);
+            })(),
+        longest: 0,
+      };
       const t = host.now(),
-        made = host.record(p, p.bands[p.parts.length], p.light);
-      diagnostics?.recorded(host.now() - t);
+        step = job.steps.next();
+      job.longest = Math.max(job.longest, host.now() - t);
+      if (!step.done) return false;
+      diagnostics?.recorded(job.longest);
+      job = undefined;
+      const made = step.value;
       if (!made) {
         failedKey = p.key;
         dropPending();
@@ -193,7 +214,7 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
     const p0 = pending;
     if (p0 && (host.fixedRaster?.() ? p0.key !== key : p0.dpr !== frame.dpr || !covers(p0.rect, frame.rect) || (p0.key !== key && (p0.light !== light || host.key(p0.scale, p0.dpr, p0.light) !== p0.key || Math.abs(Math.log2(p0.scale / view.scale)) > KEEP_OCTAVES)))) dropPending();
     if (!pending) {
-      // Nothing starts while the view moves, unless nothing can be shown or the gesture lasts: each band is a long task.
+      // Nothing starts while the view moves, unless nothing can be shown or the gesture lasts: a region costs many slices.
       const nothing = !cur || cur.dpr !== frame.dpr;
       if (!nothing && start - movedAt < host.settleMs && start - needSince < host.maxWaitMs) return true;
       pending = { ...host.plan(view, frame.cssW, frame.cssH, frame.dpr, key), light, stale: false, parts: [], live: [], draft: false, provisional: false, arrivals: host.arrivals() };
@@ -294,6 +315,7 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
       needSince = -1;
     },
     forgetPending(): void {
+      endJob();
       if (pending) {
         pending.parts.length = 0;
         pending.live.length = 0;
@@ -302,6 +324,7 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
       pending = undefined;
     },
     dispose(): void {
+      endJob();
       retained.release(pending);
       pending = undefined;
     },

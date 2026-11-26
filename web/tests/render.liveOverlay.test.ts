@@ -472,6 +472,46 @@ describe('live overlay layer', () => {
     expect(cancelled).toHaveBeenCalledTimes(2);
   });
 
+  it('records a band one step per work slice, cancellable, into the region of a one-call recording', () => {
+    const run = (stepped: boolean, cancel?: boolean) => {
+      const f = fixture(),
+        record = f.host.record,
+        closed = vi.fn();
+      let steps = 0;
+      if (stepped)
+        f.host.recordSteps = function* (plan, band, light, drape) {
+          expect(drape).toBe(false);
+          try {
+            for (; steps % 3 < 2; steps++) yield;
+            steps++;
+            return record(plan, band, light);
+          } finally {
+            closed();
+          }
+        };
+      const retained = createOverlayRegions(f.raster, f.host),
+        recording = createOverlayRecording(f.raster, f.host, retained);
+      recording.track(f.frame(), 0);
+      let slices = 1;
+      // A zero budget: every slice makes one step, then yields to the frame. A cancel drops the region after its first step.
+      if (cancel) {
+        recording.work(f.frame(), 0, 0);
+        recording.dropPending();
+      } else while (recording.work(f.frame(), 0, stepped ? 0 : 10000) && slices < 100) slices++;
+      return { slices, closed, record: f.host.record, parts: retained.shown?.parts.map(b => ({ rect: b.rect, suffix: b.suffix, baked: b.baked })) };
+    };
+    const whole = run(false),
+      stepped = run(true);
+    expect(whole.slices).toBe(1);
+    expect(stepped.slices).toBeGreaterThan(6);
+    expect(stepped.closed).toHaveBeenCalledTimes(2);
+    expect(stepped.parts).toEqual(whole.parts);
+    const cancelled = run(true, true);
+    expect(cancelled.closed).toHaveBeenCalledTimes(1);
+    expect(cancelled.record).not.toHaveBeenCalled();
+    expect(cancelled.parts).toBeUndefined();
+  });
+
   it('forgets resources on context loss without deleting their dead handles', () => {
     const f = fixture();
     f.layer.work!(10000, f.frame());

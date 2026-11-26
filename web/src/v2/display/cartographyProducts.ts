@@ -14,13 +14,13 @@ import { getDistanceUnit } from '../units';
 import { cityOverlayLandKinds, cityOverlayLandKey, cityCountrysideCanvasOptions, cityOverlayPlanMarks } from '../../render/cityEnvironment';
 import type { World, LandKind } from '../../gen/types';
 import { createCanvasRenderer, type CanvasRenderer } from '../../render/canvas';
+import { mapSeasonKey } from '../../render/seasonPalette';
 import { regionalGroundRoads } from '../../render/groundRoads';
 import { mapRoadTones, roadGroundKey, type RoadStyle } from '../../render/roadStyle';
 import { displayWorld } from '../../render/displayWorld';
 import { buildingOccupationShapes } from '../../ui/forestOccupation';
 import { nativeCitiesOf } from '../nativeProducts';
 import { activityScene } from '../activitySites';
-import { mapSeasonKey } from '../../render/seasonPalette';
 import { biomePalette } from '../../render/biomes';
 import type { Palette } from '../../render/styles';
 import { displayBiomeName, displayTerrainSettings } from '../displayBiome';
@@ -143,17 +143,19 @@ export class CartographyProducts implements Cartography {
       const rivers = !r.composition.networks.water.visible ? undefined : t.water ? riverSegments(t.water, water) : t.hydrology ? hydrologySegments(t.hydrology, hydrologyWaterColour(r.ground.style, r.palette.colors)) : undefined;
       this.dryLand = { raster, key, canvas: v1LandCanvas(raster, 'parchment', biome, rivers) };
     }
-    const dry = this.dryLand.canvas,
-      season = (canvas: HTMLCanvasElement): HTMLCanvasElement => (isUnderdarkBiome(this.map.world!.options.biome) ? canvas : seasonLand(canvas, raster)),
-      land = (this.land = season(dry));
+    const dry = (this.land = this.dryLand.canvas),
+      season = (canvas: HTMLCanvasElement): HTMLCanvasElement => (isUnderdarkBiome(this.map.world!.options.biome) ? canvas : seasonLand(canvas, raster));
     // Woods painted by the ground (render/treeSymbols.ts): the ground draws this land under them, the overlay keeps it
-    // only around them, so they show through (its tints are still masked by the whole land: `land`).
+    // only around them, so they show through (its tints are still masked by the whole land: `land`, whose alpha no
+    // date changes).
     const ground = this.parts.ground;
     if (!this.woodsOnGround) {
       ground.gpu?.setLandBackdrop(undefined);
-      return land;
+      return season(dry);
     }
-    ground.gpu!.setLandBackdrop(land);
+    // The ground takes the summer sheet, uploaded once per map, and lays the date over it in its shader
+    // (treeSymbolsGlsl.ts landSeason): a new date uploads nothing and seasons only the overlay's copy.
+    ground.gpu!.setLandBackdrop(dry);
     return season(punchWoods(dry, this.map.world!.landuse?.areas ?? [], this.map.world!.mapSize));
   }
   /** The GPU ground paints the woods of a parchment look (render/treeSymbols.ts): the overlay leaves them out. Set when
@@ -270,7 +272,7 @@ export class CartographyProducts implements Cartography {
     // The palette of the moment: a new season is a new object, read at each paint (CanvasRendererDeps.palette).
     const palette = (): Palette => overlayPalette(biomePalette(mapStyle, biome), decor);
     const semanticLook = (): string =>
-      `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, mapSeasonKey()]) : ''}|v${this.map.volumeBuildings ? 1 : 0}${this.map.volumeBuildings ? '' : `|roof:${this.map.resolved?.composition.buildings.roof ?? r.composition.buildings.roof}`}`;
+      `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, this.parts.water.regime]) : ''}|v${this.map.volumeBuildings ? 1 : 0}${this.map.volumeBuildings ? '' : `|roof:${this.map.resolved?.composition.buildings.roof ?? r.composition.buildings.roof}`}`;
     this.woodsOnGround = this.parts.ground.gpuActive && !!this.parts.ground.treeSymbols();
     this.renderer = createCanvasRenderer(this.overlay, shown, mapStyle, {
       colors: r.palette.colors,

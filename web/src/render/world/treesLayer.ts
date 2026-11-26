@@ -18,7 +18,7 @@ import { TreeCoverage } from './treesVisibility';
 import { VOLUME_LIGHT, ViewVolume, hazeDistance, startVolumeProgram, volumeProgramLinked, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
 
 export interface WorldTreesOptions {
-  /** The inputs of the near trees of the satellite looks, as the 3D view makes them (ui/view3d/terrain/trees.ts),
+  /** The inputs of the near trees of the satellite looks (ui/terrain3dTrees.ts TreeInputs, made by v2/display/worldVolumes.ts),
    * without `height` (the trees stand on `terrain`); undefined: no modelled trees (another look, or switched off). A
    * publication triggers local content checks in work slices (TreeContent), without dropping installed blocks. */
   inputs(): Omit<TreeInputs, 'height'> | undefined;
@@ -104,7 +104,8 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
   const volume = new ViewVolume();
   const coverage = new TreeCoverage();
   const selected = new TreeSelection();
-  let preparedAt = NaN;
+  /** The frame time, eye and target the selection was prepared for (prepare); NaN time: prepare again. */
+  const preparedFor = new Float64Array(7).fill(NaN);
   const slots = new Map<number, Slot>();
   const wantKey = new Float64Array(TREE_MAX_BLOCKS),
     wantPriority = new Float64Array(TREE_MAX_BLOCKS);
@@ -150,6 +151,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     wanted = visibleCount = 0;
     visible.length = 0;
     presentationPending = false;
+    preparedFor[0] = NaN;
   };
 
   /** A new publication checks local content in work slices. Installed blocks remain visible until replaced, except those
@@ -168,6 +170,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     const reliefChanged = nextHeights !== heights || nextShape !== shape;
     if (next === source && key === sourceKey && !reliefChanged && nextScene === scene) return;
     building = undefined;
+    preparedFor[0] = NaN;
     revision++;
     if (reliefChanged) reliefRevision++;
     source = next;
@@ -258,6 +261,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     } else slot.bytes = 0;
     if (previous) drop(previous);
     slots.set(key, slot);
+    preparedFor[0] = NaN;
   };
 
   /** Over budget: the blocks drawn least recently go, never one of the last frame. */
@@ -293,6 +297,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     program = { program: linking, u: uniformsOf(gl, linking, UNIFORMS), indices, vertices };
     linking = undefined;
+    preparedFor[0] = NaN;
     options.invalidate();
     return true;
   };
@@ -301,15 +306,17 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     return pending;
   };
 
+  /** Shared by the ground layer and the tree draw of one frame: the same time and camera reuse it. A work slice that
+   * links the program, uploads a block or takes a new publication forgets it, so the next call prepares again. */
   function prepare(frame: LiveFrame): TreeSelection | undefined {
-    if (frame.now !== undefined && frame.now === preparedAt) return visibleCount ? selected : undefined;
-    preparedAt = frame.now;
+    const camera = frame.camera,
+      eye = camera.eye,
+      target = camera.target;
+    if (frame.now === preparedFor[0] && eye[0] === preparedFor[1] && eye[1] === preparedFor[2] && eye[2] === preparedFor[3] && target[0] === preparedFor[4] && target[1] === preparedFor[5] && target[2] === preparedFor[6]) return visibleCount ? selected : undefined;
     selected.begin();
     visibleCount = 0;
-    const camera = frame.camera,
-      standing = volumesDrawn(camera) && options.shown();
+    const standing = volumesDrawn(camera) && options.shown();
     tick++;
-    diagnostics?.selection();
     if (standing) sync();
     const relief = heights;
     const opacity = standing && relief ? coverage.opacity(frame, relief, options.distance()) : 0;
@@ -449,6 +456,11 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       }
     } else wanted = 0;
     selected.end();
+    preparedFor[0] = frame.now;
+    for (let i = 0; i < 3; i++) {
+      preparedFor[1 + i] = eye[i];
+      preparedFor[4 + i] = target[i];
+    }
     return visibleCount ? selected : undefined;
   }
 
@@ -514,6 +526,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       const started = performance.now();
       prepare(frame);
       stats.drawCalls = stats.triangles = stats.instances = 0;
+      diagnostics?.selection();
       const camera = frame.camera,
         relief = heights;
       if (relief && program) {
@@ -611,6 +624,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       visibleCount = 0;
       visible.length = 0;
       presentationPending = false;
+      preparedFor[0] = NaN;
     },
     stats: () => stats,
     dispose() {

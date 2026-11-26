@@ -4,7 +4,7 @@ import { BARE_LIMBS_GLSL } from '../../../rust/bridge/bareTree';
  * (rust/bridge/terrainForest.ts, forestCrown). The placement below is a CPU port of forestCrown on the same
  * hash, lattices, field and occupation. The ground keeps the painted crown until its matching instance is
  * uploaded and within range. Instances take over at a stable, tree-specific distance. Height and crown
- * form follow the tree's social class in its stand and its biome (terrainForestStature.ts, treeForm), with rare giants. Colours follow the crown palette approximately (season,
+ * form follow the tree's social class in its stand and its biome (terrainForestStature.ts, treeForm), with rare giants. Colours follow the crown palette and its grade per forest type, zone and season approximately (
  * autumn hues, leaf fall, snow load from a climate proxy): the painted crown keeps the exact Render colour. Display only. */
 import { ForestClearingRoom } from '../render/forestClearance';
 import { ForestRoom, forestCrownSetback, type ForestCorridor } from '../render/forestRoom';
@@ -113,6 +113,36 @@ const V2_ZONE_FOREST: readonly (readonly [number, number, number])[] = [
   [1, 0, 1],
   [0.55, 0.08, 0.7],
 ];
+/** V2_ZONE_CANOPY.rgb (rust/bridge/terrainRenderV2Zones.ts): the zone's tint of the painted canopy. */
+const V2_ZONE_CANOPY: readonly (readonly [number, number, number])[] = [
+  [1, 1, 1],
+  [1.06, 1.03, 0.86],
+  [0.97, 1, 1],
+  [0.86, 0.95, 1.02],
+  [0.9, 0.97, 1],
+  [1.05, 1, 0.9],
+  [1.05, 1.03, 0.86],
+  [1, 1.06, 0.86],
+  [1.1, 1.05, 0.76],
+  [0.86, 1.1, 0.86],
+  [1, 1.02, 0.9],
+];
+/** forestGrade (rust/bridge/terrainForest.ts): the painted crown's grade of a forest type in the look's season (0 winter,
+ * .5 summer); `needle` 0 broadleaf, 1 conifer. The painted crowns darken and cool conifers against broadleaves with it. */
+export function forestCrownGrade(kind: readonly [number, number, number], needle: number, season: number): [number, number, number] {
+  const t = 6.2831853 * season,
+    fall = Math.max(-Math.sin(t), 0),
+    spring = Math.max(Math.sin(t), 0),
+    summer = 0.5 - 0.5 * Math.cos(t),
+    temperate = 1 - kind[0] - kind[1] - kind[2];
+  const grade = (k: number): number => {
+    const tempered = mix(mix([1.02, 1.04, 0.92][k], [1.1, 1.1, 0.82][k], spring), [1.5, 0.98, 0.5][k], 0.75 * fall),
+      savanna = mix([1.12, 1, 0.66][k], [0.94, 1.02, 0.76][k], summer),
+      broad = tempered * temperate + [0.58, 0.68, 0.66][k] * kind[0] + [0.7, 1.06, 0.62][k] * kind[1] + savanna * kind[2];
+    return mix(broad, mix([0.6, 0.7, 0.7][k], [0.62, 0.76, 0.74][k], summer), needle);
+  };
+  return [grade(0), grade(1), grade(2)];
+}
 const CROWN_CDF = [0, 0, 0, 0.0005, 0.0063, 0.0336, 0.1125, 0.2742, 0.4998, 0.7261, 0.8874, 0.9665, 0.9936, 0.9994, 1, 1, 1];
 const sstep = (a: number, b: number, v: number): number => {
   let t = (v - a) / (b - a);
@@ -430,8 +460,14 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
   const snowLoad = (needle: boolean): number => 0.45 * snow * (needle ? mix(0.24, 0.62, crownSnow) : mix(0.2, 0.8, crownSnow));
   const temperate = 1 - kind[0] - kind[1] - kind[2];
   const pigments = FOREST_CROWN_PIGMENTS;
-  const conifer = pigments.conifer.map((c, i) => mix(c, pigments.dryConifer[i], dry));
-  const broadleaf = pigments.broad.map((c, i) => mix(mix(c, pigments.tropical[i], trop), pigments.dry[i], dry * (1 - 0.5 * trop)));
+  // The painted crown is its stand's canopy times forestGrade and, on a V2 zone, the zone's canopy tint
+  // (forestCrownBaseColor, terrainRenderV2 baseClosed): the same constants keep the tilted view on the 2D map.
+  const lookSeason = inputs.renderV2 > 0 ? season : 0.5,
+    zoneCanopy = zone ? V2_ZONE_CANOPY[clamp(inputs.zone - 1, 0, 10)] : [1, 1, 1],
+    coniferGrade = forestCrownGrade(kind, 1, lookSeason),
+    broadGrade = forestCrownGrade(kind, 0, lookSeason);
+  const conifer = pigments.conifer.map((c, i) => mix(c, pigments.dryConifer[i], dry) * coniferGrade[i] * zoneCanopy[i]);
+  const broadleaf = pigments.broad.map((c, i) => mix(mix(c, pigments.tropical[i], trop), pigments.dry[i], dry * (1 - 0.5 * trop)) * broadGrade[i] * zoneCanopy[i]);
   // Instance stream in a typed array grown by doubling: partial installs hand out a view of it (the uploads copy it),
   // the finished stream a copy cut to length.
   let out = new Float32Array(1024 * TREE_STRIDE),

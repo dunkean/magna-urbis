@@ -204,6 +204,32 @@ export const urbanActivityNames: Record<string, readonly [string, string]> = {
   gorge_tomb: ['Gorge tomb', 'Tombe de gorge'],
   forgotten_stones: ['Forgotten stones', 'Pierres oubliées'],
 };
+/** Kinds of activity sites: the anchor kinds of Rust `resources/anchors.rs` and the literal kinds of `settlements/{countryside,nodes,remote}.rs`. */
+export const activityKindNames: Record<string, readonly [string, string]> = {
+  quarry: ['Quarry', 'Carrière'],
+  clay_pit: ['Clay pit', 'Glaisière'],
+  peat_cut: ['Peat cutting', 'Tourbière'],
+  mill_seat: ['Mill seat', 'Site de moulin'],
+  wind_knoll: ['Windy knoll', 'Butte ventée'],
+  fishing_landing: ['Fishing landing', 'Débarcadère de pêche'],
+  logging: ['Logging camp', 'Camp de bûcherons'],
+  charcoal: ['Charcoal burning', 'Charbonnière'],
+  pasture: ['Pasture', 'Pâturage'],
+  upland_pasture: ['Upland pasture', 'Pâturage d’altitude'],
+  hunting: ['Hunting ground', 'Terrain de chasse'],
+  salt: ['Salt pans', 'Marais salants'],
+  mine: ['Mine', 'Mine'],
+  farm: ['Farm', 'Ferme'],
+  worship: ['Place of worship', 'Lieu de culte'],
+  network_node: ['Roadside site', 'Site de bord de route'],
+  remote: ['Remote place', 'Lieu reculé'],
+};
+const spaced = (id: string): string => id.replace(/[-_]+/g, ' ').replace(/^./, c => c.toUpperCase());
+/** English labels of the ids an activity site carries, from the tables above (translated through i18n, which registers them).
+ * Every template and kind the engine emits has an entry (tests/v2/activityLabelNames.test.ts); the spaced id only covers an unknown one. */
+export const activitySiteLabel = (template: string): string => urbanActivityNames[template]?.[0] ?? spaced(template);
+export const activityKindLabel = (kind: string): string => activityKindNames[kind]?.[0] ?? spaced(kind);
+export const urbanCultureLabel = (culture: string): string => urbanCultureNames[culture]?.[0] ?? spaced(culture);
 export const urbanExtraChoiceNames: Record<string, readonly [string, string]> = {
   ring: ['Ring', 'Anneau'],
   'grown-core': ['Grown core', 'Cœur développé'],

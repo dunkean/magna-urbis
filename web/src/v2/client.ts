@@ -5,6 +5,7 @@ import { getLanguage } from './i18n';
 import { getDistanceUnit } from './units';
 import RenderWorker from '../ui/renderWorker?worker';
 import { internTerrain } from './terrainIntern';
+import { internLocalEdit } from './localEditIntern';
 import { createViewer, type Viewer } from '../ui/viewer';
 import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import { displayWorld } from '../render/displayWorld';
@@ -23,7 +24,7 @@ import { resolveSettingsAppearance, resolvedDisplayOptions } from './appearance'
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import type { FrameRequest } from '../ui/viewer';
 import type { ExportLayers } from '../render/exportLayers';
-import type { Building3dVisual } from '../render/urbanBuildingGeometry';
+import type { MapPick } from './display/composedView';
 import { screenToWorld } from '../render/view';
 import { createCameraPose, groundPoint, isTilted, poseCamera } from '../render/world/camera';
 import { publishWasmThreads, wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
@@ -67,7 +68,8 @@ export class StudioClient {
   private syncRenderer: CanvasRenderer | null = null;
   private id = 0;
   private drawingId = 0;
-  private pending: { id: number; resolve: (world: World) => void; reject: (error: Error) => void; progress?: (p: V2Progress) => void } | null = null;
+  /** `local`: a local edit of town `key` made from `base` (`internLocalEdit` keeps the unchanged objects of `base`). */
+  private pending: { id: number; resolve: (world: World) => void; reject: (error: Error) => void; progress?: (p: V2Progress) => void; local?: { base: World; key: string } } | null = null;
   private neuralDownload?: AbortController;
   /** Lazy resource payload requests (worker message `resources`), and the payload of the last terrain. */
   private resourceRequests = new Map<number, { resolve: (payload: ResourcePayload | undefined) => void; reject: (error: Error) => void }>();
@@ -122,6 +124,11 @@ export class StudioClient {
     this.viewer = createViewer({ canvas, container, minimap, onError, onView });
     this.attachEngine();
   }
+  /** A result with the objects of the shown world (terrain) and, after a local edit, of its base kept where unchanged. */
+  private interned(pending: NonNullable<StudioClient['pending']>, packed: World): World {
+    const world = unpackWorldPartitions(unpackWorldLanduse(packed));
+    return pending.local ? internLocalEdit(pending.local.base, world, pending.local.key) : internTerrain(this.world, world);
+  }
   private attachEngine(): void {
     this.engine.onmessage = ({ data: m }) => {
       if (m.type !== 'progress') publishWasmThreads(m.wasm);
@@ -149,7 +156,7 @@ export class StudioClient {
         );
         setTimeout(() => {
           try {
-            p.resolve(internTerrain(this.world, unpackWorldPartitions(unpackWorldLanduse(m.world))));
+            p.resolve(this.interned(p, m.world));
           } catch (error) {
             p.reject(error instanceof Error ? error : new Error(String(error)));
           }
@@ -157,7 +164,7 @@ export class StudioClient {
       } else if (m.type === 'result') {
         const p = this.pending!;
         this.pending = null;
-        const world = internTerrain(this.world, unpackWorldPartitions(unpackWorldLanduse(m.world)));
+        const world = this.interned(p, m.world);
         this.retained = { id: m.id, world };
         p.resolve(world);
       } else if (m.type === 'error') {
@@ -282,7 +289,7 @@ export class StudioClient {
     progress?: (p: V2Progress) => void,
     keepUrbanLanes = false,
     roadEdit?: 'access' | 'rebuild',
-    contourEdit = false,
+    localEdit = false,
   ): Promise<World> {
     if (this.pending) return Promise.reject(new Error('Un calcul est déjà en cours.'));
     // The display's code and GPU preparation do not depend on the result: load them while the engine computes.
@@ -300,7 +307,7 @@ export class StudioClient {
     }
     const id = ++this.id;
     return new Promise((resolve, reject) => {
-      this.pending = { id, resolve, reject, progress };
+      this.pending = { id, resolve, reject, progress, ...(localEdit && world && key ? { local: { base: world, key } } : {}) };
       this.runtimePreference = { ...settings, runtime: settings.runtime && { ...settings.runtime }, urban: settings.urban && { ...settings.urban } };
       const dispatch = async () => {
         if (this.runtimeCapabilities && !this.runtimeCapabilities().checked) await this.capabilitiesReady?.();
@@ -326,7 +333,7 @@ export class StudioClient {
         if (this.pending?.id !== id) return;
         // A resent world carries its town partitions packed (copies: the page keeps its objects).
         const sent = packedWorldInput(action, world, this.retained);
-        this.engine.postMessage({ id, action, settings, ...sent.input, key, keys, townStage, terrainStage, cityOutput, keepUrbanLanes, roadEdit, contourEdit, assetBase: document.baseURI }, sent.transfer);
+        this.engine.postMessage({ id, action, settings, ...sent.input, key, keys, townStage, terrainStage, cityOutput, keepUrbanLanes, roadEdit, localEdit, assetBase: document.baseURI }, sent.transfer);
       };
       void dispatch().catch(error => {
         if (this.pending?.id === id) {
@@ -448,6 +455,10 @@ export class StudioClient {
       await this.minimal.set(world, minimalSettings, minimalAppearance, {}, nextRequest);
       if (superseded()) return;
       this.minimalActive = true;
+      // The spinner and the scripts see the Minimal map at once, not after its first frames.
+      clearTimeout(this.minimalStatsTimer);
+      this.minimalFrameAt = 0;
+      this.writeMinimalStats();
       this.viewer.setDirectSource({ element: this.minimal.element, draw: frame => this.drawMinimal(frame) });
       this.viewer.contentChanged(world.mapSize, keepView && !mapChanged);
       return;
@@ -553,17 +564,38 @@ export class StudioClient {
       this.benchMiniRevision = this.appearanceRevision;
       this.benchMiniSize = frame.mini;
     }
-    this.canvas.dataset.renderer = 'minimal';
-    this.canvas.dataset.renderStyle = 'minimal';
-    this.canvas.dataset.renderFrameMs = String(renderer.stats.frameMs);
-    this.canvas.dataset.renderGeometryBuildMs = String(renderer.stats.geometryBuildMs);
-    this.canvas.dataset.renderFeatures = String(renderer.stats.features);
-    this.canvas.dataset.terrainBackend = 'cpu';
-    this.canvas.dataset.renderPending = '0';
-    this.canvas.dataset.renderPasses = '[]';
-    this.canvas.dataset.cityRender = '{}';
+    this.minimalFrameAt = performance.now();
+    this.minimalStatsTimer ??= setTimeout(this.writeMinimalStats, BENCH_STATS_MS);
     return { mini, ms: renderer.stats.frameMs, band: 0, scale: frame.view.scale };
   }
+  private minimalFrameAt = 0;
+  private minimalStatsTimer?: ReturnType<typeof setTimeout>;
+  /** Diagnostics of the Minimal map on the canvas (`data-*`, read by the loading spinner and the test scripts), written
+   * once its frames have stopped for BENCH_STATS_MS and only where a value changed: no page DOM write in the frames of
+   * a gesture (Minimal is the slow-laptop path). */
+  private readonly writeMinimalStats = (): void => {
+    const wait = this.minimalFrameAt + BENCH_STATS_MS - performance.now();
+    if (wait > 0) {
+      this.minimalStatsTimer = setTimeout(this.writeMinimalStats, wait);
+      return;
+    }
+    this.minimalStatsTimer = undefined;
+    const renderer = this.minimal;
+    if (!renderer || !this.minimalActive) return;
+    const data = this.canvas.dataset,
+      set = (key: string, value: string): void => {
+        if (data[key] !== value) data[key] = value;
+      };
+    set('renderer', 'minimal');
+    set('renderStyle', 'minimal');
+    set('renderFrameMs', String(renderer.stats.frameMs));
+    set('renderGeometryBuildMs', String(renderer.stats.geometryBuildMs));
+    set('renderFeatures', String(renderer.stats.features));
+    set('terrainBackend', 'cpu');
+    set('renderPending', '0');
+    set('renderPasses', '[]');
+    set('cityRender', '{}');
+  };
   private drawBench(frame: FrameRequest): { mini?: HTMLCanvasElement; ms: number; band: number; scale: number } {
     const started = performance.now();
     const renderer = this.bench;
@@ -646,8 +678,6 @@ export class StudioClient {
   captureView(): HTMLCanvasElement | undefined {
     return this.benchActive ? this.bench?.captureView() : undefined;
   }
-  /** What lies under the CSS pixel (sx, sy) of the map: the ground point (map metres) and, in a tilted view, the building
-   * volume in front of it among those `accept` takes. Undefined where the pixel shows no ground (the sky of a tilted view). */
   /** The ground point under the CSS pixel (sx, sy) of the map, in the top view or tilted; undefined in the sky. */
   groundAt(sx: number, sy: number, w: number, h: number): { x: number; y: number } | undefined {
     const view = this.viewer.getView();
@@ -660,11 +690,18 @@ export class StudioClient {
     return groundPoint(poseCamera(this.groundPose, view, h, relief), sx, sy, w, h, relief, point) ? { x: point[0], y: point[1] } : undefined;
   }
   private readonly groundPose = createCameraPose();
-  pickAt(sx: number, sy: number, w: number, h: number, accept: (building: Building3dVisual) => boolean): { x: number; y: number; building?: Building3dVisual } | undefined {
+  /** What lies under the CSS pixel (sx, sy) of the map: the ground point (map metres) and, in a tilted view, the building
+   * volume in front of it, with the metres a pixel spans there. Undefined where the pixel shows no ground (the sky of a
+   * tilted view). */
+  pickAt(sx: number, sy: number, w: number, h: number): MapPick | undefined {
     const view = this.viewer.getView();
-    if (this.benchActive && this.bench) return this.bench.pick(view, w, h, sx, sy, accept);
+    if (this.benchActive && this.bench) return this.bench.pick(view, w, h, sx, sy);
     const [x, y] = screenToWorld(view, w, h, sx, sy);
-    return { x, y };
+    return { x, y, metresPerPixel: 1 / view.scale };
+  }
+  /** Tints the volume of the selected building in the tilted view (its volume id; undefined: none). */
+  highlightBuilding(id: string | undefined): void {
+    this.bench?.highlightBuilding(id);
   }
   prepareViewportCapture(): void {
     if (this.minimalActive) this.minimal?.prepareCapture();

@@ -30,6 +30,9 @@ beforeEach(() => vi.stubGlobal('__muLayerDiagnostics', true));
 afterEach(() => {
   setViewDepth(VIEW_DEPTH_DEFAULT);
   vi.unstubAllGlobals();
+  // vitest keeps every mock function, with the arguments of its calls: the vertex arrays uploaded to the mock contexts
+  // of earlier tests would stay alive, and their garbage collection would land in the work slices measured here.
+  vi.clearAllMocks();
 });
 
 const W = 1600,
@@ -122,32 +125,29 @@ describe('world buildings', () => {
 
   it('keeps the eave and ridge of a warped roof pan while suppressing its diagonal in 2D and 3D', () => {
     const base = sources(1)[0];
-    const footprint = [{
-      outer: [
-        { x: 0, y: 0 },
-        { x: 8, y: 1 },
-        { x: 8, y: 7 },
-        { x: 0, y: 7 },
-      ],
-      holes: [],
-    }];
-    const source = {
-      ...base,
-      footprint,
-      roof_footprint: footprint,
-      programme: { role: 'house', massing: [{ floors: 2, eave_m: 6, rise_m: 4, roof: 'gable', ridges: [[0, 3, 8, 3]], cover: 'tile', wall: 'plaster' }] },
-    } as PlacedBuilding;
+    const footprint = [
+      {
+        outer: [
+          { x: 0, y: 0 },
+          { x: 8, y: 1 },
+          { x: 8, y: 7 },
+          { x: 0, y: 7 },
+        ],
+        holes: [],
+      },
+    ];
+    const source = { ...base, footprint, roof_footprint: footprint, programme: { role: 'house', massing: [{ floors: 2, eave_m: 6, rise_m: 4, roof: 'gable', ridges: [[0, 3, 8, 3]], cover: 'tile', wall: 'plaster' }] } } as PlacedBuilding;
     const model = city3dBuildings(batch([source]), { heightAt: () => 0 })!;
     const triangles: BuildingTriangle[] = [];
     eachBuildingTriangle(model.buildings[0], triangle => triangles.push(triangle));
-    const split = triangles.flatMap((triangle, i) => triangle.hiddenEdge === undefined ? [] : [i]);
+    const split = triangles.flatMap((triangle, i) => (triangle.hiddenEdge === undefined ? [] : [i]));
     expect(split).toHaveLength(2);
     expect(triangles[split[0]].normal).not.toEqual(triangles[split[1]].normal);
     const masks = roofEdgeMasks(triangles);
     expect(split.map(i => masks[i])).toEqual([0b101, 0b011]);
 
     const plan = buildCityBuildings(batch([source]));
-    expect(plan.roofs?.shapes.flatMap(shape => shape.hiddenEdge === undefined ? [] : [shape.hiddenEdge])).toEqual([2, 0]);
+    expect(plan.roofs?.shapes.flatMap(shape => (shape.hiddenEdge === undefined ? [] : [shape.hiddenEdge]))).toEqual([2, 0]);
     const packed = packBuildings(plan, { x: 0, y: 0 }).polygons;
     const { hiddenEdges } = packed;
     expect(hiddenEdges?.filter(edge => edge > 0)).toHaveLength(2);
@@ -198,9 +198,9 @@ describe('world buildings', () => {
       const code = Math.round((length - 1) * 32);
       const layer = Math.floor(code / 1024);
       const up = crafted[i + 4] / length;
-      if (layer && up > .1 && up < .99) drawings.roof.add(layer);
-      if (layer && Math.abs(up) < .01) drawings.wall.add(layer);
-      if (layer && up > .1 && up < .99 && crafted[i + 8] === 0x002040) {
+      if (layer && up > 0.1 && up < 0.99) drawings.roof.add(layer);
+      if (layer && Math.abs(up) < 0.01) drawings.wall.add(layer);
+      if (layer && up > 0.1 && up < 0.99 && crafted[i + 8] === 0x002040) {
         expect(code % 1024).toBeGreaterThan(0);
         tintedPans++;
       }
@@ -346,7 +346,13 @@ describe('world buildings', () => {
           { x: x + 0.24, y: 368 },
           { x, y: 368 },
         ];
-      return { ...sources(1)[0], id: `rail-${k}`, footprint: [{ outer, holes: [] }], roof_footprint: [{ outer, holes: [] }], programme: { massing: [{ floors: 1, eave_m: 1.1, rise_m: 0, roof: 'flat', ridges: [], cover: 'shingle', wall: 'wood', tone: 0.4 }] } } as unknown as PlacedBuilding;
+      return {
+        ...sources(1)[0],
+        id: `rail-${k}`,
+        footprint: [{ outer, holes: [] }],
+        roof_footprint: [{ outer, holes: [] }],
+        programme: { massing: [{ floors: 1, eave_m: 1.1, rise_m: 0, roof: 'flat', ridges: [], cover: 'shingle', wall: 'wood', tone: 0.4 }] },
+      } as unknown as PlacedBuilding;
     });
     const farm = city3dBuildings(batch([...sources(4), ...rails]), { heightAt: rawOf(heights) })!,
       [yard] = grouped(farm, heights);

@@ -11,8 +11,9 @@ import { lakeTextureData, seaDistanceSurface, type WaterSurface } from '../../..
 import { mapGpuLight, mapTextureCap } from '../../glContextRecovery';
 import { RetainedWaterSource } from '../retainedWater';
 import { heightAt, pushLayer, SurfaceSamplerCache } from '../layers';
-import { cappedForest } from '../gl/forest';
-import { gpuImage, releaseGpuLayer, releaseImage, rgbaImage, uploadGpuLayer, type ForestImages, type GpuHeightLayer, type GpuImage } from './resources';
+import { cappedForest, OCCUPATION_PAD, occupationPatch, occupationWorldRects } from '../gl/forest';
+import type { Rect4 } from '../../../render/view';
+import { gpuImage, patchRgbaImage, releaseGpuLayer, releaseImage, rgbaImage, uploadGpuLayer, type ForestImages, type GpuHeightLayer, type GpuImage } from './resources';
 import type { InputChange } from '../revision';
 import type { TerrainRenderer } from '../../terrainRenderer';
 import type { ViewState } from '../redraw';
@@ -67,6 +68,8 @@ export class GpuInputs {
   readonly retainedWater = new RetainedWaterSource();
   /** Bumped by setForest: the auxiliary pass depends on the forest field and the applied occupation. */
   forestVersion = 0;
+  /** The world boxes the last setForest changed (a local edit's occupation); undefined: the whole map. */
+  forestRegion?: readonly Rect4[];
   readonly empty: GpuImage;
   private readonly surface = new SurfaceSamplerCache();
   private waterInput?: WaterLayer;
@@ -197,6 +200,9 @@ export class GpuInputs {
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): InputChange {
     const device = this.device,
       cap = mapTextureCap(device.limits.maxTextureDimension2D);
+    // A local edit's occupation (ForestOccupation.dirty) over the one on the GPU: only its changed texels and the mip
+    // texels above them go up, and only the world tiles over them are baked again (forestRegion).
+    let region: Rect4[] | undefined = field === this.forestSource ? [] : undefined;
     if (field !== this.forestSource) {
       this.releaseForest();
       this.forestSource = field;
@@ -210,14 +216,24 @@ export class GpuInputs {
       };
     }
     if (occupation !== this.occupation?.data) {
-      releaseImage(this.occupation?.image);
-      this.occupation = occupation && { data: occupation, image: rgbaImage(device, occupation, true) };
+      const patch = occupation && this.occupation && occupationPatch(this.occupation.data, occupation);
+      if (patch && this.occupation && occupation) {
+        if (patch.length) patchRgbaImage(device, this.occupation.image, this.occupation.data, occupation, patch);
+        this.occupation.data = occupation;
+        region?.push(...occupationWorldRects(occupation, patch, OCCUPATION_PAD));
+      } else {
+        releaseImage(this.occupation?.image);
+        this.occupation = occupation && { data: occupation, image: rgbaImage(device, occupation, true) };
+        region = undefined;
+      }
     }
     const detail = mapGpuLight() || (occupation?.detail?.n ?? 0) > cap ? undefined : occupation?.detail;
     if (detail !== this.landDetail?.data) {
       releaseImage(this.landDetail?.image);
       this.landDetail = detail && { data: detail, image: rgbaImage(device, detail, true) };
+      region = undefined;
     }
+    this.forestRegion = region;
     this.forestVersion++;
     return 'content';
   }

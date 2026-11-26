@@ -57,8 +57,28 @@ export function waterClimate(s: WaterSeason): WaterClimate {
   // The sediment load keeps its winter low either way; only the ice decision leaves the regime with `landIce`.
   return { aridity, rain, ice: s.landIce ? 0 : frozen, sediment: (SEDIMENT[s.zone] ?? 0) * clamp01(rain - 0.9 * aridity) * (1 - frozen), drop: dropOf(aridity, rain) };
 }
-/** True when the regime changes anything on the map. */
-export const waterRegimeActive = (c: WaterClimate): boolean => c.aridity > 0 || c.ice > 0 || c.sediment > 0.05;
+/** Step of the drawn rain (share of the yearly mean): dry beds, pools and lake draw-down move by tenths. */
+const DRAWN_RAIN_STEP = 0.1;
+/**
+ * The regime of a date as the water products draw it (river segments, vector water, white water), or undefined where
+ * it draws nothing: arid zones dry their courses with the rain, held to steps of DRAWN_RAIN_STEP; cold zones freeze
+ * rivers and lakes as a whole (ice 0 or 1, the rule of `riverState`). The products read the date through this state
+ * only, so a date that keeps it (`drawnWaterKey`) redraws no water: a temperate year never does, a freeze, a thaw or a
+ * step of rain in a dry zone does. Turbidity is not drawn here: the ground shader takes it from the date (waterPalette.ts).
+ */
+export function drawnWaterClimate(s: WaterSeason): WaterClimate | undefined {
+  if (!s.zone) return;
+  const c = waterClimate(s),
+    ice = c.ice >= 0.5 ? 1 : 0;
+  if (c.aridity <= 0 && !ice) return;
+  const rain = c.aridity > 0 ? Math.round(c.rain / DRAWN_RAIN_STEP) * DRAWN_RAIN_STEP : 1;
+  return { aridity: c.aridity, rain, ice, sediment: 0, drop: dropOf(c.aridity, rain) };
+}
+/** Identity of `drawnWaterClimate`: the water pass and the water cut of the overlay follow the date through it. */
+export function drawnWaterKey(s: WaterSeason): string {
+  const c = drawnWaterClimate(s);
+  return c ? `${c.aridity}|${c.rain.toFixed(1)}|${c.ice}` : '';
+}
 
 /** Seconds in a mean year. */
 const YEAR_S = 31_557_600;

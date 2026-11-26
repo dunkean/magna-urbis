@@ -481,11 +481,11 @@ void main() {
     }
     // Paper map woods (render/treeSymbolsGlsl.ts): their wash on the ground, then the engraved tree symbols over it.
     if(uForestBrushes==1 && uMode==0)if(uGroundCapture==0){
-      // The overlay's lit land (cartographyProducts landBackdrop) on the shore ring's binding, box mipmaps of a
-      // transparent-on-water image: rgb / a is the land colour.
+      // The overlay's lit land in summer (cartographyProducts landBackdrop) on the shore ring's binding, box mipmaps of
+      // a transparent-on-water image: rgb / a is the land colour. Uploaded once per map: the date is laid here.
       if(uHasLandBackdrop==1){
         vec4 land=textureLod(uShoreRing,world/uMapW,max(0.,log2(uPx*float(textureSize(uShoreRing,0).x)/uMapW)));
-        color=mix(color,land.rgb/max(land.a,1e-3),land.a*landCover);
+        color=mix(color,landSeason(land.rgb/max(land.a,1e-3),world,landS.x),land.a*landCover);
       }
       color=mix(color,treeWash(color,world),landCover);
       vec4 trees=treeSymbols(world)*landCover;

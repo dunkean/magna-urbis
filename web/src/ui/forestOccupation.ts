@@ -111,6 +111,11 @@ export function withOccupationShapes(source: ForestOccupation | undefined, shape
   return measureDisplayProduct('merge', () => buildOccupationShapes(source, shapes));
 }
 function buildOccupationShapes(source: ForestOccupation | undefined, shapes: readonly OccupationShape[]): ForestOccupation {
+  const { x, y, cell, n } = mergeGrid(source, shapes);
+  return mergedOccupation(source, x, y, cell, n, mergeTexels(source, shapes, x, y, cell, n));
+}
+/** The grid of the merged raster: the source's square and the shapes, cell-aligned. */
+function mergeGrid(source: ForestOccupation | undefined, shapes: readonly OccupationShape[]): { x: number; y: number; cell: number; n: number } {
   let x0 = source?.x ?? Infinity,
     y0 = source?.y ?? Infinity,
     x1 = source ? source.x + source.width : -Infinity,
@@ -127,6 +132,10 @@ function buildOccupationShapes(source: ForestOccupation | undefined, shapes: rea
   const n = Math.min(1536, Math.ceil(side / cell) + RANGE * 2),
     x = Math.floor(x0 / cell) * cell - RANGE * cell,
     y = Math.floor(y0 / cell) * cell - RANGE * cell;
+  return { x, y, cell, n };
+}
+/** The merged texels of the square of `n` texels of `cell` metres at (x, y): the source reprojected, the shapes over it. */
+function mergeTexels(source: ForestOccupation | undefined, shapes: readonly OccupationShape[], x: number, y: number, cell: number, n: number): Uint8Array {
   const cls = new Uint8Array(n * n),
     dOpen = new Float32Array(n * n).fill(-RANGE),
     dForest = new Float32Array(n * n).fill(-RANGE);
@@ -202,7 +211,7 @@ function buildOccupationShapes(source: ForestOccupation | undefined, shapes: rea
         let nextX = dx ? (sx > 0 ? i + 1 - ax : ax - i) * tx : Infinity;
         let nextY = dy ? (sy > 0 ? j + 1 - ay : ay - j) * ty : Infinity;
         mark(i, j);
-        for (let step = 0; (i !== endX || j !== endY) && step < n * 2 + 4; step++) {
+        for (let step = 0, steps = Math.abs(endX - i) + Math.abs(endY - j) + 4; (i !== endX || j !== endY) && step < steps; step++) {
           if (Math.abs(nextX - nextY) < 1e-12) {
             mark(i + sx, j);
             mark(i, j + sy);
@@ -225,7 +234,6 @@ function buildOccupationShapes(source: ForestOccupation | undefined, shapes: rea
   // Conservative class cells still exclude roots from thin walls; the visible ground follows actual polygons.
   const built = forestClearingRaster(shapes, x, y, cell, n),
     rgba = new Uint8Array(n * n * 4);
-  let hash = 0x811c9dc5;
   for (let i = 0; i < n * n; i++) {
     const at = i * 4;
     dOpen[i] = Math.max(dOpen[i], built[i] / cell);
@@ -234,9 +242,59 @@ function buildOccupationShapes(source: ForestOccupation | undefined, shapes: rea
     rgba[at + 1] = Math.max(0, Math.min(255, Math.round(128 + 16 * dForest[i])));
     rgba[at + 2] = cls[i];
     rgba[at + 3] = cleared ? Math.max(0, Math.min(255, Math.round(128 - (16 * cleared[i]) / cell))) : 255;
-    hash = Math.imul(hash ^ cls[i] ^ rgba[at] ^ rgba[at + 3], 0x01000193);
   }
+  return rgba;
+}
+function mergedOccupation(source: ForestOccupation | undefined, x: number, y: number, cell: number, n: number, rgba: Uint8Array): ForestOccupation {
+  let hash = 0x811c9dc5;
+  for (let at = 0; at < rgba.length; at += 4) hash = Math.imul(hash ^ rgba[at + 2] ^ rgba[at] ^ rgba[at + 3], 0x01000193);
   return { x, y, width: n * cell, n, rgba, detail: source?.detail, ways: source?.ways, clearings: source?.clearings, key: `built-occ:${source?.key ?? ''}:${x}:${y}:${n * cell}:${n}:${hash >>> 0}` };
+}
+
+/** A box of the map (m). */
+export interface OccupationRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+/** Texel windows of a raster of `n` texels of `cell` metres at (x, y) around `rects`: the texels `ci0..ci1 × cj0..cj1`
+ * change, the square of `side` texels from (oi, oj) is computed for them, `margin` texels beyond where the raster allows. */
+function regionWindows(rects: readonly OccupationRect[], x: number, y: number, cell: number, n: number, margin: number) {
+  const clamp = (v: number) => Math.max(0, Math.min(n - 1, v));
+  return rects.flatMap(r => {
+    if (r.x1 < x || r.y1 < y || r.x0 > x + n * cell || r.y0 > y + n * cell) return [];
+    const ci0 = clamp(Math.floor((r.x0 - x) / cell)),
+      ci1 = clamp(Math.ceil((r.x1 - x) / cell)),
+      cj0 = clamp(Math.floor((r.y0 - y) / cell)),
+      cj1 = clamp(Math.ceil((r.y1 - y) / cell));
+    const side = Math.min(n, Math.max(ci1 - ci0, cj1 - cj0) + 1 + 2 * margin),
+      oi = Math.max(0, Math.min(n - side, ci0 - margin)),
+      oj = Math.max(0, Math.min(n - side, cj0 - margin));
+    return [{ ci0, ci1, cj0, cj1, oi, oj, side }];
+  });
+}
+/** Copies the changed texels of a window raster into the whole one. */
+function pasteWindow(rgba: Uint8Array, n: number, sub: Uint8Array, w: ReturnType<typeof regionWindows>[number]): void {
+  for (let j = w.cj0; j <= w.cj1; j++) rgba.set(sub.subarray(((j - w.oj) * w.side + w.ci0 - w.oi) * 4, ((j - w.oj) * w.side + w.ci1 - w.oi + 1) * 4), (j * n + w.ci0) * 4);
+}
+/** The texels a regional pass pasted, against the occupation it started from (ForestOccupation.dirty). */
+const windowsDirty = (previous: ForestOccupation, windows: ReturnType<typeof regionWindows>): ForestOccupation['dirty'] => ({ base: previous.key, rects: windows.map(w => ({ x: w.ci0, y: w.cj0, width: w.ci1 - w.ci0 + 1, height: w.cj1 - w.cj0 + 1 })) });
+const grownRects = (rects: readonly OccupationRect[], d: number): OccupationRect[] => rects.map(r => ({ x0: r.x0 - d, y0: r.y0 - d, x1: r.x1 + d, y1: r.y1 + d }));
+
+/** `previous` (a merge of an earlier source and its shapes) merged again only inside `rects`, from `source` and `shapes`
+ * (a local edit: elsewhere neither changed); undefined when the merged grid moved, and the merge is made whole. */
+export function withOccupationShapesRegion(previous: ForestOccupation, source: ForestOccupation | undefined, shapes: readonly OccupationShape[], rects: readonly OccupationRect[]): ForestOccupation | undefined {
+  return measureDisplayProduct('merge-region', () => {
+    const { x, y, cell, n } = mergeGrid(source, shapes);
+    if (x !== previous.x || y !== previous.y || n !== previous.n || n * cell !== previous.width) return undefined;
+    // A changed source texel moves the distances RANGE texels around and is read bilinearly; a shape clears RANGE cells around it.
+    const reach = (RANGE + 2) * Math.max(cell, source ? source.width / source.n : 0),
+      rgba = previous.rgba.slice(),
+      windows = regionWindows(grownRects(rects, reach), x, y, cell, n, 1);
+    for (const w of windows) pasteWindow(rgba, n, mergeTexels(source, shapes, x + w.oi * cell, y + w.oj * cell, cell, w.side), w);
+    return { ...mergedOccupation(source, x, y, cell, n, rgba), dirty: windowsDirty(previous, windows) };
+  });
 }
 
 /**
@@ -247,6 +305,36 @@ function buildOccupationShapes(source: ForestOccupation | undefined, shapes: rea
  * Deterministic: same layer, same bytes.
  */
 export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2, corridors: readonly ForestCorridor[] = [], clearings: readonly ForestClearing[] = []): ForestOccupation | undefined {
+  const plan = occupationPlan(landuse, maxN, minCell, corridors, clearings);
+  return plan && occupationResult(plan, occupationTexels(plan, plan.x, plan.y, plan.n));
+}
+/** `previous` (the occupation of the same land use with other corridors or clearings) rasterised again only inside
+ * `rects` (a local edit: elsewhere nothing changed); undefined when the grid moved, and the raster is made whole. */
+export function forestOccupationRegion(previous: ForestOccupation, landuse: LandUseLayer, rects: readonly OccupationRect[], corridors: readonly ForestCorridor[] = [], clearings: readonly ForestClearing[] = [], maxN = 1536, minCell = 2): ForestOccupation | undefined {
+  return measureDisplayProduct('occupation-region', () => {
+    const plan = occupationPlan(landuse, maxN, minCell, corridors, clearings);
+    if (!plan || plan.x !== previous.x || plan.y !== previous.y || plan.n !== previous.n || plan.n * plan.cell !== previous.width) return undefined;
+    const { x, y, cell, n } = plan,
+      rgba = previous.rgba.slice(),
+      // A changed texel moves the distances RANGE texels around; the distance transform reads REACH texels beyond.
+      windows = regionWindows(grownRects(rects, (RANGE + 1) * cell), x, y, cell, n, REACH + 2);
+    for (const w of windows) pasteWindow(rgba, n, occupationTexels(plan, x + w.oi * cell, y + w.oj * cell, w.side), w);
+    return { ...occupationResult(plan, rgba), dirty: windowsDirty(previous, windows) };
+  });
+}
+interface OccupationPlan {
+  landuse: LandUseLayer;
+  shapes: { rings: Polygon[]; cls: number; forest: boolean }[];
+  ways: ForestCorridor[];
+  farms: Polygon[];
+  clearings: readonly ForestClearing[];
+  x: number;
+  y: number;
+  cell: number;
+  n: number;
+}
+/** The shapes of the occupation and its grid. */
+function occupationPlan(landuse: LandUseLayer, maxN: number, minCell: number, corridors: readonly ForestCorridor[], clearings: readonly ForestClearing[]): OccupationPlan | undefined {
   const shapes: { rings: Polygon[]; cls: number; forest: boolean }[] = [];
   for (const area of landuse.areas) {
     const cls = area.cultivation === 'fungal' ? FUNGUS_BED : (CLASS[area.kind] ?? 0);
@@ -296,11 +384,17 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
   // Cell-aligned origin: identical layers produce identical texel centres.
   const x = (Math.floor(minX / cell) - RANGE) * cell,
     y = (Math.floor(minY / cell) - RANGE) * cell;
+  // Built reserves override fields and woods drawn below them.
+  shapes.sort((a, b) => Number(a.cls === BUILT) - Number(b.cls === BUILT));
+  return { landuse, shapes, ways, farms, clearings, x, y, cell, n };
+}
+/** The occupation texels of the square of `n` texels at (x, y), on the plan's cell. */
+function occupationTexels(plan: OccupationPlan, x: number, y: number, n: number): Uint8Array {
+  const { landuse, shapes, ways, farms, clearings, cell } = plan;
   const cls = new Uint8Array(n * n),
     open = new Uint8Array(n * n),
     forest = new Uint8Array(n * n);
-  // Built reserves override fields and woods drawn below them.
-  for (const s of shapes.sort((a, b) => Number(a.cls === BUILT) - Number(b.cls === BUILT))) {
+  for (const s of shapes) {
     fillRings(s.rings, x, y, cell, n, (from, to) => {
       cls.fill(s.cls, from, to);
       // Towns and defensive clearings contribute their polygon distance below, never a distance to filled cells.
@@ -346,7 +440,10 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
   // cell open, as for thin building walls, rather than dropping the whole lane.
   for (const path of landuse.ways ?? [])
     for (let i = 1; i < path.length; i++) {
-      visitSegmentCells({ w: n, h: n, cell }, { x: path[i - 1].x - x, y: path[i - 1].y - y }, { x: path[i].x - x, y: path[i].y - y }, at => {
+      // Clipped to the raster: a segment clamped to its edge would cross other cells.
+      const segment = clipSegment(path[i - 1].x - x, path[i - 1].y - y, path[i].x - x, path[i].y - y, n * cell);
+      if (!segment) continue;
+      visitSegmentCells({ w: n, h: n, cell }, segment[0], segment[1], at => {
         cls[at] = CLEARANCE;
         open[at] = 1;
         forest[at] = 0;
@@ -390,9 +487,33 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
     rgba[o + 2] = cls[i];
     rgba[o + 3] = cleared ? Math.max(0, Math.min(255, Math.round(128 - (16 * cleared[i]) / cell))) : 255;
   }
+  return rgba;
+}
+function occupationResult(plan: OccupationPlan, rgba: Uint8Array): ForestOccupation {
+  const { x, y, cell, n, clearings } = plan;
   let hash = 0x811c9dc5;
   for (const word of new Uint32Array(rgba.buffer)) hash = Math.imul(hash ^ word, 0x01000193);
   return { x, y, width: n * cell, n, rgba, clearings, key: `occ:${x}:${y}:${n * cell}:${n}:${(hash >>> 0).toString(36)}` };
+}
+
+/** The part of segment a-b inside the square [0, size]² (Liang-Barsky); undefined outside it. */
+function clipSegment(ax: number, ay: number, bx: number, by: number, size: number): [{ x: number; y: number }, { x: number; y: number }] | undefined {
+  let t0 = 0,
+    t1 = 1;
+  const dx = bx - ax,
+    dy = by - ay;
+  for (const [p, q] of [
+    [-dx, ax],
+    [dx, size - ax],
+    [-dy, ay],
+    [dy, size - ay],
+  ]) {
+    if (p === 0) {
+      if (q < 0) return undefined;
+    } else if (p < 0) t0 = Math.max(t0, q / p);
+    else t1 = Math.min(t1, q / p);
+  }
+  return t0 <= t1 ? [{ x: ax + t0 * dx, y: ay + t0 * dy }, { x: ax + t1 * dx, y: ay + t1 * dy }] : undefined;
 }
 
 /** Signed distance (texels, positive inside) of each texel centre to the union of the corridor capsules, with the

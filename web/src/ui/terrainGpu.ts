@@ -139,8 +139,9 @@ export class TerrainGpu implements TerrainRenderer {
     this.revision.bump();
     replayInputs(this, inputs);
   }
-  private changed(change: InputChange): void {
-    if (change === 'content') this.revision.bump();
+  /** `region`: the world boxes a 'content' change is limited to (setForest of a local edit); undefined: the whole map. */
+  private changed(change: InputChange, region?: readonly Rect4[]): void {
+    if (change === 'content') this.revision.bump(region);
     if (change !== 'none') this.request();
   }
   private get fallback(): TerrainRenderer | undefined {
@@ -190,7 +191,8 @@ export class TerrainGpu implements TerrainRenderer {
   /** Render3D forest: texture uploads only. `undefined` restores the macro canopy of the material exactly. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {
     if (this.fallback) return this.fallback.setForest(field, occupation);
-    this.changed(this.parts.inputs.setForest(field, occupation));
+    const inputs = this.parts.inputs;
+    this.changed(inputs.setForest(field, occupation), inputs.forestRegion);
   }
   setRenderV2Season(season: number): void {
     if (this.fallback) return this.fallback.setRenderV2Season(season);
@@ -237,6 +239,11 @@ export class TerrainGpu implements TerrainRenderer {
   /** Changes whenever renderWorldTile would draw other pixels (inputs, created pipelines, style pixel ratio, fall back). */
   contentRevision(): number {
     return this.revision.value() + (this.fallback?.contentRevision() ?? 0);
+  }
+  /** The world boxes whose pixels changed after revision `since` (GroundTileRenderer.contentChanges); after a fall back
+   * the two revisions are summed: whole changes. */
+  contentChanges(since: number): readonly Rect4[] | undefined {
+    return this.fallback ? undefined : this.revision.changesSince(since);
   }
 
   /** Synchronous, as the captures below: await variantReady() first where the caller can wait, otherwise a

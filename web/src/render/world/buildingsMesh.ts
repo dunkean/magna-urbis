@@ -3,13 +3,19 @@
  * of each building (eachBuildingTriangle) with their paint (culture tint, cover and wall material classes, snow), in
  * groups that one program state draws.
  *
- * Shared by the two views that stand buildings on a terrain: the separate 3D view (ui/urbanBuilding3d.ts, sectors of
- * 256 m, its own exaggerated relief) and the tilted world view (buildingsLayer.ts, blocks seated on TerrainHeights).
+ * Shared by the two views that stand buildings on a terrain: V2's world view, top and tilted (buildingsLayer.ts, blocks
+ * seated on TerrainHeights), and City Bench's separate 3D view (ui/urbanBuilding3d.ts, sectors of 256 m, its own relief).
  * They differ only in where a vertex stands, which `BuildingSeat` decides; colours, classes and geometry are one code.
  *
  * Vertex layout (BUILDING_STRIDE floats): x and y relative to the block origin in the GL frame of the 3D view
  * (x, height, y south), the normal in that frame scaled by 1 + code / 32 (material class, town grain and drawing layer),
  * then either the colour (flat program) or uv + material layer (textured program), then the seat's second value.
+ *
+ * The tilted world view keeps no colour in its vertices (`BuildingPaint.slots`): a face carries a colour slot, an index
+ * into the look table of the style on screen (buildingsLookTable.ts), which `slotLooks` fills with the paint the colour
+ * mode writes (`faceLook`, one code). Its normal's length then holds only what no look changes (lit windows, lot
+ * boundary strips, crafted drawing layers), and its three colour floats are the slot (signed by the V1 roof edges) and
+ * the night light of the wall, or uv + slot on a crafted face. Another style, season or ambience swaps the table.
  */
 import type { HouseMaterial, MaterialPattern } from '../../../../rust/bridge/housesContract';
 import { roofEdgeMasks } from '../roofEdges';
@@ -25,6 +31,7 @@ import { building3dHeight, eachBuildingTriangle, isBuildingProjection, type Buil
 import type { BuildingFeatureLod } from '../urbanBuildingFeatureLod';
 import { massingLookOf } from '../city3d/materials';
 import { volumeRoofPaint, volumeWallColor, type VolumeTownLook } from '../city/buildingLook';
+import type { CityBuilding } from '../city/model/contract';
 import { houseSurfaceLayer, HOUSE_TILE_LAYERS } from '../houseSurfaceTexture';
 import { roofFaceForm } from '../houseRoofArt';
 import { houseSurfaceMapper } from '../houseSurfaceUv';
@@ -63,15 +70,16 @@ export function buildingBounds(building: Building3dVisual, crafted = false): Bui
   if (crafted && !isBuildingProjection(building) && building.volumes.length) {
     const boundary = boundaryOf(building);
     if (boundary) {
-      for (const line of boundary.lines) for (const p of line.points) {
-        const pad = line.half + 0.48;
-        box[0] = Math.min(box[0], p.x - pad);
-        box[1] = Math.min(box[1], p.y - pad);
-        box[2] = Math.min(box[2], p.g - 0.2);
-        box[3] = Math.max(box[3], p.x + pad);
-        box[4] = Math.max(box[4], p.y + pad);
-        box[5] = Math.max(box[5], p.g + line.height + Math.max(0.85, line.height * 0.22));
-      }
+      for (const line of boundary.lines)
+        for (const p of line.points) {
+          const pad = line.half + 0.48;
+          box[0] = Math.min(box[0], p.x - pad);
+          box[1] = Math.min(box[1], p.y - pad);
+          box[2] = Math.min(box[2], p.g - 0.2);
+          box[3] = Math.max(box[3], p.x + pad);
+          box[4] = Math.max(box[4], p.y + pad);
+          box[5] = Math.max(box[5], p.g + line.height + Math.max(0.85, line.height * 0.22));
+        }
     } else includeCraftedMassing(building, box);
   }
   return box;
@@ -108,6 +116,8 @@ export interface BuildingPaint {
    * colour of its pan there, light of its slope included (volumeRoofPaint), and is marked painted (its grain gain on
    * the normal's length, see `faceCode`); its walls take the town's wall colour and keep the volume's light. */
   look?: VolumeTownLook;
+  /** The world view: faces carry colour slots gathered here instead of colours (see the header). */
+  slots?: BuildingColorSlots;
 }
 /** What rides on the normal's length, 1 + code / 32: the material class (0 to 32), plus 64 times the grain gain of a
  * face painted by the town look in sixteenths (1 to 15; 0: not painted). Decoded by WORLD_BUILDING_VS. */
@@ -196,7 +206,7 @@ interface LitOpening {
 const alongWall = (x: number, y: number, normal: readonly number[]): number => (y * normal[0] - x * normal[1]) / (Math.hypot(normal[0], normal[1]) || 1);
 /** Writes the light of the lit opening of its plane on each wall triangle, the lowest one (a door) first: both triangles
  * of a wall take the same. Boxes and overviews draw no opening: one stands every 32 m of their walls, in its own place. */
-function lightWalls(walls: readonly LitWall[], openings: readonly LitOpening[], drawn: number | undefined, crafted: boolean): void {
+function lightWalls(walls: readonly LitWall[], openings: readonly LitOpening[], drawn: number | undefined, crafted: boolean, slotted: boolean): void {
   // `at` is the place in a batch that may have grown since: its data is read from the batch.
   for (const wall of walls) {
     let lit: LitOpening | undefined;
@@ -213,11 +223,17 @@ function lightWalls(walls: readonly LitWall[], openings: readonly LitOpening[], 
       const at = wall.at + i * BUILDING_STRIDE;
       const add = (k: number, v: number): void => {
         const c = data[at + k];
-        data[at + k] = c < 0 || Object.is(c, -0) ? c - 2 * v : c + 2 * v;
+        data[at + k] = c < 0 || Object.is(c, -0) ? c - v : c + v;
       };
-      add(6, GLOW_EXTRA + wall.level);
-      add(7, q);
-      add(8, h);
+      // A slotted face keeps its slot on the first float: the light and its place ride on the other two.
+      if (slotted) {
+        add(7, GLOW_EXTRA + wall.level + 32 * q);
+        add(8, h);
+        continue;
+      }
+      add(6, 2 * (GLOW_EXTRA + wall.level));
+      add(7, 2 * q);
+      add(8, 2 * h);
     }
   }
 }
@@ -296,6 +312,177 @@ function faceUv(p: readonly number[], normal: readonly number[], layer: number):
   return [(-p[0] * dy + p[1] * dx) / e, (p[0] * dx + p[1] * dy) / Math.max(nz, 0.2) / e];
 }
 
+/** The paint of one building's faces, whatever writes it (buildingBatches in colour mode, slotLooks for a look table). */
+interface BuildingInk {
+  building: Building3dVisual;
+  culture: string;
+  tone: number;
+  role: string;
+  house: boolean;
+  /** A crafted house (showsCraftedHouses): its detail paint stays its own. */
+  crafted: boolean;
+  /** Its town item, when its faces take the top view's look. */
+  item?: CityBuilding;
+  catalogue: { materials: HouseMaterial[] };
+  /** The colour of each surface and material, read for its first face. */
+  colors: Map<string, Vec3>;
+  /** Its ground snow (mapGroundSnow), which its roof faces hold a share of. */
+  snow: number;
+  /** The last roof face painted by the town look (the triangles of one face come in a row, with the same normal and slots). */
+  lastNormal?: BuildingTriangle['normal'];
+  lastSlots?: BuildingTriangle['materials'];
+  lastRoof?: { color: Vec3; gain: number; family: number };
+}
+const idHash = (id: string): number => {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return h;
+};
+function buildingInk(building: Building3dVisual, paint: BuildingPaint): BuildingInk {
+  const appearance = paint.appearance,
+    ground = buildingGround(building),
+    house = Number.isFinite(ground) && !building.id.startsWith('city3d-'),
+    programme = (building as unknown as { programme?: { role?: string; landmark?: boolean } }).programme,
+    textured = !!appearance.textured && appearance.roof !== 'crafted';
+  return {
+    building,
+    culture: building.culture?.culture ?? '',
+    tone: Math.round(((idHash(building.id) >>> 0) / 0xffffffff) * 15) / 15,
+    role: `${programme?.role ?? ''}${programme?.landmark ? ' monument' : ''}`,
+    house,
+    crafted: house && showsCraftedHouses(appearance),
+    item: paint.look && !textured && appearance.diagnostic === 'none' ? paint.look.item(building.id) : undefined,
+    catalogue: { materials: paint.materials as HouseMaterial[] },
+    colors: new Map(),
+    snow: appearance.style !== 'silhouette' && appearance.diagnostic === 'none' ? mapGroundSnow(paint.snowAltitudes.get(building.id) ?? building.ground_z_m, appearance.roofSnow) : 0,
+  };
+}
+type FaceOf = Pick<BuildingTriangle, 'surface' | 'materials' | 'normal'>;
+/** The colour of a face before its snow (aperture joinery included), the town look's paint of its pan, and its grain
+ * class: what both the vertex colours and the look tables write. */
+function faceLook(ink: BuildingInk, face: FaceOf, raw: string, aperture: 'door' | 'window' | undefined, paint: BuildingPaint): { color: Vec3; townRoof?: { color: Vec3; gain: number; family: number }; cls: number } {
+  const appearance = paint.appearance,
+    building = ink.building,
+    culture = ink.culture,
+    tm = materialTint(raw),
+    id = tm ? raw.slice(0, tm.index) : raw,
+    item = ink.item;
+  const massing = item && face.surface !== 'yard' ? massingLookOf(face.materials) : undefined;
+  // A face of the volume's cover takes its pan's paint; one of its walls (not an opening) the town's wall colour.
+  let townRoof: { color: Vec3; gain: number; family: number } | undefined;
+  const explicitDetailPaint = ink.crafted && !!tm && (id?.includes('@') || (raw !== face.materials.cladding && raw !== face.materials.coating));
+  if (massing && face.surface === 'roof' && id?.startsWith('city3d:cover:') && !explicitDetailPaint) {
+    if (face.normal !== ink.lastNormal || face.materials !== ink.lastSlots) {
+      const p = volumeRoofPaint(paint.look!.frame, item!, { ...massing, normal: face.normal });
+      ink.lastRoof = { color: rgb(p.color), gain: p.gain, family: p.family };
+      ink.lastNormal = face.normal;
+      ink.lastSlots = face.materials;
+    }
+    townRoof = ink.lastRoof;
+  }
+  const townWall = !!massing && raw === face.materials.coating,
+    key = face.surface + '|' + raw;
+  let c = townRoof?.color ?? ink.colors.get(key);
+  if (!c && townWall) {
+    c = rgb(volumeWallColor(paint.look!.frame, item!, massing!));
+    ink.colors.set(key, c);
+  }
+  if (!c) {
+    // The paint is read for the first face of each material and surface only.
+    const p = buildingPaint(face.materials, building.function, building3dHeight(building), appearance, id, ink.catalogue);
+    c = rgb(face.surface === 'roof' ? p.roof : p.wall);
+    if (appearance.diagnostic === 'none' || face.surface === 'yard') {
+      if (tm?.[1].length === 6) c = rgb(`#${tm[1]}`);
+      else if (tm) c = c.map((v, i) => Math.min(1, (v * parseInt(tm[1][i], 16)) / 8)) as Vec3;
+      else if (culture && !building.id.startsWith('city3d-')) {
+        const material = (s: string): string => /(?:^|[:/_-])(timber|wood|brick|stone|earth|plaster|bamboo|wattle|hide|coral|tile|slate|thatch|reed|palm|shingle|bark|turf|felt|snow|metal|lead)(?:$|[:/_-])/.exec(s)?.[1] ?? '';
+        const w = material(face.materials.coating || face.materials.infill),
+          r = material(face.materials.cladding);
+        const t = buildingTint(culture, w, r, ink.tone, ink.role + (/tower|minaret|stone/.test(id) ? ' monument' : ''));
+        c = face.surface === 'roof' ? t.roof : t.wall;
+      }
+    }
+    if (face.surface === 'roof' && appearance.diagnostic === 'none' && appearance.colors?.building && !(ink.crafted && (id?.startsWith('city3d:detail:') || explicitDetailPaint))) c = rgb(appearance.colors.building);
+    const tree = /^city3d:tree:(crown|trunk)$/.exec(id ?? ''); // switch treeHouseGreens: forest greens, whatever the colour mode
+    if (tree) c = rgb(tm?.[1].length === 6 ? `#${tm[1]}` : tree[1] === 'crown' ? '#5f8247' : '#4b5a36'); // a canopy layer may carry its own green
+    if (id === 'city3d:water') c = rgb('#' + (tm?.[1] ?? '8aaeb8'));
+    ink.colors.set(key, c);
+  }
+  if (ink.crafted && culture === 'mongol-ordu' && !appearance.colors?.building) {
+    const cloth = id === 'city3d:cover:felt' ? GER_CLOTH.roof : id === 'city3d:wall:hide' ? GER_CLOTH.wall : undefined;
+    if (cloth) c = c.map((v, i) => (v + cloth[i]) * 0.5) as Vec3;
+  }
+  // The original aperture is almost black; leave enough daylight for glazing and joinery to read.
+  if (aperture) c = aperture === 'door' ? DOOR_COLOR : WINDOW_COLOR;
+  // Flat-colour program only: the material class rides on the normal's length (see materialGrain).
+  // A face painted by the town look takes the grain family of its pan (the top view's grain marks, COVER_GRAIN_GLSL).
+  const textured = !!appearance.textured && appearance.roof !== 'crafted',
+    solid = ink.house && (appearance.roof === 'minimal' || (appearance.roof === 'flat' && face.surface === 'roof'));
+  const cls = !textured && !solid && face.surface !== 'yard' && appearance.style === 'cartographic' && appearance.diagnostic === 'none' ? (townRoof ? townRoof.family : materialClass(id, face.normal, culture)) : 0;
+  return { color: c, townRoof, cls };
+}
+/** Code 35 + class marks a house roof for the world plan shader (planRoofs), up to class 28. */
+const roofCode = (paint: BuildingPaint, ink: BuildingInk, surface: BuildingTriangle['surface'], cls: number): number => (paint.planRoofs && ink.house && surface === 'roof' && cls <= 28 ? 35 + cls : cls);
+
+/** One colour slot of the world view: what the paint of a face reads, besides the look. */
+export interface ColorSlot extends FaceOf {
+  building: Building3dVisual;
+  raw: string;
+  aperture?: 'door' | 'window';
+  /** Eighths of its building's ground snow the face holds (roofSnowShare), in every season. */
+  share: number;
+  /** A crafted face drawn from the house surface atlas: its colour takes the snow tint, no mantle. */
+  project: boolean;
+}
+/** Material slot objects by identity (the massing looks are kept by identity too), for the slot keys. */
+const slotIds = new WeakMap<object, number>();
+let slotIdNext = 0;
+const slotIdOf = (slots: object): number => {
+  let id = slotIds.get(slots);
+  if (id === undefined) slotIds.set(slots, (id = slotIdNext++));
+  return id;
+};
+/** The colour slots of a town's meshes, shared by every level and every look of one geometry (buildingsLayer.ts): one
+ * per building, surface, material, pan and snow share. Grows as levels are built; never depends on the look. */
+export class BuildingColorSlots {
+  readonly list: ColorSlot[] = [];
+  private readonly byKey = new Map<string, number>();
+  private last = -1;
+  get length(): number {
+    return this.list.length;
+  }
+  slot(building: Building3dVisual, face: FaceOf, raw: string, aperture: 'door' | 'window' | undefined, share: number, project: boolean): number {
+    const last = this.list[this.last];
+    if (last && last.normal === face.normal && last.materials === face.materials && last.raw === raw && last.surface === face.surface && last.share === share && last.aperture === aperture && last.project === project && last.building.id === building.id) return this.last;
+    const n = face.normal,
+      key = `${building.id}|${face.surface}|${raw}|${slotIdOf(face.materials)}|${n[0]},${n[1]},${n[2]}|${share}|${aperture ?? ''}|${project ? 1 : 0}`;
+    let index = this.byKey.get(key);
+    if (index === undefined) {
+      this.byKey.set(key, (index = this.list.length));
+      this.list.push({ building, surface: face.surface, materials: face.materials, normal: face.normal, raw, aperture, share, project });
+    }
+    this.last = index;
+    return index;
+  }
+}
+/** The look table entries of slots `from` to `to` in `paint` (its appearance, season and town look), four floats each
+ * at 4 x slot of `out`: the colour (a crafted face's under its snow tint), then the snow (fifteenths of a mantle the
+ * shader lays) + 16 x the face code (faceCode: class and grain gain), which WORLD_BUILDING_VS reads. */
+export function slotLooks(slots: BuildingColorSlots, from: number, to: number, paint: BuildingPaint, out: Float32Array): void {
+  let ink: BuildingInk | undefined;
+  for (let s = from; s < to; s++) {
+    const slot = slots.list[s];
+    if (ink?.building.id !== slot.building.id) ink = buildingInk(slot.building, paint);
+    const look = faceLook(ink, slot, slot.raw, slot.aperture, paint),
+      snow = (ink.snow * slot.share) / 8,
+      color = slot.project && snow ? snowRoofTint(look.color, snow, -(slot.normal[0] + slot.normal[1]) * 0.4, look.townRoof && paint.look!.frame.night ? nightSnow : undefined) : look.color;
+    out[4 * s] = color[0];
+    out[4 * s + 1] = color[1];
+    out[4 * s + 2] = color[2];
+    out[4 * s + 3] = (snow > 0 && !slot.project ? snowExtra(snow) : 0) + 16 * faceCode(roofCode(paint, ink, slot.surface, look.cls), look.townRoof?.gain);
+  }
+}
+
 const seatOut = new Float64Array(2);
 /** The vertex groups of `buildings` around `origin` (map metres), at one level of detail: `overview` (capped bodies),
  * `featureLod` (small structural features dropped), `yardLevel` (lot boundaries as ribbons). */
@@ -306,22 +493,18 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
   const appearance = paint.appearance,
     groups = new Map<string, { batch: BuildingBatchData; length: number; seen?: Set<Vec3> }>(),
     crafted = appearance.roof === 'crafted',
-    textured = !!appearance.textured && !crafted;
-  const catalogue = { materials: paint.materials as HouseMaterial[] };
+    textured = !!appearance.textured && !crafted,
+    slots = textured ? undefined : paint.slots;
   const patterns = showsCraftedHouses(appearance) ? new Map(paint.materials.map(m => [m.id, m.pattern])) : undefined;
   const litWalls: LitWall[] = [],
     litOpenings: LitOpening[] = [];
   for (const original of buildings) {
     const building = patterns && original.culture?.culture === 'wizard-city' && !isBuildingProjection(original) ? craftedMageCity(original) : original;
-    const colors = new Map<string, Map<string, Vec3>>(),
-      culture = building.culture?.culture ?? '';
-    let h = 2166136261;
-    for (let i = 0; i < building.id.length; i++) h = Math.imul(h ^ building.id.charCodeAt(i), 16777619);
+    const culture = building.culture?.culture ?? '';
+    const h = idHash(building.id);
     // Four lots can share one texture while retaining different course offsets and patinas.
     const finishOffset = (h >>> 30) * HOUSE_TILE_LAYERS;
-    const tone = Math.round(((h >>> 0) / 0xffffffff) * 15) / 15;
     const programme = (building as unknown as { programme?: { role?: string; landmark?: boolean } }).programme;
-    const role = `${programme?.role ?? ''}${programme?.landmark ? ' monument' : ''}`;
     const ground = buildingGround(building);
     const house = Number.isFinite(ground) && !building.id.startsWith('city3d-');
     const craftedHouse = house ? patterns : undefined;
@@ -329,11 +512,9 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
     const glow = house && !textured ? nightGlow(building.function, building3dHeight(building), ((h >>> 8) & 255) / 256, !!programme?.landmark) : 0;
     litWalls.length = litOpenings.length = 0;
     const canInk = paint.roofInk && house && appearance.diagnostic === 'none';
-    // The town item of the building, when the faces take the top view's look; the last roof face painted (the
-    // triangles of one face come in a row, with the same normal and slots).
-    const item = paint.look && !textured && appearance.diagnostic === 'none' ? paint.look.item(building.id) : undefined;
-    let lastNormal: BuildingTriangle['normal'] | undefined, lastSlots: BuildingTriangle['materials'] | undefined, lastRoof: { color: Vec3; gain: number; family: number } | undefined;
-    const paintFace = (face: BuildingTriangle, edges = 0, snow = 0): void => {
+    // Colour mode: the paint of the building's faces. The world view writes colour slots instead.
+    const ink = slots ? undefined : buildingInk(building, paint);
+    const paintFace = (face: BuildingTriangle, edges = 0, snow = 0, share = 0): void => {
       const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating),
         tm = materialTint(raw);
       const id = tm ? raw.slice(0, tm.index) : raw;
@@ -345,98 +526,67 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
         const threshold = (face.ground?.[0] ?? ground) + 0.3;
         aperture = face.entrance || face.points.some(p => p[2] <= threshold) ? 'door' : 'window';
       }
-      const massing = item && face.surface !== 'yard' ? massingLookOf(face.materials) : undefined;
-      // A face of the volume's cover takes its pan's paint; one of its walls (not an opening) the town's wall colour.
-      let townRoof: { color: Vec3; gain: number; family: number } | undefined;
-      const explicitDetailPaint = !!craftedHouse && !!tm && (id?.includes('@') || (raw !== face.materials.cladding && raw !== face.materials.coating));
-      if (massing && face.surface === 'roof' && id?.startsWith('city3d:cover:') && !explicitDetailPaint) {
-        if (face.normal !== lastNormal || face.materials !== lastSlots) {
-          const p = volumeRoofPaint(paint.look!.frame, item!, { ...massing, normal: face.normal });
-          lastRoof = { color: rgb(p.color), gain: p.gain, family: p.family };
-          lastNormal = face.normal;
-          lastSlots = face.materials;
-        }
-        townRoof = lastRoof;
-      }
-      const townWall = !!massing && raw === face.materials.coating;
       // Thin enclosures already carry their final yard colours. A roof/wall
       // atlas and its normal-map highlights turn subpixel copings into white
       // parcel outlines; retain the same matte material at every yard LOD.
       const solid = house && (appearance.roof === 'minimal' || (appearance.roof === 'flat' && face.surface === 'roof'));
       const layer = textured && !solid && !snow && face.surface !== 'yard' ? materialLayer(id ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating)) : -1;
-      let surfaceColors = colors.get(face.surface);
-      if (!surfaceColors) colors.set(face.surface, (surfaceColors = new Map()));
-      let c = townRoof?.color ?? surfaceColors.get(String(raw));
-      if (!c && townWall) {
-        c = rgb(volumeWallColor(paint.look!.frame, item!, massing!));
-        surfaceColors.set(String(raw), c);
-      }
-      if (!c) {
-        // The paint is read for the first face of each material and surface only.
-        const p = buildingPaint(face.materials, building.function, building3dHeight(building), appearance, id, catalogue);
-        c = rgb(face.surface === 'roof' ? p.roof : p.wall);
-        if (appearance.diagnostic === 'none' || face.surface === 'yard') {
-          if (tm?.[1].length === 6) c = rgb(`#${tm[1]}`);
-          else if (tm) c = c.map((v, i) => Math.min(1, (v * parseInt(tm[1][i], 16)) / 8)) as Vec3;
-          else if (culture && !building.id.startsWith('city3d-')) {
-            const material = (s: string): string => /(?:^|[:/_-])(timber|wood|brick|stone|earth|plaster|bamboo|wattle|hide|coral|tile|slate|thatch|reed|palm|shingle|bark|turf|felt|snow|metal|lead)(?:$|[:/_-])/.exec(s)?.[1] ?? '';
-            const w = material(face.materials.coating || face.materials.infill),
-              r = material(face.materials.cladding);
-            const t = buildingTint(culture, w, r, tone, role + (/tower|minaret|stone/.test(id) ? ' monument' : ''));
-            c = face.surface === 'roof' ? t.roof : t.wall;
-          }
-        }
-        if (face.surface === 'roof' && appearance.diagnostic === 'none' && appearance.colors?.building && !(craftedHouse && (id?.startsWith('city3d:detail:') || explicitDetailPaint))) c = rgb(appearance.colors.building);
-        const tree = /^city3d:tree:(crown|trunk)$/.exec(id ?? ''); // switch treeHouseGreens: forest greens, whatever the colour mode
-        if (tree) c = rgb(tm?.[1].length === 6 ? `#${tm[1]}` : tree[1] === 'crown' ? '#5f8247' : '#4b5a36'); // a canopy layer may carry its own green
-        if (id === 'city3d:water') c = rgb('#' + (tm?.[1] ?? '8aaeb8'));
-        surfaceColors.set(String(raw), c);
-      }
-      if (craftedHouse && culture === 'mongol-ordu' && !appearance.colors?.building) {
-        const cloth = id === 'city3d:cover:felt' ? GER_CLOTH.roof : id === 'city3d:wall:hide' ? GER_CLOTH.wall : undefined;
-        if (cloth) c = c.map((v, i) => (v + cloth[i]) * 0.5) as Vec3;
-      }
-      // The original aperture is almost black; leave enough daylight for glazing and joinery to read.
-      if (aperture) c = aperture === 'door' ? DOOR_COLOR : WINDOW_COLOR;
-      const recolored = appearance.diagnostic === 'none' && ((!!appearance.colors?.building && face.surface === 'roof') || tm?.[1].length === 6 || (!!culture && !building.id.startsWith('city3d-')));
-      // Flat-colour program only: the material class rides on the normal's length (see materialGrain).
-      // A face painted by the town look takes the grain family of its pan (the top view's grain marks, COVER_GRAIN_GLSL).
-      const cls = !textured && !solid && face.surface !== 'yard' && appearance.style === 'cartographic' && appearance.diagnostic === 'none' ? (townRoof ? townRoof.family : materialClass(id, face.normal, culture)) : 0;
       const drawing = aperture ? houseSurfaceLayer('wall', culture, aperture) : craftedHouse && snow < 0.4 && face.surface !== 'yard' ? craftedLayer(face, id ?? '', culture, craftedHouse, programme?.role ?? '') : 0;
       const finish = drawing && !aperture ? drawing + finishOffset : drawing;
       const project = drawing && mapper ? mapper(face, id ?? '', !!aperture) : undefined;
-      // The shader lays the snow of a flat-coloured face over its cover. The other programs take it in the colour, under
-      // the light the top view's look painted the pan with.
-      const bare = c;
-      if (snow) c = snowRoofTint(c, snow, -(face.normal[0] + face.normal[1]) * 0.4, townRoof && paint.look!.frame.night ? nightSnow : undefined);
-      const laid = snow > 0 && !textured && !project,
-        extra = laid ? snowExtra(snow) : 0,
-        red = (laid ? bare[0] : c[0]) + 2 * extra,
-        green = laid ? bare[1] : c[1],
-        blue = laid ? bare[2] : c[2];
-      // A complete sRGB8 colour fits exactly in one float. The two released channels carry
-      // real per-vertex UVs on the crafted faces only. Plain and PBR meshes retain their original layout.
-      const color24 = project ? (Math.round(c[0] * 255) << 16) | (Math.round(c[1] * 255) << 8) | Math.round(c[2] * 255) : 0;
       const lateral = face.lateral,
+        // Codes 32 to 34 belong to the face whatever its look: a lit window, the side and top of a lot boundary strip.
+        fixed = lateral ? (face.normal[2] > 0.5 ? STRIP_TOP_CLASS : STRIP_SIDE_CLASS) : id === 'city3d:wall:lit' ? LIT_CLASS : -1;
+      let c: Vec3 | undefined,
+        recolored = false,
+        gain: number | undefined,
+        code: number,
+        key: string,
+        red: number,
+        green = 0,
+        blue = 0,
+        color24 = 0;
+      if (slots) {
+        // The world view: the slot whose paint the look table holds; the snow share rides in it, whatever the season.
+        red = slots.slot(building, face, raw, aperture, share, !!project);
+        code = Math.max(0, fixed);
+        key = 'slot';
+      } else {
+        const look = faceLook(ink!, face, raw, aperture, paint);
+        c = look.color;
+        gain = look.townRoof?.gain;
+        recolored = appearance.diagnostic === 'none' && ((!!appearance.colors?.building && face.surface === 'roof') || tm?.[1].length === 6 || (!!culture && !building.id.startsWith('city3d-')));
+        // The shader lays the snow of a flat-coloured face over its cover. The other programs take it in the colour, under
+        // the light the top view's look painted the pan with.
+        const bare = c;
+        if (snow) c = snowRoofTint(c, snow, -(face.normal[0] + face.normal[1]) * 0.4, look.townRoof && paint.look!.frame.night ? nightSnow : undefined);
+        const laid = snow > 0 && !textured && !project,
+          extra = laid ? snowExtra(snow) : 0;
+        red = (laid ? bare[0] : c[0]) + 2 * extra;
+        green = laid ? bare[1] : c[1];
+        blue = laid ? bare[2] : c[2];
+        // A complete sRGB8 colour fits exactly in one float. The two released channels carry
+        // real per-vertex UVs on the crafted faces only. Plain and PBR meshes retain their original layout.
+        color24 = project ? (Math.round(c[0] * 255) << 16) | (Math.round(c[1] * 255) << 8) | Math.round(c[2] * 255) : 0;
         // Codes 35..63 carry a roof and its underlying grain class.
-        roofClass = paint.planRoofs && house && face.surface === 'roof' && cls <= 28 ? 35 + cls : cls,
-        code = lateral ? (face.normal[2] > 0.5 ? STRIP_TOP_CLASS : STRIP_SIDE_CLASS) : id === 'city3d:wall:lit' ? LIT_CLASS : roofClass,
-        unit = (1 + (faceCode(code, townRoof?.gain) + finish * 1024) / 32) / (lateral ? 1 : Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
-      const key = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : snow ? 'vertex-colour|true' : 'vertex-colour|false';
+        code = fixed >= 0 ? fixed : roofCode(paint, ink!, face.surface, look.cls);
+        key = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : snow ? 'vertex-colour|true' : 'vertex-colour|false';
+      }
+      const unit = (1 + (faceCode(code, gain) + finish * 1024) / 32) / (lateral ? 1 : Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
       let group = groups.get(key);
       if (!group) {
-        const mean = MATERIALS.layers[layer]?.mean_rgb,
-          shade = c;
-        const tint = mean && recolored ? (shade.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3) : tm?.[1].length === 3 ? ([...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3) : ([1, 1, 1] as Vec3);
-        group = { batch: { color: textured ? c : [1, 1, 1], tint, recolored, vcolor: !textured, palette: [], stride: BUILDING_STRIDE, data: new Float32Array(4096) }, length: 0, seen: paint.collectPalette === false ? undefined : new Set() };
+        const mean = MATERIALS.layers[layer]?.mean_rgb;
+        const tint = mean && recolored && c ? (c.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3) : tm?.[1].length === 3 ? ([...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3) : ([1, 1, 1] as Vec3);
+        group = { batch: { color: textured && c ? c : [1, 1, 1], tint, recolored, vcolor: !textured, palette: [], stride: BUILDING_STRIDE, data: new Float32Array(4096) }, length: 0, seen: paint.collectPalette === false || slots ? undefined : new Set() };
         groups.set(key, group);
       }
       const batch = group.batch,
         points = face.points;
       // A snowed face has a colour of its own (never seen before): it is compared by value, as every colour was.
-      if (group.seen && (snow || !group.seen.has(c))) {
-        if (!snow) group.seen.add(c);
-        if (!batch.palette.some(q => q[0] === c[0] && q[1] === c[1] && q[2] === c[2])) batch.palette.push(c);
+      if (c && group.seen && (snow || !group.seen.has(c))) {
+        const seen = c;
+        if (!snow) group.seen.add(seen);
+        if (!batch.palette.some(q => q[0] === seen[0] && q[1] === seen[1] && q[2] === seen[2])) batch.palette.push(seen);
       }
       if (group.length + points.length * BUILDING_STRIDE > batch.data.length) {
         const grown = new Float32Array(Math.max(batch.data.length * 2, group.length + points.length * BUILDING_STRIDE));
@@ -485,10 +635,11 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
           // The material layer is integral; carry V1's mask in its fractional part.
           data[at++] = layer + on / 8;
         } else if (project) {
-          const uv = project(p);
+          const uv = project(p),
+            packed = slots ? red : color24;
           data[at++] = uv[0];
           data[at++] = uv[1];
-          data[at++] = project.underEave ? -(color24 + 1) : color24;
+          data[at++] = project.underEave ? -(packed + 1) : packed;
         } else {
           // A negative channel is zero on that roof edge, positive is one. Interpolation in the
           // shader supplies distance to the side. All wall and interior triangle coordinates stay one.
@@ -501,13 +652,14 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       group.length = at;
     };
     const snow = appearance.style !== 'silhouette' && appearance.diagnostic === 'none' ? mapGroundSnow(paint.snowAltitudes.get(building.id) ?? building.ground_z_m, appearance.roofSnow) : 0;
-    const heat = snow ? buildingHeat(building.function) : 0;
+    // Slots keep the share of every roof face, whatever the season: the look table lays the snow.
+    const heat = snow || slots ? buildingHeat(building.function) : 0;
     const paintTriangle = (face: BuildingTriangle, edges = 0): void => {
       // Tint each pan directly so the snow does not add seams or depth bias.
       const material = face.material ?? face.materials.cladding;
-      const covered = snow && face.surface === 'roof' && !/^city3d:(wall|tree|road|water)/.test(material) && !building.id.startsWith('city3d-');
-      const share = covered ? roofSnowShare(face.normal, -(face.normal[0] + face.normal[1]) * 0.4, heat, /^city3d:cover:([a-z]+)/.exec(material)?.[1]) : 0;
-      paintFace(face, edges, (snow * Math.round(share * 8)) / 8);
+      const covered = (snow || slots) && face.surface === 'roof' && !/^city3d:(wall|tree|road|water)/.test(material) && !building.id.startsWith('city3d-');
+      const share = covered ? Math.round(roofSnowShare(face.normal, -(face.normal[0] + face.normal[1]) * 0.4, heat, /^city3d:cover:([a-z]+)/.exec(material)?.[1]) * 8) : 0;
+      paintFace(face, edges, (snow * share) / 8, share);
     };
     const detailed = !!craftedHouse || (!!patterns && !isBuildingProjection(building) && !!boundaryOf(building));
     if (canInk) {
@@ -516,7 +668,7 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       const masks = roofEdgeMasks(triangles);
       triangles.forEach((face, i) => paintTriangle(face, masks[i]));
     } else eachBuildingTriangle(building, paintTriangle, overview, featureLod, yardLevel, paint.yardStrips, detailed);
-    if (litWalls.length) lightWalls(litWalls, litOpenings, overview ? (h >>> 16) % 32 : undefined, !!craftedHouse);
+    if (litWalls.length) lightWalls(litWalls, litOpenings, overview ? (h >>> 16) % 32 : undefined, !!craftedHouse, !!slots);
   }
   const batches: BuildingBatchData[] = [];
   for (const { batch, length } of groups.values()) {

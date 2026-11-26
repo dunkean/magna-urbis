@@ -41,7 +41,7 @@ vec3 v2CoastSwell(vec3 color,vec2 world,vec3 s,float fp,float cover){
     open*=k==0?sstep(-40.,220.,ahead):mix(.3,1.,sstep(-40.,450.,ahead));
   }
   // Distance to the drawn shore: the refined height's own estimate (depth over slope) within a few texels of the
-  // retained coast, which the refined coastline can leave by tens of metres; the field beyond.
+  // retained coast (measured to the same refined line, render/terrainWater.ts, but only to a texel); the field beyond.
   float depth=max(-s.x,0.),slope=max(length(s.yz),.004);
   float d=mix(min(depth/slope,3.*cell),max(here.x,0.),sstep(cell,3.*cell,here.x));
   float exposure=open*clamp(uCoastWaves,0.,2.);

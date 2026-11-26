@@ -7,7 +7,7 @@ import { roadBlockScope } from './urbanRoadBlocks';
 import { mpArea } from '../gen/geo/bool';
 import { editableUrbanRoads } from './urbanRoadEditing';
 
-type Scope = { original: Layout; layout: Layout; rebuilt: Layout; affected: Set<number>; indices: number[] };
+export type Scope = { original: Layout; layout: Layout; rebuilt: Layout; affected: Set<number>; indices: number[] };
 type Generate = typeof generateRustTown;
 function localProgramme(p: UrbanProgramme | undefined, scope: Scope): UrbanProgramme | undefined {
   if (!p) return;
@@ -48,7 +48,8 @@ function mergeProgramme(old: UrbanProgramme | undefined, delta: UrbanProgramme |
   };
 }
 function mergePartitions(old: Partition[] | undefined, delta: Partition[] | undefined, scopes: Scope[]): Partition[] | undefined {
-  if (!old) return delta;
+  // Scoped partitions index the blocks of their sub-layout: without the retained stage there is nothing to complete.
+  if (!old) return undefined;
   return old.map(partition => {
     const scope = scopes.find(s => s.layout.key === partition.key),
       fresh = delta?.find(p => p.key === partition.key);
@@ -64,6 +65,72 @@ function mergePartitions(old: Partition[] | undefined, delta: Partition[] | unde
   });
 }
 
+/** Scope of the blocks `affected` of `original` (indices of `rebuilt`, its retained or road-cut plan): the sub-layout of
+ * these blocks alone, with a programme scaled to their area. */
+export function blockScope(original: Layout, rebuilt: Layout, affected: Set<number>): Scope {
+  const indices = [...affected].filter(i => (rebuilt.blocks[i]?.shape.outer.length ?? 0) > 2);
+  const scope: Scope = { original, rebuilt, affected, indices, layout: { ...rebuilt, blocks: indices.map(i => rebuilt.blocks[i]) } };
+  const programme = localProgramme(original.programme, scope);
+  // Keep all streets as frontage constraints, while making unedited land unavailable to native placement.
+  scope.layout = { ...scope.layout, programme, claim: undefined, structure: scope.layout.structure ? { ...scope.layout.structure, allocated: scope.layout.blocks.map(b => b.shape), reserve: [], quays: [], waterways: scope.layout.structure.waterways } : undefined };
+  return scope;
+}
+
+/** Regenerate the scoped blocks of one town (parcels, programme, sites, houses) through `through`, every other lot and
+ * house retained. `settings` are those of the regeneration; the population is scaled to the scoped area. */
+export async function rebuildTownBlocks(
+  source: World,
+  settings: V2Settings,
+  key: string,
+  previous: RustTownSnapshot,
+  scopes: Scope[],
+  through: RustTownSnapshot['stage'],
+  onProgress?: ProgressCallback,
+  generate: Generate = generateRustTown,
+): Promise<{ snapshot: RustTownSnapshot; result?: RustTownResult; removed: Set<string> }> {
+  const place = source.settlements?.find(t => t.key === key);
+  if (!place) throw new Error(`Unknown place: ${key}`);
+  const active = scopes.filter(s => s.affected.size);
+  const removed = new Set<string>();
+  for (const partition of previous.partitions ?? []) {
+    const scope = active.find(s => s.layout.key === partition.key);
+    if (scope) for (const parcel of partition.parcels) if (scope.affected.has(parcel.block) && parcel.id) removed.add(parcel.id);
+  }
+  // Native silhouette scenes may retain only site ids; these always identify their cadastral parcel.
+  const localPopulation = Math.max(
+    1,
+    active.reduce((n, s) => n + (s.layout.programme?.population ?? Math.round((place.population * mpArea(s.layout.blocks.map(b => b.shape))) / Math.max(1, mpArea(s.original.blocks.map(b => b.shape))))), 0),
+  );
+  const localSettings: V2Settings = { ...settings, local: { ...settings.local, [key]: { ...settings.local[key], population: localPopulation } } };
+  const available = active.filter(s => s.layout.blocks.length).map(s => s.layout);
+  let result: RustTownResult | undefined;
+  if (available.length) result = await generate(source, localSettings, key, onProgress, through, undefined, [], available);
+  const fresh = result?.snapshot;
+  const retain = <T extends { parcel_id: string }>(old: T[] | undefined, delta: T[] | undefined): T[] | undefined => (old || delta ? [...(old ?? []).filter(x => !removed.has(x.parcel_id)), ...(delta ?? [])] : undefined);
+  let scene = previous.scene;
+  if (scene && fresh?.scene) scene = mergeHouseDelta(scene, fresh.scene, removed);
+  else if (scene) scene = { ...scene, buildings: scene.buildings.filter(b => !removed.has(b.parcel_id)), refusals: scene.refusals.filter(b => !removed.has(b.parcel_id)), open_spaces: scene.open_spaces.filter(b => !removed.has(b.parcel_id)) };
+  else scene = fresh?.scene;
+  const snapshot: RustTownSnapshot = {
+    ...previous,
+    layouts: scopes.map(s => s.rebuilt),
+    scene,
+    partitions: mergePartitions(previous.partitions, fresh?.partitions, active),
+    // A cadastre the regeneration left in the engine (handle only) cannot be completed here.
+    cadastralPartitions: fresh && !fresh.cadastralPartitions ? undefined : mergePartitions(previous.cadastralPartitions, fresh?.cadastralPartitions, active),
+    programmePartitions: mergePartitions(previous.programmePartitions, fresh?.programmePartitions, active),
+    sites: retain(previous.sites, fresh?.sites)?.map((site, offset) => ({ ...site, offset })),
+    requests: retain(previous.requests, fresh?.requests),
+    siteQuery: undefined,
+    pendingRoadChanges: undefined,
+    houseBaseline: undefined,
+    capacityKey: undefined,
+    lastBuildingRequests: fresh?.lastBuildingRequests ?? 0,
+    warnings: [...new Set([...previous.warnings, ...(fresh?.warnings ?? [])])],
+  };
+  return { snapshot, result, removed };
+}
+
 /** Regenerate only road-touched native blocks. Quarters, streets and every other parcel/house are retained. */
 export async function rebuildRoadBlocks(source: World, settings: V2Settings, keys: readonly string[], onProgress?: ProgressCallback, generate: Generate = generateRustTown): Promise<World> {
   const cities = { ...(source.debug?.v2RustCities ?? {}) } as Record<string, RustTownSnapshot>,
@@ -75,58 +142,17 @@ export async function rebuildRoadBlocks(source: World, settings: V2Settings, key
     if (!previous || !place) continue;
     const changes = previous.pendingRoadChanges;
     if (!changes) continue;
-    const scopes: Scope[] = previous.layouts.map(original => {
-      const scoped = roadBlockScope(original, changes),
-        indices = [...scoped.affected].filter(i => scoped.layout.blocks[i].shape.outer.length > 2);
-      const scope: Scope = { original, rebuilt: scoped.layout, affected: scoped.affected, indices, layout: { ...scoped.layout, blocks: indices.map(i => scoped.layout.blocks[i]) } };
-      const programme = localProgramme(original.programme, scope);
-      // Keep all streets as frontage constraints, while making unedited land unavailable to native placement.
-      scope.layout = { ...scope.layout, programme, claim: undefined, structure: scope.layout.structure ? { ...scope.layout.structure, allocated: scope.layout.blocks.map(b => b.shape), reserve: [], quays: [], waterways: scope.layout.structure.waterways } : undefined };
-      return scope;
+    const scopes = previous.layouts.map(original => {
+      const scoped = roadBlockScope(original, changes);
+      return blockScope(original, scoped.layout, scoped.affected);
     });
-    const active = scopes.filter(s => s.affected.size),
-      layouts = scopes.map(s => s.rebuilt);
+    const active = scopes.filter(s => s.affected.size);
     if (!active.length) {
       cities[key] = { ...previous, pendingRoadChanges: undefined };
       continue;
     }
     count += active.reduce((n, s) => n + s.affected.size, 0);
-    const removed = new Set<string>();
-    for (const partition of previous.partitions ?? []) {
-      const scope = active.find(s => s.layout.key === partition.key);
-      if (scope) for (const parcel of partition.parcels) if (scope.affected.has(parcel.block) && parcel.id) removed.add(parcel.id);
-    }
-    // Native silhouette scenes may retain only site ids; these always identify their cadastral parcel.
-    const localPopulation = Math.max(
-      1,
-      active.reduce((n, s) => n + (s.layout.programme?.population ?? Math.round((place.population * mpArea(s.layout.blocks.map(b => b.shape))) / Math.max(1, mpArea(s.original.blocks.map(b => b.shape))))), 0),
-    );
-    const localSettings: V2Settings = { ...settings, local: { ...settings.local, [key]: { ...settings.local[key], population: localPopulation } } };
-    const available = active.filter(s => s.layout.blocks.length).map(s => s.layout);
-    let result: RustTownResult | undefined;
-    if (available.length) result = await generate(source, localSettings, key, onProgress, previous.stage, undefined, [], available);
-    const fresh = result?.snapshot;
-    const retain = <T extends { parcel_id: string }>(old: T[] | undefined, delta: T[] | undefined): T[] | undefined => (old || delta ? [...(old ?? []).filter(x => !removed.has(x.parcel_id)), ...(delta ?? [])] : undefined);
-    let scene = previous.scene;
-    if (scene && fresh?.scene) scene = mergeHouseDelta(scene, fresh.scene, removed);
-    else if (scene) scene = { ...scene, buildings: scene.buildings.filter(b => !removed.has(b.parcel_id)), refusals: scene.refusals.filter(b => !removed.has(b.parcel_id)), open_spaces: scene.open_spaces.filter(b => !removed.has(b.parcel_id)) };
-    else scene = fresh?.scene;
-    const snapshot: RustTownSnapshot = {
-      ...previous,
-      layouts,
-      scene,
-      partitions: mergePartitions(previous.partitions, fresh?.partitions, active),
-      cadastralPartitions: mergePartitions(previous.cadastralPartitions, fresh?.cadastralPartitions, active),
-      programmePartitions: mergePartitions(previous.programmePartitions, fresh?.programmePartitions, active),
-      sites: retain(previous.sites, fresh?.sites)?.map((site, offset) => ({ ...site, offset })),
-      requests: retain(previous.requests, fresh?.requests),
-      siteQuery: undefined,
-      pendingRoadChanges: undefined,
-      houseBaseline: undefined,
-      capacityKey: undefined,
-      lastBuildingRequests: fresh?.lastBuildingRequests ?? 0,
-      warnings: [...new Set([...previous.warnings, ...(fresh?.warnings ?? [])])],
-    };
+    const { snapshot, result } = await rebuildTownBlocks(source, settings, key, previous, scopes, previous.stage, onProgress, generate);
     const urban = projectRustTown(snapshot, place.population, place.culture);
     cities[key] = snapshot;
     updated.set(key, { snapshot, urban, stats: result?.stats ?? {} });

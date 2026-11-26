@@ -189,7 +189,7 @@ export function createSubdivisionInspector(state: PageState, actions: PageAction
         validateSettings(next);
         state.settings = next;
         actions.touchRecipe();
-        void actions.generate('town', settlement.key, 'buildings');
+        void actions.generate('town', settlement.key, 'buildings', undefined, undefined, undefined, false, true);
       };
       mountSubdivisionActions($('#subdivision-actions'), {
         kind,

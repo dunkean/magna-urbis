@@ -7,7 +7,10 @@ import { UrbanBuildingPass, type Batch } from '../src/ui/urbanBuilding3d';
 import type { Layout, Partition, Point, Shape } from '../../rust/bridge/urban';
 import { polygonContains } from '../src/gen/core/geom';
 import { softenRuralGround } from '../src/render/countryside';
-import { ruralDetails } from '../src/render/ruralDetails';
+import { ruralDetails, type RuralRenderLayer } from '../src/render/ruralDetails';
+import { farmRidges } from '../src/render/farms';
+import { farmPlacedBuildings } from '../src/render/farmRoofs';
+import type { Farmstead } from '../src/gen/types';
 import { cultureEnclosure } from '../src/render/hedges';
 
 const rect = (x: number, y: number, w: number, h: number): Shape => ({
@@ -369,13 +372,46 @@ describe('house yards', () => {
     for (const p of smooth.outer) expect(p.x >= 0 && p.y >= 0 && p.x <= 40 && p.y <= 30 && !(p.x > 30.01 && p.y > 10.01) && !(p.x > 20.01 && p.y > 20.01)).toBe(true);
     expect(softenRuralGround(source)).toBe(smooth);
   });
-  it('encloses real farmyards by culture without closing their cart entrance', () => {
-    const lu = { areas: [], reserve: [], farmsteads: [{ pos: { x: 10, y: 10 }, angle: 0, yard: rect(0, 0, 20, 20).outer, buildings: [rect(3, 13, 7, 6).outer], gate: { x: 10, y: 0 }, entry: { x: 10, y: 2 }, drive: [] }] };
-    const fenced = ruralDetails(lu, 'chinese');
-    expect(fenced.some(m => m.kind === 'wall')).toBe(true);
-    expect(fenced.some(m => m.line.length === 2 && m.line.every(p => p.y === 0) && Math.min(...m.line.map(p => p.x)) < 10 && Math.max(...m.line.map(p => p.x)) > 10)).toBe(false);
-    expect(ruralDetails(lu, 'elven').some(m => ['wall', 'hedge', 'fence'].includes(m.kind))).toBe(false);
-    expect(ruralDetails(lu, 'stilt-town').some(m => ['wall', 'hedge', 'fence'].includes(m.kind))).toBe(false);
+  it('draws on a farm only what the farm holds and the 3D view raises: no unbuilt yard enclosure, ridges of the raised massing', () => {
+    const house = rect(3, 13, 7, 6).outer,
+      hut = rect(12, 13, 4, 4).outer,
+      barn = rect(3, 3, 8, 5).outer,
+      pen = rect(12, 3, 6, 6).outer;
+    const farm: Farmstead = {
+      pos: { x: 10, y: 10 },
+      angle: 0,
+      yard: rect(0, 0, 20, 20).outer,
+      buildings: [house, hut, barn],
+      gate: { x: 10, y: 0 },
+      entry: { x: 10, y: 2 },
+      drive: [],
+      plots: [{ kind: 'pen', poly: pen }],
+      parts: [
+        { poly: house, use: 'house', arch: '', roof: 'gable', massing: [{ floors: 1, eave_m: 3, rise_m: 2, roof: 'hip', ridges: [[5, 16, 8, 16]], cover: 'tile', wall: 'plaster' }] },
+        { poly: hut, use: 'hut', arch: '', roof: 'thatch-round' },
+        { poly: barn, use: 'barn', arch: '', roof: 'gable', massing: [{ floors: 1, eave_m: 3, rise_m: 0, roof: 'flat', ridges: [], cover: 'earth', wall: 'earth' }] },
+      ],
+    };
+    const lu: RuralRenderLayer = { areas: [], reserve: [], farmsteads: [farm] };
+    // The yard holds no wall: nothing closes it, whatever the culture of the map.
+    expect(ruralDetails(lu)).toEqual([]);
+    // A pen's fence stands on the pen (the rail fence the 3D view raises there), never across the yard.
+    lu.ruralDetails = { visiblePaddocks: true };
+    const fences = ruralDetails(lu).filter(m => m.kind === 'fence');
+    expect(fences.length).toBeGreaterThan(0);
+    for (const m of fences) for (const p of m.line) expect(p.x >= 11.3 && p.x <= 18.7 && p.y >= 2.3 && p.y <= 9.7).toBe(true);
+    const raised = farmPlacedBuildings([farm], () => 0);
+    expect(raised.filter(b => (b as { sitePart?: { form?: string } }).sitePart?.form === 'farm-rail').length).toBeGreaterThan(0);
+    // Ridges: the house's from the massing both views raise (not the plan's full gable), none on the round hut nor on
+    // the barn whose massing is flat although its plan roof says gable.
+    expect(farmRidges(farm)).toEqual([
+      [
+        { x: 5, y: 16 },
+        { x: 8, y: 16 },
+      ],
+    ]);
+    const pieces = raised.slice(0, 3).map(b => (b as unknown as { programme: { massing: { ridges: number[][] }[] } }).programme.massing[0].ridges);
+    expect(pieces).toEqual([[[5, 16, 8, 16]], [], []]);
   });
   it('3D: a fence follows the slope under exaggeration, joins its corners, keeps a ribbon far away and its own colours', () => {
     class Capture extends UrbanBuildingPass {

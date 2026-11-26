@@ -112,8 +112,9 @@ export class TerrainGl {
     this.parts.inputs.replay(lost.inputs, this.look?.mapWidth);
     this.changed('content');
   }
-  private changed(change: InputChange): void {
-    if (change === 'content') this.revision.bump();
+  /** `region`: the world boxes a 'content' change is limited to (setForest of a local edit); undefined: the whole map. */
+  private changed(change: InputChange, region?: readonly Rect4[]): void {
+    if (change === 'content') this.revision.bump(region);
     if (change !== 'none') this.request();
   }
 
@@ -153,7 +154,8 @@ export class TerrainGl {
   }
   /** Render3D forest: texture uploads only. `undefined` restores the macro canopy of the material exactly. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {
-    this.changed(this.parts.inputs.setForest(field, occupation));
+    const inputs = this.parts.inputs;
+    this.changed(inputs.setForest(field, occupation), inputs.forestRegion);
   }
   setRenderV2Season(season: number): void {
     if (!this.look) return;
@@ -210,6 +212,10 @@ export class TerrainGl {
   /** Changes whenever renderWorldTile would draw other pixels (inputs, a linked program, the style pixel ratio). */
   contentRevision(): number {
     return this.revision.value();
+  }
+  /** The world boxes whose pixels changed after revision `since` (GroundTileRenderer.contentChanges). */
+  contentChanges(since: number): readonly Rect4[] | undefined {
+    return this.revision.changesSince(since);
   }
 
   /** Reuse the map material for the perspective viewer without changing the 2D camera. */

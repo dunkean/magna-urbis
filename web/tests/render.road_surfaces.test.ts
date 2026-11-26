@@ -8,7 +8,7 @@ import { roadsLayer } from '../src/render/landuse';
 import { urbanLayer } from '../src/render/urban';
 import { buildScene } from '../src/render/scene';
 import { createCanvasRenderer, type CanvasLike } from '../src/render/canvas';
-import { PALETTES, ruralInk } from '../src/render/styles';
+import { hexToRgb, PALETTES, ruralInk } from '../src/render/styles';
 import { regionalBridgeSurface, regionalRoadSurface, urbanStrokeSpace } from '../src/render/roadSurfaces';
 import { fakeWorld, mockCanvas, MockPath2D } from '../scripts/fakeworld';
 
@@ -134,7 +134,8 @@ describe('road surfaces', () => {
     const raster = new Resvg(svg).render();
     const pixel = (x: number, y: number) => [...raster.pixels.slice((y * 100 + x) * 4, (y * 100 + x) * 4 + 4)];
     expect(pixel(20, 50)).toEqual([255, 0, 0, 255]);
-    expect(pixel(50, 50)).toEqual([244, 234, 208, 255]);
+    // The street colour of the palette (parchment's warmer street since c9b2692e).
+    expect(pixel(50, 50)).toEqual([...hexToRgb(PALETTES.parchment.urban.street), 255]);
   });
 
   it('keeps quarter holes oppositely wound in the Canvas stroke clip without mutating geometry', () => {

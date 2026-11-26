@@ -39,10 +39,11 @@ export interface OverlayHost {
    * provisional band, recorded before, is made again; the others stay valid. */
   arrivals(): number;
   plan(view: View, cssW: number, cssH: number, dpr: number, key: string): OverlayPlan;
-  /** Records one band with the `crisp` mark; undefined when the recorder cannot represent the map. */
+  /** Records one band with the `crisp` mark in one call; undefined when the recorder cannot represent the map. */
   record(plan: OverlayPlan, band: Rect4, light: boolean): OverlayBand | undefined;
-  /** Resumable equivalent for drape recording; each yield leaves the recording context private to the job. */
-  recordSteps?(plan: OverlayPlan, band: Rect4, light: boolean): Generator<void, OverlayBand | undefined>;
+  /** The same recording, resumable: one step per `next()`, the recording context private to the job across yields,
+   * `return()` cancels it. `drape`: a world drape tile (paths clipped to the band before construction, no world ink). */
+  recordSteps?(plan: OverlayPlan, band: Rect4, light: boolean, drape: boolean): Generator<void, OverlayBand | undefined>;
   /** Asks for a new frame (a region became ready). */
   invalidate(): void;
   /** Makes, until `deadline`, what a recording would otherwise make in one block (the tree marks of the woods); true

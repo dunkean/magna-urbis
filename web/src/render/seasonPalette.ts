@@ -53,23 +53,32 @@ const smooth = (a: number, b: number, x: number): number => {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
 };
-/** Climatic snow of level ground at an altitude, before its cover threshold (v2Snow / v2PerennialSnow at slope 0). */
-function groundSnowSupply(altitude: number, settings?: GroundSnowSettings): number {
+/** The climatic snow of a date at sea level, as four terms an altitude only lowers by its lapse (0.0065 °C per metre):
+ * the date's temperature, the warm season's temperature, the divisor of the supply (lowered twenty times the lapse) and
+ * the precipitation. The paper ground's shader reads them as `uLandSnow` (treeSymbolsGlsl.ts landSeason). */
+export type SnowTerms = readonly [date: number, warm: number, divisor: number, precipitation: number];
+const NO_SNOW: SnowTerms = [0, 0, 0, 0];
+function snowTerms(settings?: GroundSnowSettings): SnowTerms {
   const snowZone = settings?.climateZone ?? zone;
-  if (!snowZone) return 0;
+  if (!snowZone) return NO_SNOW;
   const c = settings?.climate ?? climate ?? CLIMATE_ZONE_VALUES[snowZone],
     year = calendarSeason(snowZone, settings ? settings.calendar : calendar),
     date = settings?.season ?? season;
-  const annual = c.temperature - 0.0065 * Math.max(0, altitude),
-    amplitude = 6 + 0.5 * Math.max(0, 10 - c.temperature);
-  const warm = annual + amplitude,
-    cold = annual - amplitude - year.cool;
+  const amplitude = 6 + 0.5 * Math.max(0, 10 - c.temperature),
+    warm = c.temperature + amplitude,
+    cold = c.temperature - amplitude - year.cool;
   const phase = 0.5 - 0.5 * Math.cos(2 * Math.PI * (date - 0.08));
   const w = seasonWeights(date),
     thaw = (year.thaw ?? [0, 0, 0, 0]).reduce((sum, v, i) => sum + v * w[i], 0);
-  const supply = smooth(0.12, 0.7, c.precipitation / Math.max(120, 10 * (warm + cold) + 280));
-  return Math.max(smooth(2, -5, cold + (warm - cold) * phase + thaw), smooth(2.5, -2.5, warm)) * supply;
+  return [cold + (warm - cold) * phase + thaw, warm, 10 * (warm + cold) + 280, c.precipitation];
 }
+/** Climatic snow of level ground at an altitude, before its cover threshold (v2Snow / v2PerennialSnow at slope 0). */
+function snowSupply(terms: SnowTerms, altitude: number): number {
+  const lapse = 0.0065 * Math.max(0, altitude),
+    supply = smooth(0.12, 0.7, terms[3] / Math.max(120, terms[2] - 20 * lapse));
+  return Math.max(smooth(2, -5, terms[0] - lapse), smooth(2.5, -2.5, terms[1] - lapse)) * supply;
+}
+const groundSnowSupply = (altitude: number, settings?: GroundSnowSettings): number => snowSupply(snowTerms(settings), altitude);
 
 /** The relief the land snow reads: B-spline control heights (m), row by row from the north-west corner, `n` per side
  * over the square of side `width` at (`x`, `y`). */
@@ -168,6 +177,45 @@ export function mapLandSnowGrid(n: number, size: number, urban = 0): Float32Arra
 export const mapSnowCover = (altitude = 0): number => (zone ? Math.max(seasonPaint(season, zone, calendar).snow, mapGroundSnow(altitude)) : 0);
 /** Seasonal colour ratio of the open ground. */
 export const mapHerbTint = (): SeasonPaint['herb'] => (zone ? seasonPaint(season, zone, calendar).herb : [1, 1, 1]);
+/** Opacity of a full snow cover on the paper: the relief reads through it. */
+export const LAND_SNOW_ALPHA = 0.86;
+/** The date on the lit land of a paper map, laid over its summer sheet by the overlay's canvas copy (v1Landscape.ts
+ * seasonLand) and by the ground's shader (treeSymbolsGlsl.ts landSeason, uniforms `uLandTint` and `uLandSnow`): the
+ * multiply tint of the open ground with the low-ground snow of the calendar in its fourth component, and the snow terms. */
+export function mapLandSeason(): { tint: [number, number, number, number]; snow: SnowTerms } {
+  const herb = mapHerbTint(),
+    brightest = Math.max(...herb),
+    shade = (v: number): number => 1 - 0.5 * (1 - v / brightest);
+  return { tint: [shade(herb[0]), shade(herb[1]), shade(herb[2]), zone ? seasonPaint(season, zone, calendar).snow : 0], snow: snowTerms() };
+}
+const snowHash = (i: number, j: number, salt: number): number => {
+  let h = (Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ salt) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 8) / 16777216;
+};
+/** Raggedness of the snow line (0-1, two octaves of value noise) at a point of the map in 512ths of its side. An
+ * integer lattice hash, the same in the ground's shader (landSnowOctave): both copies of the land draw one snow line. */
+export function landSnowRagged(gx: number, gy: number): number {
+  let sum = 0;
+  for (let octave = 0; octave < 2; octave++) {
+    const f = octave ? 3.1 / 14 : 1 / 14,
+      salt = octave ? 0x7c15a4e9 : 0x2f6b1d35,
+      x = gx * f,
+      y = gy * f,
+      i = Math.floor(x),
+      j = Math.floor(y),
+      u = x - i,
+      v = y - j,
+      su = u * u * (3 - 2 * u),
+      sv = v * v * (3 - 2 * v);
+    const h00 = snowHash(i, j, salt),
+      h01 = snowHash(i, j + 1, salt),
+      top = h00 + (snowHash(i + 1, j, salt) - h00) * su,
+      bottom = h01 + (snowHash(i + 1, j + 1, salt) - h01) * su;
+    sum += (octave ? 0.35 : 0.65) * (top + (bottom - top) * sv);
+  }
+  return sum;
+}
 /** The climate zone of the map and its calendar, for what grows on it (treeSpecies.ts). */
 export const mapZone = (): { zone: ClimateZone | undefined; larch: number } => ({ zone, larch: zone ? calendarSeason(zone, calendar).larch : 0 });
 /** Crown state of the map season, for the town crowns painted over natural grounds (cityGrove.ts): leaf fullness,
@@ -183,8 +231,7 @@ let snowKey: { season: number; zone: ClimateZone | undefined; calendar: SeasonCa
 /** Part of the cache keys of what depends on the season through the ground snow alone (roofs, roads, river ice): dates
  * with the same snow share it, so that a bare spring and a bare autumn recolour nothing. */
 export function roofSeasonKey(): string {
-  if (snowKey?.season !== season || snowKey.zone !== zone || snowKey.calendar !== calendar || snowKey.climate !== climate)
-    snowKey = { season, zone, calendar, climate, key: SNOW_LEVELS.map(level => mapGroundSnow(level).toFixed(3)).join() };
+  if (snowKey?.season !== season || snowKey.zone !== zone || snowKey.calendar !== calendar || snowKey.climate !== climate) snowKey = { season, zone, calendar, climate, key: SNOW_LEVELS.map(level => mapGroundSnow(level).toFixed(3)).join() };
   return snowKey.key;
 }
 /** Zone and date of the map, with the zone's year there: the water palette reads them (waterPalette.ts). */

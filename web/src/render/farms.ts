@@ -1,20 +1,38 @@
-/** Farmstead drawing helpers shared by the SVG and Canvas renderers (lots, plots, ridges from the roof metadata). */
+/** Farmstead drawing helpers shared by the SVG and Canvas renderers (lots, plots, ridges of the raised massing). */
 import type { Farmstead, FarmBuilding, Polygon, Polyline, Vec2 } from '../gen/types';
+import { readMassing } from './cityMassing';
 
-/** Ridge lines of the farm buildings from their roof kind: full-length ridge for gables, shortened for hips, none for flat or round roofs. */
+/** Ridge lines of the farm buildings, those of the volumes both views raise (farmRoofs.ts farmPlacedBuildings): the
+ * engine's massing when it sends one (no line on a volume whose roof is explicit pans, a tree or a small decorative
+ * volume), else the ridge of the roof kind the derived piece takes. */
 export function farmRidges(f: Farmstead): Polyline[] {
   const out: Polyline[] = [];
   for (const b of f.parts ?? []) {
-    const r = ridge(b);
-    if (r) out.push(r);
+    const sent = Array.isArray(b.massing) ? readMassing({ massing: b.massing }, [{ outer: b.poly, holes: [] }]) : undefined;
+    if (!sent) {
+      const r = ridge(b);
+      if (r) out.push(r);
+      continue;
+    }
+    for (const m of sent)
+      for (const v of (m.volumes?.length ? m.volumes : [m]) as { minor?: boolean; pans?: unknown; form?: string; ridges?: readonly number[][] }[])
+        if (!v.minor && !v.pans && v.form !== 'tree')
+          for (const r of v.ridges ?? [])
+            if (r.length === 4 && r.every(Number.isFinite))
+              out.push([
+                { x: r[0], y: r[1] },
+                { x: r[2], y: r[3] },
+              ]);
   }
   return out;
 }
 
-/** Ridge line of one farm building (see farmRidges), or null. */
+/** Ridge line of one farm building from its roof kind, or null: full length for a gable or barrel, shortened for a hip
+ * (pagoda included), none for flat, terraced, pyramidal, conical, domed or round roofs (farmRoofs.ts farmPiece). */
 export const farmBuildingRidge = (b: FarmBuilding): Polyline | null => ridge(b);
 function ridge(b: FarmBuilding): Polyline | null {
-  if (b.roof === 'flat' || b.roof === 'none' || b.poly.length !== 4) return null;
+  const hip = b.roof === 'hip' || b.roof === 'tiled-hip' || b.roof === 'pagoda';
+  if ((!hip && b.roof !== 'gable' && b.roof !== 'barrel') || b.poly.length !== 4) return null;
   const [p0, p1, p2, p3] = b.poly;
   const l01 = Math.hypot(p1.x - p0.x, p1.y - p0.y),
     l12 = Math.hypot(p2.x - p1.x, p2.y - p1.y);
@@ -30,8 +48,7 @@ function ridge(b: FarmBuilding): Polyline | null {
     c = m(p2, p3);
     short = l01;
   }
-  if (b.roof === 'pyramidal' || b.roof === 'conical') return null;
-  if (b.roof === 'hip' || b.roof === 'tiled-hip') {
+  if (hip) {
     const L = Math.hypot(c.x - a.x, c.y - a.y),
       k = Math.min(0.45, (0.5 * short) / (L || 1));
     if (k >= 0.45) return null;

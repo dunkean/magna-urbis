@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { applySeason, mapSnowCover, roofSeasonKey, seasonPaint, setMapClimateZone, setMapSeason } from '../src/render/seasonPalette';
+import { applySeason, mapLandSeason, mapSnowCover, roofSeasonKey, seasonPaint, setMapClimateZone, setMapSeason } from '../src/render/seasonPalette';
 import { CLIMATE_ZONE_VALUES } from '../../rust/bridge/terrainClimate';
 import { canopyGlyph } from '../src/render/canopy';
 import { createCanvasRenderer, type CanvasLike } from '../src/render/canvas';
@@ -30,7 +30,8 @@ describe('the season of the drawn maps', () => {
   it('bares the deciduous crowns in winter, never the conifers, and turns them in autumn', () => {
     const winter = at(0, 'temperate'),
       summer = at(0.5, 'temperate');
-    const lines = (kind: 'forest' | 'conifer', pal: typeof winter) => canopyGlyph(kind, 3, pal, 5).filter(s => s.open).length;
+    // A bare crown is its tapered limbs (rust/bridge/bareTree.ts bareLimbs), each a filled quad; a crown in leaf has none.
+    const lines = (kind: 'forest' | 'conifer', pal: typeof winter) => canopyGlyph(kind, 3, pal, 5).filter(s => !s.open && !s.line && s.points.length === 4).length;
     expect(lines('forest', winter)).toBeGreaterThan(15);
     expect(lines('forest', summer)).toBeLessThan(6);
     expect(lines('conifer', winter)).toBe(0);
@@ -42,6 +43,28 @@ describe('the season of the drawn maps', () => {
     const earlier = roofSeasonKey();
     setMapSeason(0.63, 'mediterranean', {});
     expect(roofSeasonKey()).toBe(earlier);
+  });
+  it('gives the paper ground the snow of the overlay land as uniforms of the date', () => {
+    // landSeason of treeSymbolsGlsl.ts, transcribed: the ground lays the date over one summer sheet.
+    const ramp = (a: number, b: number, x: number): number => {
+      const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    };
+    const shaderCover = ({ tint, snow }: ReturnType<typeof mapLandSeason>, altitude: number): number => {
+      const lapse = 0.0065 * Math.max(0, altitude),
+        supply = ramp(0.12, 0.7, snow[3] / Math.max(120, snow[2] - 20 * lapse));
+      return Math.max(tint[3], ramp(0.405, 0.465, Math.max(ramp(2, -5, snow[0] - lapse), ramp(2.5, -2.5, snow[1] - lapse)) * supply));
+    };
+    expect(shaderCover(mapLandSeason(), 3000)).toBe(0);
+    setMapClimateZone('alpine', CLIMATE_ZONE_VALUES.alpine);
+    for (const date of [0, 0.3, 0.5, 0.8]) {
+      setMapSeason(date, 'alpine', {});
+      const land = mapLandSeason();
+      for (const altitude of [0, 400, 1200, 2600]) expect(shaderCover(land, altitude)).toBeCloseTo(mapSnowCover(altitude), 9);
+    }
+    setMapSeason(0.5, 'alpine', {});
+    expect(mapLandSeason().tint.slice(0, 3)).toEqual([1, 1, 1]);
+    expect(shaderCover(mapLandSeason(), 2600)).toBeGreaterThan(shaderCover(mapLandSeason(), 0));
   });
   it('plants the species of the zone', () => {
     expect(treeMix('temperate').conifer).toBeLessThan(0.2);

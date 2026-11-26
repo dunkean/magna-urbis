@@ -67,7 +67,8 @@ export interface NetworkEditorHost {
 export interface NetworkEditor {
   /** Revalidate the selection against the current world and refresh the panel (call after any world change). */
   sync(): void;
-  start(tool: Exclude<NetworkTool, 'off'>): void;
+  /** Opens a tool; `focus`: the road (roads tool) or river (rivers tool) under that point is selected. False: not started. */
+  start(tool: Exclude<NetworkTool, 'off'>, focus?: Vec2): boolean;
   stop(): void;
   active(): boolean;
   pending(): boolean;
@@ -789,11 +790,11 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
   }
 
   // ---- tools
-  function start(tool: Exclude<NetworkTool, 'off'>): void {
-    if (host.busy?.() || host.topView?.() === false) return;
+  function start(tool: Exclude<NetworkTool, 'off'>, focus?: Vec2): boolean {
+    if (host.busy?.() || host.topView?.() === false) return false;
     if (!host.getWorld()) {
       host.toast?.(translate(T.noWorld), true);
-      return;
+      return false;
     }
     window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: modeToken }));
     clearHold();
@@ -811,12 +812,26 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     cutPreview = false;
     lastLineTap = undefined;
     if (tool !== 'roads') selected = -1;
+    // The same picks as a click on the map with the tool open.
+    const w = knownWorld;
+    if (focus && w && tool === 'roads') {
+      selected = roadAt(w, focus, PICK_PX / scale())?.index ?? selected;
+      announce(T.lineSelected);
+    } else if (focus && w && tool === 'rivers') {
+      const hit = riverAt(w, focus, PICK_PX / scale());
+      try {
+        if (hit) plan = { world: w, plan: planRiverDeletion(w, hit.index, { throughLakes }) };
+      } catch (error) {
+        fail(error);
+      }
+    }
     host.map.classList.add('v2-network-active');
     svg.toggleAttribute('hidden', false);
     lastBox = '';
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(follow);
     render();
+    return true;
   }
   function stop(): void {
     clearHold();

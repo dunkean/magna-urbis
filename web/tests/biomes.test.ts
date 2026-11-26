@@ -72,7 +72,15 @@ describe('biome landscapes', () => {
   }, 60000);
   const hectares = (layer: LandUseLayer, kind: LandKind) => layer.areas.filter(a => a.kind === kind).reduce((sum, a) => sum + area(a.poly) - (a.holes ?? []).reduce((s, h) => s + area(h), 0), 0) / 1e4;
   it('preserves temperate generation and produces deterministic distinct land cover', () => {
-    expect(layers.get('temperate')).toEqual(world.landuse);
+    // The naming stage of the generated world (b72defb4) stamps retained name identities (nameKey) on its woods and farms.
+    const unnamed = structuredClone(world.landuse);
+    const strip = (value: unknown): void => {
+      if (!value || typeof value !== 'object' || ArrayBuffer.isView(value)) return;
+      delete (value as { nameKey?: string }).nameKey;
+      for (const child of Object.values(value)) strip(child);
+    };
+    strip(unnamed);
+    expect(layers.get('temperate')).toEqual(unnamed);
     const again = generateRural({ ...world, options: { ...world.options, biome: 'desert' } }, new Rng('magna-urbis:' + world.seed), world.roads!.length).layer;
     expect(again).toEqual(layers.get('desert'));
     expect(hectares(layers.get('forest')!, 'forest')).toBeGreaterThan(hectares(layers.get('temperate')!, 'forest'));

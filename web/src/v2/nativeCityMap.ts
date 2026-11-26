@@ -30,12 +30,12 @@ import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { LotEnclosure } from '../../../rust/bridge/urban';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import { nativeCitiesOf } from './nativeProducts';
-import { cityGroundOf } from './rustUrban';
+import { cityGroundOf, type RustTownSnapshot } from './rustUrban';
 import { buildCityBuildingsParallel, clipCityGroundAhead, releaseCityBuildingWorkers } from '../render/cityBuildingsParallel';
 import { cityGroundFor } from '../render/cityGround';
 import { activityScene, activitySitesOf, drawInstallations } from './activitySites';
 import type { LiveCityEnv, LiveLayer } from '../render/live/contract';
-import { createLiveCityLayer } from '../render/live/cityLayer';
+import { createLiveCityLayer, type LiveCityLayer, type LiveCityTowns } from '../render/live/cityLayer';
 import { createStepwiseTown, type NativeCityStepwise } from '../render/city/canvas/stepwiseTown';
 import { countWork } from '../render/workCount';
 import { updateYardEnclosures } from '../render/cityLotEnclosures';
@@ -86,7 +86,7 @@ export interface NativeCityMap {
   prepare(appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>): Promise<void>;
   /** The towns as a layer of the live compositor (render/live/cityLayer.ts), bound to its shared WebGL2 context: retained
    * meshes drawn while the view moves. Undefined without towns. Disposed with this map at the latest. */
-  createLiveLayer(gl: WebGL2RenderingContext, env: LiveCityEnv): LiveLayer | undefined;
+  createLiveLayer(gl: WebGL2RenderingContext, env: LiveCityEnv, previous?: LiveLayer): LiveLayer | undefined;
   dispose(): void;
 }
 interface Entry {
@@ -209,27 +209,58 @@ function cityPlans(world: World): CityScene[] {
   const raster = cities.length ? cityGroundOf(world) : undefined;
   return cities.map(city => buildCityScene(city.layouts, city.partitions ?? [], raster));
 }
+/** The plan and city volumes each town was last prepared with, by snapshot: a map made again for a world where only
+ * some towns changed (a local edit keeps the others' snapshots, localEditIntern.ts) prepares those towns only. */
+const preparedTowns = new WeakMap<RustTownSnapshot, { raster: object | undefined; roofs: boolean; plan: CityScene; buildings: CityBuildings | undefined }>();
 /** `createNativeCityMap` with the city volumes of the unedited native towns built over workers (same result). */
 export async function createNativeCityMapAsync(world: World, onInvalidate: (kind: NativeCityInvalidation) => void, deferRoofs = false): Promise<NativeCityMap> {
-  const cities = nativeCitiesOf(world);
-  // The water clip of every town's lots and blocks runs on the warm build workers first; the plans then read it.
-  if (cities.length)
+  const cities = nativeCitiesOf(world),
+    raster = cities.length ? cityGroundOf(world) : undefined,
+    roofs = (city: RustTownSnapshot): boolean => !deferRoofs && !largeTown(city);
+  const kept = cities.map(city => {
+      const hit = preparedTowns.get(city);
+      return hit && hit.raster === raster && hit.roofs === roofs(city) ? hit : undefined;
+    }),
+    fresh = cities.filter((_, i) => !kept[i]);
+  // The water clip of every new town's lots and blocks runs on the warm build workers first; the plans then read it.
+  if (fresh.length)
     await clipCityGroundAhead(
-      cityGroundFor(cityGroundOf(world)),
-      cities.flatMap(city => cityGroundSubjects(city.layouts, city.partitions ?? [])),
+      cityGroundFor(raster!),
+      fresh.flatMap(city => cityGroundSubjects(city.layouts, city.partitions ?? [])),
     );
-  const plans = cityPlans(world);
+  const plans = cities.map((city, i) => kept[i]?.plan ?? buildCityScene(city.layouts, city.partitions ?? [], raster));
   // Several small towns can together take seconds. Reuse the warm pool in order so
   // the first town does not leave every later town building on the page.
-  const batchBuildings = cities.reduce((sum, city) => sum + (usesNativeHouseRenderer(city.scene) ? 0 : (city.scene?.buildings.length ?? 0)), 0);
+  const batchBuildings = fresh.reduce((sum, city) => sum + (usesNativeHouseRenderer(city.scene) ? 0 : (city.scene?.buildings.length ?? 0)), 0);
   const buildings: (CityBuildings | undefined)[] = [];
   try {
-    for (const [i, city] of cities.entries()) buildings.push(usesNativeHouseRenderer(city.scene) ? undefined : await buildCityBuildingsParallel(city.scene, plans[i], city.sites, { roofs: !deferRoofs && !largeTown(city), batchBuildings }));
+    for (const [i, city] of cities.entries()) {
+      const made = kept[i] ? kept[i].buildings : usesNativeHouseRenderer(city.scene) ? undefined : await buildCityBuildingsParallel(city.scene, plans[i], city.sites, { roofs: roofs(city), batchBuildings });
+      if (!kept[i]) preparedTowns.set(city, { raster, roofs: roofs(city), plan: plans[i], buildings: made });
+      buildings.push(made);
+    }
   } finally {
     releaseCityBuildingWorkers();
   }
   return createNativeCityMap(world, onInvalidate, { plans, buildings, deferRoofs });
 }
+/** The activity sites' plan and buildings, by their scene (kept while the sites are: a local edit of a town keeps them). */
+const preparedSites = new WeakMap<object, { roofs: boolean; plan: CityScene; base: CityBuildings }>();
+/** A live town layer (`createLiveLayer`) and the map that holds it, by the layer handed out: a later map of the same
+ * terrain adopts it instead of making a new one. */
+interface LiveBinding {
+  gl: WebGL2RenderingContext;
+  terrain: World['terrain'];
+  regular: LiveCityLayer;
+  layer: LiveLayer;
+  disposed: boolean;
+  /** The layer drawing for the current look: the town layer, or the holding map's cadastre raster layer. */
+  active(): LiveLayer | undefined;
+  fixed?: LiveLayer;
+  release?(): void;
+  park?(): void;
+}
+const liveBindings = new WeakMap<LiveLayer, LiveBinding>();
 const objectIds = new WeakMap<object, number>();
 let objectSeq = 0;
 const idOf = (value: object | undefined): number => {
@@ -278,13 +309,16 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
   const activities = activityScene(world),
     sites = activitySitesOf(world);
   if (activities) {
-    const plan = buildCityScene([], []);
-    const base = buildCityBuildings(activities, plan, { roofs: !prepared?.deferRoofs });
+    const roofs = !prepared?.deferRoofs,
+      hit = preparedSites.get(activities),
+      { plan, base } = hit?.roofs === roofs ? hit : { plan: buildCityScene([], []), base: undefined };
+    const ready = base ?? buildCityBuildings(activities, plan, { roofs });
+    preparedSites.set(activities, { roofs, plan, base: ready });
     entries.push({
       plan,
       canopyBuildings: activities.buildings,
-      buildings: base,
-      large: prepared?.deferRoofs ? { base, detail: new Map() } : undefined,
+      buildings: ready,
+      large: prepared?.deferRoofs ? { base: ready, detail: new Map() } : undefined,
       houses: canvasHouses(activities),
       materials: new Map((activities.materials ?? []).map(material => [material.id, material])),
       refused: new Set(),
@@ -506,6 +540,35 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
   // Live compositor layers (render/city/live/townLayer.ts). They share the merged plan of the GL path and keep their own
   // tier of the very large towns: the merged buildings of the tiers last handed out, reused while no tier changes.
   const liveLayers = new Set<LiveLayer>();
+  /** This map takes a live layer: its own cadastre raster layer, what `release` (another map adopts the layer, or
+   * the layer is disposed) and `park` (this map is disposed) undo. */
+  function holdLive(binding: LiveBinding, env: LiveCityEnv): void {
+    const fixed = fixedTownRasterLayer(
+      binding.gl,
+      cadastreRaster,
+      budget => paintCadastre(env.appearance(), env.visibility() ?? {}, rasterHooks ?? { water: env.water }, budget),
+      () => env.appearance().city.opacity,
+    );
+    binding.fixed = fixed;
+    binding.active = () => {
+      const appearance = env.appearance();
+      if (!isCadastre(appearance)) return binding.regular;
+      ensureCadastre(appearance, env.visibility() ?? {}, env.water?.());
+      return fixed;
+    };
+    binding.release = () => {
+      liveLayers.delete(binding.layer);
+      fixed.dispose();
+      binding.fixed = binding.release = binding.park = undefined;
+      // Until another map holds it: the town layer alone, no cadastre raster (that look waits for the next map).
+      binding.active = () => (isCadastre(env.appearance()) ? undefined : binding.regular);
+    };
+    binding.park = () => {
+      binding.release?.();
+      binding.regular.retarget(undefined);
+    };
+    liveLayers.add(binding.layer);
+  }
   let liveTier: { parts: (CityBuildings | undefined)[]; merged: CityBuildings } | undefined, liveRefused: ReadonlySet<string> | undefined;
   // The live scene also holds the towns and activity sites drawn by the native house renderer (entry.houses), as their
   // city volumes (entry.buildings: massing silhouettes with roof pans and cast shadows, built with the entry): the
@@ -528,8 +591,9 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     }
     return (volumeLots ??= lots);
   }
-  /** The live scene in resumable steps (a few milliseconds each): the GL path's merged plan when it has none yet, then
-   * every entry's buildings. The exact draw may build its plan meanwhile; the first one made is kept. */
+  /** The live scene in resumable steps (a few milliseconds each): the merged plan made once (the GL path's, or the plan
+   * of the city-volume looks), then every entry's buildings for the looks that draw them. The exact draw may build its
+   * plan meanwhile; the first one made is kept, and both building tiers share it. */
   let volumePlan: CityScene | undefined;
   function* liveSceneSteps(planOnly = false): Generator<void, { plan: CityScene; buildings?: CityBuildings }> {
     if (planOnly) {
@@ -537,11 +601,11 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       volumePlan ??= glScene?.plan ?? (yield* mergeCityPlansSteps(entries.map(entry => ({ plan: entry.plan })))).plan;
       return { plan: volumePlan };
     }
-    if (!glScene) {
+    if (!glScene && !volumePlan) {
       const merged = yield* mergeCityPlansSteps(entries.map(entry => ({ plan: entry.plan, buildings: entry.houses ? undefined : entry.buildings })));
       glScene ??= merged;
     }
-    const plan = glScene.plan,
+    const plan = glScene?.plan ?? volumePlan!,
       parts = entries.map(entry => entry.buildings);
     if (!sameParts(parts)) {
       const merged = yield* mergeCityBuildingsSteps(liveParts(parts));
@@ -688,9 +752,9 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       if (disposed || !entries.length || glBlockReason(appearance, visibility)) return;
       if (!prepareGl()) await gl?.ready();
     },
-    createLiveLayer(context, env) {
+    createLiveLayer(context, env, previous) {
       if (disposed || !entries.length) return undefined;
-      const regular = createLiveCityLayer(context, env, {
+      const towns: LiveCityTowns = {
         sceneSteps: liveSceneSteps,
         enclosures: () => entries.map(entry => entry.plan.lotEnclosures),
         canopies: () => entries.map(entry => cityCanopy(entry.plan.layouts, entry.canopyBuildings)),
@@ -701,53 +765,49 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
         refused: () => (liveRefused ??= new Set(entries.flatMap(entry => [...entry.refused]))),
         sites: () => sites.length > 0,
         housePlans: () => entries.some(entry => !!entry.houses),
-      });
-      const fixed = fixedTownRasterLayer(
-        context,
-        cadastreRaster,
-        budget => paintCadastre(env.appearance(), env.visibility() ?? {}, rasterHooks ?? { water: env.water }, budget),
-        () => env.appearance().city.opacity,
-      );
-      const active = (): LiveLayer => {
-        const appearance = env.appearance();
-        if (!isCadastre(appearance)) return regular;
-        ensureCadastre(appearance, env.visibility() ?? {}, env.water?.());
-        return fixed;
       };
-      const made: LiveLayer = {
+      // A map made again for the same terrain (a local edit): the previous map's layer takes these towns and keeps
+      // its programs and GPU data (townLayer.ts retarget). Same object: the compositor keeps it installed.
+      const held = previous && liveBindings.get(previous);
+      if (held && !held.disposed && held.gl === context && held.terrain === world.terrain) {
+        held.release?.();
+        held.regular.retarget(towns);
+        holdLive(held, env);
+        return held.layer;
+      }
+      const binding: LiveBinding = { gl: context, terrain: world.terrain, regular: createLiveCityLayer(context, env, towns), disposed: false, active: () => undefined, layer: undefined! };
+      const active = (): LiveLayer | undefined => binding.active();
+      binding.layer = {
         name: 'city',
         isolated: true,
-        opacity: () => active().opacity?.() ?? 1,
-        ready: frame => active().ready(frame),
-        restExact: frame => active().restExact?.(frame) ?? false,
-        draw: frame => active().draw(frame),
-        work: (budget, frame) => active().work?.(budget, frame) ?? false,
-        invalidate: () => regular.invalidate?.(),
-        lookChanged: () => regular.lookChanged?.(),
+        opacity: () => active()?.opacity?.() ?? 1,
+        ready: frame => active()?.ready(frame) ?? false,
+        restExact: frame => active()?.restExact?.(frame) ?? false,
+        draw: frame => active()?.draw(frame),
+        work: (budget, frame) => active()?.work?.(budget, frame) ?? false,
+        invalidate: () => binding.regular.invalidate?.(),
+        lookChanged: () => binding.regular.lookChanged?.(),
         contextLost: () => {
-          regular.contextLost?.();
-          fixed.contextLost?.();
+          binding.regular.contextLost?.();
+          binding.fixed?.contextLost?.();
         },
-        drape: { revision: () => active().drape?.revision() ?? 0, ready: c => active().drape?.ready(c) ?? true, paint: c => active().drape?.paint(c) },
-        stats: () => active().stats?.() ?? { drawCalls: 0, triangles: 0, ms: 0 },
+        drape: { revision: () => active()?.drape?.revision() ?? 0, ready: c => active()?.drape?.ready(c) ?? true, paint: c => active()?.drape?.paint(c) },
+        stats: () => active()?.stats?.() ?? { drawCalls: 0, triangles: 0, ms: 0 },
         dispose: () => {
-          regular.dispose();
-          fixed.dispose();
+          binding.disposed = true;
+          binding.release?.();
+          binding.regular.dispose();
         },
       };
-      const dispose = made.dispose.bind(made);
-      const owned: LiveLayer = Object.assign(made, {
-        dispose: () => {
-          liveLayers.delete(owned);
-          dispose();
-        },
-      });
-      liveLayers.add(owned);
-      return owned;
+      liveBindings.set(binding.layer, binding);
+      holdLive(binding, env);
+      return binding.layer;
     },
     dispose() {
       if (disposed) return;
-      for (const live of [...liveLayers]) live.dispose();
+      // The layers this map holds are parked, not disposed: still installed, they draw these towns until the next map
+      // adopts them (createLiveLayer `previous`) or the compositor replaces them.
+      for (const live of [...liveLayers]) liveBindings.get(live)?.park?.();
       liveTier = undefined;
       liveRefused = undefined;
       liveFarTowns = liveHouses = undefined;

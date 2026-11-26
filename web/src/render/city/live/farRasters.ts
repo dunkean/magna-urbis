@@ -93,6 +93,16 @@ export class FarRasters {
   /** One step: re-uploads a raster drawFarTown replaced, builds a missing one unless the view moves (a pass over the
    * town's buildings, as the first Canvas far frame does). True when it did something. */
   work(towns: readonly FarTown[], look: { palette: CityPalette; night: boolean; custom?: string }, moving: boolean): boolean {
+    // A town the layer no longer shows (an edited town has new buildings, so a new key): its texture goes, the others stay.
+    if (this.textures.size) {
+      const shown = new Set(towns.map(town => town.buildings));
+      for (const [key, t] of this.textures)
+        if (!shown.has(key)) {
+          this.gl.deleteTexture(t.texture);
+          this.size -= t.bytes;
+          this.textures.delete(key);
+        }
+    }
     let missing = false;
     for (const town of towns) {
       if (!town.buildings.items.length) continue;

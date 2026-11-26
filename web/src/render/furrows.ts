@@ -1,5 +1,9 @@
-/** World-anchored furrow direction and spacing shared by SVG patterns and Canvas paths. */
+/**
+ * World-anchored furrows, one definition for the three painters: the SVG pattern (landuse.ts), the GPU stripe fill
+ * (recorder `fillStripes`, cover shader) and the Canvas plough lines (furrowLines).
+ */
 import type { Polygon, Polyline } from '../gen/types';
+import type { Stripe } from './gpu/contract';
 import { bboxOf } from '../gen/geo/poly';
 
 export const furrowDegrees = (angle: number): number => Math.round((angle * 180) / Math.PI) % 180;
@@ -8,15 +12,19 @@ const rawSpacing = (mapSize: number): number => Math.max(2.4, (1.5 * mapSize) / 
 export const furrowSpacing = (mapSize: number): number => Math.round(rawSpacing(mapSize) * 10) / 10;
 export const furrowOffset = (mapSize: number): number => Math.round(rawSpacing(mapSize) * 5) / 10;
 
+/** The furrows of a holding as world stripes: lines along the rounded strip direction, at `offset + k * period` across it. */
+export function furrowStripe(mapSize: number, angle: number, width: number): Stripe {
+  const theta = (furrowDegrees(angle) * Math.PI) / 180;
+  return { nx: -Math.sin(theta), ny: Math.cos(theta), period: furrowSpacing(mapSize), offset: furrowOffset(mapSize), width };
+}
+
 /** Lines cover the holder's bounds; the renderer clips them to its actual strips and holes. */
 export function furrowLines(poly: Polygon, mapSize: number, angle: number): Polyline[] {
   if (poly.length < 3 || !Number.isFinite(angle)) return [];
   const box = bboxOf(poly),
-    theta = (furrowDegrees(angle) * Math.PI) / 180;
-  const dx = Math.cos(theta),
-    dy = Math.sin(theta),
-    nx = -dy,
-    ny = dx;
+    { nx, ny, period: sp, offset } = furrowStripe(mapSize, angle, 0);
+  const dx = ny,
+    dy = -nx;
   const corners = [
     { x: box.x0, y: box.y0 },
     { x: box.x1, y: box.y0 },
@@ -26,9 +34,7 @@ export function furrowLines(poly: Polygon, mapSize: number, angle: number): Poly
   const along = corners.map(p => p.x * dx + p.y * dy),
     across = corners.map(p => p.x * nx + p.y * ny);
   const lo = Math.min(...along),
-    hi = Math.max(...along),
-    sp = furrowSpacing(mapSize),
-    offset = furrowOffset(mapSize);
+    hi = Math.max(...along);
   const first = Math.ceil((Math.min(...across) - offset) / sp),
     last = Math.floor((Math.max(...across) - offset) / sp);
   const out: Polyline[] = [];

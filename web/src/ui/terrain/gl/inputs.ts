@@ -13,7 +13,8 @@ import { RetainedWaterSource } from '../retainedWater';
 import { heightAt, pushLayer, SurfaceSamplerCache } from '../layers';
 import type { InputChange } from '../revision';
 import { glTexture, releaseHeightLayer, uploadHeightLayer, type GlHeightLayer } from './resources';
-import { cappedForest, deleteForestTextures, forestTexture, forestTextures, glLandDetailUnit, type ForestTextures } from './forest';
+import { cappedForest, deleteForestTextures, forestTexture, forestTextures, glLandDetailUnit, OCCUPATION_PAD, occupationPatch, occupationWorldRects, patchForestTexture, type ForestTextures } from './forest';
+import type { Rect4 } from '../../../render/view';
 import { landBackdropTexture } from '../../../render/treeSymbols';
 import type { HeightLayer, OverlayLayer, RetainedWaterOptions, SurfaceSample, TerrainLook, WaterLayer } from '../contract';
 
@@ -41,6 +42,8 @@ export class GlInputs {
   retainedWater = new RetainedWaterSource();
   /** Bumped by setForest: the auxiliary pass depends on the forest field and the applied occupation. */
   forestVersion = 0;
+  /** The world boxes the last setForest changed (a local edit's occupation); undefined: the whole map. */
+  forestRegion?: readonly Rect4[];
   readonly empty: WebGLTexture;
   private readonly surface = new SurfaceSamplerCache();
   private waterInput?: WaterLayer;
@@ -185,6 +188,9 @@ export class GlInputs {
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): InputChange {
     const gl = this.gl,
       cap = mapTextureCap(gl.getParameter(gl.MAX_TEXTURE_SIZE));
+    // A local edit's occupation (ForestOccupation.dirty) over the one on the GPU: only its changed texels go up, and
+    // only the world tiles over them are baked again (forestRegion).
+    let region: Rect4[] | undefined = field === this.forestSource ? [] : undefined;
     if (field !== this.forestSource) {
       deleteForestTextures(gl, this.forest);
       this.forestSource = field;
@@ -192,16 +198,26 @@ export class GlInputs {
       this.forest = field && !mapGpuLight() ? forestTextures(gl, cappedForest(field, cap)) : undefined;
     }
     if (occupation !== this.occupation?.data) {
-      if (this.occupation) gl.deleteTexture(this.occupation.texture);
+      const patch = occupation && this.occupation && occupationPatch(this.occupation.data, occupation);
       this.occupationSource = occupation;
-      this.occupation = occupation && { data: occupation, texture: forestTexture(gl, occupation, true) };
+      if (patch && this.occupation && occupation) {
+        if (patch.length) patchForestTexture(gl, this.occupation.texture, occupation, patch);
+        this.occupation.data = occupation;
+        region?.push(...occupationWorldRects(occupation, patch, OCCUPATION_PAD));
+      } else {
+        if (this.occupation) gl.deleteTexture(this.occupation.texture);
+        this.occupation = occupation && { data: occupation, texture: forestTexture(gl, occupation, true) };
+        region = undefined;
+      }
     }
     // Holdings are optional detail: left out in the light profile and when larger than the cap (classes cannot be box-filtered).
     const detail = glLandDetailUnit(gl) === undefined || mapGpuLight() || (occupation?.detail?.n ?? 0) > cap ? undefined : occupation?.detail;
     if (detail !== this.landDetail?.data) {
       if (this.landDetail) gl.deleteTexture(this.landDetail.texture);
       this.landDetail = detail && { data: detail, texture: forestTexture(gl, detail, true) };
+      region = undefined;
     }
+    this.forestRegion = region;
     this.forestVersion++;
     return 'content';
   }

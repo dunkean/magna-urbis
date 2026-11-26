@@ -81,7 +81,7 @@ export class AppearancePasses {
       // The forest field grows from the generation climate (displayForest.ts): a display biome only repaints it.
       const forestKey = JSON.stringify([effective.forest, effectiveTerrainSettings(settings, world.mapSize).climateValues]);
       const worldSig = JSON.stringify([world.mapSize, world.seed, world.options.biome, getLanguage(), getDistanceUnit(), settings.naming?.mode, settings.naming?.mapLanguage, settings.naming?.script]);
-      map.input = () => ({ r, revisions: scene.revisions, layers, mode: ground.mode(), effective: effectiveKey, forestEffective: forestKey, worldSig });
+      map.input = () => ({ r, revisions: scene.revisions, layers, mode: ground.mode(), effective: effectiveKey, climateZone: effective.climateZone, forestEffective: forestKey, worldSig });
       map.paper = terrainStyle(r.styleId, r.palette.colors).palette.paper;
       // What the ground shader itself lays under and around the map (setLook `background`): the live ground tiles' paper.
       map.groundPaper = terrainStyle(r.ground.style, r.palette.colors).palette.paper;

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Polygon, World } from '../src/gen/types';
-import { furrowDegrees, furrowLines, furrowOffset, furrowSpacing } from '../src/render/furrows';
+import { furrowDegrees, furrowLines, furrowOffset, furrowSpacing, furrowStripe } from '../src/render/furrows';
+import { createMapRecording } from '../src/render/cartography/mapRecording';
+import { CartographyContext } from '../src/render/cartography/context';
+import { drawVector } from '../src/render/cartography/vector';
+import { stripeOfDevice } from '../src/render/gpu/replay';
+import type { FillOp, Mat, Paint } from '../src/render/gpu/contract';
 import { landuseLayer } from '../src/render/landuse';
 import { biomePalette } from '../src/render/biomes';
 import { FURROW_HOLDER_BUDGET, FURROW_MIN_PX } from '../src/render/lod';
@@ -236,5 +241,44 @@ describe('actual plough lines in Canvas fields', () => {
     expect(warm.pathsBuilt).toBe(0);
     expect(warm.furrowCache).toBe(FURROW_HOLDER_BUDGET * 2);
     h.renderer.dispose();
+  });
+
+  it('records a holding as one world-anchored stripe fill on the GPU path, without plough line strokes', () => {
+    const w = fakeWorld({ mapSize: 1600, buildings: 0, streets: 0, landAreas: 0 }),
+      poly = rect(200, 200, 600),
+      theta = 0.63;
+    w.urban = undefined;
+    w.roads = [];
+    w.terrain.rivers = [];
+    w.options.contours = false;
+    w.options.labels = false;
+    w.landuse!.areas = [{ kind: 'field', poly, strips: [poly], stripAngle: theta }];
+    // Recorded as the live overlay records a band (liveHost.ts): a text-free recording, drawVector in 'map' mode (no furniture).
+    const canvas = createMapRecording(900, 700),
+      c = new CartographyContext(canvas as unknown as CanvasLike, w, 'parchment', { scene: buildScene(w), terrain: () => null, createCanvas: () => null, dpr: 1 });
+    const record = (view: { cx: number; cy: number; scale: number }) => {
+      drawVector(c, view, canvas as unknown as CanvasLike, 'map');
+      const list = canvas.finish();
+      expect(list.unsupported).toBeUndefined();
+      const fills = list.ops.filter((op): op is FillOp => op.type === 'fill' && op.paint.kind === 'stripes');
+      expect(fills).toHaveLength(1);
+      expect(fills[0].paths).toHaveLength(1);
+      const paint = fills[0].paint as Extract<Paint, { kind: 'stripes' }>;
+      expect(list.ops.some(op => op.type === 'stroke' && op.width === paint.stripe.width)).toBe(false);
+      return { stripe: paint.stripe, transform: fills[0].transform };
+    };
+    const a = record({ cx: 500, cy: 500, scale: 2 }),
+      b = record({ cx: 430, cy: 560, scale: 3 });
+    // The stripe is defined in the world (same lines as the Canvas plough lines and the SVG pattern)...
+    for (const s of [a, b]) expect({ ...s.stripe, width: 0 }).toEqual(furrowStripe(w.mapSize, theta, 0));
+    expect(a.transform).not.toEqual(b.transform);
+    // ...so the replay puts a furrow on the same world point in both views.
+    const n = furrowOffset(w.mapSize) + 7 * furrowSpacing(w.mapSize),
+      p = { x: a.stripe.nx * n + a.stripe.ny * 40, y: a.stripe.ny * n - a.stripe.nx * 40 };
+    for (const { stripe, transform: m } of [a, b]) {
+      const d = stripeOfDevice(stripe, m as Mat)!,
+        phase = (d[0] * (m[0] * p.x + m[2] * p.y + m[4]) + d[1] * (m[1] * p.x + m[3] * p.y + m[5]) + d[2]) / stripe.period;
+      expect(Math.abs(phase - Math.round(phase))).toBeLessThan(1e-6);
+    }
   });
 });

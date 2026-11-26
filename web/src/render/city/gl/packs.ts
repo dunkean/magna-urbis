@@ -199,3 +199,62 @@ export function crossingStart(strokes: CityGlStrokes | undefined): number {
   for (let i = 0; i < strokes.count; i++) if (u[i * STROKE_STRIDE + 8] & META.crossing) return i;
   return strokes.count;
 }
+/** One page of a paged fill (pages.ts): its own scene part, mesh, buffers and colour tables. */
+export interface FillPage<T> {
+  key: number;
+  /** The page's part of the scene (a plan page or a building page) its tables are computed from. */
+  part: T;
+  pack: FillPack;
+  box: [number, number, number, number];
+}
+/** The fills of a scene as spatial pages, each a FillPack with its own feature numbering: a frame draws the pages in
+ * view one after the other in each pass; an edit replaces only the pages it changed. */
+export class FillPages<T> {
+  /** Triangles and outline edges of each layer over every page (what a frame checks before a pass). */
+  readonly counts: Record<string, { triangles: number; lines: number }> = {};
+  readonly featureCount: number;
+  private draws = new Map<string, CityGlDraws | undefined>();
+  constructor(readonly pages: FillPage<T>[]) {
+    let features = 0;
+    for (const p of pages) {
+      features += p.pack.mesh.featureCount;
+      for (const [name, l] of Object.entries(p.pack.mesh.layers)) {
+        const c = (this.counts[name] ??= { triangles: 0, lines: 0 });
+        c.triangles += l.triangles.count;
+        c.lines += l.lines.count;
+      }
+    }
+    this.featureCount = features;
+  }
+  get bytes(): number {
+    return this.pages.reduce((s, p) => s + p.pack.bytes, 0);
+  }
+  /** Every page keeps the tables of state `key`. */
+  has(key: string): boolean {
+    return this.pages.every(p => p.pack.has(key));
+  }
+  /** Makes the kept tables of `key` current on every page; the draw list of the pages together (undefined when a page
+   * lacks them). */
+  table(key: string): { draws?: CityGlDraws } | undefined {
+    if (!this.has(key)) return undefined;
+    for (const p of this.pages) p.pack.table(key);
+    let draws = this.draws.get(key);
+    if (!this.draws.has(key)) {
+      for (const p of this.pages) {
+        const d = p.pack.table(key)?.draws;
+        if (!d) continue;
+        if (!draws) draws = { ...d };
+        else for (const k of Object.keys(d) as (keyof CityGlDraws)[]) draws[k] = !!(draws[k] || d[k]);
+      }
+      this.draws.set(key, draws);
+    }
+    return { draws };
+  }
+  /** Drops the merged draw list of `key` (a page's tables of that key were made again). */
+  forget(key: string): void {
+    this.draws.delete(key);
+  }
+  dispose(): void {
+    for (const p of this.pages) p.pack.dispose();
+  }
+}

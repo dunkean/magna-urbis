@@ -11,7 +11,7 @@
  * Output: whole-map fields, sampled bilinearly by the painters below. Material water compositors read a regime code
  * (regimeRgb); ink styles and 3D tiles get the map symbols (wadi, intermittent course, ice) through alpha masks. */
 import type { TerrainStyle } from '../../../rust/bridge/terrainRender';
-import { riverState, waterClimate, waterRegimeActive, type WaterClimate, type WaterSeason } from '../render/waterRegime';
+import { drawnWaterClimate, riverState, type WaterClimate, type WaterSeason } from '../render/waterRegime';
 import type { RetainedWaterPath } from '../render/retainedWaterGeometry';
 import { regimeInk } from './vectorWaterRender';
 import { styleTraits } from '../render/terrainStyle';
@@ -148,12 +148,13 @@ function canvas(n: number): HTMLCanvasElement {
 }
 
 const memo = new WeakMap<readonly RetainedWaterPath[], { key: string; regime: RetainedRegime | undefined }>();
-/** Regime of the retained water for a zone and season; undefined when the season leaves every course running and
- * open (the sediment tint alone needs no field). Memoized per path set and climate. */
+/** Regime of the retained water for a zone and season, the V2's drawn one (`drawnWaterClimate`); undefined when the
+ * season leaves every course running and open (the sediment tint alone needs no field). Memoized per path set and
+ * drawn climate, so a date that keeps it recomputes nothing. */
 export function retainedRegime(paths: readonly RetainedWaterPath[], width: number, season: WaterSeason | undefined): RetainedRegime | undefined {
   if (!season?.zone || !paths.length || !(width > 0)) return;
-  const climate = waterClimate(season);
-  if (!waterRegimeActive(climate) || (climate.aridity <= 0 && climate.ice <= 0)) return;
+  const climate = drawnWaterClimate(season);
+  if (!climate) return;
   const key = JSON.stringify([width, climate]),
     found = memo.get(paths);
   if (found?.key === key) return found.regime;

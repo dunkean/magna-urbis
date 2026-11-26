@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { generateTerrain, planRegion, rerouteRegion, generateTowns, generateTown, generateTownStage, updateRoadTowns, updateContourTown, clearTerrainPreviews, namesRenamedAfterActions } from './engine';
+import { generateTerrain, planRegion, rerouteRegion, generateTowns, generateTown, generateTownStage, updateRoadTowns, updateLocalTown, clearTerrainPreviews, namesRenamedAfterActions } from './engine';
 import type { V2WorkerRequest, V2WorkerResponse, V2ResourceRequest, ProgressCallback } from './contracts';
 import { WorkerWorld } from './workerWorld';
 import { renameMap } from './mapNaming';
@@ -79,7 +79,7 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest | V2ResourceR
       if (action === 'town') {
         if (!request.key) throw new Error('Choose a settlement.');
         world = await stage(effective =>
-          request.contourEdit ? updateContourTown(world!, effective, request.key!, progress) : request.townStage ? generateTownStage(world!, effective, request.key!, request.townStage, progress) : generateTown(world!, effective, request.key!, progress),
+          request.localEdit ? updateLocalTown(world!, effective, request.key!, progress) : request.townStage ? generateTownStage(world!, effective, request.key!, request.townStage, progress) : generateTown(world!, effective, request.key!, progress),
         );
       }
       if (!['terrain', 'region', 'roads', 'towns', 'town', 'settlements', 'all'].includes(action)) throw new Error('Unknown action.');

@@ -27,13 +27,12 @@ import { initializeDisplayQuality, noteDisplayNavigation, onDisplayQualityChange
 import { onVectorEngineChange } from '../../render/vectorEngine';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import { screenToWorld, type View } from '../../render/view';
-import type { Building3dVisual } from '../../render/urbanBuildingGeometry';
 import { isTilted } from '../../render/world/camera';
 import type { WorldRelief } from '../../render/world/contract';
 import type { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
 import { suspendFantasyRaster } from '../../ui/fantasyRaster';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
-import { ComposedView, GROUND_WARMING } from './composedView';
+import { ComposedView, GROUND_WARMING, type MapPick } from './composedView';
 import type { AppearanceListener, DisplayParts, ViewFrame, ViewStatus } from './contract';
 import type { ExactFrame } from './exactFrame';
 import { FallbackView } from './fallback/fallbackView';
@@ -277,12 +276,16 @@ export class MapView implements AppearanceListener, ViewStatus {
     if (!frame || !isTilted(frame.view) || this.presenter !== 'composed') return undefined;
     return this.composed.capture(frame.view, frame.w, frame.h, frame.dpr, canvas) ? canvas : undefined;
   }
-  /** The ground point under the CSS pixel (sx, sy) of `view`, and in a tilted view the building volume in front of it
-   * among those `accept` takes; undefined when the pixel shows no ground (the sky of a tilted view). */
-  pick(view: View, w: number, h: number, sx: number, sy: number, accept: (building: Building3dVisual) => boolean): { x: number; y: number; building?: Building3dVisual } | undefined {
-    if (isTilted(view) && this.presenter === 'composed') return this.composed.pick(view, w, h, sx, sy, accept);
+  /** The ground point under the CSS pixel (sx, sy) of `view`, and in a tilted view the building volume in front of it;
+   * undefined when the pixel shows no ground (the sky of a tilted view). */
+  pick(view: View, w: number, h: number, sx: number, sy: number): MapPick | undefined {
+    if (isTilted(view) && this.presenter === 'composed') return this.composed.pick(view, w, h, sx, sy);
     const [x, y] = screenToWorld(view, w, h, sx, sy);
-    return { x, y };
+    return { x, y, metresPerPixel: 1 / view.scale };
+  }
+  /** Tints the volume of the selected building in the tilted view (its volume id; undefined: none). */
+  highlightBuilding(id: string | undefined): void {
+    this.composed.highlightBuilding(id);
   }
   private releaseCapture(): void {
     if (!this.captured) return;

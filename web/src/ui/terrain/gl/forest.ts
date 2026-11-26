@@ -3,7 +3,8 @@
  * (TerrainGl) and the perspective ground (terrain3d.ts). Texture units are owned by each caller.
  */
 import { capRgbaRaster } from '../../glContextRecovery';
-import { forestBeachTexture, type ForestField, type ForestOccupation, type LandDetail } from '../../../../../rust/bridge/terrainForest';
+import { forestBeachTexture, type ForestField, type ForestOccupation, type LandDetail, type TexelRect } from '../../../../../rust/bridge/terrainForest';
+import type { Rect4 } from '../../../render/view';
 
 /** Holdings take a 17th texture unit. ANGLE on D3D11 stops at 16: there the shader leaves them out and fields keep their plain material. */
 export const glLandDetailUnit = (gl: WebGL2RenderingContext): number | undefined => (gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) > 16 ? 16 : undefined);
@@ -22,6 +23,42 @@ export function forestTexture(gl: WebGL2RenderingContext, raster: { n: number; r
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   return texture;
+}
+
+/** A forestTexture of a raster of the same size whose texels changed only inside `rects`: those uploaded alone, the
+ * mipmaps generated again on the GPU. */
+export function patchForestTexture(gl: WebGL2RenderingContext, texture: WebGLTexture, raster: { n: number; rgba: Uint8Array }, rects: readonly TexelRect[]): void {
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, raster.n);
+  for (const r of rects) {
+    if (r.width <= 0 || r.height <= 0) continue;
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, r.x);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, r.y);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, r.x, r.y, r.width, r.height, gl.RGBA, gl.UNSIGNED_BYTE, raster.rgba);
+  }
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+  gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+  gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+  gl.generateMipmap(gl.TEXTURE_2D);
+}
+/** The texel rectangles by which `next` differs from `held` (ForestOccupation.dirty) when it was made from it on the
+ * same grid; undefined: `next` must be uploaded whole. The same pixels (one product spread again): no rectangle. */
+export function occupationPatch(held: ForestOccupation | undefined, next: ForestOccupation): readonly TexelRect[] | undefined {
+  if (!held || held.n !== next.n || held.x !== next.x || held.y !== next.y || held.width !== next.width) return undefined;
+  if (held.rgba === next.rgba) return [];
+  return next.dirty?.base === held.key ? next.dirty.rects : undefined;
+}
+/** Occupation texels around a changed one whose ground pixels may change: bilinear reads, a distance read a little off
+ * the fragment (soft edges, symbols). Coarse tiles add their own reach (render/live/groundLayer.ts). */
+export const OCCUPATION_PAD = 4;
+/** The world boxes (metres) of texel rectangles of an occupation, grown by `pad` texels (bilinear reads, mipmaps). */
+export function occupationWorldRects(occupation: ForestOccupation, rects: readonly TexelRect[], pad: number): Rect4[] {
+  const cell = occupation.width / occupation.n;
+  return rects.map(r => ({ minX: occupation.x + (r.x - pad) * cell, minY: occupation.y + (r.y - pad) * cell, maxX: occupation.x + (r.x + r.width + pad) * cell, maxY: occupation.y + (r.y + r.height + pad) * cell }));
 }
 
 /** Canonical forest field and its riparian bank envelope (same grid), uploaded and released together. */

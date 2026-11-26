@@ -11,7 +11,7 @@
  * Two subclasses own a context each and differ only in what this class leaves to them: tileRasterizer.ts (a private
  * canvas: exact tiles, captures, the 3D drape) and liveRasterizer.ts (the live compositor's context).
  */
-import { GpuRasterError, IDENTITY, SPRITE_STRIDE, type ClipNode, type Composite, type DisplayList, type FillRule, type Mat, type Paint, type RecordedPath, type SpriteOp, type StrokeOp, type ReplayStats } from './contract';
+import { GpuRasterError, IDENTITY, SPRITE_STRIDE, type ClipNode, type Composite, type DisplayList, type FillRule, type Mat, type Paint, type RecordedPath, type SpriteOp, type Stripe, type StrokeOp, type ReplayStats } from './contract';
 import { DISC_STRIDE, JOIN_STRIDE, SEGMENT_STRIDE } from './tessellate';
 import { compose, intersect, inverse, overlaps, scale, transformedBox, union, type Box } from './transforms';
 import { GpuResources, type GeometryData, type Slice, type StrokeSlices, type ToleranceRule } from './resources';
@@ -19,6 +19,20 @@ import { Program } from './program';
 import type { ProgramKind } from './shaders';
 
 export const emptyStats = (): ReplayStats => ({ drawCalls: 0, triangles: 0, ms: 0, clips: 0, ops: 0, synced: false });
+
+/**
+ * A stripe seen from the device pixels of `m` (user -> device): across = gx X + gy Y + k in user units, k reduced modulo
+ * the period in double precision (world coordinates far from the origin keep their phase in float32), and the pixel
+ * footprint |g| in user units. Null when `m` cannot be inverted or the period is not positive.
+ */
+export function stripeOfDevice(s: Stripe, m: Mat): readonly [gx: number, gy: number, k: number, footprint: number] | null {
+  const inv = inverse(m);
+  if (!inv || !(s.period > 0)) return null;
+  const gx = s.nx * inv[0] + s.ny * inv[1],
+    gy = s.nx * inv[2] + s.ny * inv[3],
+    k = s.nx * inv[4] + s.ny * inv[5] - s.offset;
+  return [gx, gy, k - Math.floor(k / s.period) * s.period, Math.max(1e-9, Math.hypot(gx, gy))];
+}
 
 export abstract class ListReplayer {
   protected resources: GpuResources;
@@ -124,13 +138,14 @@ export abstract class ListReplayer {
     this.gl.uniformMatrix3fv(p.u('uMatrix'), false, this.mat3(m));
     this.gl.uniformMatrix3fv(p.u('uInverse'), false, this.mat3(inverse(m) ?? IDENTITY));
   }
-  private paint(p: Program, paint: Paint, alpha: number): void {
+  private paint(p: Program, paint: Paint, alpha: number, m: Mat): void {
     const gl = this.gl;
     gl.uniform1f(p.u('uAlpha'), alpha);
-    gl.uniform1i(p.u('uPattern'), paint.kind === 'pattern' ? 1 : 0);
-    if (paint.kind === 'color') {
+    gl.uniform1i(p.u('uPattern'), paint.kind === 'pattern' ? 1 : paint.kind === 'stripes' ? 2 : 0);
+    if (paint.kind !== 'pattern') {
       const c = paint.rgba;
       gl.uniform4f(p.u('uColor'), c[0], c[1], c[2], c[3]);
+      if (paint.kind === 'stripes') this.stripe(p, paint.stripe, m);
       return;
     }
     const inv = inverse(paint.transform);
@@ -151,6 +166,13 @@ export abstract class ListReplayer {
     gl.uniform2f(p.u('uImageSize'), t.width, t.height);
     gl.uniform2i(p.u('uRepeat'), rx ? 1 : 0, ry ? 1 : 0);
     gl.uniformMatrix3fv(p.u('uPatternInverse'), false, this.mat3(inv));
+  }
+  /** Two uniforms per stripe op (stripeOfDevice), nothing uploaded per frame; a degenerate stripe covers nothing. */
+  private stripe(p: Program, s: Stripe, m: Mat): void {
+    const gl = this.gl,
+      d = stripeOfDevice(s, m);
+    gl.uniform4f(p.u('uStripe'), d ? d[0] : 0, d ? d[1] : 0, d ? s.period : 1, d ? d[2] : 0.5);
+    gl.uniform2f(p.u('uStripeLine'), d ? s.width / 2 : 0, d ? d[3] : 1);
   }
   private attributes(buffer: WebGLBuffer, start: number, stride: number, sizes: readonly number[]): void {
     const gl = this.gl;
@@ -274,7 +296,7 @@ export abstract class ListReplayer {
     const gl = this.gl,
       p = this.program('cover');
     this.matrices(p, m);
-    this.paint(p, paint, alpha);
+    this.paint(p, paint, alpha, m);
     gl.colorMask(true, true, true, true);
     gl.stencilMask(0);
     if (rule === 'stroke') gl.stencilFunc(gl.EQUAL, 0x81, 0xff);
@@ -359,7 +381,7 @@ export abstract class ListReplayer {
     const gl = this.gl,
       p = this.program('stroke');
     this.matrices(p, m);
-    this.paint(p, op.paint, alpha);
+    this.paint(p, op.paint, alpha, m);
     gl.uniform1f(p.u('uWidth'), deviceWidth);
     gl.uniform1f(p.u('uMiterLimit'), op.miterLimit);
     gl.uniform1i(p.u('uCap'), hair || op.cap === 'butt' ? 0 : op.cap === 'round' ? 1 : 2);

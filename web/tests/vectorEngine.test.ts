@@ -115,4 +115,26 @@ describe('vector engine policy', () => {
     cpuTiles(2, 500);
     expect(demoted()).toBe('context lost');
   });
+  it('warns about a forced choice that is wrong for the machine, never on auto', async () => {
+    const raster = { software: true, lost: false, renderer: 'test' };
+    vi.resetModules();
+    vi.doMock('../src/render/gpu/tileRasterizer', () => ({ sharedGpuRasterizer: () => raster }));
+    vi.stubGlobal('document', {});
+    try {
+      const policy = await import('../src/render/vectorEngine');
+      expect(policy.vectorEngineWarning()).toBeUndefined();
+      policy.setVectorEnginePreference('gpu');
+      expect(policy.vectorEngineWarning()).toBe('gpu-software');
+      raster.software = false;
+      expect(policy.vectorEngineWarning()).toBeUndefined();
+      policy.setVectorEnginePreference('cpu');
+      expect(policy.vectorEngineWarning()).toBe('cpu-forced');
+      policy.setVectorEnginePreference('auto');
+      expect(policy.vectorEngineWarning()).toBeUndefined();
+    } finally {
+      vi.doUnmock('../src/render/gpu/tileRasterizer');
+      vi.unstubAllGlobals();
+      delete (globalThis as unknown as Record<string, unknown>).__muVectorEngine;
+    }
+  });
 });

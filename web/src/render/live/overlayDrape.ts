@@ -159,7 +159,7 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
           recorded,
           ms: 0,
           record: host.recordSteps
-            ? host.recordSteps(plan, band, tile.light)
+            ? host.recordSteps(plan, band, tile.light, true)
             : (function* () {
                 return host.record(plan, band, tile.light);
               })(),

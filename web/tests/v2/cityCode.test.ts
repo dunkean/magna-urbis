@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { COUNT_ROLES, CULTURES, cityDebugText, codeBaseline, decodeCityCode, encodeCityCode, formatCode, nextRootSeed, parseCode, rootSeedFromText, settlementKey, settlementNumber } from '../../src/v2/cityCode';
 import { candidateParameters, codeParameters, listedParameterKeys } from '../../src/v2/cityCodeParams';
-import { levelValue, parameterLevels, readParamId, snapParameter, valueLevel, writeInt, writeParamId } from '../../src/v2/cityCodeFormat';
+import { FREE_LEVELS, levelStep, levelValue, parameterLevels, readParamId, snapParameter, valueLevel, writeInt, writeParamId } from '../../src/v2/cityCodeFormat';
+import { NOT_IN_CODE } from '../../src/v2/cityCodeRecords';
 import { readSettingPath, writeSettingPath } from '../../src/v2/parameterForm';
 import { rerollSeed, stepSeed } from '../../../rust/bridge/generationSeed';
 import { rerollSettlement } from '../../src/v2/urbanSeeds';
@@ -59,12 +60,21 @@ describe('short city code', () => {
   });
   it('lists every eligible parameter and quantises values to each parameter domain', () => {
     const listed = new Set(listedParameterKeys());
-    expect(candidateParameters().filter(c => !listed.has(c.key)).map(c => c.key)).toEqual([]);
-    expect(parameterLevels({ min: 0, max: 1, step: 'any' })).toBe(32);
+    expect(
+      candidateParameters()
+        .filter(c => !listed.has(c.key))
+        .map(c => c.key),
+    ).toEqual([]);
+    expect(parameterLevels({ min: 0, max: 1, step: 'any' })).toBe(FREE_LEVELS);
+    expect(FREE_LEVELS).toBe(32);
     expect(parameterLevels({ min: 0, max: 1, step: 0.05 })).toBe(21);
     expect(parameterLevels({ min: 0, max: 10000, step: 25 })).toBe(401);
     const field = { min: 0, max: 1, step: 'any' as const };
-    for (let l = 0; l < 32; l++) expect(valueLevel(field, levelValue(field, l))).toBe(l);
+    // Each slider position (a multiple of levelStep) is one level and comes back unchanged.
+    for (let l = 0; l < FREE_LEVELS; l++) {
+      expect(valueLevel(field, levelValue(field, l))).toBe(l);
+      expect(snapParameter(field, l * levelStep(field)!)).toBe(levelValue(field, l));
+    }
     expect(snapParameter(field, 0.5)).toBe(levelValue(field, valueLevel(field, 0.5)));
     for (const id of [0, 30, 31, 400]) expect(readParamId(writeParamId(id), 0)[0]).toBe(id);
     const settings = codeBaseline();
@@ -117,14 +127,25 @@ describe('short city code', () => {
     expect(formatCode(parseCode('magnas_c.4u8_cl005ic3!0g00h0'))).toBe('magnas_c.4u8_cl005ic3!0g00h0');
   });
   it('names quarter and block edits by their position in the plan', () => {
-    const square = (x: number) => ({ outer: [{ x, y: 0 }, { x: x + 1, y: 0 }, { x: x + 1, y: 1 }], holes: [] });
-    const layout = { key: 'main', blocks: [{ quarter: 2, shape: square(0) }, { quarter: 4, shape: square(2) }, { quarter: 4, shape: square(4) }] } as never;
+    const square = (x: number) => ({
+      outer: [
+        { x, y: 0 },
+        { x: x + 1, y: 0 },
+        { x: x + 1, y: 1 },
+      ],
+      holes: [],
+    });
+    const layout = {
+      key: 'main',
+      blocks: [
+        { quarter: 2, shape: square(0) },
+        { quarter: 4, shape: square(2) },
+        { quarter: 4, shape: square(4) },
+      ],
+    } as never;
     const saved = blockEditId(layout, (layout as { blocks: { shape: never }[] }).blocks[2].shape);
     const settings = codeBaseline();
-    settings.urban = {
-      backend: 'rust',
-      local: { main: { layout: { overrides: { quarters: { '4': { tissue: 'grid', culture: CULTURES[40], salt: 2 } } } } as never, parcels: { overrides: { blocks: { [saved]: { salt: 1, operator: 'strips' } } } } as never } },
-    };
+    settings.urban = { backend: 'rust', local: { main: { layout: { overrides: { quarters: { '4': { tissue: 'grid', culture: CULTURES[40], salt: 2 } } } } as never, parcels: { overrides: { blocks: { [saved]: { salt: 1, operator: 'strips' } } } } as never } } };
     expect(encodeCityCode(settings)).not.toContain('0.4.1');
     const code = encodeCityCode(settings, (_key, key) => blockAddress(layout, key));
     expect(code).toMatch(/_0\.4u2l018.+_0\.4\.1u1l/);
@@ -154,14 +175,51 @@ describe('short city code', () => {
     expect(programme).toMatchObject({ counts: { [first]: 0, [second]: 3 }, countMode: 'force' });
     same(code);
   });
+  it('restores lot edits and house models by their saved ids, leaving drawn outlines out', () => {
+    const lot = 'layout-0123456789abcdef/block-fedcba9876543210/parcel-00112233445566ff';
+    const neighbour = 'layout-0123456789abcdef/block-fedcba9876543210/parcel-a0b1c2d3e4f5a6b7';
+    const outline = {
+      outer: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 10 },
+      ],
+    };
+    const parcels = { [lot]: { role: 'market', households: 2, enclosure: 'hedge', salt: 4, culture: CULTURES[3], houseConfig: { allow_late: true, overrides: { overhang_m: 0.35, footprint: null } }, shape: outline }, [neighbour]: { deleted: 'garden' } };
+    const settings = codeBaseline();
+    settings.urban = {
+      backend: 'rust',
+      houses: { house_config: { pack: 'EUR-MED', variation: 0.35 } } as never,
+      buildings: { [`main/${lot}/building`]: { culture: CULTURES[3], recipe: 'EUR-MED-TOWNHOUSE', overrides: { roof: 'RF-HIP', floors: 3, roof_pitch_deg: -12.5 } } as never },
+      local: { main: { parcels: { overrides: { parcels } } as never, layout: { overrides: { quarters: { '2': { salt: 1, houseConfig: { era: 'late' }, parts: [outline] } } } } as never } },
+    };
+    const code = encodeCityCode(settings);
+    const urban = decodeCityCode(code).settings.urban!;
+    const { shape: _shape, ...kept } = parcels[lot];
+    expect(urban.local!.main.parcels!.overrides!.parcels).toEqual({ [lot]: kept, [neighbour]: { deleted: 'garden' } });
+    expect(urban.buildings).toEqual(settings.urban.buildings);
+    expect(urban.houses?.house_config).toEqual({ pack: 'EUR-MED', variation: 0.35 });
+    expect(urban.local!.main.layout!.overrides!.quarters!['2']).toEqual({ salt: 1, houseConfig: { era: 'late' } });
+    expect(NOT_IN_CODE.geometry).toEqual(expect.arrayContaining(['shape', 'parts']));
+    same(code);
+    // A second lot of the same block costs its own hash and value, not a whole id again.
+    delete (settings.urban.local!.main.parcels!.overrides!.parcels as Record<string, unknown>)[neighbour];
+    expect(code.length - encodeCityCode(settings).length).toBeLessThan(40);
+  });
   it('appends pins at a fixed width and restores their texts from the debug text', () => {
     const settings = codeBaseline();
-    settings.pins = [{ x: 1200, y: 3400, text: 'North gate' }, { x: 5, y: 6 }];
+    settings.pins = [
+      { x: 1200, y: 3400, text: 'North gate' },
+      { x: 5, y: 6 },
+    ];
     const code = encodeCityCode(settings);
     expect(code).toBe('magnas!15g3a8005006');
     const debug = cityDebugText(settings, 'abc123');
     expect(debug.split('\n')).toEqual([code, 'abc123 · page v2', '#1 x=1200 y=3400 North gate', '#2 x=5 y=6']);
-    expect(decodeCityCode(debug).settings.pins).toEqual([{ x: 1200, y: 3400, text: 'North gate' }, { x: 5, y: 6 }]);
+    expect(decodeCityCode(debug).settings.pins).toEqual([
+      { x: 1200, y: 3400, text: 'North gate' },
+      { x: 5, y: 6 },
+    ]);
   });
   it('rejects malformed codes and normalises typed seeds', () => {
     expect(() => decodeCityCode('magnas_')).toThrow();

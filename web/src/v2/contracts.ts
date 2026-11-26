@@ -162,7 +162,9 @@ export interface V2WorkerRequest {
   keepUrbanLanes?: boolean;
   /** Direct road edits retain placement and update only the selected built towns. */
   roadEdit?: 'access' | 'rebuild';
-  contourEdit?: boolean;
+  /** An edit inside one built town (outline, quarter, block, parcel, building): that town alone is rebuilt, without
+   * its neighbours or the countryside. */
+  localEdit?: boolean;
 }
 /** Lazy fetch of the resource payload of a world's terrain; never a generation (id shares the client's counter). */
 export interface V2ResourceRequest {

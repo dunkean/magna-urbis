@@ -7,6 +7,7 @@ import type { ExportLayers } from '../../exportLayers';
 import type { Box, CityBuildings, CityLayers, CityScene } from '../model/contract';
 import type { YardBoundary } from '../../cityLotEnclosures';
 import type { CityCanopy } from '../../cityGrove';
+import type { LiveLayer } from '../../live/contract';
 
 /** What the owner of the towns (v2/nativeCityMap.ts) gives the layer. */
 export interface LiveCityTowns {
@@ -32,6 +33,14 @@ export interface LiveCityTowns {
   /** Some activity site has drawn ground (drawInstallations); some town is drawn by the native house renderer. */
   sites(): boolean;
   housePlans(): boolean;
+}
+
+/** The live town layer. `retarget` hands it the towns of the next map of the same world (a local edit): it keeps its
+ * programs, its GPU data and the far rasters of the unchanged towns, draws the previous towns until the new scene is
+ * uploaded, and triangulates only the polygons the edit changed. Without towns it is parked: it keeps drawing what it
+ * holds and prepares nothing new (its map was disposed before the next one adopted it). */
+export interface LiveCityLayer extends LiveLayer {
+  retarget(towns: LiveCityTowns | undefined): void;
 }
 
 /** Why the live layer cannot stand for the exact town of this appearance (null: it can). Per-frame conditions are

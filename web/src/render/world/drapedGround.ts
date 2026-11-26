@@ -269,6 +269,7 @@ export class DrapedGround {
     gl.uniform3f(u.uLevel, this.query.ratio * 2 * LATTICE, morphStart(this.query.ratio), lodEyeHeight(camera));
     if (heights) gl.uniform4f(u.uGrid, heights.n / heights.width, heights.n, Math.max(heights.floor, -1e30), heights.exaggeration * rise);
     else gl.uniform4f(u.uGrid, 1, 1, 0, 0);
+    gl.uniform1f(u.uShore, heights?.shore ? 1 : 0);
     gl.uniform3f(u.uLight, LIGHT[0], LIGHT[1], LIGHT[2]);
     gl.uniform3f(u.uAir, SLOPE_LIGHT * rise, hazeDistance(camera), rise);
     gl.uniform3f(u.uHaze, air[0], air[1], air[2]);

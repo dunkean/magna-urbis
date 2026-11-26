@@ -62,6 +62,17 @@ export interface ForestOccupation {
   /** Exact ways (roads, town streets; render/forestRoom.ts corridors) for the modelled trees: the raster is too coarse
    * to keep a trunk off a street a few metres wide. */
   ways?: readonly { path: readonly { x: number; y: number }[]; half: number | readonly number[]; covered?: boolean }[];
+  /** Made from the occupation keyed `base` by a local edit (ui/forestOccupation.ts forestOccupationRegion,
+   * withOccupationShapesRegion): only these texel rectangles differ from it. A renderer that holds `base` uploads them
+   * alone; without it, or another grid, the whole raster. */
+  dirty?: { base: string; rects: readonly TexelRect[] };
+}
+/** Texels `x..x+width-1` by `y..y+height-1` of a square raster. */
+export interface TexelRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 /** Holdings raster (web/src/ui/landDetail.ts): R cropping system and crop (a plot identity in gardens), G and B cos 2a and sin 2a of the row direction, A edge distance over its range. */
 export interface LandDetail {

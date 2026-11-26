@@ -3,8 +3,9 @@
  * barracks, squat guard towers at the outer street ends and the unguarded gates.
  *
  * One derivation from the layouts and the placed buildings (`underdarkOrnaments`, cached per input pair) feeds the 2D plan
- * (`drawUnderdarkOrnaments`, called by the shared `finishCityFrame`) and the 3D city (`city3dUnderdarkOrnaments`, built
- * once with the other structures in `mountCity3d`), so V2, City Bench and the render board draw the same ornaments.
+ * (`drawUnderdarkOrnaments`, called by the shared `finishCityFrame`) and the volumes (`city3dUnderdarkOrnaments`, built
+ * once with the other structures: V2's world volumes in v2/display/worldVolumes.ts, City Bench's `mountCity3d`), so V2,
+ * City Bench and the render board draw the same ornaments.
  * Deterministic: everything hashes on the layout key and building ids, never on draw order.
  * Budget: a web is at most ~180 triangles, a forge 14, a spike 2, a guard tower ~40; their volumes are `minor`, so the
  * 3D overview LOD drops them with the chimneys. Ember faces use the lit-opening material: they glow only when the

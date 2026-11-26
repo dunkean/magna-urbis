@@ -6,6 +6,8 @@ import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import type { ExportLayers } from '../../render/exportLayers';
 import type { SceneRevisions } from '../renderScene';
 import { isResourceDiagnostic } from '../../render/displayDiagnostics';
+import { drawnWaterKey } from '../../render/waterRegime';
+import type { ClimateZone } from '../../../../rust/bridge/terrainClimate';
 
 export type PassName = 'terrainData' | 'terrainLook' | 'forest' | 'water' | 'frame' | 'cartography' | 'overlays' | 'semantic' | 'city';
 /** Dependency order: each pass may read the outcome of the previous ones (the GPU/CPU mode, the uploaded terrain). */
@@ -25,9 +27,9 @@ export const PASSES: Readonly<Record<PassName, PassSpec>> = {
   },
   forest: { inputs: ['keys.forest', 'revisions.terrain|roads|landuse|cities|settlements', 'effective forest settings'], owns: ['GPU forest field'], invalidation: 'forest settings, terrain, circulation and occupation' },
   water: {
-    inputs: ['keys.water', 'revisions.terrain', 'layers.water', 'mode'],
+    inputs: ['keys.water', 'revisions.terrain', 'layers.water', 'mode', 'drawn water regime (climateZone, season, calendar)'],
     owns: ['GPU water/overlay textures', 'water vector SVG'],
-    invalidation: 'water colours, lakes, oxbows, diagnostic overlay (resource diagnostics also read revisions.settlements and the lazily fetched payload)',
+    invalidation: 'water colours, lakes, oxbows, diagnostic overlay, the drawn regime of the date (a freeze, a step of rain in a dry zone; resource diagnostics also read revisions.settlements and the lazily fetched payload)',
   },
   frame: { inputs: ['ground style + palette', 'layers.decor'], owns: ['frame vector SVG'], invalidation: 'frame toggle, palette' },
   cartography: {
@@ -47,6 +49,8 @@ export interface PassInput {
   mode: 'gpu' | 'cpu';
   /** Terrain settings read by the look and the forest (climate, relief, refine, forest...). */
   effective: string;
+  /** Climate zone of the display: with the date, it sets the drawn water regime (waterRegime.ts drawnWaterKey). */
+  climateZone?: ClimateZone;
   forestEffective: string;
   /** mapSize, seed, biome: read by the overlay renderer outside the products. */
   worldSig: string;
@@ -62,8 +66,8 @@ export function passKeys(i: PassInput): Record<PassName, string> {
     terrainData: j(v.terrain, rel(i), mode),
     terrainLook: j(k.terrainLook, i.effective, mode, rel(i), l.decor, l.background, v.terrain, ...(mode === 'cpu' ? [k.terrainBase, k.forest, k.water, l.water, l.terrain, i.forestEffective, v.roads, v.landuse, v.cities, v.settlements] : [])),
     forest: mode === 'cpu' ? 'in-terrain' : j(k.forest, v.terrain, v.roads, v.landuse, v.cities, v.settlements, i.forestEffective, rel(i)),
-    // The season and the climate zone set the water regime (dry beds, ice).
-    water: j(k.water, v.terrain, l.water, mode, rel(i), isResourceDiagnostic(r.diagnostic) ? v.settlements : null, r.ground.season, r.ground.calendar, i.effective),
+    // The date moves the water only through its drawn regime (dry beds, ice): a date that keeps it redraws no water.
+    water: j(k.water, v.terrain, l.water, mode, rel(i), isResourceDiagnostic(r.diagnostic) ? v.settlements : null, drawnWaterKey({ zone: i.climateZone, season: r.ground.season, calendar: r.ground.calendar }), i.effective),
     frame: j(r.ground.style, r.palette.colors, rel(i), r.ground.layers.frame, l.decor),
     cartography: j(k.cartography, v.roads, v.landuse, v.settlements, v.names, v.terrain, i.worldSig, cartLayers),
     overlays: j(k.overlays, k.roads, l.labels, l.decor),

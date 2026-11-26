@@ -305,7 +305,8 @@ describe('residential ground follows the landscape without erasing dedicated mat
       },
     ];
     const other = { ...u, culture: 'european-organic', streets: [{ ...u.streets[0] }] };
-    w.settlements = [{ index: 1, main: false, urban: other } as never];
+    // Regional roads take the pavement of the nearest settlement centre (roadPavement.ts pavementSites).
+    w.settlements = [{ index: 1, main: false, urban: other, center: { x: 465, y: 445 }, radius: 240 } as never];
     const before = JSON.stringify(w),
       scene = new SceneBuilder().update(w),
       material = worldGroundAppearance(w);

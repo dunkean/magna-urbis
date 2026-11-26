@@ -1,7 +1,7 @@
 /**
  * GLSL of town buildings, for the two views that draw them: the shading shared by both (base occlusion, night,
  * underdark, the procedural grain of covers and walls, and daylight), and the program of the tilted
- * world view (buildingsLayer.ts). The separate 3D view (ui/urbanBuilding3d.ts) builds its programs from the same
+ * world view (buildingsLayer.ts, V2). City Bench's separate 3D view (ui/urbanBuilding3d.ts) builds its programs from the same
  * snippets; web/scripts/wgsl_shaders_3d.ts translates those to WGSL, so the text of the snippets is theirs too.
  *
  * World program: a vertex is (block-local x, height above its seat, block-local y) with the seat, the terrain height
@@ -10,12 +10,13 @@
  * flat at a pitch of 0 (roofs seen from above, never hidden: volumes.ts). A roof face of a town the top view draws
  * comes painted with its pan's colour there, light and ambience included, and takes the top view's grain marks
  * (COVER_GRAIN_GLSL), so tilting keeps the town's look; other faces take the roof light of the 2D plan (buildingLight,
- * roofPlaneLight.ts) and the procedural grain. Haze as the draped ground.
+ * roofPlaneLight.ts) and the procedural grain. Haze as the draped ground. The paint of a face (colour, snow, class and
+ * grain gain) is read from the look table by its colour slot (buildingsLookTable.ts), one texel fetch per vertex.
  */
 import { MOONLIGHT_GLSL } from '../materialLook';
 import { ROOF_PLANE_LIGHT_GLSL } from '../roofPlaneLight';
 import { COVER_GRAIN_GLSL } from '../buildingMaterials';
-import { HOUSE_SURFACE_GLSL, HOUSE_SURFACE_VERTEX_GLSL } from '../houseSurfaceTexture';
+import { HOUSE_SURFACE_GLSL } from '../houseSurfaceTexture';
 
 // Walls darken towards their foot (cheap ambient occlusion over the first 2.4 m); roofs and ground-less
 // works (city walls, bridges: facadePosition.y = -10000) are left as they are.
@@ -181,11 +182,19 @@ export const WORLD_BUILDING_VS = `#version 300 es
 precision highp float;
 precision highp int;
 // Block-local x, height above the seat (m), block-local y; the normal in the 3D view's frame (x, up, y south) with the
-// material class on its length (classes 33 and 34: side and top of a lot boundary strip, the side it lies on instead); the colour; the terrain height under the building, metres as drawn at full relief.
+// codes no look changes on its length (32: lit window, 33 and 34: side and top of a lot boundary strip, the side it lies
+// on instead; 1024 x the crafted drawing layer); the colour slot (buildingsMesh.ts header); the terrain height under the
+// building, metres as drawn at full relief.
 layout(location=0) in vec3 position;
 layout(location=1) in vec3 normal;
 layout(location=2) in vec3 albedo;
 layout(location=4) in float seat;
+// The look table of the style on screen (buildingsLookTable.ts): per slot the colour, then snow + 16 x face code.
+uniform highp sampler2D uLook;
+// The selected building (buildingsLayer.ts highlight): its slots marked in a mask laid out as the look table, read only
+// while a building is selected.
+uniform highp sampler2D uSelection;
+uniform bool uSelected;
 uniform mat4 uProjection;
 // Block origin relative to the target (x, y) and minus the target's height.
 uniform vec4 uBlock; // w: local ground luma, or -1 without a sample
@@ -202,18 +211,27 @@ out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat
 flat out float houseLayer; flat out vec3 extra;
 out vec3 houseUv;
 out vec3 roofEdge;
-${HOUSE_SURFACE_VERTEX_GLSL}
 void main(){
-  n=normalize(normal);base=uRoofInkDpr>0.?abs(albedo):albedo;
-  // Inspect the bits directly so black channels can carry a negative zero.
+  n=normalize(normal);
+  // Inspect the bits directly so zero channels can carry a negative zero.
   roofEdge=uRoofInkDpr>0.?vec3(greaterThanEqual(floatBitsToInt(albedo),ivec3(0))):vec3(1.);
-  // The normal's length carries 1 + code / 32 (buildingsMesh.ts faceCode): the material class, plus 64 x the grain gain
-  // in sixteenths of a face the town look painted (0: not painted). Block-local metres keep the grain's hashes exact.
   float code=floor((length(normal)-1.)*32.+.5);
   houseLayer=floor(code/1024.);code-=houseLayer*1024.;
   houseUv=vec3(albedo.xy,albedo.z<0.?albedo.y:100.);
-  if(houseLayer>.5)base=houseFaceColor(albedo.z);
-${FACE_EXTRA_GLSL}
+  // The face's paint in the look on screen: a crafted face holds its slot on z (negative under the eaves), any other on x.
+  vec3 a=abs(albedo);
+  int slot=int((houseLayer>.5?(albedo.z<0.?-albedo.z-1.:albedo.z):a.x)+.5);
+  vec4 ink=texelFetch(uLook,ivec2(slot&1023,slot>>10),0);
+  base=ink.rgb;
+  // The selection's red (selectionOverlay.ts) over the faces of the selected building.
+  if(uSelected&&texelFetch(uSelection,ivec2(slot&1023,slot>>10),0).r>.5)base=mix(base,vec3(.9,.17,.21),.55);
+  // The table's code (buildingsMesh.ts faceCode: the material class, plus 64 x the grain gain in sixteenths of a face the
+  // town look painted) unless the face has its own. Block-local metres keep the grain's hashes exact.
+  float lookCode=floor(ink.a/16.);
+  if(code<.5)code=lookCode;
+  // extra: the snow (1 to 15) of the table, or the night light of a wall (16 to 31) with the place of its lit opening.
+  float glow=mod(a.y,32.);
+  extra=houseLayer>.5?vec3(0.):glow>15.5?vec3(glow,floor(a.y/32.),a.z):vec3(ink.a-16.*lookCode,0.,0.);
   float painted=floor(code/64.);
   materialClass=code-64.*painted;townGain=painted/15.;
   bool roof=materialClass>=35.;

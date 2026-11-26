@@ -282,7 +282,9 @@ onCoreWasmReset(() => {
   landscapeCache = new WeakMap();
 });
 export function urbanLandscapeGround(world: World, appearance = false): PolyH[] {
-  const fields = world.site?.fields;
+  // Worker snapshots may carry a site without its analysis rasters: the ground is then that of no analysis.
+  const site = world.site?.fields,
+    fields = site?.hab && site.dWater ? site : undefined;
   const open = [world.urban, ...(world.settlements ?? []).filter(s => !s.main).map(s => s.urban), ...Object.values(world.megaDetail ?? {})].some(u => u?.renderHints?.openGround);
   const g = { ...(geometry(world, appearance) as object), ...(appearance && open ? { landuse: world.landuse } : {}) };
   const signature = JSON.stringify([world.mapSize, world.options.biome, g, appearance && fields && [fields.hab, fields.dWater]]);
@@ -324,7 +326,8 @@ function containGround(call: () => PolyH[]): PolyH[] {
   }
 }
 function groundOperation(operation: string, world?: World, extra: object = {}): PolyH[] {
-  const fields = world?.site?.fields;
+  const site = world?.site?.fields,
+    fields = site?.hab && site.dWater ? site : undefined;
   const context =
     world &&
     (operation === 'water-ground'

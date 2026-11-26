@@ -8,6 +8,7 @@ import { SceneBuilder } from '../src/render/sceneCache';
 import { renderSvg } from '../src/render/svg';
 import { createCanvasRenderer, type CanvasLike } from '../src/render/canvas';
 import { biomePalette } from '../src/render/biomes';
+import { forestLandPaint } from '../src/render/landuseForestTone';
 import { fakeWorld, mockCanvas, MockPath2D } from '../scripts/fakeworld';
 
 const rect = (x: number, y: number, width: number): Polygon => [
@@ -104,7 +105,8 @@ describe('urban forest exclusion', () => {
     const w = fixture(),
       extent = rect(20, 20, 80),
       local: UrbanLayer = { ...w.urban!, footprint: [extent], footprintH: [piece(extent)], blocks: [extent], parcels: [], buildings: [], masses: [] };
-    w.settlements = [{ main: false, index: 1, urban: local } as never];
+    // Regional roads take the pavement of the nearest settlement centre (roadPavement.ts pavementSites).
+    w.settlements = [{ main: false, index: 1, urban: local, center: { x: 60, y: 60 }, radius: 40 } as never];
     expect(covered(worldForestClearings(w), 25, 25)).toBe(true);
     const builder = new SceneBuilder(),
       a = builder.update(w),
@@ -177,7 +179,8 @@ describe('urban forest exclusion', () => {
     };
     const pal = biomePalette('parchment', w.options.biome);
     ctx.fill = (...a: unknown[]) => {
-      if (ctx.fillStyle === pal.land.forest || ctx.fillStyle === pal.treeFill) forestClips.push(clips.slice());
+      // Woods are painted in the shared forest tone as a stepped wash (cartography/landuse.ts fillLandSteps, 484ac8c7).
+      if (ctx.fillStyle === forestLandPaint(pal).color || ctx.fillStyle === pal.treeFill) forestClips.push(clips.slice());
       fill(...a);
     };
     const renderer = createCanvasRenderer(m.canvas as unknown as CanvasLike, w, 'parchment', { Path2D: RecordingPath as never, terrain: () => null });

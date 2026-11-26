@@ -207,14 +207,19 @@ describe('applied building display geometry', () => {
       const i = (Math.floor(((y - merged.y) / merged.width) * merged.n) * merged.n + Math.floor(((x - merged.x) / merged.width) * merged.n)) * 4;
       return merged.rgba.slice(i, i + 4);
     };
+    // Every occupied cell excludes roots (class 8), even under a 0.15 m support. The visible open ground follows the
+    // actual polygons (55e0537c), so only the footprint and the circulation, wider than a texel, read as open inside.
     for (const [x, y] of [
       [14, 14],
       [32, 20],
       [36.1, 20],
-    ]) {
+    ])
       expect(at(x, y)[2]).toBe(8);
+    for (const [x, y] of [
+      [14, 14],
+      [32, 20],
+    ])
       expect(at(x, y)[0]).toBeGreaterThan(128);
-    }
     for (const [x, y] of [
       [20, 20],
       [4, 4],
@@ -224,7 +229,10 @@ describe('applied building display geometry', () => {
     scene.buildings[0].structural_foundations = [{ footprint: [{ outer: rectangle(36, 12, 0.15, 16), holes: [] }], z_min_m: 9, z_max_m: 12 }];
     const ground = new UrbanBuildingGround(scene);
     expect(ground.constrain(14, 14, 20)).toBe(12);
-    expect(ground.constrain(20, 20, 20)).toBe(20);
+    // The footing collar (0e03fcb1) holds the ground at the footing within 2 m of any facade, courtyard walls included:
+    // the centre of this 4 m courtyard is 2 m from them. Beyond the 8 m blend the relief is untouched.
+    expect(ground.constrain(20, 20, 20)).toBe(12);
+    expect(ground.constrain(4, 4, 20)).toBe(20);
     expect(ground.constrain(36.1, 20, 20)).toBe(12);
     expect(scene.buildings[0].ground_z_m).toBe(12);
   });

@@ -76,7 +76,7 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     const steps = city3dPadSteps(shaped ? [...((scene as PlacementBatch | undefined)?.buildings ?? []), ...city3dFarmSources(farmsteads, placeholders, ground.at)] : [], ground, cityContext.stiltWaterAt);
     let pads = steps.next();
     while (!pads.done) pads = steps.next();
-    const shape = new UrbanGroundShape(groundShapeLots(partitions ?? [], pads.value, cityContext.groundShaping), ground.at);
+    const shape = new UrbanGroundShape(groundShapeLots(partitions ?? [], pads.value, cityContext.groundShaping), ground.at, shaped && cityContext.groundShaping ? (layouts ?? []).flatMap(l => l.streets) : []);
     t.setGroundShape(shape.empty ? undefined : shape);
     // The regional roads keep their width where they cross steep slopes, as on the tilted map (v2/display/worldVolumes.ts):
     // the terrain reads its pictures squeezed across them. The vertices hold the field, far ones included.

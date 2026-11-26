@@ -48,6 +48,44 @@ export function vectorMouth(vector: { hydro: { n: number; sea: ArrayLike<number>
     }
   return lake ? 'lake' : 'edge';
 }
+/** Sets the planning sea (`sea` 1, `water` class 1) to the sea regions at the cell centres of an n × n grid, by scanlines
+ * (even-odd over the outer rings and their islands: O(vertices + cells)). Lakes keep their class. Returns the sea cells. */
+export function rasterizeSea(regions: readonly { outer: Polygon; holes: Polygon[] }[], n: number, cell: number, sea: Uint8Array, water: Uint8Array): number {
+  const crossings: number[][] = Array.from({ length: n }, () => []);
+  for (const region of regions)
+    for (const ring of [region.outer, ...region.holes])
+      for (let k = 0; k < ring.length; k++) {
+        const a = ring[k],
+          b = ring[(k + 1) % ring.length];
+        if (a.y === b.y) continue;
+        // Rows whose centre lies in [min, max) of the edge.
+        const low = Math.max(0, Math.ceil(Math.min(a.y, b.y) / cell - 0.5)),
+          high = Math.min(n - 1, Math.ceil(Math.max(a.y, b.y) / cell - 0.5) - 1);
+        for (let row = low; row <= high; row++) {
+          const y = (row + 0.5) * cell;
+          crossings[row].push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
+        }
+      }
+  let count = 0;
+  for (let row = 0; row < n; row++) {
+    const xs = crossings[row].sort((p, q) => p - q);
+    let at = 0,
+      inside = false;
+    for (let x = 0; x < n; x++) {
+      const centre = (x + 0.5) * cell;
+      while (at < xs.length && xs[at] <= centre) {
+        inside = !inside;
+        at++;
+      }
+      const i = row * n + x;
+      if (water[i] === 2) continue;
+      sea[i] = inside ? 1 : 0;
+      water[i] = inside ? 1 : 0;
+      count += sea[i];
+    }
+  }
+  return count;
+}
 function polygons(mask: Uint8Array, n: number, cell: number): { outer: Polygon; holes: Polygon[] }[] {
   if (!mask.some(Boolean)) return [];
   return vectorizeRegions(Float32Array.from(mask), n, n, cell, cell * cell * 0.1, { x0: 0, y0: 0, x1: n - 1, y1: n - 1 });
@@ -190,6 +228,13 @@ export function projectEngineTerrain(data: TerrainData): V2TerrainLayer {
         }
       }
     }
+  // One coastline for the town engine and both maps: the zero line of the display field's spline (v2/shoreline.ts).
+  const shore = data.field,
+    traced = seaCells && shore && !cave.length && !(shore.floor > 0) && shore.data.length === shore.n ** 2;
+  const seaRegions = traced ? shoreRegions(shore, width, sea, n) : polygons(sea, n, cell);
+  // The planning sea is that coastline at the planning cells (their centres), so the masks the town engine plans with
+  // (footprint, harbours, walls) agree with the drawn shore to a cell, never with the coarser drainage sea.
+  if (traced) seaCells = rasterizeSea(seaRegions, n, cell, sea, water);
   const rivers: River[] = [];
   if (vector?.rivers) {
     const network = vector.rivers;
@@ -289,10 +334,6 @@ export function projectEngineTerrain(data: TerrainData): V2TerrainLayer {
         if (!water[i]) water[i] = 3;
       });
     }
-  // One coastline for the town engine and both maps: the zero line of the display field's spline (v2/shoreline.ts).
-  const shore = data.field,
-    traced = seaCells && shore && !cave.length && !(shore.floor > 0) && shore.data.length === shore.n ** 2;
-  const seaRegions = traced ? shoreRegions(shore, width, sea, n) : polygons(sea, n, cell);
   let lakes: Polygon[];
   if (vector) {
     // Consume the renderer's retained shoreline, including islands and small lakes.

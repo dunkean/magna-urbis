@@ -27,10 +27,23 @@ export type ImageSource = CanvasImageSource;
 /** Straight (non-premultiplied) RGBA in 0..1. */
 export type Rgba = readonly [number, number, number, number];
 
+/** Parallel lines anchored in the user space of the op: unit normal (nx, ny), lines where `nx x + ny y = offset + k period`,
+ * each `width` user units wide (plough furrows, render/furrows.ts). */
+export interface Stripe {
+  readonly nx: number;
+  readonly ny: number;
+  readonly period: number;
+  readonly offset: number;
+  readonly width: number;
+}
+
 export type Paint =
   | { readonly kind: 'color'; readonly rgba: Rgba }
   /** `transform` maps pattern space (source pixels) to the user space of the op (Canvas `pattern.setTransform`). */
-  | { readonly kind: 'pattern'; readonly source: ImageSource; readonly repeat: Repeat; readonly transform: Mat; readonly smoothing: boolean };
+  | { readonly kind: 'pattern'; readonly source: ImageSource; readonly repeat: Repeat; readonly transform: Mat; readonly smoothing: boolean }
+  /** The colour inside the stripe lines, transparent between them (`RecordingContext.fillStripes`): the fragment shader
+   * draws them from the distance to the nearest line, box-filtered by the pixel footprint, with no texture. */
+  | { readonly kind: 'stripes'; readonly rgba: Rgba; readonly stripe: Stripe };
 
 /**
  * Flattened path: polylines only. `points` holds x,y pairs in the path's own coordinates (the op transform applies).

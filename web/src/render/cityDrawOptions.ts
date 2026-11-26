@@ -25,7 +25,8 @@ const finite = (value: number | undefined, fallback: number, min: number, max: n
 /** Volume ownership is independent of roof ink: every roof mode keeps the same GPU house path. */
 export function volumeTownBuildings(a: ResolvedAppearance | undefined): boolean {
   if (!a || !a.composition?.buildings?.visible || a.composition.buildings.meshes === 'none' || a.city.diagnostic !== 'none') return false;
-  // In the separate 3D camera, city.view selects the ground diagram underneath the standing houses.
+  // The volume target ('view3d': V2's town volumes in the top and tilted views, v2/urban3d.ts) always stands its houses;
+  // the 2D targets do only in the buildings view.
   if (a.target !== 'view3d' && a.city.view !== 'buildings') return false;
   const ground = a.composition.recipe.ground.look;
   return ground !== 'cadastre' && ground !== 'topographic' && ground !== 'minimal' && ground !== 'white';

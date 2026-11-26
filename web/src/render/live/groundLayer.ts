@@ -57,7 +57,7 @@ const MAX_TIER = 20;
 const FADE_MS = 120;
 /** Items of one kind (opaque, fading) per frame; a 8K view at the worst minification needs about 650. */
 const MAX_ITEMS = 2048;
-/** Floats per item and per instance: destination rectangle (device pixels), source rectangle (uv), layer, alpha. */
+/** Floats per item and per instance: destination rectangle (world metres), source rectangle (uv), layer, alpha. */
 const FLOATS = 10;
 /** A renderer that cannot draw (programs linking) is asked again after this delay. */
 const RETRY_MS = 100;
@@ -80,10 +80,13 @@ layout(location=0) in vec4 aDst;
 layout(location=1) in vec4 aSrc;
 layout(location=2) in vec2 aLayerAlpha;
 uniform vec2 uSize;
+// World position of the frame's top-left pixel (xy, with the remainder float32 drops in zw) and device pixels per metre:
+// the instances stay in world metres, a moving view changes these two uniforms only.
+uniform vec4 uOrigin; uniform vec2 uScale;
 out vec3 vUv; out float vAlpha;
 void main() {
   vec2 c = vec2(gl_VertexID & 1, gl_VertexID >> 1);
-  vec2 p = mix(aDst.xy, aDst.zw, c);
+  vec2 p = ((mix(aDst.xy, aDst.zw, c) - uOrigin.xy) - uOrigin.zw) * uScale;
   vUv = vec3(mix(aSrc.xy, aSrc.zw, c), aLayerAlpha.x); vAlpha = aLayerAlpha.y;
   gl_Position = vec4(p.x / uSize.x * 2.0 - 1.0, 1.0 - p.y / uSize.y * 2.0, 0.0, 1.0);
 }`;
@@ -107,6 +110,8 @@ interface Tile {
 interface GlState {
   program: WebGLProgram;
   uSize: WebGLUniformLocation | null;
+  uOrigin: WebGLUniformLocation | null;
+  uScale: WebGLUniformLocation | null;
   uTiles: WebGLUniformLocation | null;
   vao: WebGLVertexArrayObject;
   instances: WebGLBuffer;
@@ -193,6 +198,10 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
   let opaqueCount = 0,
     fadeCount = 0;
   const instanceData = new Float32Array(MAX_ITEMS * 2 * FLOATS);
+  /** The instances the buffer holds (`sentCount` of them; -1: none): it is written again only when they change, that
+   * is when the set of tiles drawn changes or one fades in, never for a view that only moves. */
+  const sent = new Float32Array(MAX_ITEMS * 2 * FLOATS);
+  let sentCount = -1;
   /** Per draw: page, first instance, count. */
   const ranges = new Int32Array(2 * MAX_PAGES * 3);
   /** `patches`: squares of the terrain mesh in the last tilted frame; `patchUploads`: lists of squares sent to the GPU;
@@ -247,7 +256,8 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, stagingFbo);
     gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, staging, 0);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
-    state = { program, uSize: gl.getUniformLocation(program, 'uSize'), uTiles: gl.getUniformLocation(program, 'uTiles'), vao, instances, staging, stagingFbo, pages: [], crownPages: new Map(), free: [] };
+    sentCount = -1;
+    state = { program, uSize: gl.getUniformLocation(program, 'uSize'), uOrigin: gl.getUniformLocation(program, 'uOrigin'), uScale: gl.getUniformLocation(program, 'uScale'), uTiles: gl.getUniformLocation(program, 'uTiles'), vao, instances, staging, stagingFbo, pages: [], crownPages: new Map(), free: [] };
     return state;
   }
 
@@ -317,6 +327,24 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     const tile = tiles.get(tileKey(tier, ix, iy));
     return !tile || tile.generation !== generation;
   };
+  /** Marks stale only the current tiles whose baked square (with its gutter, and the reach of a few of its pixels:
+   * filtering, symbols) meets one of the world boxes; the others are carried into the new generation. */
+  function staleIn(boxes: readonly Rect4[]): void {
+    if (!boxes.length) return;
+    const current = generation;
+    generation++;
+    tileRevision++;
+    for (const tile of tiles.values()) {
+      if (tile.generation !== current) continue;
+      const ts = gridSize / 2 ** tile.tier,
+        pad = ((GUTTER + 16) * ts) / TILE,
+        x0 = tile.ix * ts - pad,
+        y0 = tile.iy * ts - pad,
+        x1 = (tile.ix + 1) * ts + pad,
+        y1 = (tile.iy + 1) * ts + pad;
+      if (!boxes.some(b => b.minX <= x1 && x0 <= b.maxX && b.minY <= y1 && y0 <= b.maxY)) tile.generation = generation;
+    }
+  }
   /** Tier 0 holds the current look: the whole map can be shown in it. */
   const lookBaked = (): boolean => (tiles.get(0)?.generation ?? -1) >= lookGeneration;
   /** The generation from which tiles may be drawn by this frame. */
@@ -673,25 +701,25 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
         const y0 = Math.max(0, Math.floor(minY / ts)),
           y1 = Math.min(n - 1, Math.ceil(maxY / ts) - 1);
         for (let iy = y0; iy <= y1; iy++) {
-          // Edges from the same expression for both neighbours: no gap, no overlap.
-          const py0 = iy * ts * sy + ty,
-            py1 = (iy + 1) * ts * sy + ty;
+          // Edges in world metres, from the same expression for both neighbours: no gap, no overlap.
+          const wy0 = iy * ts,
+            wy1 = (iy + 1) * ts;
           for (let ix = x0; ix <= x1; ix++) {
-            const px0 = ix * ts * sx + tx,
-              px1 = (ix + 1) * ts * sx + tx;
+            const wx0 = ix * ts,
+              wx1 = (ix + 1) * ts;
             const key = tileKey(k, ix, iy),
               tile = tiles.get(key);
             if (!tile || !drawable(tile)) {
               diagnostics?.ancestor(key, frame.now);
-              pushAncestor(k, ix, iy, px0, py0, px1, py1);
+              pushAncestor(k, ix, iy, wx0, wy0, wx1, wy1);
               continue;
             }
             tile.used = stamp;
             const alpha = Math.min(1, (frame.now - tile.shownAt) / FADE_MS);
-            if (alpha < 1 && pushAncestor(k, ix, iy, px0, py0, px1, py1)) {
+            if (alpha < 1 && pushAncestor(k, ix, iy, wx0, wy0, wx1, wy1)) {
               fading = true;
-              if (fadeCount < MAX_ITEMS) pushItem(fadeItems, fadeCount++, px0, py0, px1, py1, 0, 0, 1, 1, tile.slot, alpha);
-            } else if (opaqueCount < MAX_ITEMS) pushItem(opaqueItems, opaqueCount++, px0, py0, px1, py1, 0, 0, 1, 1, tile.slot, 1);
+              if (fadeCount < MAX_ITEMS) pushItem(fadeItems, fadeCount++, wx0, wy0, wx1, wy1, 0, 0, 1, 1, tile.slot, alpha);
+            } else if (opaqueCount < MAX_ITEMS) pushItem(opaqueItems, opaqueCount++, wx0, wy0, wx1, wy1, 0, 0, 1, 1, tile.slot, 1);
           }
         }
       }
@@ -724,10 +752,23 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       if (draws) {
         gl.useProgram(s.program);
         gl.uniform2f(s.uSize, frame.width, frame.height);
+        const originX = -tx / sx,
+          originY = -ty / sy,
+          nearX = Math.fround(originX),
+          nearY = Math.fround(originY);
+        gl.uniform4f(s.uOrigin, nearX, nearY, originX - nearX, originY - nearY);
+        gl.uniform2f(s.uScale, sx, sy);
         gl.uniform1i(s.uTiles, 0);
         gl.bindVertexArray(s.vao);
         gl.bindBuffer(gl.ARRAY_BUFFER, s.instances);
-        gl.bufferData(gl.ARRAY_BUFFER, instanceData, gl.DYNAMIC_DRAW, 0, used * FLOATS);
+        const floats = used * FLOATS;
+        let same = used === sentCount;
+        for (let i = 0; same && i < floats; i++) same = instanceData[i] === sent[i];
+        if (!same) {
+          gl.bufferData(gl.ARRAY_BUFFER, instanceData, gl.DYNAMIC_DRAW, 0, floats);
+          sent.set(instanceData.subarray(0, floats));
+          sentCount = used;
+        }
         gl.activeTexture(gl.TEXTURE0);
         // Premultiplied source-over (resetLiveState): opaque tiles replace, fading ones blend over their ancestor.
         for (let d = 0; d < draws; d++) {
@@ -769,11 +810,16 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       light = frame?.quality === 'light';
       const crowns = options.treeMaterials?.() ?? false;
       if (renderer !== seenRenderer || revision !== seenRevision || crowns !== treeMaterials) {
+        // A local edit (contentChanges): only the tiles over its boxes go stale, the others stay current.
+        const changes = crowns === treeMaterials && renderer === seenRenderer && revision > seenRevision ? renderer.contentChanges?.(seenRevision) : undefined;
         treeMaterials = crowns;
         seenRenderer = renderer;
         seenRevision = revision;
-        generation++;
-        tileRevision++;
+        if (changes) staleIn(changes);
+        else {
+          generation++;
+          tileRevision++;
+        }
       }
       const started = performance.now();
       if (started < blockedUntil) return true;
@@ -827,6 +873,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
 
     contextLost(): void {
       state = undefined;
+      sentCount = -1;
       draped?.contextLost();
       wantedCount = 0;
       tileRevision++;

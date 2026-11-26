@@ -44,11 +44,16 @@ vec2 roadSqueeze(vec2 p, float rise) {
   return squeezePush(textureLod(uSqueeze, vec3((node + 0.5) / ${SQUEEZE_SIDE}.0, float(layer)), 0.0), rise);
 }`;
 
+/** Height layers allocated beyond those a shape uses (33 kB each). */
+const SPARE_LAYERS = 32;
+
 export class GroundShapeTexture {
   private layers?: WebGLTexture;
   private squeeze?: WebGLTexture;
   private index?: WebGLTexture;
   private uploaded?: GroundShape;
+  /** Layers allocated for the heights: a few more than the shape uses, so a local edit that shapes new blocks updates in place. */
+  private capacity = 0;
   /** Blocks per side of the map on the GPU (uShapeSide), and the same where a road is squeezed (uSqueezeSide). */
   side = 0;
   squeezeSide = 0;
@@ -63,10 +68,14 @@ export class GroundShapeTexture {
   /** Puts `shape` on the GPU when it is another one. */
   prepare(shape: GroundShape | undefined): void {
     if (this.layers && this.uploaded === shape) return;
+    if (shape && this.layers && this.index && shape.base && shape.base === this.uploaded && this.update(shape)) return;
     const gl = this.gl;
     this.dispose();
     this.uploaded = shape;
-    const count = Math.max(1, Math.min(shape?.drawn.length ?? 0, Number(gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS)) || 256)),
+    const max = Number(gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS)) || 256,
+      count = Math.max(1, Math.min(shape?.drawn.length ?? 0, max));
+    this.capacity = shape ? Math.min(max, count + SPARE_LAYERS) : 1;
+    const capacity = this.capacity,
       size = shape ? SHAPE_SIDE : 1,
       side = shape?.side ?? 1,
       index = shape ? Int16Array.from(shape.index, layer => (layer < count ? layer : -1)) : Int16Array.of(-1);
@@ -75,7 +84,7 @@ export class GroundShapeTexture {
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     this.layers = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.layers);
-    gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.R16F, size, size, count);
+    gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.R16F, size, size, capacity);
     if (shape) for (let layer = 0; layer < count; layer++) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, size, size, 1, gl.RED, gl.FLOAT, shape.drawn[layer]);
     gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -107,6 +116,28 @@ export class GroundShapeTexture {
     this.side = shape ? shape.side : 0;
     this.squeezeSide = squeezed ? shape!.side : 0;
   }
+  /** A shape made from the one on the GPU by a local edit (groundShapeRegionSteps): only its touched layers and the
+   * block index are uploaded. False when it needs more layers than allocated or the squeeze moved. */
+  private update(shape: GroundShape): boolean {
+    const base = shape.base!,
+      count = shape.drawn.length;
+    if (count > this.capacity || shape.side !== base.side || shape.squeezed !== base.squeezed || shape.squeeze.some((nodes, i) => i < base.squeeze.length && nodes !== base.squeeze[i])) return false;
+    if (shape.squeezed && count > base.drawn.length) return false;
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.layers!);
+    for (const layer of shape.touched) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, SHAPE_SIDE, SHAPE_SIDE, 1, gl.RED, gl.FLOAT, shape.drawn[layer]);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+    gl.bindTexture(gl.TEXTURE_2D, this.index!);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, shape.side, shape.side, gl.RED_INTEGER, gl.SHORT, shape.index);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    this.uploaded = shape;
+    this.side = shape.side;
+    return true;
+  }
   /** Binds the three textures to the units `unit` (heights), `unit + 1` (index) and `unit + 2` (squeeze), or unbinds them. */
   bind(unit: number, on = true): void {
     const gl = this.gl;
@@ -120,7 +151,7 @@ export class GroundShapeTexture {
   /** Every handle is dead: forget them. */
   contextLost(): void {
     this.layers = this.squeeze = this.index = this.uploaded = undefined;
-    this.side = this.squeezeSide = 0;
+    this.side = this.squeezeSide = this.capacity = 0;
   }
   dispose(): void {
     if (this.layers) this.gl.deleteTexture(this.layers);
