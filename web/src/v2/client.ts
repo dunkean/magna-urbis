@@ -784,7 +784,7 @@ export class StudioClient {
         renderer = new MinimalRenderer(() => {});
       try {
         await renderer.set(source, settings, resolved, layers);
-        return await renderer.capture(size);
+        return await renderer.capture(size, frame);
       } finally {
         renderer.dispose();
       }

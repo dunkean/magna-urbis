@@ -45,7 +45,7 @@ export function mapGlb(scene: MapMesh, texture?: Uint8Array): Uint8Array<ArrayBu
       materials.set(key, material);
     }
     const attributes = { POSITION: accessor(part.positions, 'VEC3', true), NORMAL: accessor(part.normals, 'VEC3'), ...(part.uvs ? { TEXCOORD_0: accessor(part.uvs, 'VEC2') } : {}) };
-    const primitive = { attributes, material: material.index, ...(part.indices ? { indices: accessor(part.indices, 'SCALAR') } : {}) };
+    const primitive = { attributes, material: material.index, ...(part.indices ? { indices: accessor(part.indices, 'SCALAR') } : {}), ...(part.featureRanges ? { extras: { features: part.featureRanges } } : {}) };
     let mesh = meshes.get(part.name);
     if (!mesh) meshes.set(part.name, (mesh = { name: part.name, primitives: [] }));
     mesh.primitives.push(primitive);
@@ -56,7 +56,7 @@ export function mapGlb(scene: MapMesh, texture?: Uint8Array): Uint8Array<ArrayBu
     JSON.stringify({
       asset: { version: '2.0', generator: 'Magna Urbis' },
       scene: 0,
-      scenes: [{ name: 'Magna Urbis', nodes: nodes.map((_, i) => i), extras: { originMetres: scene.origin, widthMetres: scene.width, depthMetres: scene.depth } }],
+      scenes: [{ name: 'Magna Urbis', nodes: nodes.map((_, i) => i), extras: { originMetres: scene.origin, widthMetres: scene.width, depthMetres: scene.depth, ...(scene.metadata ? { map: scene.metadata } : {}) } }],
       nodes,
       meshes: [...meshes.values()],
       materials: [...materials.values()].map(entry => entry.data),
@@ -121,6 +121,12 @@ export function mapObj(scene: MapMesh, texture?: Uint8Array): Record<string, Uin
   return { 'map.obj': strToU8(obj.join('')), 'map.mtl': strToU8(mtl), ...(texture ? { 'terrain.png': texture } : {}) };
 }
 
+function metadataFiles(scene: MapMesh): Record<string, Uint8Array> {
+  if (!scene.metadata) return {};
+  const objects = scene.parts.map(part => ({ name: part.name, material: part.color, triangleCount: (part.indices?.length ?? part.positions.length / 3) / 3, features: part.featureRanges }));
+  return { 'map-metadata.json': strToU8(JSON.stringify({ ...scene.metadata, objects })) };
+}
+
 function godotProject(scene: MapMesh, mesh: Uint8Array): Uint8Array {
   const extent = Math.max(scene.width, scene.depth);
   const root = `[gd_scene load_steps=2 format=3]
@@ -143,7 +149,7 @@ size = ${extent * 1.15}
 far = ${scene.highestPoint + extent * 8 + 1000}
 current = true
 `;
-  return zipSync({ 'project.godot': strToU8('[application]\nconfig/name="Magna Urbis"\nrun/main_scene="res://map.tscn"\n\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n'), 'map.tscn': strToU8(root), 'map.glb': mesh }, { level: 1 });
+  return zipSync({ 'project.godot': strToU8('[application]\nconfig/name="Magna Urbis"\nrun/main_scene="res://map.tscn"\n\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n'), 'map.tscn': strToU8(root), 'map.glb': mesh, ...metadataFiles(scene) }, { level: 1 });
 }
 
 /** Unity's local import package is a gzip tar of per-asset payload, .meta and pathname entries. */
@@ -184,8 +190,8 @@ async function unityPackage(obj: Record<string, Uint8Array>, name: string): Prom
 }
 
 export async function encodeMapMesh(scene: MapMesh, format: MeshExport, name: string, texture?: Uint8Array): Promise<{ extension: string; bytes: Uint8Array; type: string }> {
-  if (format === 'obj') return { extension: 'obj.zip', bytes: zipSync(mapObj(scene, texture), { level: 1 }), type: 'application/zip' };
-  if (format === 'unity') return { extension: 'unitypackage', bytes: await unityPackage(mapObj(scene, texture), name), type: 'application/gzip' };
+  if (format === 'obj') return { extension: 'obj.zip', bytes: zipSync({ ...mapObj(scene, texture), ...metadataFiles(scene) }, { level: 1 }), type: 'application/zip' };
+  if (format === 'unity') return { extension: 'unitypackage', bytes: await unityPackage({ ...mapObj(scene, texture), ...metadataFiles(scene) }, name), type: 'application/gzip' };
   const glb = mapGlb(scene, texture);
   if (format === 'godot') return { extension: 'godot.zip', bytes: godotProject(scene, glb), type: 'application/zip' };
   return { extension: 'glb', bytes: glb, type: 'model/gltf-binary' };

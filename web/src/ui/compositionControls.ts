@@ -78,7 +78,7 @@ export const limitationText: Record<string, string> = {
   'The 3D bench cannot drape footprints from retained building projections.': copy('The 3D bench cannot drape footprints from retained building projections.', 'Le banc 3D ne peut pas draper les emprises des projections de bâtiments conservées.'),
 };
 // Level 1 and 2: every row writes appearance.composition (render/composition.ts) and nothing else.
-const STYLE_ENTRIES = [
+export const STYLE_ENTRIES = [
   ['minimal', 'Minimal', 'Minimal'],
   ['atlas', 'Atlas', 'Atlas'],
   ['cadastre', 'Cadastre', 'Cadastre'],
@@ -128,7 +128,7 @@ const styleFrench: Record<string, string> = {
   'render-v2-vegetation': 'Render v2 - Végétation',
   'render-v2-snow': 'Render v2 - Neige / glace',
 };
-const variantLabel = (id: TerrainStyle): readonly [string, string] => {
+export const variantLabel = (id: TerrainStyle): readonly [string, string] => {
   const style = TERRAIN_STYLE_LIST.find(entry => entry.id === id);
   return [style?.traits.fantasy === 'ink' ? 'Fantasy · Black & white ink' : style?.traits.fantasy === 'color' ? 'Fantasy · Watercolour' : (style?.label ?? id), styleFrench[id] ?? style?.label ?? id];
 };

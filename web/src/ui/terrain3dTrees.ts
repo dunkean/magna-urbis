@@ -105,6 +105,8 @@ export interface TreeView {
   /** Every tree whose centre lies in this square instead, its corners on the TREE_BLOCK grid: no distance, direction,
    * thinning or cap (the world view builds its trees per block of the map, render/world/treesBlocks.ts). */
   area?: { minX: number; minY: number; maxX: number; maxY: number };
+  /** Asset exports can sample one cell block per square of this side, in blocks. */
+  areaBlockStep?: number;
 }
 
 const V2_ZONE_FOREST: readonly (readonly [number, number, number])[] = [
@@ -555,7 +557,16 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
   // visible trees around the eye.
   const blocks: [number, number, number][] = [],
     unseen = 4 * (TREE_FAR + block) ** 2;
-  if (area) for (let by = Math.round(area.minY / block); by < Math.round(area.maxY / block); by++) for (let bx = Math.round(area.minX / block); bx < Math.round(area.maxX / block); bx++) blocks.push([0, bx, by]);
+  if (area) {
+    const step = Math.max(1, view.areaBlockStep ?? 1);
+    const minX = Math.round(area.minX / block), maxX = Math.round(area.maxX / block);
+    const minY = Math.round(area.minY / block), maxY = Math.round(area.maxY / block);
+    for (let by = minY; by < maxY; by += step) for (let bx = minX; bx < maxX; bx += step) {
+      const dx = step === 1 ? 0 : forestHash(bx, by, 118, seed) % Math.min(step, maxX - bx);
+      const dy = step === 1 ? 0 : forestHash(bx, by, 119, seed) % Math.min(step, maxY - by);
+      blocks.push([0, bx + dx, by + dy]);
+    }
+  }
   else
     for (let by = by0; by <= by1; by++)
       for (let bx = bx0; bx <= bx1; bx++) {

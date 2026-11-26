@@ -1,4 +1,5 @@
 /** Minimal map: retained Canvas batches at rest and an optional single-pass GPU contour layer during motion. */
+import type { ExportFrame } from './display/exactFrame';
 import type { World, UrbanLayer } from '../gen/types';
 import type { Shape } from '../../../rust/bridge/urban';
 import { buildMinimalGeometry, emptyMinimalGeometry, bakeMinimalRelief, paintMinimalMap, minimalWaterPolygons, type MinimalFeature, type MinimalGeometry, type MinimalPlace, type MinimalTextLayout } from '../render/minimalMap';
@@ -274,14 +275,15 @@ export class MinimalRenderer {
   drawMini(size: number): HTMLCanvasElement {
     return this.captureCanvas(size);
   }
-  private captureCanvas(size: number): HTMLCanvasElement {
+  private captureCanvas(size: number, frame?: ExportFrame): HTMLCanvasElement {
     const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = size;
+    canvas.width = frame?.width ?? size;
+    canvas.height = frame?.height ?? size;
     if (this.geometry && this.resolved)
       paintMinimalMap(canvas.getContext('2d')!, this.geometry, {
-        view: { cx: this.geometry.size / 2, cy: this.geometry.size / 2, scale: size / this.geometry.size },
-        width: size,
-        height: size,
+        view: frame?.view ?? { cx: this.geometry.size / 2, cy: this.geometry.size / 2, scale: size / this.geometry.size },
+        width: canvas.width,
+        height: canvas.height,
         dpr: 1,
         recipe: this.resolved.composition.recipe,
         plan: this.resolved.composition.buildings,
@@ -293,9 +295,9 @@ export class MinimalRenderer {
       });
     return canvas;
   }
-  async capture(size: number): Promise<HTMLCanvasElement> {
+  async capture(size: number, frame?: ExportFrame): Promise<HTMLCanvasElement> {
     await this.work;
-    return this.captureCanvas(size);
+    return this.captureCanvas(size, frame);
   }
   async settled(): Promise<void> {
     await this.work;

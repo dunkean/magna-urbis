@@ -15,6 +15,9 @@ import { nativeCitiesOf, nativeTerrainOf } from './nativeProducts';
 import { activityScene } from './activitySites';
 import { combineV2NativeScenes, withV2ActivityScene } from './urban3d';
 import { townRoadStreets } from './rustUrban';
+import type { TreeInputs } from '../ui/terrain3dTrees';
+import { exportTreeParts } from './exportTrees';
+import type { MapMetadata } from './exportMetadata';
 
 export interface MeshPart {
   name: string;
@@ -23,6 +26,7 @@ export interface MeshPart {
   normals: Float32Array;
   uvs?: Float32Array;
   indices?: Uint32Array;
+  featureRanges?: { sourceId: string; firstTriangle: number; triangleCount: number }[];
 }
 
 export interface MapMesh {
@@ -31,6 +35,7 @@ export interface MapMesh {
   width: number;
   depth: number;
   highestPoint: number;
+  metadata?: MapMetadata;
 }
 
 /** East, up, south in a right-handed system. Altitude stays measured from sea level. */
@@ -114,8 +119,8 @@ function nearArea(building: Building3dVisual, rect: ExportRect): boolean {
   return building.footprint.some(({ outer }) => !outer.every(p => p.x < rect.x - margin) && !outer.every(p => p.x > rect.x + rect.width + margin) && !outer.every(p => p.y < rect.y - margin) && !outer.every(p => p.y > rect.y + rect.height + margin));
 }
 
-function* objectParts(objects: readonly Building3dVisual[], area: ExportRect, group: string, materialColor: (id: string) => string): Generator<void, MeshPart[]> {
-  const batches = new Map<string, { positions: number[]; normals: number[] }>();
+function* objectParts(objects: readonly Building3dVisual[], area: ExportRect, group: string, materialColor: (id: string) => string, trackFeatures: boolean): Generator<void, MeshPart[]> {
+  const batches = new Map<string, { positions: number[]; normals: number[]; featureRanges?: NonNullable<MeshPart['featureRanges']> }>();
   for (const [index, building] of objects.entries()) {
     if (!nearArea(building, area)) continue;
     eachBuildingTriangle(
@@ -136,6 +141,12 @@ function* objectParts(objects: readonly Building3dVisual[], area: ExportRect, gr
             [vx, vy, vz] = c.map((v, k) => v - a[k]);
           const dot = (uy * vz - uz * vy) * normal[0] + (uz * vx - ux * vz) * normal[1] + (ux * vy - uy * vx) * normal[2];
           if (Math.abs(dot) < 1e-9) continue;
+          if (trackFeatures) {
+            const ranges = (batch.featureRanges ??= []);
+            const last = ranges.at(-1);
+            if (last?.sourceId === building.id) last.triangleCount++;
+            else ranges.push({ sourceId: building.id, firstTriangle: batch.positions.length / 9, triangleCount: 1 });
+          }
           batch.positions.push(...a, ...(dot < 0 ? c : b), ...(dot < 0 ? b : c));
           batch.normals.push(...normal, ...normal, ...normal);
         }
@@ -148,10 +159,10 @@ function* objectParts(objects: readonly Building3dVisual[], area: ExportRect, gr
     );
     if (index % 16 === 0) yield;
   }
-  return [...batches].flatMap(([color, batch]) => (batch.positions.length ? [{ name: group, color, positions: Float32Array.from(batch.positions), normals: Float32Array.from(batch.normals) }] : []));
+  return [...batches].flatMap(([color, batch]) => (batch.positions.length ? [{ name: group, color, positions: Float32Array.from(batch.positions), normals: Float32Array.from(batch.normals), featureRanges: batch.featureRanges }] : []));
 }
 
-export async function mapMesh(world: World, area: ExportRect, resolution: number, layers: Partial<ExportLayers>, groundShaping: boolean, terraces: boolean): Promise<MapMesh> {
+export async function mapMesh(world: World, area: ExportRect, resolution: number, layers: Partial<ExportLayers>, groundShaping: boolean, terraces: boolean, trees?: Omit<TreeInputs, 'height'>, metadata?: MapMetadata): Promise<MapMesh> {
   const native = nativeTerrainOf(world);
   const grid = world.terrain.height;
   const n = native?.field?.n ?? native?.resolution ?? grid.w;
@@ -196,8 +207,9 @@ export async function mapMesh(world: World, area: ExportRect, resolution: number
     ['Bridges', works.bridges],
     ['Waterfront', [...works.quays, ...works.boardwalks]],
   ] as const)
-    parts.push(...(await finish(objectParts(models, area, name, materialColor))));
+    parts.push(...(await finish(objectParts(models, area, name, materialColor, !!metadata))));
+  if (trees) parts.push(...(await finish(exportTreeParts({ ...trees, height: (x, y) => terrain.heightAt(x, y) }, area, materialScene))));
   let highestPoint = 0;
   for (const part of parts) for (let i = 1; i < part.positions.length; i += 3) highestPoint = Math.max(highestPoint, part.positions[i]);
-  return { parts, origin: { x: area.x, y: area.y }, width: area.width, depth: area.height, highestPoint };
+  return { parts, origin: { x: area.x, y: area.y }, width: area.width, depth: area.height, highestPoint, metadata };
 }
