@@ -232,7 +232,9 @@ The Apple Silicon DMG is signed ad hoc and distributed without Apple notarizatio
 - In Economy mode, the map preview and minimap reuse the lighter terrain renderer, avoiding full-quality shader compilation during generation.
 - On phones and tablets, the satellite map keeps a shaded 2D view if graphics fail. The app pauses map rendering while the tab is hidden and can retry the 3D compositor when you return to the map.
 - The mobile satellite fallback shows climate colours, woodland and fine ground texture in 2D and after the 3D view comes back.
+- In Economy mode on Adreno 619 phones, the satellite map starts with the textured ground preview and keeps GPU rendering for navigation and 3D buildings.
 - On phones, the Workshop opens as a bottom sheet (a side panel in landscape). It closes when a generation starts or when the map is touched, and opens on the town that was tapped. An empty map offers a Generate a map button.
+- The performance notice leaves the Workshop and selection-sheet controls accessible on phones.
 - On phones, the header fits the screen with a ⋯ menu for secondary actions. The toolbar keeps the map style, 2D/3D and a Display panel for the other view controls. The places list folds into a chip, and the phone layout also applies in landscape.
 - With a finger: fields no longer zoom the page on iOS, buttons, sliders and checkboxes have larger touch areas, parameter help opens from a ? button, dialogs close with a tap outside, and a downward pan no longer reloads the page.
 - The advice to use Chrome or Edge is no longer shown on iPhone and iPad, where it could not help.

@@ -23,7 +23,7 @@ import { seaDistanceSurface, seaMaterialSvg } from '../../render/terrainWater';
 import { DEFAULT_FRACTAL_DETAIL, seedHash } from '../../../../rust/bridge/terrainAdjust';
 import { climateOf, type TerrainData, type TerrainSettings } from '../../../../rust/bridge/terrain';
 import { displayBiomeName, displayTerrainSettings } from '../displayBiome';
-import { createTerrainRenderer, type TerrainRenderer } from '../../ui/terrainRenderer';
+import { createTerrainRenderer, requestedTerrainBackend, type TerrainRenderer } from '../../ui/terrainRenderer';
 import { MAP_GPU_FAILED_MESSAGE, MAP_GPU_LIGHTER_MESSAGE, MapContextLostError, enterMapGpuLight, isMapContextLost, noteMapRenderer } from '../../ui/glContextRecovery';
 import { registerFantasyBrushes, isFantasyStyle, renderFantasyTerrain, prepareFantasyTerrain } from '../../../../rust/bridge/fantasyTerrain';
 import { fantasyClearance, prepareFantasyRaster, type FantasyRaster } from '../../ui/fantasyRaster';
@@ -32,6 +32,7 @@ import { getDisplayQuality, reportDisplayRenderer } from '../../render/displayQu
 import type { GroundTileRenderer } from '../../render/live/contract';
 import { underdarkSceneLook } from '../../render/underdarkLighting';
 import { nativeCitiesOf } from '../nativeProducts';
+import { prefersCpuSatelliteGround } from '../machineTier';
 import { SOFTWARE_GL } from '../../render/softwareGl';
 import type { Ground } from './contract';
 import type { MapState } from './mapState';
@@ -85,6 +86,7 @@ export class GroundProducts implements Ground {
   /** The terrain draws on the GPU when it can; the CPU raster otherwise. Evaluated lazily: the terrainData pass may demote it. */
   mode(): 'gpu' | 'cpu' {
     const r = this.map.resolved!;
+    if (r.target === 'view2d' && r.ground.traits.satelliteVariant > 0 && !requestedTerrainBackend() && prefersCpuSatelliteGround()) return 'cpu';
     return this.map.exportLayers.terrain !== false && r.ground.layers.relief && !isFantasyStyle(r.ground.style) && !this.gpuUnavailable ? 'gpu' : 'cpu';
   }
   preparePrograms(): Promise<void> {
