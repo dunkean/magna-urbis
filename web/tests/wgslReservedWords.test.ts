@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import * as generated from '../src/ui/terrainWgsl.generated';
 import * as generated3d from '../src/ui/terrain3dWgsl.generated';
 
@@ -49,11 +49,15 @@ function sources(): [string, string][] {
 }
 
 describe('WGSL reserved words', () => {
+  let shaders: ReturnType<typeof sources>;
+  beforeAll(() => {
+    shaders = sources();
+  });
   it('finds the WGSL sources', () => {
-    expect(sources().length).toBeGreaterThan(20);
+    expect(shaders.length).toBeGreaterThan(20);
   });
   it('no shader uses a reserved word as an identifier', () => {
-    const bad = sources().flatMap(([name, code]) => reservedTokens(code).map(hit => `${name}:${hit}`));
+    const bad = shaders.flatMap(([name, code]) => reservedTokens(code).map(hit => `${name}:${hit}`));
     expect(bad).toEqual([]);
   });
 });
