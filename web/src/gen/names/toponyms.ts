@@ -11,7 +11,7 @@ import { authoredProper } from './roots';
 export const ALGORITHM_VERSION = '3';
 export const CORPUS_VERSION = `${pack.version}/${authored.version}`;
 export const BASE_CORPUS_SHA256 = manifest.artifact.sha256;
-/** SHA-256 of the exact authored JSON bytes; checked against the source file in corpus-quality tests. */
+/** The version 3 replay fingerprint uses the authored JSON serialized with CRLF. */
 export const AUTHORED_CORPUS_SHA256 = '72fa7b7d7ed46a85b6cad23ec6ed6f11679529535e4d27742840815e2914022b';
 /** SHA-256 of BASE_CORPUS_SHA256 + ':' + AUTHORED_CORPUS_SHA256. */
 export const CORPUS_FINGERPRINT = 'bae38bc101a567e331ba69fa94621e1fd6b9a6305880930d2708256e52a5975d';

@@ -93,7 +93,9 @@ describe('cultural corpus source quality', () => {
 
   it('versions replay against both the source pack and exact authored data', () => {
     const bytes = readFileSync(new URL('../src/gen/names/data/cultural-roots.json', import.meta.url));
-    expect(createHash('sha256').update(bytes).digest('hex')).toBe(AUTHORED_CORPUS_SHA256);
+    // Git stores this asset with LF. Existing version 3 maps identify the CRLF serialization.
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe('93dfccf5248d8a68e33305f07cfd9a4230fdff92442a4048755c58d69988b9be');
+    expect(createHash('sha256').update(bytes.toString('utf8').replaceAll('\n', '\r\n')).digest('hex')).toBe(AUTHORED_CORPUS_SHA256);
     expect(createHash('sha256').update(`${BASE_CORPUS_SHA256}:${AUTHORED_CORPUS_SHA256}`).digest('hex')).toBe(CORPUS_FINGERPRINT);
     expect(ALGORITHM_VERSION).toBe('3');
   });

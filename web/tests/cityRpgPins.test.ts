@@ -90,9 +90,12 @@ describe('RPG map annotations', () => {
   it('gives the global labels switch precedence over enabled RPG pins and landmarks', () => {
     const { world } = fixture();
     world.options.labels = false;
-    expect(buildMapLabels(world, 'atlas', PALETTES.atlas)).toEqual([]);
-    expect(labelsSvg(world, PALETTES.atlas)).toBe('');
-    expect(renderSvg(world, { labels: false, raster: false, contours: false, legend: false, cartouche: false })).not.toContain('Auberge');
+    const layers = { raster: false, contours: false, legend: false, cartouche: false };
+    // The export composes the retained label layer according to the global switch or its explicit override.
+    expect(renderSvg(world, layers)).not.toContain('Auberge');
+    expect(renderSvg(world, { ...layers, labels: true })).toContain('Auberge');
+    world.options.labels = true;
+    expect(renderSvg(world, { ...layers, labels: false })).not.toContain('Auberge');
   });
 
   it('keeps RPG annotations in the share query and MU1, separate from bug pins, including when hidden', async () => {

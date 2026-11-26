@@ -17,7 +17,7 @@ const hash = (v: unknown): string =>
       ),
     )
     .digest('hex');
-const terrainHash = (v: object): Record<string, string> => Object.fromEntries(Object.entries(v).map(([key, value]) => [key, hash(key === 'rivers' ? (value as { name?: string }[]).map(({ name: _name, ...river }) => river) : value)]));
+const terrainHash = (v: object): Record<string, string> => Object.fromEntries(Object.entries(v).map(([key, value]) => [key, hash(key === 'rivers' ? (value as { name?: string; nameKey?: string }[]).map(({ name: _name, nameKey: _nameKey, ...river }) => river) : value)]));
 
 const options = makeOptions({ seed: 'debug-stages', workflow: 'list', mapSize: 2400, river: 'river', settlements: { list: [{ population: 140 }, { population: 30, position: { x: 300, y: 400 } }] } });
 
@@ -56,8 +56,9 @@ describe('developer generation stages', () => {
     expect(roads.names).toBeUndefined();
     const full = session.advance(4);
     expect(terrainHash(full.terrain)).toEqual(terrainHash(rivers.terrain));
+    expect(full.terrain.rivers.every(r => r.name && r.nameKey)).toBe(true);
     expect(full.settlements!.map(s => s.center)).toEqual(centers);
-    expect(full.roads).toEqual(roads.roads);
+    expect(full.roads!.map(({ nameKey: _nameKey, ...road }) => road)).toEqual(roads.roads);
     expect(full.urban!.buildings.length).toBeGreaterThan(0);
     expect(full.settlements![1].urban).toBeDefined();
     expect(full.landuse).toBeDefined();
