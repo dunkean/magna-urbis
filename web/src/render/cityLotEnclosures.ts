@@ -4,6 +4,7 @@ import type { LotEnclosure, Point, ResolvedEnclosure, Shape } from '../../../rus
 import { polygonArea, polygonContains } from '../gen/core/geom';
 import { cultureEnclosure, type CultureEnclosure } from './hedges';
 import { yardRuns, yardStyle } from './yardStyle';
+import { countWork } from './workCount';
 
 /** `cluster` groups several footprints (farmstead house and outbuildings) into one yard; default one per parcel. */
 /** `farmstead.ring`: the wall or hedge of a closed-court or round compound (farmsteads.rs), round its house and bodies inside the lot. */
@@ -173,8 +174,38 @@ interface Edge {
   owners: number[];
   len: number;
 }
+interface ParcelRing {
+  owner: number;
+  ring: readonly Point[];
+}
+interface ParcelGraph {
+  nodes: readonly Point[];
+  edges: readonly Edge[];
+}
+const parcelGraphs = new WeakMap<CityScene['layouts'], { input: Float64Array; graph: ParcelGraph }>();
+/** The snap and T-junction pass reads just the ordered owners and their XY rings, including the
+ * ground-clipped rings. Store the coordinates verbatim so a change smaller than the snap tolerance
+ * also rebuilds the graph. Each live layout list retains only its last graph. */
+function retainedBoundaryGraph(layouts: CityScene['layouts'], rings: readonly ParcelRing[]): ParcelGraph {
+  const input = new Float64Array(rings.reduce((size, { ring }) => size + 2 + 2 * ring.length, 0));
+  let at = 0;
+  for (const { owner, ring } of rings) {
+    input[at++] = owner;
+    input[at++] = ring.length;
+    for (const p of ring) {
+      input[at++] = p.x;
+      input[at++] = p.y;
+    }
+  }
+  const held = parcelGraphs.get(layouts);
+  if (held && held.input.length === input.length && input.every((n, i) => Object.is(n, held.input[i]))) return held.graph;
+  const graph = boundaryGraph(rings);
+  parcelGraphs.set(layouts, { input, graph });
+  return graph;
+}
 /** The planar graph of parcel limits: vertices snapped into nodes, rings split at the T-junctions, one edge per stretch of limit with its owners. */
-function boundaryGraph(rings: readonly { owner: number; ring: readonly Point[] }[]): { nodes: Point[]; edges: Edge[] } {
+function boundaryGraph(rings: readonly ParcelRing[]): ParcelGraph {
+  countWork('town.yardBoundaryGraph');
   const nodes: Point[] = [],
     fine = new Map<number, number[]>(),
     coarse = new Map<number, number[]>(),
@@ -508,11 +539,14 @@ export function buildYardEnclosures(scene: CityScene, houses: readonly YardHouse
   if (!closed.size) return result;
   // ---- the graph of the limits of every block holding a fenced lot
   const blocks = new Set([...closed].map(pi => `${scene.parcels[pi].layout}/${scene.parcels[pi].block}`));
-  const rings: { owner: number; ring: readonly Point[] }[] = [];
+  const rings: ParcelRing[] = [];
   scene.parcels.forEach((p, pi) => {
     if (p.use !== 'reserve' && blocks.has(`${p.layout}/${p.block}`)) for (const s of ringsOf(p)) for (const ring of [s.outer, ...s.holes]) if (ring.length >= 3) rings.push({ owner: pi, ring });
   });
-  const { nodes, edges } = boundaryGraph(rings);
+  const graph = retainedBoundaryGraph(scene.layouts, rings),
+    edges = graph.edges,
+    // The road pass moves nodes and publishes some of the points in enclosure paths.
+    nodes = graph.nodes.map(p => ({ ...p }));
   // ---- yards: clusters, then merges along the longest shared limit
   const parent = new Map<number, number>();
   const find = (i: number): number => {

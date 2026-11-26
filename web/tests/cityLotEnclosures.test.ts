@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { isDeepStrictEqual } from 'node:util';
+import * as work from '../src/render/workCount';
 import { buildCityScene } from '../src/render/cityCanvas';
 import { buildYardEnclosures, type YardHouse } from '../src/render/cityLotEnclosures';
 import { city3dLotEnclosures } from '../src/render/city3dMeshes';
@@ -70,6 +72,39 @@ const inside = (s: Shape, p: Point): boolean => polygonContains(s.outer, p);
 const owners = (r: ReturnType<typeof buildYardEnclosures>): number => new Set(r.yards.map(y => y.parcel)).size;
 
 describe('house yards', () => {
+  it('keeps the parcel graph across house edits and rebuilds it when a clipped boundary moves', () => {
+    const { scene, houses } = fixture();
+    const clippedRing = structuredClone(scene.parcels[3].shape);
+    scene.parcels[3].ground = [clippedRing];
+    const counter = vi.spyOn(work, 'countWork');
+    const builds = () => counter.mock.calls.filter(([name]) => name === 'town.yardBoundaryGraph').length;
+    const ground = (x: number, y: number) => Math.sin(x / 20) + y / 5;
+    const fresh = (edited: YardHouse[]) => buildYardEnclosures({ ...scene, layouts: [...scene.layouts] }, edited);
+    const check = (yards: ReturnType<typeof buildYardEnclosures>, reference: typeof yards) => {
+      expect(yards).toStrictEqual(reference);
+      expect(isDeepStrictEqual(city3dLotEnclosures(yards.enclosures, ground), city3dLotEnclosures(reference.enclosures, ground))).toBe(true);
+    };
+    try {
+      const original = buildYardEnclosures(scene, houses);
+      expect(builds()).toBe(1);
+      // The house now interrupts the west fence. The same parcel graph produces a different public outline.
+      const moved = [{ ...houses[0], footprint: [rect(-2, 7, 14, 20)] }, ...houses.slice(1)];
+      const edited = buildYardEnclosures(scene, moved);
+      expect(builds()).toBe(1);
+      expect(edited.enclosures).not.toEqual(original.enclosures);
+      check(edited, fresh(moved));
+      expect(builds()).toBe(2);
+      // A change outside that house's lot, with the same owner, number of rings and number of vertices.
+      clippedRing.outer[2].y = 36;
+      clippedRing.outer[3].y = 36;
+      const clipped = buildYardEnclosures(scene, moved);
+      expect(builds()).toBe(3);
+      expect(clipped.enclosures).not.toEqual(edited.enclosures);
+      check(clipped, fresh(moved));
+    } finally {
+      counter.mockRestore();
+    }
+  });
   it('partition the block: neighbours share one line, no strip between them', () => {
     const f = fixture(),
       r = buildYardEnclosures(f.scene, f.houses);
