@@ -20,6 +20,14 @@ import type { MapInformation, SemanticLegendEntry } from '../legend';
 import type { ResolvedDisplayQuality } from '../displayQuality';
 import type { LiveLayer, LiveTextPlacement } from '../live/contract';
 import type { OverlayInk } from '../live/contourInk';
+import type { LandTint } from '../gpu/contract';
+
+export interface LandBackdrop {
+  summer: HTMLCanvasElement;
+  /** Materialize the current date only for a native Canvas draw. */
+  canvas(): HTMLCanvasElement;
+  uniforms(): LandTint;
+}
 
 export interface CanvasLike {
   width: number;
@@ -54,7 +62,7 @@ export interface CanvasRendererDeps {
   /** Offscreen canvas factory (default: OffscreenCanvas / document canvas). Return null if unavailable. */
   createCanvas?: (w: number, h: number) => CanvasLike | null;
   /** Terrain bitmap provider (default: hillshade raster). Return null to skip terrain. */
-  terrain?: (world: World, pal: Palette) => CanvasImageSource | null;
+  terrain?: (world: World, pal: Palette) => CanvasImageSource | LandBackdrop | null;
   /** The land a transparent sheet keeps its tints on, when `terrain` leaves out what the ground paints (the woods of
    * `groundTrees`); default: the terrain bitmap. */
   land?: () => CanvasImageSource | undefined;
@@ -146,7 +154,9 @@ export interface CanvasRenderer {
   /** The stepwise tiles cached for `box` (the stand-in of the 3D drape and the miniature). Never rasterises a missing tile or includes labels. */
   drawCachedMap(target: CanvasLike, box: Rect4): boolean;
   /** Reuse immutable scene tiles and resources after detail arrival. False requires a new renderer. */
-  update(world: World, scene: Scene, style?: MapStyle | Palette): boolean;
+  update(world: World, scene: Scene, style?: MapStyle | Palette, sameContent?: boolean): boolean;
+  /** Switch the drawing recipe while retaining this scene's geometry and GPU layer. */
+  setLook(look: Pick<CanvasRendererDeps, 'palette' | 'colors' | 'brushes' | 'vegetation' | 'mask' | 'fullLanduse' | 'roadLook'>): void;
   setLabels(labels: Label[]): void;
   /** Toggle names and site pins, the legend and the cartouche (defaults: labels per world.options.labels, legend per world.options.legend, cartouche on). */
   setOverlays(o: Partial<Overlays>): void;
@@ -164,7 +174,7 @@ export interface CanvasRenderer {
   /** Frame, cartouche, legend and scale bar alone (screen space) on `target`, cleared first: a canvas of `cssW` x
    * `cssH` CSS pixels at any pixel ratio. What a live frame draws over the overlay layer. */
   drawFurniture(target: CanvasRenderingContext2D, view: View, cssW: number, cssH: number): void;
-  /** Conservative owned storage for retaining an inactive style (native Path2D memory is estimated). */
+  /** Estimated storage of the renderer's active and reusable products (native Path2D memory is estimated). */
   retainedBytes(): number;
   /** Title and legend of the actual renderer, without a view-specific scale in the external drawer. */
   getMapInfo(): MapInformation;

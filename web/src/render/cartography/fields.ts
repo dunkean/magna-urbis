@@ -5,12 +5,13 @@
  * Reads: scene, palette, the furrow cache.
  */
 import { isUnderdarkBiome } from '../../gen/biomes';
-import { Palette, ruralInk } from '../styles';
+import type { Palette } from '../styles';
 import { fieldBoundaryStyle, fieldHedgeStyle } from '../hedges';
 import { furrowDegrees, furrowSpacing, furrowStripe } from '../furrows';
 import { RecordingContext, setMapInk } from '../gpu/recorder';
 import { CANVAS_MAP_STROKES as MAP_STROKES, mapStrokeWidth } from '../strokes';
-import { trackInk } from '../roadStyle';
+import { literalPalette } from './bandRecording';
+import { trackSlot } from './roads';
 import { WAY_SCALE, FURROW_MIN_PX, FURROW_HOLDER_BUDGET } from '../lod';
 import type { CartographyContext } from './context';
 import type { VectorFrame } from './frame';
@@ -95,7 +96,6 @@ export function paintFieldNetwork(c: CartographyContext, f: VectorFrame): void {
   // field network: ways, headlands, hedgerows (+ trees near). Ways and headlands are subtle earth-toned hairlines
   // (never paper-white bands across the fields), and the ways only show from mid-close zoom on.
   if (luOn && lod.strips) {
-    const rk = ruralInk(pal);
     strokeLines(
       linesOf(l => l.name === 'headlands'),
       c.ink('furrow'),
@@ -108,10 +108,10 @@ export function paintFieldNetwork(c: CartographyContext, f: VectorFrame): void {
       const ways = linesOf(l => l.name === 'field-ways');
       if (natural) {
         if (ways.length) strokeEarthRoads(ways, 'path', ways[0].width * 0.7);
-      } else strokeLines(ways, trackInk(rk, pal.roadFill), () => lw(1.4, 0.8), Math.min(1, pal.rural.way * inkAlpha), [], 'butt');
+      } else if (ways.length) strokeLines(ways, c.ink(trackSlot(pal)), () => lw(1.4, 0.8), Math.min(1, pal.rural.way * inkAlpha), [], 'butt');
     }
     if (pal.hedgeOn) {
-      const hedge = fieldHedgeStyle(pal, u);
+      const hedge = fieldHedgeStyle(literalPalette(pal), u);
       strokeLines(
         linesOf(l => l.name === 'hedges'),
         c.ink('fieldHedge'),

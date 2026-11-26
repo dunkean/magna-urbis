@@ -85,6 +85,8 @@ export interface LiveFrame {
   readonly moving: boolean;
   /** 'light' on slow hardware (displayQuality.ts): layers drop optional detail. */
   readonly quality: 'full' | 'light';
+  /** False for a Fast look: the live picture also serves at rest. */
+  readonly refineAtRest?: boolean;
 }
 
 export interface LiveLayerStats {

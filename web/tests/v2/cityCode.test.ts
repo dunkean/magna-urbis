@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COUNT_ROLES, CULTURES, cityDebugText, codeBaseline, decodeCityCode, encodeCityCode, formatCode, nextRootSeed, parseCode, rootSeedFromText, settlementKey, settlementNumber } from '../../src/v2/cityCode';
+import { COUNT_ROLES, CULTURES, cityCodeUrl, cityDebugText, codeBaseline, decodeCityCode, encodeCityCode, formatCode, nextRootSeed, parseCode, rootSeedFromText, settlementKey, settlementNumber } from '../../src/v2/cityCode';
 import { candidateParameters, codeParameters, listedParameterKeys } from '../../src/v2/cityCodeParams';
 import { FREE_LEVELS, levelStep, levelValue, parameterLevels, readParamId, snapParameter, valueLevel, writeInt, writeParamId } from '../../src/v2/cityCodeFormat';
 import { NOT_IN_CODE } from '../../src/v2/cityCodeRecords';
@@ -9,8 +9,18 @@ import { rerollSettlement } from '../../src/v2/urbanSeeds';
 import { automaticCulture, plausibleCultures } from '../../src/v2/environmentCultures';
 import { randomInitialSettings } from '../../src/v2/startup';
 import { blockAddress, blockEditId, runtimeBlockEdits } from '../../../rust/bridge/urbanBlockEdits';
+import { effectiveRegionalExits } from '../../src/v2/regionalExits';
+import { renameToponym } from '../../src/v2/toponymOverrides';
 
 const same = (code: string) => expect(encodeCityCode(decodeCityCode(code).settings)).toBe(code);
+const outline = (x: number, y: number) => ({
+  outer: [
+    { x, y },
+    { x: x + 6.5, y },
+    { x: x + 6.5, y: y + 7 },
+    { x, y: y + 7 },
+  ],
+});
 
 describe('short city code', () => {
   it('is the bare seed for the default city', () => {
@@ -175,7 +185,7 @@ describe('short city code', () => {
     expect(programme).toMatchObject({ counts: { [first]: 0, [second]: 3 }, countMode: 'force' });
     same(code);
   });
-  it('restores lot edits and house models by their saved ids, leaving drawn outlines out', () => {
+  it('restores lot edits and house models by their saved ids', () => {
     const lot = 'layout-0123456789abcdef/block-fedcba9876543210/parcel-00112233445566ff';
     const neighbour = 'layout-0123456789abcdef/block-fedcba9876543210/parcel-a0b1c2d3e4f5a6b7';
     const outline = {
@@ -185,7 +195,7 @@ describe('short city code', () => {
         { x: 10, y: 10 },
       ],
     };
-    const parcels = { [lot]: { role: 'market', households: 2, enclosure: 'hedge', salt: 4, culture: CULTURES[3], houseConfig: { allow_late: true, overrides: { overhang_m: 0.35, footprint: null } }, shape: outline }, [neighbour]: { deleted: 'garden' } };
+    const parcels = { [lot]: { role: 'market', households: 2, enclosure: 'hedge', salt: 4, culture: CULTURES[3], houseConfig: { allow_late: true, overrides: { overhang_m: 0.35, footprint: null } } }, [neighbour]: { deleted: 'garden' } };
     const settings = codeBaseline();
     settings.urban = {
       backend: 'rust',
@@ -195,35 +205,134 @@ describe('short city code', () => {
     };
     const code = encodeCityCode(settings);
     const urban = decodeCityCode(code).settings.urban!;
-    const { shape: _shape, ...kept } = parcels[lot];
-    expect(urban.local!.main.parcels!.overrides!.parcels).toEqual({ [lot]: kept, [neighbour]: { deleted: 'garden' } });
+    expect(urban.local!.main.parcels!.overrides!.parcels).toEqual(parcels);
     expect(urban.buildings).toEqual(settings.urban.buildings);
     expect(urban.houses?.house_config).toEqual({ pack: 'EUR-MED', variation: 0.35 });
-    expect(urban.local!.main.layout!.overrides!.quarters!['2']).toEqual({ salt: 1, houseConfig: { era: 'late' } });
-    expect(NOT_IN_CODE.geometry).toEqual(expect.arrayContaining(['shape', 'parts']));
+    expect(urban.local!.main.layout!.overrides!.quarters!['2']).toEqual({ salt: 1, houseConfig: { era: 'late' }, parts: [outline] });
     same(code);
     // A second lot of the same block costs its own hash and value, not a whole id again.
     delete (settings.urban.local!.main.parcels!.overrides!.parcels as Record<string, unknown>)[neighbour];
     expect(code.length - encodeCityCode(settings).length).toBeLessThan(40);
   });
-  it('appends pins at a fixed width and restores their texts from the debug text', () => {
+  it('round-trips a quarter outline and split with holes and edits of split pieces', () => {
+    const settings = codeBaseline();
+    const quarters = {
+      '2': { shape: { ...outline(4200.5, 18), holes: [outline(4201.5, 19).outer.slice(0, 2).concat({ x: 4202.5, y: 20 })] }, role: 'elite' },
+      '4': { parts: [outline(70, 70), outline(76.5, 70)], deletedParts: [0], wealth: 0.27 },
+      '4/1': { deleted: true, buildingCulture: CULTURES[7] },
+    };
+    settings.urban = { backend: 'rust', local: { main: { layout: { overrides: { quarters } } } } };
+    const code = encodeCityCode(settings);
+    expect(decodeCityCode(code).settings.urban!.local!.main.layout!.overrides!.quarters).toEqual(quarters);
+    expect(code.length).toBeLessThan(JSON.stringify(quarters).length / 2);
+    same(code);
+  });
+  it('round-trips block geometry by source position or saved id, with a split child edit', () => {
+    const settings = codeBaseline(),
+      source = 'block:0123456789abcdef',
+      renamedSource = 'block:2.4';
+    const blocks = { 'block:0123456789abcdff': { shape: outline(58, 73) }, [source]: { parts: [outline(58, 80), outline(64.5, 80)], deletedParts: [0] }, [`${source}/1`]: { salt: 3, operator: 'strips' as const } };
+    settings.urban = { backend: 'rust', local: { main: { parcels: { overrides: { blocks } } } } };
+    const withoutPlan = encodeCityCode(settings);
+    expect(decodeCityCode(withoutPlan).settings.urban!.local!.main.parcels!.overrides!.blocks).toEqual(blocks);
+    same(withoutPlan);
+    const code = encodeCityCode(settings, (town, id) => (town === 'main' && id === source ? [2, 4] : undefined));
+    expect(decodeCityCode(code).settings.urban!.local!.main.parcels!.overrides!.blocks).toEqual({ 'block:0123456789abcdff': blocks['block:0123456789abcdff'], [renamedSource]: blocks[source], [`${renamedSource}/1`]: blocks[`${source}/1`] });
+    same(code);
+  });
+  it('keeps a redrawn block exact for its regenerated lots and buildings, without extending independent codes', () => {
+    const settings = codeBaseline(),
+      block = 'block:2.0',
+      lot = 'layout-a/block-b/parcel-c';
+    const shape = outline(-0.25, 703.123456789);
+    const blocks = { [block]: { shape } };
+    settings.urban = { local: { main: { parcels: { overrides: { blocks } } } } };
+    const blockOnly = encodeCityCode(settings);
+    expect(blockOnly).not.toContain('X');
+    settings.urban.buildings = { [`site-1/${lot}/building`]: { overrides: { floors: 2 } } };
+    expect(encodeCityCode(settings)).not.toContain('X');
+    settings.urban.buildings = { [`main/${lot}/building`]: { overrides: { floors: 2 } } };
+    const code = encodeCityCode(settings);
+    expect(decodeCityCode(code).settings.urban!.local!.main.parcels!.overrides!.blocks![block].shape).toEqual(shape);
+    same(code);
+    delete settings.urban.buildings;
+    expect(encodeCityCode(settings)).toBe(blockOnly);
+  });
+  it('round-trips lot outlines and splits on a half-metre grid', () => {
+    const settings = codeBaseline(),
+      first = 'layout-0123456789abcdef/block-fedcba9876543210/parcel-00112233445566ff',
+      second = 'layout-0123456789abcdef/block-fedcba9876543210/parcel-a0b1c2d3e4f5a6b7';
+    const retained = { [first]: { shape: outline(40.5, 901), role: 'market' }, [second]: { parts: [outline(40.5, 908), outline(47, 908)] }, [`${second}/part-1`]: { deleted: 'garden' as const } };
+    const parcels = { ...retained, [first]: { ...retained[first], shape: outline(40.58, 900.91) } };
+    settings.urban = { backend: 'rust', local: { main: { parcels: { overrides: { parcels } } } } };
+    const code = encodeCityCode(settings);
+    expect(decodeCityCode(code).settings.urban!.local!.main.parcels!.overrides!.parcels).toEqual(retained);
+    same(code);
+  });
+  it('preserves authored map, settlement and feature names through share links', () => {
+    const settings = codeBaseline();
+    settings.naming = { title: 'Pays de l’Orne', labels: { 'free:gate': { text: 'ここ', anchor: { x: 45.25, y: 66 }, kind: 'free' } } };
+    renameToponym(settings, { id: 'settlement:main', town: 'main' }, 'Mont-des-Érables');
+    renameToponym(settings, { id: 'quarter:main:4', kind: 'quarter' }, 'حي النهر');
+    settings.region = { customPlaces: [{ key: 'place-2', name: 'Port des Îles', population: 1200, culture: CULTURES[7], siteType: 'harbor', sitePrefs: {}, position: { x: 2500, y: 4100 } }] };
+    const code = encodeCityCode(settings);
+    const decoded = decodeCityCode(cityCodeUrl(code, 'https://example.org/v2.html')).settings;
+    expect(decoded.naming).toEqual(settings.naming);
+    expect(decoded.region?.customPlaces?.[0].name).toBe('Port des Îles');
+    same(code);
+  });
+  it('appends pin texts while keeping the position-only code unchanged', () => {
     const settings = codeBaseline();
     settings.pins = [
-      { x: 1200, y: 3400, text: 'North gate' },
+      { x: 1200, y: 3400, text: 'Porte du Nord 北' },
       { x: 5, y: 6 },
     ];
     const code = encodeCityCode(settings);
-    expect(code).toBe('magnas!15g3a8005006');
+    expect(code).toMatch(/^magnas!15g3a8005006:/);
+    expect(decodeCityCode(code).settings.pins).toEqual(settings.pins);
     const debug = cityDebugText(settings, 'abc123');
-    expect(debug.split('\n')).toEqual([code, 'abc123 · page v2', '#1 x=1200 y=3400 North gate', '#2 x=5 y=6']);
-    expect(decodeCityCode(debug).settings.pins).toEqual([
-      { x: 1200, y: 3400, text: 'North gate' },
-      { x: 5, y: 6 },
-    ]);
+    expect(debug.split('\n')).toEqual([code, 'abc123 · page v2', '#1 x=1200 y=3400 Porte du Nord 北', '#2 x=5 y=6']);
+    expect(decodeCityCode(debug).settings.pins).toEqual(settings.pins);
+    expect(decodeCityCode(debug + ' Edited debug line').settings.pins).toEqual(settings.pins);
+    expect(decodeCityCode(debug.replace(code, 'magnas!15g3a8005006')).settings.pins).toEqual(settings.pins);
+    same(code);
+    delete settings.pins[0].text;
+    expect(encodeCityCode(settings)).toBe('magnas!15g3a8005006');
+  });
+  it('restores regional and rural road sources, town street edits and exit requests exactly', () => {
+    const settings = codeBaseline(),
+      a = { x: 154.12345678901234, y: 207.1125 },
+      b = { x: 912.0005, y: 122.04 },
+      path = [a, b],
+      street = { path, widths: [4.5, 4], role: 'lane', rank: 3 };
+    settings.region = { roads: { exits: { highway: 0, main: 1, local: 0, track: 0 } } };
+    settings.roadOverrides = {
+      routes: { 'region:154123,207113/912001,122040': [], 'rural:154123,207113/912001,122040': [{ path, cls: 'track', width: 2.3, sites: ['site-1', null] }], 'draw:new': [{ path, controls: path, cls: 'main', width: 9, routingVariant: 1 }] },
+      towns: { main: [{ id: 'main:41a9', layout: 'main', original: street, parts: [{ street, part: '1', editorId: 'draw:1', controls: path, controlIndices: [0, 1], routingVariant: 2 }] }] },
+      exits: { 'test-exit': { present: true, report: { requested: 'main', class: 'main', gateway: 'main', point: b, reason: null, connected: false } } },
+      fromDisabled: true,
+    };
+    const code = encodeCityCode(settings);
+    const restored = decodeCityCode(code).settings;
+    expect(restored.roadOverrides).toEqual(settings.roadOverrides);
+    expect(restored.region?.roads).toEqual(settings.region.roads);
+    expect(effectiveRegionalExits(restored)).toEqual({ highway: 0, main: 1, local: 0, track: 0 });
+    expect(code.length).toBeLessThan(JSON.stringify(settings.roadOverrides).length);
+    same(code);
+  });
+  it('restores sparse wall overrides by enclosure key', () => {
+    const settings = codeBaseline();
+    const walls = { 'outer-0': { present: false }, 'inner-1': { style: 'palisade' as const, moat: 'dry' as const, gates: 0 }, castle: { present: true, gates: 64 } };
+    settings.urban = { backend: 'rust', local: { 'site-2': { layout: { overrides: { walls } } } } };
+    const code = encodeCityCode(settings);
+    expect(decodeCityCode(code).settings.urban!.local!['site-2'].layout!.overrides!.walls).toEqual(walls);
+    same(code);
   });
   it('rejects malformed codes and normalises typed seeds', () => {
     expect(() => decodeCityCode('magnas_')).toThrow();
     expect(() => decodeCityCode('magnas!123')).toThrow();
+    expect(() => decodeCityCode('magnas:zekw')).toThrow('Incomplete or corrupt code.');
+    expect(Object.keys(NOT_IN_CODE)).toEqual(['relief', 'rivers', 'seeds']);
     expect(rootSeedFromText('Lions Out')).toBe('110ns0');
     expect(rootSeedFromText('ab')).toMatch(/^ab[0-9a-hjkmnp-tv-z]{4}$/);
   });

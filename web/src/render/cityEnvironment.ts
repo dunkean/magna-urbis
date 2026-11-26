@@ -2,6 +2,7 @@ import { NEAR_SCALE, TEXTURE_SCALE } from './lod';
 /** Physical and display inputs shared by V2 and City Bench. */
 import type { ResolvedAppearance } from './appearanceRecipe';
 import type { LandKind } from '../gen/types';
+import { LAND_ORDER } from './scene';
 import type { Terrain3dGroundSettings } from '../ui/terrain3d';
 import type { City3dGround } from '../ui/city3d';
 import { DEFAULT_FOREST_SETTINGS } from '../../../rust/bridge/terrainForest';
@@ -13,7 +14,14 @@ import { underdarkCavernOf } from './underdarkCavern';
 import { underdarkLightingLook } from './underdarkLighting';
 import { cityBuildingAppearance } from './cityDrawOptions';
 
-export const cityGroundLook = (r: ResolvedAppearance) => ({ ambience: r.composition.ambience, underdark: r.underdark, craftedBeds: r.composition.buildings.roof === 'crafted', waterLook: r.composition.networks.water.look, waterVisible: r.ground.layers.water, groundCover: r.composition.vegetation.procedural });
+export const cityGroundLook = (r: ResolvedAppearance) => ({
+  ambience: r.composition.ambience,
+  underdark: r.underdark,
+  craftedBeds: r.composition.buildings.roof === 'crafted',
+  waterLook: r.composition.networks.water.look,
+  waterVisible: r.ground.layers.water,
+  groundCover: r.composition.vegetation.procedural,
+});
 
 export function cityGroundSettings(
   r: ResolvedAppearance,
@@ -73,7 +81,10 @@ export const cityWaterCutsLand = (r: ResolvedAppearance): boolean => r.compositi
 /** The dashed site reserve is a planning annotation, never part of a satellite ground. */
 export const cityOverlayPlanMarks = (r: ResolvedAppearance): boolean => r.city.plan && !r.ground.traits.satelliteVariant;
 /** A cached vector scene must be rebuilt when its layer ownership changes. */
-export const cityOverlayLandKey = (r: ResolvedAppearance): string => JSON.stringify([r.ground.traits.family, r.ground.traits.fantasy, r.composition.vegetation.cartographic, atlasPlate(r), r.quality === 'light']);
+export const cityOverlayLandKey = (r: ResolvedAppearance): string => {
+  const owns = cityOverlayLandKinds(r);
+  return (owns === true ? LAND_ORDER : LAND_ORDER.filter(owns)).join(',');
+};
 
 /** Both 2D hosts use the raster tile renderer and the retained map extent for decorative field scale. */
 export function cityCountrysideCanvasOptions(r: ResolvedAppearance, mapSize: number, current: () => ResolvedAppearance = () => r) {

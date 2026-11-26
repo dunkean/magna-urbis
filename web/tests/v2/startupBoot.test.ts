@@ -24,6 +24,7 @@ afterEach(() => {
 
 async function boot(restore: boolean, saved: SavedRecipe, search = '') {
   hooks.takeAutosave.mockResolvedValue(saved);
+  vi.stubGlobal('matchMedia', () => ({ matches: hooks.handheld }));
   vi.stubGlobal('localStorage', { getItem: (key: string) => (key === STARTUP_RESTORE_KEY && restore ? 'true' : null) });
   vi.stubGlobal('location', { hash: '', search });
   const seedField = { dataset: { option: 'seed' }, tagName: 'INPUT', value: '' };

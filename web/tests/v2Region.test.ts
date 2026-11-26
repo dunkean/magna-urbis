@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { World } from '../src/gen/types';
 import type { RoadOutput, SettlementOutput, SettlementRaster } from '../../rust/bridge/settlements';
+import type { chooseSiteRust } from '../../rust/bridge/siteNative';
 import { defaultSettings } from '../src/v2/settings';
 import { effectiveRegion, regionSpec, validateRegionSettings } from '../src/v2/regionSettings';
 import { projectEngineTerrain } from '../src/v2/terrainProjection';
@@ -9,10 +10,11 @@ import { suggestRegionalExits, effectiveRegionalExits, regionalExitResults } fro
 import { settlementStageValidityKeys } from '../src/v2/stageValidity';
 import { rerollSeed, stepSeed } from '../../rust/bridge/generationSeed';
 
-const bridge = vi.hoisted(() => ({ create: vi.fn(), run: vi.fn(), dispose: vi.fn(), raster: vi.fn(), fallback: vi.fn() }));
+const bridge = vi.hoisted(() => ({ create: vi.fn(), run: vi.fn(), dispose: vi.fn(), raster: vi.fn(), fallback: vi.fn(), site: vi.fn<typeof chooseSiteRust>() }));
 vi.mock('../../rust/bridge/settlementEngine', () => ({ createSettlementEngine: bridge.create }));
 vi.mock('../../rust/bridge/settlements', () => ({ settlementRaster: bridge.raster }));
 vi.mock('../src/v2/rustUrban', () => ({ rustSettlementRaster: bridge.fallback }));
+vi.mock('../../rust/bridge/siteNative', () => ({ chooseSiteRust: bridge.site }));
 function raster(n = 64, width = 2400): SettlementRaster {
   return { n, width, height: new Float32Array(n * n).fill(20), water: new Uint8Array(n * n), waterLevel: new Float32Array(n * n), riverWidth: new Float32Array(n * n), riverIds: new Int32Array(n * n).fill(-1) };
 }
@@ -105,6 +107,12 @@ beforeEach(() => {
   bridge.run.mockReset().mockImplementation(async request => ({ id: request.id, ...(request.place ? { settlements: output() } : {}), roads: request.roads ? roads() : null }));
   bridge.raster.mockReset().mockReturnValue(raster());
   bridge.fallback.mockReset().mockReturnValue(raster());
+  // The planner asks only for display fields. Keep this unit fixture off the native/WASM site engine.
+  bridge.site.mockReset().mockImplementation(async ({ height }) => {
+    const empty = new Float32Array(0),
+      mask = new Uint8Array(0);
+    return { center: { x: 0, y: 0 }, archetype: 'plain', offers: {}, cost: { ...height, data: empty }, reserveRadius: 0, fields: { dWater: height.data, dSea: empty, dMain: empty, hab: height.data, slopeS: empty, riverMask: mask, bridgeZone: mask } };
+  });
 });
 describe('V2 regional Rust forwarding and retained sessions', () => {
   it('records regional-road variation in the general seed while preserving placed sites and their draw', async () => {
@@ -140,6 +148,8 @@ describe('V2 regional Rust forwarding and retained sessions', () => {
       { x: 1800, y: 1700 },
     ]);
     expect(world.site?.center).toEqual(world.settlements![0].center);
+    expect(bridge.site).toHaveBeenCalledTimes(1);
+    expect(bridge.site).toHaveBeenCalledWith(world.terrain, expect.objectContaining({ center: world.site!.center, population: 80 }), 2400, expect.anything(), { profile: 'local', server: 'http://127.0.0.1:18791' }, true);
     expect(world.debug?.v2RustRegion).toEqual({ placement: output(), roads: roads() });
     expect(world.bridges).toEqual([{ a: { x: 1200, y: 1200 }, b: { x: 1300, y: 1300 }, width: 6 }]);
   });

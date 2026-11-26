@@ -1,4 +1,5 @@
 import { cityDebugText, codeBaseline, decodeCityCode, encodeCityCode, INVALID_CODE, UNRECOGNISED_INPUT, type BlockAddress, type DecodedCityCode } from './cityCode';
+import { SHARE_CODE_TOO_LARGE } from './cityCodeExtras';
 import { parseAzgaarBurg } from './externalCity/azgaar';
 import { applyExternalCity } from './externalCity/apply';
 import { FMG_EXPORT_SCRIPT } from './externalCity/fmgExport';
@@ -39,6 +40,7 @@ const text = {
   fmgError: copy('Azgaar burg data was not recognized. Paste the script’s JSON or a single burg CSV row.', 'Données Azgaar non reconnues. Collez le JSON du script ou une seule ligne du CSV des bourgs.'),
 };
 copy(INVALID_CODE, 'Code incomplet ou corrompu.');
+copy(SHARE_CODE_TOO_LARGE, 'Ces modifications sont trop volumineuses pour un code de partage. Exportez le projet pour les partager.');
 copy('The root seed must be 6 characters of the code alphabet.', 'La graine racine doit compter 6 caractères de l’alphabet du code.');
 copy(UNRECOGNISED_INPUT, 'Non reconnu : collez un code ou un lien Magna Urbis, un lien watabou, ou utilisez la fenêtre Azgaar FMG pour importer un bourg.');
 

@@ -4,9 +4,11 @@ import { createOverlayRecording } from '../src/render/live/overlayRecording';
 import { createOverlayRegions } from '../src/render/live/overlayRegions';
 import { createOverlayLayer } from '../src/render/live/overlayLayer';
 import { createLiveRasterizer } from '../src/render/gpu/liveRasterizer';
-import type { BakedPrefix, DisplayList, LiveRasterizer } from '../src/render/gpu/contract';
+import { ColorSlot, SPRITE_STRIDE } from '../src/render/gpu/contract';
+import type { SpriteOp, BakedPrefix, DisplayList, LiveRasterizer } from '../src/render/gpu/contract';
 import type { LiveFrame } from '../src/render/live/contract';
 import type { DrapeCanvas } from '../src/render/world/contract';
+import { LIVE_LOOK_QUALITY } from '../src/render/composition';
 import { RegionalRevision } from '../src/ui/terrain/revision';
 
 import { CartographyContext } from '../src/render/cartography/context';
@@ -127,6 +129,52 @@ function fixture() {
 beforeEach(() => vi.clearAllMocks());
 
 describe('live overlay layer', () => {
+  it('keeps unchanged baked bands across dates and replaces only a band whose ink changed', () => {
+    const f = fixture(),
+      original = f.host.record,
+      frame = f.frame();
+    let paint = 0,
+      snow = false;
+    f.host.paintRevision = () => paint;
+    f.host.record = vi.fn((plan, rect, light) => {
+      const band = original(plan, rect, light)!,
+        drawnSnow = snow;
+      return { ...band, replayed: snow, pixelsMatch: () => rect.minY === 0 || snow === drawnSnow };
+    });
+    f.layer.work!(10000, frame);
+    expect(f.host.record).toHaveBeenCalledTimes(2);
+    paint++;
+    f.layer.work!(10000, frame);
+    expect(f.host.record).toHaveBeenCalledTimes(2);
+    expect(f.raster.releaseBaked).not.toHaveBeenCalled();
+    snow = true;
+    paint++;
+    expect(f.layer.restExact!(frame)).toBe(false);
+    f.layer.work!(10000, frame);
+    expect(f.host.record).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(f.host.record).mock.lastCall![1].maxY).toBe(0);
+    expect(f.layer.stats!()).toMatchObject({ recorded: 2 });
+    expect(f.raster.releaseBaked).toHaveBeenCalledTimes(1);
+    expect(f.layer.restExact!(frame)).toBe(true);
+    paint++;
+    f.layer.work!(10000, frame);
+    expect(f.host.record).toHaveBeenCalledTimes(3);
+  });
+  it('settles an explicit Fast look at its reduced density without a second bake, snapshots or warming', () => {
+    const f = fixture();
+    const { pixelScale, refineAtRest } = LIVE_LOOK_QUALITY.light;
+    expect(pixelScale).toBeLessThan(LIVE_LOOK_QUALITY.full.pixelScale);
+    const frame = (moving: boolean) => ({ ...f.frame(0, 1, moving), dpr: pixelScale, width: 100 * pixelScale, height: 100 * pixelScale, worldToPixel: [pixelScale, pixelScale, 50 * pixelScale, 50 * pixelScale] as const, quality: 'light' as const, refineAtRest });
+    f.layer.work!(10000, frame(true));
+    expect(f.host.record).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(f.raster.bake).mock.calls.map(call => call[2]?.samples)).toEqual([2, 2]);
+    f.time(200);
+    expect(f.layer.work!(10000, frame(false))).toBe(false);
+    expect(f.layer.restExact!(frame(false))).toBe(true);
+    expect(f.raster.bake).toHaveBeenCalledTimes(2);
+    expect(f.host.record).toHaveBeenCalledTimes(2);
+    expect(f.host.warm).not.toHaveBeenCalled();
+  });
   it('reuses the unaffected band and reports regional changes to tilted tiles', () => {
     const f = fixture(),
       content = new RegionalRevision(),
@@ -211,6 +259,42 @@ describe('live overlay layer', () => {
     expect(parts.every(part => part.list.ops.length === 0 && !!part.baked)).toBe(true);
   });
 
+  it('draws retained pen buffers over the baked land and below contour ink, including snapshots', () => {
+    const f = fixture(),
+      order: string[] = [];
+    const stamp: SpriteOp = {
+      type: 'sprites',
+      source: { width: 32, height: 32 } as HTMLCanvasElement,
+      instances: new Float32Array(SPRITE_STRIDE),
+      count: 1,
+      transform: [1, 0, 0, 1, 0, 0],
+      clip: null,
+      composite: 'source-over',
+      smoothing: true,
+      tint: [new ColorSlot(), new ColorSlot()],
+    };
+    const record = vi.mocked(f.host.record).getMockImplementation()!;
+    vi.mocked(f.host.record).mockImplementation((...args) => {
+      const made = record(...args)!,
+        [land, road] = made.list.ops;
+      return { ...made, list: { ...made.list, ops: [land, stamp, road], marks: [{ name: 'crisp', at: 2 }] } };
+    });
+    Object.assign(f.host, { ink: { ready: () => true, work: () => false, draw: () => order.push('contours'), stats: () => ({ drawCalls: 0, triangles: 0, ms: 0 }), dispose: vi.fn(), contextLost: vi.fn() } });
+    f.layer.work!(10000, f.frame());
+    for (const [list] of vi.mocked(f.raster.bake).mock.calls) expect(list.ops.some(op => op === stamp)).toBe(false);
+    vi.mocked(f.raster.replayLive).mockImplementation(parts => {
+      if (parts.every(p => p.baked && p.list.ops[0] === stamp)) order.push('land and symbols');
+      else if (parts.every(p => !p.baked && p.list.ops[0]?.type === 'clear')) order.push('roads');
+    });
+    f.layer.draw(f.frame());
+    expect(order).toEqual(['land and symbols', 'contours', 'roads']);
+    f.time(10);
+    f.layer.work!(10000, f.frame(0, 2, true));
+    const snapshots = vi.mocked(f.raster.bake).mock.calls.filter(call => !!call[2]?.under);
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots.every(call => call[2]?.symbols?.ops[0] === stamp)).toBe(true);
+    f.layer.dispose();
+  });
   it('draws retained world ink between area prefixes and suffixes, including motion snapshots', () => {
     const f = fixture(),
       order: string[] = [];

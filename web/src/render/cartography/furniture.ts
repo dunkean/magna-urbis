@@ -128,7 +128,7 @@ export function drawMinimap(c: CartographyContext, target: CanvasLike, view: Vie
   ctx.fillStyle = pal.paper;
   ctx.fillRect(0, 0, target.width, target.height);
   const tex = c.getTerrain();
-  if (tex) ctx.drawImage(tex, 0, 0, target.width, target.width);
+  if (tex) c.drawTerrain(ctx, tex, 0, 0, target.width, target.width);
   ctx.setTransform(k, 0, 0, k, 0, 0);
   const waterImage = c.getWater();
   const water = (name: string, fill: string, rule: CanvasFillRule = 'nonzero'): void => {

@@ -2,6 +2,7 @@ import type { World, LandUseLayer, Polyline } from '../gen/types';
 import { polygonCentroid, polygonContains } from '../gen/core/geom';
 import type { Palette } from './styles';
 import { pathD } from './util';
+import { setMapInk, type MapInk } from './gpu/recorder';
 
 export interface RuralRenderOptions {
   visiblePaddocks?: boolean;
@@ -138,7 +139,7 @@ export function ruralDetailsSvg(lu: LandUseLayer, pal: Palette): string {
   const style = styles(pal);
   return '<g class="rural-details" fill="none" stroke-linejoin="round">' + marks.map(m => `<path d="${pathD(m.line, !!m.closed)}" stroke="${style[m.kind][0]}" stroke-width="${style[m.kind][1]}"/>`).join('') + '</g>';
 }
-export function drawRuralDetails(ctx: CanvasRenderingContext2D, world: Pick<World, 'landuse'>, pal: Palette): void {
+export function drawRuralDetails(ctx: CanvasRenderingContext2D, world: Pick<World, 'landuse'>, pal: Palette, drain: MapInk = pal.furrow): void {
   if (!world.landuse) return;
   const marks = ruralDetails(world.landuse);
   if (!marks.length) return;
@@ -150,7 +151,7 @@ export function drawRuralDetails(ctx: CanvasRenderingContext2D, world: Pick<Worl
     ctx.beginPath();
     m.line.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
     if (m.closed) ctx.closePath();
-    ctx.strokeStyle = style[m.kind][0];
+    setMapInk(ctx, 'strokeStyle', m.kind === 'drain' ? drain : style[m.kind][0]);
     ctx.lineWidth = style[m.kind][1];
     ctx.stroke();
   }

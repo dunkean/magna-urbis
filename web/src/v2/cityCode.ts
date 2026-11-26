@@ -1,9 +1,9 @@
 /** Short city code: a 6-digit root seed, then only what differs from the default city.
  *
- * Grammar (URL-safe). Digits come from cityCodeFormat.ts: lowercase base32 without i, l, o, u; those four letters are
- * the edit actions, and '-', '_', '!' open the sections, so every character has a single reading.
+ * Grammar (URL-safe). Digits come from cityCodeFormat.ts: lowercase base32 without i, l, o, u. Those letters and
+ * uppercase letters mark edit actions. Section delimiters are '-', '_', '!' and ':'.
  *
- *   code     = seed header ["*"] ["-" params] ("_" edit)* ["!" pins]       sections appear only when not empty
+ *   code     = seed header ["*"] ["-" params] ("_" edit)* ["!" pins] [":" extras]
  *   seed     = 6 digits. Every other draw derives from it (stepSeed: hash of root + stage path + iteration).
  *              The dice on the root is seed + 1 (nextRootSeed), so a root roll adds nothing to the code.
  *   header   = up to 6 positional digits, each an offset from the default (mod 32), trailing zeros trimmed:
@@ -30,11 +30,15 @@
  *            | "P" id record                      lot edit (parcels.overrides.parcels[id]) of the settlement
  *            | "B" id record                      building house model (urban.buildings[`<settlement>/<id>`]); on the
  *                                                 region, a bare saved key
+ *            | "Q" id record                      drawn or split quarter edit keyed by its saved quarter id
+ *            | "D" id record                      drawn or split block edit keyed by its position or saved block id
+ *            | "W" id record                      wall override keyed by its enclosure id
  *                                                 records and ids: cityCodeRecords.ts
  *   pins     = (x y)+                             integer world metres, fixed width = digits of the region size
+ *   extras   = mode base64url                     optional names, pin texts and exact road overrides (cityCodeExtras.ts)
  *
  * What the code leaves out is listed in NOT_IN_CODE (cityCodeRecords.ts): use the project export for it.
- * The debug text (cityDebugText) adds a build line and one `#n x=… y=… text` line per pin; pasting it restores pin texts. */
+ * The debug text (cityDebugText) adds a build line and one `#n x=… y=… text` line per pin. */
 import defaults from './cityCodeDefaults.json';
 import { climateZoneBiome } from '../gen/biomes';
 import type { V2Settings } from './contracts';
@@ -54,8 +58,9 @@ import { POPULATION_CLASSES } from './regionalPopulation';
 import { SITE_ARCHETYPES } from '../gen/options';
 import type { SettlementSpec } from '../../../rust/bridge/settlements';
 import { COUNTABLE } from './programmeCounts';
-import { normalizeProgrammeCounts, type ParcelOverride } from '../../../rust/bridge/urbanConfig';
+import { normalizeProgrammeCounts, type BlockOverride, type ParcelOverride, type QuarterOverride, type WallOverride } from '../../../rust/bridge/urbanConfig';
 import { codedRecord, readId, readRecord, writeId, writeRecord } from './cityCodeRecords';
+import { applyCityCodeExtras, cityCodeExtras, readExtras, writeExtras } from './cityCodeExtras';
 import type { HouseEditConfig } from '../../../rust/bridge/urbanHouseEdits';
 
 /** Thrown for text that is neither a city code nor a known external city; localised in cityCodeSharing. */
@@ -91,15 +96,15 @@ export type CodeAction =
   | { kind: 'place'; x: number; y: number; population: number; culture: number; site: number }
   | { kind: 'counts'; force: boolean; counts: [number, number][] }
   | { kind: 'house'; record: CodeRecord }
-  | { kind: 'parcel'; id: string; record: CodeRecord }
-  | { kind: 'building'; id: string; record: CodeRecord };
+  | { kind: 'parcel' | 'building' | 'quarter' | 'block' | 'wall'; id: string; record: CodeRecord };
+const RECORD_ACTIONS = { parcel: 'P', building: 'B', quarter: 'Q', block: 'D', wall: 'W' } as const;
+const ACTION_BY_MARKER = new Map<string, keyof typeof RECORD_ACTIONS>(Object.entries(RECORD_ACTIONS).map(([kind, marker]) => [marker, kind as keyof typeof RECORD_ACTIONS]));
 const SITES = ['auto', ...SITE_ARCHETYPES] as const;
 /** Countable building roles, sorted so the index only moves when the catalogue changes. */
 export const COUNT_ROLES: readonly string[] = [...COUNTABLE].sort();
 /** Settlement number spaces: the places of the automatic plan (`site-<rank>`), then custom places (`place-<k>`). */
 const KEY_SPACES = ['site', 'place'] as const;
-/** Address of a saved block edit (quarter index, rank in the quarter) in the plan on screen; undefined when the code
- * cannot name it (no plan yet, a part of a split block). */
+/** Address of the source block (quarter index, rank in the quarter) in the plan on screen, when available. */
 export type BlockAddress = (settlement: string, saved: string) => readonly [number, number] | undefined;
 export interface CodeEdit {
   /** Empty = region; settlement number; then quarter index; then the rank of the block in its quarter. */
@@ -116,6 +121,7 @@ export interface CodeModel {
   params: [number, number][];
   edits: CodeEdit[];
   pins: [number, number][];
+  extras?: ReturnType<typeof readExtras>;
 }
 
 // ---------------------------------------------------------------- grammar
@@ -134,19 +140,42 @@ function headerExtent(header: readonly number[]): 'auto' | number {
   return size === 'auto' ? 'auto' : size * 1000;
 }
 const pinWidth = (extent: 'auto' | number): number => intWidth(extent === 'auto' ? 200000 : extent);
+
+/** Clipping and the lot random stream depend on the parent contour. A child's saved hash
+ * cannot tell us which drawn block produced it before regeneration. Protect structural
+ * inputs in its town; split lot pieces and their buildings have explicit parent ID prefixes. */
+function exactContours(model: CodeModel): Set<CodeAction> {
+  const exact = new Set<CodeAction>();
+  const bare = model.edits.find(edit => !edit.path.length)?.actions.filter(action => action.kind === 'building') ?? [];
+  for (const edit of model.edits) {
+    const contours = edit.actions.filter(action => 'id' in action && ('shape' in action.record || 'parts' in action.record));
+    if (!contours.length) continue;
+    const childIds = [...bare, ...edit.actions].flatMap(action => (action.kind === 'parcel' || action.kind === 'building' ? [action.id] : []));
+    const hasBlock = edit.actions.some(action => action.kind === 'block') || model.edits.some(other => other.path[0] === edit.path[0] && other.path.length === 3);
+    const lotParents = new Set<string>();
+    for (const id of childIds) {
+      for (let slash = id.lastIndexOf('/'); slash > 0; slash = id.lastIndexOf('/', slash - 1)) lotParents.add(id.slice(0, slash));
+    }
+    for (const action of contours) {
+      if ((action.kind === 'quarter' && hasBlock) || ((action.kind === 'quarter' || action.kind === 'block') && childIds.length) || (action.kind === 'parcel' && lotParents.has(action.id))) exact.add(action);
+    }
+  }
+  return exact;
+}
 export function formatCode(model: CodeModel): string {
   if (!SEED_PATTERN.test(model.seed)) throw new Error('The root seed must be 6 characters of the code alphabet.');
   let code = model.seed + model.header.map(digit).join('').replace(/0+$/, '') + (model.reliefMissing ? '*' : '');
   if (model.params.length) code += '-' + writeParams(model.params);
+  const exact = exactContours(model);
   for (const edit of model.edits) {
     code += '_' + edit.path.map(n => writeInt(n)).join('.');
     let previous: number[] = [];
     for (const action of edit.actions)
       if (action.kind === 'house') code += 'H' + writeRecord(action.record);
-      else if (action.kind === 'parcel' || action.kind === 'building') {
+      else if ('id' in action) {
         const [id, bytes] = writeId(action.id, previous);
         previous = bytes;
-        code += (action.kind === 'parcel' ? 'P' : 'B') + id + writeRecord(action.record);
+        code += RECORD_ACTIONS[action.kind] + id + writeRecord(action.record, exact.has(action));
       } else if (action.kind === 'reroll') code += 'u' + writeInt(action.n);
       else if (action.kind === 'stage') code += 'i' + digit(action.stage) + writeInt(action.n);
       else if (action.kind === 'population') code += 'o' + writeInt(action.n);
@@ -162,9 +191,13 @@ export function formatCode(model: CodeModel): string {
     const width = pinWidth(headerExtent(model.header));
     code += '!' + model.pins.map(([x, y]) => writeInt(x, width) + writeInt(y, width)).join('');
   }
+  if (model.extras) code += ':' + writeExtras(model.extras);
   return code;
 }
 export function parseCode(code: string): CodeModel {
+  const extrasAt = code.indexOf(':');
+  const extras = extrasAt < 0 ? undefined : code.slice(extrasAt + 1);
+  if (extras !== undefined) code = code.slice(0, extrasAt);
   const seed = code.slice(0, SEED_LENGTH);
   if (!SEED_PATTERN.test(seed)) throw new Error(INVALID_CODE);
   let i = SEED_LENGTH;
@@ -218,14 +251,15 @@ export function parseCode(code: string): CodeModel {
       i = next;
       return value;
     };
-    while (code[i] !== undefined && 'uiol~KHPB'.includes(code[i])) {
+    while (code[i] !== undefined && 'uiol~KHPBQDW'.includes(code[i])) {
       const marker = code[i++];
+      const kind = ACTION_BY_MARKER.get(marker);
       if (marker === 'H') edit.actions.push({ kind: 'house', record: record() });
-      else if (marker === 'P' || marker === 'B') {
+      else if (kind) {
         const [id, next, bytes] = readId(code, i, previous);
         i = next;
         previous = bytes;
-        edit.actions.push({ kind: marker === 'P' ? 'parcel' : 'building', id, record: record() });
+        edit.actions.push({ kind, id, record: record() });
       } else if (marker === 'u') edit.actions.push({ kind: 'reroll', n: number() });
       else if (marker === 'i') edit.actions.push({ kind: 'stage', stage: fixed(1), n: number() });
       else if (marker === 'o') edit.actions.push(path.length ? { kind: 'population', n: number() } : { kind: 'demography', field: fixed(1), n: number() });
@@ -250,6 +284,7 @@ export function parseCode(code: string): CodeModel {
     if (!model.pins.length) throw new Error(INVALID_CODE);
   }
   if (i !== code.length) throw new Error(INVALID_CODE);
+  if (extras !== undefined) model.extras = readExtras(extras);
   return model;
 }
 
@@ -379,6 +414,10 @@ function headerSettings(seed: string, header: readonly number[]): V2Settings {
 }
 /** An imported or hand-drawn relief or coast: the code says it misses ("*"), the heightmap or project export goes with it. */
 const reliefNotInCode = (settings: V2Settings): boolean => !!(settings.options.importedHeight || settings.decor || settings.terrain?.sketch || settings.terrain?.zones || settings.terrain?.modification || settings.terrain?.coastTrace);
+const structural = (edit: QuarterOverride | BlockOverride): boolean => !!(edit.shape || edit.parts || edit.deletedParts?.length);
+const SPLIT_KEY = /^(.*)\/(\d+)$/;
+const QUARTER_KEY = /^\d+(?:\/\d+)?$/;
+const BLOCK_KEY = /^block:(?:[0-9a-f]{16}|\d+\.\d+)(?:\/\d+)?$/;
 
 export function cityCodeModel(settings: V2Settings, blockAddress?: BlockAddress): CodeModel {
   const seed = readGenerationSeed(settings.options.seed);
@@ -431,12 +470,14 @@ export function cityCodeModel(settings: V2Settings, blockAddress?: BlockAddress)
     maxCoordinate = Math.min(extentMetres - 1, Math.pow(CODE_BASE, pinWidth(headerExtent(header))) - 1);
   const coordinate = (v: number) => Math.min(maxCoordinate, Math.max(0, Math.round(v)));
   const places = new Map<number, CodeAction>();
+  const namedPlaces: [string, string][] = [];
   for (const place of settings.region?.customPlaces ?? []) {
     const n = settlementNumber(place.key);
     if (n === undefined || !place.position) continue;
     places.set(n, { kind: 'place', x: coordinate(place.position.x), y: coordinate(place.position.y), population: populationLevel(place.population), culture: indexOrThrow(CULTURES, place.culture, 'culture'), site: Math.max(0, SITES.indexOf((place.siteType ?? 'auto') as never)) });
     numbers.add(n);
     keyOf.set(n, place.key);
+    if (place.name && settlementKey(n) === place.key) namedPlaces.push([place.key, place.name]);
   }
   for (const key of new Set([...Object.keys(settings.local), ...Object.keys(settings.urban?.local ?? {})])) {
     const n = settlementNumber(key);
@@ -464,13 +505,16 @@ export function cityCodeModel(settings: V2Settings, blockAddress?: BlockAddress)
     if (house) actions.push({ kind: 'house', record: house });
     // Lots and buildings in id order, so a building follows its lot and lots of one block follow each other: each id
     // is written after the bytes it shares with the previous one.
-    const byId: (CodeAction & { id: string })[] = (buildings.get(n) ?? []).map(([id, record]) => ({ kind: 'building' as const, id, record }));
+    const byId: Extract<CodeAction, { id: string }>[] = (buildings.get(n) ?? []).map(([id, record]) => ({ kind: 'building', id, record }));
     for (const [id, edit] of Object.entries(urban.parcels?.overrides?.parcels ?? {})) {
       const record = codedRecord(edit);
       if (record) byId.push({ kind: 'parcel', id, record });
     }
-    actions.push(...byId.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : a.kind < b.kind ? -1 : 1)));
-    if (actions.length) model.edits.push({ path: [n], actions });
+    for (const [id, override] of Object.entries(urban.layout?.overrides?.walls ?? {})) {
+      const record = codedRecord(override);
+      if (record) byId.push({ kind: 'wall', id, record });
+    }
+    const subdivisions: CodeEdit[] = [];
     const subdivision = (path: number[], scope: 'quarter' | 'block', override: { salt?: number; culture?: string; houseConfig?: object }) => {
       const own: CodeAction[] = [];
       if (override.salt) own.push({ kind: 'reroll', n: override.salt });
@@ -479,24 +523,42 @@ export function cityCodeModel(settings: V2Settings, blockAddress?: BlockAddress)
       if (choices.length) own.push({ kind: 'params', params: choices });
       const houseModel = codedRecord(override.houseConfig);
       if (houseModel) own.push({ kind: 'house', record: houseModel });
-      if (own.length) model.edits.push({ path, actions: own });
+      if (own.length) subdivisions.push({ path, actions: own });
     };
     const quarters = Object.entries(urban.layout?.overrides?.quarters ?? {})
-      .filter(([q]) => /^\d+$/.test(q))
+      .filter(([q]) => QUARTER_KEY.test(q))
       .sort((a, b) => Number(a[0]) - Number(b[0]));
-    for (const [q, override] of quarters) subdivision([n, Number(q)], 'quarter', override);
+    for (const [id, override] of quarters) {
+      if (id.includes('/') || structural(override)) {
+        const record = codedRecord(override);
+        if (record) byId.push({ kind: 'quarter', id, record });
+      } else subdivision([n, Number(id)], 'quarter', override);
+    }
     const blocks = Object.entries(urban.parcels?.overrides?.blocks ?? {}).flatMap(([saved, override]) => {
-      const position = BLOCK_POSITION_KEY.exec(saved),
-        address = position ? ([Number(position[1]), Number(position[2])] as const) : blockAddress?.(key, saved);
+      const split = SPLIT_KEY.exec(saved),
+        source = split?.[1] ?? saved,
+        position = BLOCK_POSITION_KEY.exec(source),
+        address = position ? ([Number(position[1]), Number(position[2])] as const) : blockAddress?.(key, source);
+      if (split || structural(override)) {
+        const id = address ? blockPositionKey(...address) + (split ? `/${split[2]}` : '') : saved;
+        const record = codedRecord(override);
+        if (record && BLOCK_KEY.test(id)) byId.push({ kind: 'block', id, record });
+        return [];
+      }
       return address ? [{ address, override }] : [];
     });
     blocks.sort((a, b) => a.address[0] - b.address[0] || a.address[1] - b.address[1]);
     for (const { address, override } of blocks) subdivision([n, ...address], 'block', override);
+    actions.push(...byId.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : a.kind < b.kind ? -1 : 1)));
+    if (actions.length) model.edits.push({ path: [n], actions });
+    model.edits.push(...subdivisions);
   }
   model.pins = (settings.pins ?? []).map(pin => [coordinate(pin.x), coordinate(pin.y)]);
+  const extras = cityCodeExtras(settings, namedPlaces);
+  if (extras) model.extras = extras;
   return model;
 }
-/** The short code of a recipe. Manual edits (mods) stay in the project file. */
+/** The short code of a recipe. Snapshot-only edits stay in the project file. */
 export function encodeCityCode(settings: V2Settings, blockAddress?: BlockAddress): string {
   return formatCode(cityCodeModel(settings, blockAddress));
 }
@@ -522,10 +584,14 @@ export function settingsFromModel(model: CodeModel): V2Settings {
       (root.houses ??= {}).house_config = record;
     };
     for (const action of edit.actions) {
+      if ('id' in action && action.id === '__proto__') throw new Error(INVALID_CODE);
       if (action.kind === 'building' && q === undefined) (urbanRoot().buildings ??= {})[n === undefined ? action.id : `${key}/${action.id}`] = action.record as HouseEditConfig;
       else if (action.kind === 'house' && q === undefined) houseModel(action.record);
       else if (action.kind === 'house') subdivision().houseConfig = action.record;
       else if (action.kind === 'parcel' && n !== undefined && q === undefined) (((urban().parcels ??= {}).overrides ??= {}).parcels ??= {})[action.id] = action.record as ParcelOverride;
+      else if (action.kind === 'quarter' && n !== undefined && q === undefined && QUARTER_KEY.test(action.id)) (((urban().layout ??= {}).overrides ??= {}).quarters ??= {})[action.id] = action.record as QuarterOverride;
+      else if (action.kind === 'block' && n !== undefined && q === undefined && BLOCK_KEY.test(action.id)) (((urban().parcels ??= {}).overrides ??= {}).blocks ??= {})[action.id] = action.record as BlockOverride;
+      else if (action.kind === 'wall' && n !== undefined && q === undefined) (((urban().layout ??= {}).overrides ??= {}).walls ??= {})[action.id] = action.record as WallOverride;
       else if (n === undefined) {
         if (action.kind === 'demography') {
           const field = DEMOGRAPHY_FIELDS[action.field];
@@ -564,6 +630,7 @@ export function settingsFromModel(model: CodeModel): V2Settings {
   }
   settings.options.seed = writeGenerationSeed({ base: model.seed, variations });
   if (model.pins.length) settings.pins = model.pins.map(([x, y]) => ({ x, y }));
+  if (model.extras) applyCityCodeExtras(settings, model.extras);
   validateSettings(settings);
   return settings;
 }
@@ -576,7 +643,7 @@ export interface DecodedCityCode {
   /** The shared map has an imported or hand-drawn relief that the code does not carry. */
   reliefMissing?: boolean;
 }
-const CODE_SHAPE = new RegExp(`^${DIGIT_CLASS}{${SEED_LENGTH}}${DIGIT_CLASS}{0,6}\\*?(?:-${DIGIT_CLASS}+)?(?:_[0-9a-zKHPB.~]+)*(?:!${DIGIT_CLASS}+)?$`);
+const CODE_SHAPE = new RegExp(`^${DIGIT_CLASS}{${SEED_LENGTH}}${DIGIT_CLASS}{0,6}\\*?(?:-${DIGIT_CLASS}+)?(?:_[0-9a-zKHPBQDWX.~]+)*(?:!${DIGIT_CLASS}+)?(?::[A-Za-z0-9_-]+)?$`);
 /** Pin lines of the debug text: `#<n> x=<m> y=<m> <text>`. */
 const PIN_LINE = /^#(\d+)\s+x=(-?\d+)\s+y=(-?\d+)(?:\s+(.*))?$/;
 /** Plain text for a bug report: the code, the build and page, then one line per pin with its text. */
@@ -586,7 +653,7 @@ export function cityDebugText(settings: V2Settings, build: string, blockAddress?
 }
 export function decodeCityCode(text: string): DecodedCityCode {
   const lines = text.trim().split(/\r?\n/);
-  // A debug block: the first line is the code; pin lines give back the texts by order.
+  // Older debug blocks may contain pin texts only in their human-readable lines.
   const first = cityCodeFromInput(lines[0]);
   const input = lines.length > 1 && CODE_SHAPE.test(first) ? first : cityCodeFromInput(text);
   if (!CODE_SHAPE.test(input)) {
@@ -602,11 +669,12 @@ export function decodeCityCode(text: string): DecodedCityCode {
   } catch {
     throw new Error(INVALID_CODE);
   }
-  for (const line of lines.slice(1)) {
-    const match = PIN_LINE.exec(line.trim()),
-      pin = match ? settings.pins?.[Number(match[1]) - 1] : undefined;
-    if (pin && match?.[4]?.trim()) pin.text = match[4].trim();
-  }
+  if (!model.extras?.pins)
+    for (const line of lines.slice(1)) {
+      const match = PIN_LINE.exec(line.trim()),
+        pin = match ? settings.pins?.[Number(match[1]) - 1] : undefined;
+      if (pin && match?.[4]?.trim()) pin.text = match[4].trim();
+    }
   return { settings, mods: [], ...(model.reliefMissing ? { reliefMissing: true } : {}) };
 }
 /** Accept a copied code or a share URL. Other payloads (an Azgaar CSV row or JSON) are returned trimmed for the external-city parsers. */

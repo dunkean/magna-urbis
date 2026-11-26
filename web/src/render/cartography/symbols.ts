@@ -14,7 +14,7 @@ import { orientPos } from '../../gen/geo/poly';
 import { TextureLayer, textureMarks, type Mark } from '../scene';
 import { Rect4 } from '../view';
 import { appendUnderdarkMark, fungalBedLook, underdarkTextureSpec } from '../underdark';
-import { RecordingContext, setMapInk } from '../gpu/recorder';
+import { RecordingContext, setMapInk, markDatedDrawing, nativeTileInks } from '../gpu/recorder';
 import type { CartographyContext } from './context';
 import type { VectorFrame } from './frame';
 import { growRect, TAU, frac, clumpNoise, smooth01, addRing } from './geometry';
@@ -144,6 +144,7 @@ function* drawTextureSteps(c: CartographyContext, ctx: CanvasRenderingContext2D,
     // Select centres inside the cover, then draw whole trees, including overhanging crowns.
     const expanded = growRect(rect, CANOPY_MARGIN),
       count = tl.index.tilesInRect(expanded).length;
+    if (count && canopy && !brushes) markDatedDrawing(ctx);
     ctx.save();
     if (tl.kind === 'forest') {
       const clip = forestClip(c, rect);
@@ -183,18 +184,17 @@ function penSheet(c: CartographyContext, ink: string, wash: string): ParchmentSy
   return sheet;
 }
 /** `area`: only the marks inside it (a layer tile and the reach of its sprites); all marks of `tiles` otherwise. */
-function drawPenSymbols(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[], area?: Rect4): void {
+function drawPenSymbols(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[], area?: Rect4, coverage = false): void {
   const ink = c.ink(tl.kind === 'marsh' ? 'sheetReed' : 'sheetGrass'),
     wash = c.ink('sheetWash');
-  const tint: SpriteTint | undefined = ctx instanceof RecordingContext && /^#[0-9a-f]{6}$/i.test(ink.css) && /^#[0-9a-f]{6}$/i.test(wash.css) ? [ink, wash] : undefined;
-  const sheet = tint ? (c.penMask ??= new ParchmentSymbols(null, 0.6, c.makeCanvas)) : penSheet(c, ink.css, wash.css),
+  const sheet = coverage ? (c.penCoverage ??= new ParchmentSymbols(['#ff0000', '#000000'], 0.6, c.makeCanvas)) : penSheet(c, ink.css, wash.css),
     list = penMarkList(c, tl, tiles, area);
   list.sort((a, b) => a.y - b.y);
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.globalAlpha = 0.8;
-  for (const m of list) sheet.draw(ctx, m.cell, m.x, m.y, m.size, tint);
+  for (const m of list) sheet.draw(ctx, m.cell, m.x, m.y, m.size);
   ctx.restore();
 }
 /** Pen symbol marks of `tiles` (inside `area` when given), unsorted. */
@@ -218,11 +218,44 @@ function penMarkList(c: CartographyContext, tl: TextureLayer, tiles: number[], a
   }
   return list;
 }
+/** Fixed world blocks share the same instance buffer at every zoom. A block includes the overhang
+ * of neighbouring stamps and clips at its edge, preserving their global y order on the seam. */
+function recordPenBlocks(c: CartographyContext, ctx: RecordingContext, tl: TextureLayer, rect: Rect4): void {
+  const sheet = (c.penMask ??= new ParchmentSymbols(null, 0.6, c.makeCanvas));
+  const image = sheet.sheetImage();
+  if (!image) return;
+  const tint: SpriteTint = [c.ink(tl.kind === 'marsh' ? 'sheetReed' : 'sheetGrass'), c.ink('sheetWash')];
+  const side = 128;
+  for (let y = Math.floor(Math.max(0, rect.minY) / side); y < Math.ceil(Math.min(c.S, rect.maxY) / side); y++)
+    for (let x = Math.floor(Math.max(0, rect.minX) / side); x < Math.ceil(Math.min(c.S, rect.maxX) / side); x++) {
+      const key = `${tl.kind}|${x},${y}`;
+      let block = c.penBlocks.get(key);
+      if (block === undefined) {
+        const bounds = { minX: x * side, minY: y * side, maxX: (x + 1) * side, maxY: (y + 1) * side };
+        const reach = growRect(bounds, LAYER_TILE_REACH);
+        const marks = penMarkList(c, tl, tl.index.tilesInRect(reach), reach).filter(m => m.x + m.size / 2 > bounds.minX && m.x - m.size / 2 < bounds.maxX && m.y + m.size / 2 > bounds.minY && m.y - m.size / 2 < bounds.maxY);
+        block = null;
+        if (marks.length) {
+          const clip = new c.recordedP();
+          clip.rect(bounds.minX, bounds.minY, side, side);
+          block = { instances: sheet.instances(marks), clip };
+        }
+        c.penBlocks.put(key, { value: block, bounds, bytes: 128 + (block?.instances.byteLength ?? 0), release() {} });
+      }
+      if (!block) continue;
+      ctx.save();
+      ctx.clip(block.clip);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawWorldSprites(image, block.instances, tint);
+      ctx.restore();
+    }
+}
 /** Canopy lone trees of an open land layer (cached per index tile); `area` keeps only the marks inside it. */
 function drawStrays(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[], pxPerMetre: number, area?: Rect4): void {
   const { canopy } = c;
   const lone = strayMarkList(c, tl, tiles, area);
   if (!lone.length) return;
+  markDatedDrawing(ctx);
   lone.sort((a, b) => a.y - b.y || a.x - b.x);
   canopy!.draw(ctx, lone, 'forest', pxPerMetre, 1);
   ctx.globalAlpha = 1;
@@ -303,27 +336,40 @@ function drawTextureMarks(c: CartographyContext, ctx: CanvasRenderingContext2D, 
   // Lone trees at the edge of the woods, drawn as canopy sprites over the open land.
   const strayKind = !underground && (tl.kind === 'commons' || tl.kind === 'pasture' || tl.kind === 'meadow');
   const spriteStrays = strayKind && !!canopy;
-  if (sprites) {
-    // Thousands of small stamps per view: pre-composited per density and tile like the woods (drawLayerTiles).
-    // GPU engine: few enough marks are stamped directly (instanced sprites); more go through the layer tiles.
-    const direct = ctx instanceof RecordingContext && penMarkList(c, tl, tiles).length + (spriteStrays ? strayMarkList(c, tl, tiles).length : 0) <= GPU_SPRITE_BUDGET;
-    const painted =
-      !direct &&
-      drawLayerTiles(c, ctx, tl, 'pen', rect, (target, area, pxPerMetre) => {
-        const reach = growRect(area, LAYER_TILE_REACH),
-          owners = tl.index.tilesInRect(reach);
-        drawPenSymbols(c, target, tl, owners, reach);
-        if (spriteStrays) drawStrays(c, target, tl, owners, pxPerMetre, reach);
+  if (sprites && ctx instanceof RecordingContext) {
+    recordPenBlocks(c, ctx, tl, rect);
+    if (spriteStrays) {
+      const tiled =
+        strayMarkList(c, tl, tiles).length > GPU_SPRITE_BUDGET &&
+        drawLayerTiles(c, ctx, tl, 'strays', rect, (target, area, scale) => {
+          const reach = growRect(area, LAYER_TILE_REACH);
+          drawStrays(c, target, tl, tl.index.tilesInRect(reach), scale, reach);
+        });
+      if (!tiled) drawStrays(c, ctx, tl, tiles, ctx.getTransform().a);
+    }
+  } else if (sprites) {
+    const pigment = tl.kind === 'marsh' ? 'sheetReed' : 'sheetGrass';
+    nativeTileInks.get(ctx)?.add(c.ink(pigment)).add(c.ink('sheetWash'));
+    const painted = drawLayerTiles(c, ctx, tl, 'pen', rect, (target, area) => {
+      const reach = growRect(area, LAYER_TILE_REACH);
+      const coverage = target.canvas?.width > 0 && typeof target.getImageData === 'function' && /^#[\da-f]{6}$/i.test(c.ink(pigment).css) && /^#[\da-f]{6}$/i.test(c.ink('sheetWash').css);
+      drawPenSymbols(c, target, tl, tl.index.tilesInRect(reach), reach, coverage);
+      if (coverage) c.layerTiles.recordPen(target, pigment);
+    });
+    if (!painted) drawPenSymbols(c, ctx, tl, tiles);
+    if (spriteStrays) {
+      markDatedDrawing(ctx);
+      const tiled = drawLayerTiles(c, ctx, tl, 'strays', rect, (target, area, scale) => {
+        const reach = growRect(area, LAYER_TILE_REACH);
+        drawStrays(c, target, tl, tl.index.tilesInRect(reach), scale, reach);
       });
-    if (!painted) {
-      drawPenSymbols(c, ctx, tl, tiles);
-      if (spriteStrays) drawStrays(c, ctx, tl, tiles, ctx.getTransform().a);
+      if (!tiled) drawStrays(c, ctx, tl, tiles, ctx.getTransform().a);
     }
   }
   const fillP: Path2D[] = [],
     strokeP: Path2D[] = [];
   for (const t of sprites ? [] : tiles) {
-    const key = `tex-${tl.kind}|${band}|${pen ? 'pen' : 'mark'}|t${t}`;
+    const key = `tex-${tl.kind}|${band}|${pen ? 'pen' : 'mark'}|${pal.treeShape}|t${t}`;
     const p = cached(key, () => {
       const marks = textureMarks(tl, t, spec.sp, TEX_SALT[tl.kind] ?? 1, c.world.seed);
       if (!marks.length) return null;

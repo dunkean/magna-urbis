@@ -1,5 +1,5 @@
 /** Edits the short city code (cityCode.ts) keeps with their exact values: parcel edits keyed by parcel id, building
- * house models keyed by building id, and the house model of the region, a settlement, a quarter or a block.
+ * house models, subdivision edits and wall overrides keyed by their saved ids.
  * Parcel and building ids are the engine's geometry hashes (`layout-…/block-…/parcel-…`, `…/building`): the same recipe
  * on the same engine gives the same ids, so a decoded edit lands on the same lot or building.
  *
@@ -9,22 +9,20 @@
  *   text   = length (2 digits, bytes) bytes          bytes of packText, 5 bits per digit
  *   number = head length magnitude                   head = 4 + 2·decimals + sign (1 digit), length = digits of the
  *                                                    magnitude (1 digit): exact for decimals typed in the inspector
+ *   geometry keys use point deltas on a 0.5 m grid (cityCodeGeometry.ts) in place of scalar values
  *   id     = shared (2 digits) length (2 digits) bytes   only the bytes after the first `shared` bytes of the previous id
  *                                                    of the same edit, so lots of one block cost little more than their hash */
 import { CODE_BASE, CODE_DIGITS, digit, digitValue, isCodeDigit, readInt, readParamId, writeInt, writeParamId } from './cityCodeFormat';
 import { readSettingPath, writeSettingPath } from './parameterForm';
 import { scalarLeaves } from './urbanControlSchema';
+import { GEOMETRY_KEYS, readGeometry, writeGeometry } from './cityCodeGeometry';
 
 /** What the short code deliberately leaves out, in one place. The project file (.muproj) carries all of it. */
 export const NOT_IN_CODE = {
-  /** Keys of a quarter, block or lot edit that hold drawn polygons (outlines, splits, deleted split pieces). */
-  geometry: ['shape', 'parts', 'deletedParts'] as readonly string[],
-  /** The rest, for the record: pin texts (the debug text carries them), toponyms and names, imported or hand-drawn relief
-   * and coasts (the code says so with "*"), road and river edits (world snapshot of the project), quarters and blocks
-   * made by a split (`<i>/<k>` keys), typed seed texts (the code stores reroll iterations). Edit kinds added later
-   * (for example walls) belong either in RECORD_KEYS or in this list. */
-  other: ['pin texts', 'names', 'imported or drawn relief and coast', 'road and river edits', 'split parts', 'typed seed texts'] as readonly string[],
-};
+  relief: 'Imported and drawn relief rasters and coasts require their terrain inputs. The * marker flags them.',
+  rivers: 'River edits live in the world snapshot. The recipe has no hydrology overrides to replay.',
+  seeds: 'Stage seed text is outside the iteration-based seed format.',
+} as const;
 
 /** Record keys; an ID is the index. The most edited first (one-digit IDs); `houseConfig.*` is a lot's house model. */
 const HOUSE_KEYS = [
@@ -66,8 +64,30 @@ const HOUSE_KEYS = [
   'workshop.support.height_m.0',
   'workshop.support.height_m.1',
 ];
-export const RECORD_KEYS: readonly string[] = ['culture', 'role', 'function', 'deleted', 'enclosure', 'households', 'salt', ...HOUSE_KEYS, ...HOUSE_KEYS.map(key => `houseConfig.${key}`)];
+export const RECORD_KEYS: readonly string[] = [
+  'culture',
+  'role',
+  'function',
+  'deleted',
+  'enclosure',
+  'households',
+  'salt',
+  ...HOUSE_KEYS,
+  ...HOUSE_KEYS.map(key => `houseConfig.${key}`),
+  ...GEOMETRY_KEYS,
+  'buildingCulture',
+  'tissue',
+  'density',
+  'wealth',
+  'zone',
+  'operator',
+  'present',
+  'style',
+  'moat',
+  'gates',
+];
 const KEY_ID = new Map(RECORD_KEYS.map((key, id) => [key, id]));
+const geometryKey = (key: string): key is (typeof GEOMETRY_KEYS)[number] => (GEOMETRY_KEYS as readonly string[]).includes(key);
 
 // ---------------------------------------------------------------- text
 
@@ -206,15 +226,15 @@ function readValue(code: string, at: number): [unknown, number] {
   return [((head - 4) & 1 ? -1 : 1) * (magnitude / 10 ** decimals), at + 2 + length];
 }
 
-/** The leaves of an edit the code keeps (NOT_IN_CODE.geometry apart); undefined when nothing is left. */
-export function codedRecord(edit: object | undefined): Record<string, unknown> | undefined {
-  if (!edit) return undefined;
-  const record = Object.fromEntries(Object.entries(edit).filter(([key, value]) => value !== undefined && !NOT_IN_CODE.geometry.includes(key)));
-  return scalarLeaves(record).some(leaf => leaf.value !== undefined) ? record : undefined;
+/** Empty edits have no record. Geometry arrays are leaves in the code, without dotted point or ring indexes. */
+function recordLeaves(edit: object): { path: string; value: unknown }[] {
+  return Object.entries(edit).flatMap(([path, value]) => (geometryKey(path) ? (value === undefined ? [] : [{ path, value }]) : scalarLeaves(value, path).filter(leaf => leaf.value !== undefined)));
 }
-export function writeRecord(record: object): string {
-  const leaves = scalarLeaves(record)
-    .filter(leaf => leaf.value !== undefined)
+export function codedRecord(edit: object | undefined): Record<string, unknown> | undefined {
+  return edit && recordLeaves(edit).length ? Object.fromEntries(Object.entries(edit)) : undefined;
+}
+export function writeRecord(record: object, exactGeometry = false): string {
+  const leaves = recordLeaves(record)
     .map(leaf => {
       const id = KEY_ID.get(leaf.path);
       if (id === undefined) throw new Error(`Edit not in the share code: ${leaf.path}`);
@@ -222,7 +242,7 @@ export function writeRecord(record: object): string {
     })
     .sort((a, b) => a.id - b.id);
   if (!leaves.length) throw new Error('Empty edit record');
-  return leaves.map(leaf => writeParamId(leaf.id) + writeValue(leaf.value, leaf.path)).join('');
+  return leaves.map(({ id, path, value }) => writeParamId(id) + (geometryKey(path) ? writeGeometry(path, value as Parameters<typeof writeGeometry>[1], exactGeometry) : writeValue(value, path))).join('');
 }
 export function readRecord(code: string, at: number): [Record<string, unknown>, number] {
   const record: Record<string, unknown> = {};
@@ -231,7 +251,7 @@ export function readRecord(code: string, at: number): [Record<string, unknown>, 
     const [id, used] = readParamId(code, i),
       key = RECORD_KEYS[id];
     if (key === undefined || readSettingPath(record, key) !== undefined) throw new Error('Corrupt record');
-    const [value, next] = readValue(code, i + used);
+    const [value, next] = geometryKey(key) ? readGeometry(key, code, i + used) : readValue(code, i + used);
     writeSettingPath(record, key, value);
     i = next;
   }

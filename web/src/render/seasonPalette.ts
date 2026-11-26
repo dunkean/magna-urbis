@@ -32,13 +32,18 @@ let season = 0.5,
   zone: ClimateZone | undefined,
   calendar: SeasonCalendar | undefined;
 let climate: ClimateValues | undefined;
+let landSeasonDirty = true,
+  landSeasonRevision = 0;
+let landSeason: { tint: [number, number, number, number]; snow: SnowTerms } | undefined;
 export function setMapSeason(next: number, nextZone: ClimateZone | undefined = zone, nextCalendar: SeasonCalendar | undefined = calendar): void {
+  landSeasonDirty = true;
   season = next;
   zone = nextZone;
   calendar = nextCalendar;
 }
 /** The benches load a map apart from the appearance that sets the season. */
 export function setMapClimateZone(next: ClimateZone | undefined, values?: ClimateValues): void {
+  landSeasonDirty = true;
   zone = next;
   climate = values;
 }
@@ -193,10 +198,22 @@ export const LAND_SNOW_ALPHA = 0.86;
  * seasonLand) and by the ground's shader (treeSymbolsGlsl.ts landSeason, uniforms `uLandTint` and `uLandSnow`): the
  * multiply tint of the open ground with the low-ground snow of the calendar in its fourth component, and the snow terms. */
 export function mapLandSeason(): { tint: [number, number, number, number]; snow: SnowTerms } {
+  if (!landSeasonDirty && landSeason) return landSeason;
   const herb = mapHerbTint(),
     brightest = Math.max(...herb),
     shade = (v: number): number => 1 - 0.5 * (1 - v / brightest);
-  return { tint: [shade(herb[0]), shade(herb[1]), shade(herb[2]), zone ? seasonPaint(season, zone, calendar).snow : 0], snow: snowTerms() };
+  const tint: [number, number, number, number] = [shade(herb[0]), shade(herb[1]), shade(herb[2]), zone ? seasonPaint(season, zone, calendar).snow : 0],
+    snow = snowTerms();
+  landSeasonDirty = false;
+  if (!landSeason || tint.some((v, i) => v !== landSeason!.tint[i]) || snow.some((v, i) => v !== landSeason!.snow[i])) {
+    landSeason = { tint, snow };
+    landSeasonRevision++;
+  }
+  return landSeason;
+}
+export function mapLandSeasonRevision(): number {
+  if (landSeasonDirty) mapLandSeason();
+  return landSeasonRevision;
 }
 const snowHash = (i: number, j: number, salt: number): number => {
   let h = (Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ salt) >>> 0;
@@ -383,6 +400,19 @@ const token =
     p[key];
 const pen = (key: 'treeFill' | 'treeInk' | 'grass' | 'reed' | 'orchardDot') => (p: Palette) => mixHex(p[key], p.inkSoft, 0.32);
 const inks = {
+  ink: token('ink'),
+  paper: token('paper'),
+  roadEdge: token('roadEdge'),
+  roadFill: token('roadFill'),
+  trackFill: token('trackFill'),
+  farmInk: token('farmInk'),
+  farmYard: token('farmYard'),
+  farmRoof: token('farmRoof'),
+  bridgeDeck: token('bridgeDeck'),
+  bridgeInk: token('bridgeInk'),
+  wall: (p: Palette) => p.urban.wall,
+  wallFill: (p: Palette) => p.urban.wallFill,
+  ruralInk: (p: Palette) => p.rural.ink ?? p.trackFill,
   field: landColor('field'),
   garden: landColor('garden'),
   pasture: landColor('pasture'),
@@ -425,6 +455,8 @@ const inks = {
   sheetWash: (p: Palette) => mixHex(p.treeFill, p.inkSoft, 0.3),
 };
 export type SeasonInk = keyof typeof inks;
+const slotNames = new WeakMap<ColorSlot, SeasonInk>();
+export const seasonInkOf = (slot: ColorSlot): SeasonInk | undefined => slotNames.get(slot);
 
 /** Renderer-local: independently visible renderers can show different dates and colour overrides.
  * Only slots actually used by a recording need updating. */
@@ -435,6 +467,7 @@ export class SeasonColorTable {
     let slot = this.slots.get(name);
     if (!slot) {
       slot = new ColorSlot();
+      slotNames.set(slot, name);
       this.slots.set(name, slot);
       this.write(name, slot);
     }

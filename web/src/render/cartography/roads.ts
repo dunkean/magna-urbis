@@ -5,7 +5,9 @@
  * Reads: palette, the road style of the host (read once per frame), the path cache, the canopy revision of the roads.
  */
 import { groundRoadLook } from '../composition';
-import { ruralInk } from '../styles';
+import { setMapInk } from '../gpu/recorder';
+import { literalPalette } from './bandRecording';
+import { type Palette, ruralInk } from '../styles';
 import { regionalRoadSurface } from '../roadSurfaces';
 import { BLEND_ROAD_ALPHA, BLEND_ROAD_PX } from '../groundBlend';
 import { CANOPY_LEVELS, ROAD_CANOPY_REACH, canopyRuns, emphasisAlpha, hasRoadCanopy, lookRoadWidth, regionalRank, roadCanopyChanges, roadCanopyLineChanged, roadCanopyOpacity, roadCanopyRevision, strokeNaturalRoad, trackInk, type RoadStyle } from '../roadStyle';
@@ -14,6 +16,20 @@ import type { Rect4 } from '../view';
 import { growRect, runPath } from './geometry';
 import type { CartographyContext } from './context';
 import type { FrameBase, RoadPainters, VectorFrame } from './frame';
+
+/** Tracks choose the lighter road fill on dark ground. The choice is retained, its pigment is rebound. */
+export function trackSlot(pal: Palette): 'ruralInk' | 'roadFill' {
+  const p = literalPalette(pal),
+    ink = ruralInk(p);
+  return trackInk(ink, p.roadFill) === ink ? 'ruralInk' : 'roadFill';
+}
+
+export function materialBedSlot(c: CartographyContext, style: RoadStyle, track: boolean) {
+  const color = style.colors?.[track ? 'track' : 'road'];
+  if (!color) return;
+  const slot = c.ink(track ? 'trackFill' : 'roadFill');
+  return slot.css === color && slot.valid ? slot : undefined;
+}
 
 export const canopyBoxesMeet = (a: Rect4, b: Rect4): boolean => a.minX <= b.maxX && b.minX <= a.maxX && a.minY <= b.maxY && b.minY <= a.maxY;
 
@@ -80,8 +96,8 @@ export function roadPainters(c: CartographyContext, f: FrameBase): RoadPainters 
   /** Casing + fill for a group of road-like layers (all casings first so junctions merge). */
   const roadGroup = (ls: LineLayer[], fillMinPx: (l: LineLayer) => number, edgeK: (l: LineLayer) => number = () => 1): void => {
     if (!ls.length) return;
-    strokeLines(ls, pal.roadEdge, l => lw(l.width, fillMinPx(l)) + 2 * edge * edgeK(l));
-    strokeLines(ls, pal.roadFill, l => lw(l.width, fillMinPx(l)));
+    strokeLines(ls, c.ink('roadEdge'), l => lw(l.width, fillMinPx(l)) + 2 * edge * edgeK(l));
+    strokeLines(ls, c.ink('roadFill'), l => lw(l.width, fillMinPx(l)));
   };
 
   const requested: RoadStyle = deps.roadStyle?.() ?? { look: deps.roadLook ?? 'ink', emphasis: 1, night: false, colors: deps.colors };
@@ -130,7 +146,7 @@ export function roadPainters(c: CartographyContext, f: FrameBase): RoadPainters 
     if (deps.regionalRoadsOnGround?.()) return;
     const width = lookRoadWidth(roadStyle.look, rank, metres, sc);
     canopyMerged(ls).forEach((p, k) => {
-      if (p) strokeNaturalRoad(ctx, p, rank, width, sc, roadStyle, k / (CANOPY_LEVELS - 1), metres);
+      if (p) strokeNaturalRoad(ctx, p, rank, width, sc, roadStyle, k / (CANOPY_LEVELS - 1), metres, materialBedSlot(c, roadStyle, rank === 'track' || rank === 'path'));
     });
   };
   const drawRegionalRoads = (roads: LineLayer[], tracks: LineLayer[]): void => {
@@ -148,7 +164,7 @@ export function roadPainters(c: CartographyContext, f: FrameBase): RoadPainters 
           if (!ls.length) continue;
           for (const l of ls) {
             if (pavement === 'earth') strokeEarthRoads([l], regionalRank(kind), l.width);
-            else strokeNaturalRoad(ctx, merged([l]), regionalRank(kind), lookRoadWidth(roadStyle.look, regionalRank(kind), l.width, sc), sc, { ...roadStyle, pavement }, 0, l.width);
+            else strokeNaturalRoad(ctx, merged([l]), regionalRank(kind), lookRoadWidth(roadStyle.look, regionalRank(kind), l.width, sc), sc, { ...roadStyle, pavement }, 0, l.width, materialBedSlot(c, roadStyle, false));
           }
         }
       return;
@@ -156,7 +172,7 @@ export function roadPainters(c: CartographyContext, f: FrameBase): RoadPainters 
     // Drawn maps keep their inks: a paved trunk road is a firmer cased road with a centre line, once wide enough to hold it.
     const pavedCentre = (width: (l: LineLayer) => number): void => {
       const ls = roads.filter(l => l.pavement === 'asphalt' && l.kind === 'major' && width(l) * sc >= 4.5);
-      if (ls.length) strokeLines(ls, pal.roadEdge, () => px(0.8), Math.min(1, 0.7 * inkAlpha));
+      if (ls.length) strokeLines(ls, c.ink('roadEdge'), () => px(0.8), Math.min(1, 0.7 * inkAlpha));
     };
     if (roadStyle.look === 'wash') {
       // Pale translucent bands with a faint edge, as the bench draws them (terrainRoads.ts).
@@ -164,8 +180,8 @@ export function roadPainters(c: CartographyContext, f: FrameBase): RoadPainters 
         const ls = roads.filter(l => l.kind === kind),
           rank = kind === 'major' ? 'highway' : 'local',
           width = (l: LineLayer): number => Math.max(px(BLEND_ROAD_PX[rank]), l.width);
-        strokeLines(ls, pal.roadEdge, l => width(l) + px(1.6), BLEND_ROAD_ALPHA[rank] * 0.22 * inkAlpha);
-        strokeLines(ls, pal.roadFill, width, Math.min(1, BLEND_ROAD_ALPHA[rank] * inkAlpha));
+        strokeLines(ls, c.ink('roadEdge'), l => width(l) + px(1.6), BLEND_ROAD_ALPHA[rank] * 0.22 * inkAlpha);
+        strokeLines(ls, c.ink('roadFill'), width, Math.min(1, BLEND_ROAD_ALPHA[rank] * inkAlpha));
         if (kind === 'major') pavedCentre(width);
       }
       strokeCoveredTracks(tracks);
@@ -174,21 +190,22 @@ export function roadPainters(c: CartographyContext, f: FrameBase): RoadPainters 
     const surface = (l: LineLayer) => regionalRoadSurface(l.kind === 'major' ? 'major' : 'minor', sc, l.width);
     strokeLines(
       roads,
-      pal.roadEdge,
+      c.ink('roadEdge'),
       l => {
         const r = surface(l);
         return r.fill + (r.casing - r.fill) * Math.max(1, roadStyle.emphasis) * (l.pavement === 'asphalt' ? 1.5 : 1);
       },
       Math.min(1, inkAlpha),
     );
-    strokeLines(roads, pal.roadFill, l => surface(l).fill);
+    strokeLines(roads, c.ink('roadFill'), l => surface(l).fill);
     pavedCentre(l => surface(l).fill);
     strokeCoveredTracks(tracks);
   };
   const strokeCoveredTracks = (tracks: LineLayer[]): void => {
+    if (!tracks.length) return;
     canopyMerged(tracks).forEach((path, level) => {
       if (!path) return;
-      ctx.strokeStyle = trackInk(ruralInk(pal), pal.roadFill);
+      setMapInk(ctx, 'strokeStyle', c.ink(trackSlot(pal)));
       ctx.lineWidth = Math.min(lw(1.1, 0.75), px(1.8));
       ctx.globalAlpha = Math.min(1, 0.8 * pal.rural.track * inkAlpha) * roadCanopyOpacity('track', level / (CANOPY_LEVELS - 1));
       ctx.lineCap = 'butt';

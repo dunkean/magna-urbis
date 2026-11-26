@@ -3,6 +3,7 @@ import { resolveAppearance, resolvedValues, applyAppearancePatch, type Appearanc
 import { presetComposition } from '../src/render/composition';
 import { renderScene } from '../src/v2/renderScene';
 import type { World } from '../src/gen/types';
+import type { Decor } from '../src/ui/decor';
 
 const base = { mapStyle: 'parchment' as const };
 const resolve = (a: AppearanceInput | undefined, nativeCities = false, target: RenderTarget = 'view2d') => resolveAppearance(a, base, { nativeCities }, target);
@@ -59,8 +60,8 @@ describe('appearance recipe', () => {
     const base = resolve({ ...a, composition }).keys,
       season = resolve({ ...a, composition: seasonal }).keys;
     expect(season.terrainLook).not.toBe(base.terrainLook);
-    // Water freezing follows the season too; the retained terrain and forest products do not.
-    expect(season.water).not.toBe(base.water);
+    // The water pass adds its drawn hydrology regime separately; the appearance key contains only paint settings.
+    expect(season.water).toBe(base.water);
     for (const pass of ['terrainBase', 'forest', 'cartography', 'city'] as const) expect(season[pass]).toBe(base[pass]);
     const recolored = resolve({ ...a, colors: { river: '#112233', waterShore: '#445566' } }).keys;
     expect(recolored.water).toBe(before.water);
@@ -102,5 +103,20 @@ describe('render scene', () => {
     expect(bare.cities).toHaveLength(0);
     expect(bare.capabilities.nativeCities).toBe(false);
     expect(bare.revisions.terrain).not.toBe(a.revisions.terrain);
+  });
+  it('keeps the projected terrain of a retained decor across town edits', () => {
+    const decor = { raster: { n: 1, width: 1000, height: new Float32Array([12]) }, meta: { tags: {}, stats: { minHeight: 12, maxHeight: 12 } } } as Decor;
+    const world = make();
+    const terrain = { ...world.terrain, v2NativeTerrain: undefined, v2Decor: decor };
+    const initial = renderScene({ ...world, terrain });
+    const edited = renderScene({ ...initial.world, debug: { v2RustCities: { a: { layouts: [{}], stage: 'buildings' } } } });
+    expect(edited.terrain).toBe(initial.terrain);
+    expect(edited.revisions.terrain).toBe(initial.revisions.terrain);
+
+    const replacement = { ...decor, raster: { ...decor.raster, height: new Float32Array([22]) } };
+    const replacedTerrain = { ...terrain, v2Decor: replacement };
+    const replaced = renderScene({ ...world, terrain: replacedTerrain });
+    expect(replaced.terrain.height[0]).toBe(22);
+    expect(replaced.revisions.terrain).not.toBe(initial.revisions.terrain);
   });
 });

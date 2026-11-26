@@ -40,12 +40,12 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     live = createLiveHost(c);
   c.drawNames = (ctx, view, cssW, cssH) => names.drawText(ctx, view, cssW, cssH);
 
-  function update(nextSource: World, nextScene: Scene, nextStyle: MapStyle | Palette = style): boolean {
+  function update(nextSource: World, nextScene: Scene, nextStyle: MapStyle | Palette = style, sameContent = false): boolean {
     const { scene, sourceWorld, world } = c;
     if ((c.brushes || c.canopy) && nextSource.seed !== sourceWorld.seed) return false;
     if (nextSource.mapSize !== c.S || (!c.deps.palette && biomePalette(nextStyle, nextSource.options.biome) !== c.basePalette)) return false;
     // Prepare potentially fallible metadata before committing the replacement.
-    const nextWorld = cavernDisplayWorld(nextScene.renderedWorld ? { ...nextScene.renderedWorld, options: nextSource.options } : renderView(cavernDisplayWorld(nextSource)));
+    const nextWorld = cavernDisplayWorld(nextScene.renderedWorld ? { ...nextScene.renderedWorld, options: nextSource.options, names: nextSource.names } : renderView(cavernDisplayWorld(nextSource)));
     const nextLabels = names.namesOf(nextWorld);
     const terrainChanged = nextSource.terrain !== sourceWorld.terrain;
     // Dirty-region update (a town build or edit on the same terrain): tiles outside the changed areas stay cached,
@@ -61,12 +61,16 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       c.cache.clear();
       tiles.rasterCache.clear();
     }
+    if (c.deps.terrain && nextSource.landuse?.areas !== sourceWorld.landuse?.areas) c.terrainImg = undefined;
     if (nextScene.density?.cov !== scene.density?.cov) c.densityImg = undefined;
     if (nextScene.furrows !== scene.furrows) c.furrowCache.clear();
     if (nextScene !== scene) {
       c.treeMarks.clear();
       c.treeSprites.clear();
-      c.penMarks.clear();
+      if (!sameContent) {
+        c.penMarks.clear();
+        c.penBlocks.invalidate(local ? nextScene.dirty : undefined, LAYER_TILE_REACH);
+      }
       c.forestWashes.clear();
       c.strayMarks.clear();
     }
@@ -92,10 +96,19 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     c.litCache = undefined;
     c.forestRoom = undefined;
     // The region a live layer shows keeps showing until its replacement is recorded (no blank frame after a town build).
-    live.invalidateLayers(local ? nextScene.dirty : undefined);
+    live.invalidateLayers(local ? nextScene.dirty : undefined, sameContent);
     return true;
   }
 
+  let measuredScene: Scene | undefined,
+    geometryBytes = 0;
+  function retainedBytes(): number {
+    if (c.scene !== measuredScene) {
+      measuredScene = c.scene;
+      geometryBytes = c.scene.textures.reduce((n, layer) => n + layer.areas.reduce((s, a) => s + a.poly.length * 16, 0), 0);
+    }
+    return live.retainedBytes() + tiles.bytes() + c.layerTiles.bytes + c.penBlocks.bytes + (c.brushes?.cachedBytes ?? 0) + (c.canopy ? 48 * 1024 * 1024 : 0) + c.cache.size * 1024 + c.furrowCache.size * 2048 + geometryBytes;
+  }
   return {
     get scene() {
       return c.scene;
@@ -109,6 +122,20 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     drawGround: tiles.drawGround,
     drawCachedMap: tiles.drawCachedMap,
     update,
+    setLook(look) {
+      const previous = c.pal,
+        vegetation = deps.vegetation,
+        brushes = deps.brushes,
+        colors = deps.colors;
+      Object.assign(deps, look);
+      const symbolsChanged = vegetation !== deps.vegetation || brushes !== deps.brushes;
+      c.syncPalette(symbolsChanged || JSON.stringify(colors) !== JSON.stringify(deps.colors));
+      if (symbolsChanged || (previous.name === 'parchment') !== (c.pal.name === 'parchment')) c.treeMarks.clear();
+      if (previous !== c.pal) names.setText(names.text());
+      c.terrainImg = undefined;
+      tiles.suspendStepwise();
+      tiles.dropLastPicture();
+    },
     suspendStepwise: tiles.suspendStepwise,
     createLiveLayer: live.createLiveLayer,
     drawFurniture: (target, view, cssW, cssH) => drawFurniture(c, target, view, cssW, cssH),
@@ -123,8 +150,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     liveText: names.liveText,
     drawMinimap: (target, view, viewW, viewH, withRect) => drawMinimap(c, target, view, viewW, viewH, withRect),
     lastStats: () => c.stats,
-    retainedBytes: () =>
-      tiles.bytes() + c.layerTiles.bytes + (c.brushes?.cachedBytes ?? 0) + (c.canopy ? 48 * 1024 * 1024 : 0) + c.cache.size * 1024 + c.furrowCache.size * 2048 + c.scene.textures.reduce((n, layer) => n + layer.areas.reduce((s, a) => s + a.poly.length * 16, 0), 0),
+    retainedBytes,
     getMapInfo: () => ({ cartouche: (c.infoPanel ??= cartoucheModel(c.world, c.pal, 1, false)), legend: c.legendNow(), fontFamily: c.family }),
     dispose() {
       c.disposed = true;
@@ -135,6 +161,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       c.treeMarks.clear();
       c.treeSprites.clear();
       c.strayMarks.clear();
+      c.penBlocks.clear();
       c.layerTiles.clear();
       c.forestWashes.clear();
       c.patterns.clear();

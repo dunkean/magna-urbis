@@ -76,7 +76,7 @@ class LiveListRasterizer extends ListReplayer implements LiveRasterizer {
     if (this.parallel === undefined) this.parallel = gl.getExtension('KHR_parallel_shader_compile');
     let done = true;
     for (const kind of Object.keys(SHADERS) as ProgramKind[]) {
-      if (kind === 'contour' || kind === 'pen') continue; // Prepared only for lists that contain the corresponding mask.
+      if (kind === 'contour' || kind === 'pen' || kind === 'land') continue; // Prepared only for lists that use them.
       let p = this.programs.get(kind);
       if (!p) {
         p = Program.start(gl, kind);
@@ -112,7 +112,7 @@ class LiveListRasterizer extends ListReplayer implements LiveRasterizer {
         yield;
       }
       if (op.type === 'sprites') {
-        const mask = op.tint ? 'pen' : op.contourTint ? 'contour' : undefined;
+        const mask = op.landTint ? 'land' : op.tint ? 'pen' : op.contourTint ? 'contour' : undefined;
         if (mask && !this.programs.has(mask)) {
           const program = Program.start(this.gl, mask);
           program.settle(null);
@@ -120,6 +120,7 @@ class LiveListRasterizer extends ListReplayer implements LiveRasterizer {
           yield;
         }
         resources.texture(op.source, op.smoothing);
+        if (op.landTint) resources.texture(op.landTint.heights, true);
         resources.uploadSprites(op);
         yield;
         continue;
@@ -227,6 +228,7 @@ class LiveListRasterizer extends ListReplayer implements LiveRasterizer {
       const post: Mat = [density, 0, 0, density, g, g];
       // An earlier bake of the same band under the ops (texel on texel when the densities are equal).
       if (under) this.drawBaked(under, post);
+      if (options?.symbols) this.replayList(options.symbols, post);
       if (options?.between) {
         options.between(this.bakeFbo!, w, h, post);
         // The ink uses its own retained rasterizer in this context. Restore ours without clearing the colour.

@@ -17,6 +17,7 @@ import {
   type FillRule,
   type ImageSource,
   type LineCap,
+  type LandTint,
   type LineJoin,
   type Mat,
   type Paint,
@@ -166,12 +167,22 @@ const EMPTY_DASH: readonly number[] = [];
 
 type Style = string | CanvasGradient | CanvasPattern | ColorSlot;
 export type MapInk = string | ColorSlot;
+/** Only populated while painting a native exact tile. Null means the tile also drew dated imagery. */
+export const nativeTileInks = new WeakMap<CanvasRenderingContext2D, Set<ColorSlot> | null>();
+export function markDatedDrawing(ctx: CanvasRenderingContext2D): void {
+  if (ctx instanceof RecordingContext) ctx.bakedSeason = true;
+  else if (nativeTileInks.has(ctx)) nativeTileInks.set(ctx, null);
+}
 export function setMapInk(ctx: CanvasRenderingContext2D, style: 'fillStyle' | 'strokeStyle', ink: MapInk): void {
   if (typeof ink === 'string') ctx[style] = ink;
   else if (ctx instanceof RecordingContext && ink.valid) {
     const rec: RecordingContext = ctx;
     rec[style] = ink;
-  } else ctx[style] = ink.css;
+  } else {
+    if (ctx instanceof RecordingContext) markDatedDrawing(ctx);
+    else nativeTileInks.get(ctx)?.add(ink);
+    ctx[style] = ink.css;
+  }
 }
 
 class State {
@@ -301,6 +312,8 @@ export class RecordingCanvas {
 
 /** Canvas 2D subset that records a DisplayList. Cast to CanvasRenderingContext2D by RecordingCanvas.getContext. */
 export class RecordingContext {
+  /** A dated canopy can also emit plain vector paths at close zoom. */
+  bakedSeason = false;
   private s = new State();
   private stack: State[] = [];
   private depth = 0;
@@ -353,11 +366,13 @@ export class RecordingContext {
       width: this.owner.width,
       height: this.owner.height,
       ops,
+      ...(this.bakedSeason ? { bakedSeason: true } : {}),
       stats: { calls: this.nCalls, ops: ops.length, paths: this.nPaths, sprites: this.nSprites, recordMs: now() - this.t0 },
       ...(this.reason !== undefined ? { unsupported: this.reason } : {}),
       ...(this.marks.length ? { marks: this.marks } : {}),
     };
     this.ops = [];
+    this.bakedSeason = false;
     this.last = null;
     this.marks = [];
     this.clipMemo.clear();
@@ -368,6 +383,9 @@ export class RecordingContext {
 
   /** Capture a self-contained paint pass. Its caller guarantees the same incoming transform and clip on reuse. */
   *captureSection(steps: Generator<void>): Generator<void, RecordedSection | undefined> {
+    // A dated sibling pass cannot change whether this section itself can be retained.
+    const datedBefore = this.bakedSeason;
+    this.bakedSeason = false;
     const start = this.ops.length,
       calls = this.nCalls,
       paths = this.nPaths,
@@ -376,8 +394,9 @@ export class RecordingContext {
     this.save();
     try {
       yield* steps;
-      if (!this.reason) return { ops: this.ops.slice(start), calls: this.nCalls - calls, paths: this.nPaths - paths, sprites: this.nSprites - sprites };
+      if (!this.reason && !this.bakedSeason) return { ops: this.ops.slice(start), calls: this.nCalls - calls, paths: this.nPaths - paths, sprites: this.nSprites - sprites };
     } finally {
+      this.bakedSeason ||= datedBefore;
       this.restore();
       this.last = null;
     }
@@ -950,6 +969,18 @@ export class RecordingContext {
     this.push({ type: 'clear', transform: this.matNow(), clip: this.s.clip, x, y, w, h });
   }
 
+  /** A trusted, immutable batch in world coordinates. The producer packs per-instance alpha. */
+  drawWorldSprites(image: CanvasImageSource, instances: Float32Array, tint: SpriteTint): void {
+    const count = instances.length / SPRITE_STRIDE;
+    if (!count || this.reason) return;
+    const composite = this.composite();
+    if (!composite) return;
+    this.nCalls++;
+    this.nSprites += count;
+    this.push({ type: 'sprites', source: image, tint, instances, count, transform: this.matNow(), clip: this.s.clip, smoothing: this.s.smoothing, composite });
+    this.last = null;
+  }
+
   /** One coverage sprite, isolated from ordinary image batching. */
   drawContourImage(image: CanvasImageSource, contourTint: ContourTint, ...rect: [number, number, number, number, number, number, number, number]): void {
     const at = this.ops.length;
@@ -957,6 +988,15 @@ export class RecordingContext {
     this.drawImage(image, ...rect);
     const op = this.ops[at];
     if (op?.type === 'sprites') this.ops[at] = { ...op, contourTint };
+    this.last = null;
+  }
+
+  drawLandImage(image: CanvasImageSource, landTint: LandTint, ...rect: [number, number, number, number, number, number, number, number]): void {
+    const at = this.ops.length;
+    this.last = null;
+    this.drawImage(image, ...rect);
+    const op = this.ops[at];
+    if (op?.type === 'sprites') this.ops[at] = { ...op, landTint };
     this.last = null;
   }
 

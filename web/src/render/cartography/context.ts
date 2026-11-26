@@ -17,7 +17,7 @@ import { orientPos } from '../../gen/geo/poly';
 import { furrowLines } from '../furrows';
 import { renderView } from '../../gen/settlements/merge';
 import { biomePalette } from '../biomes';
-import { SeasonColorTable, seasonSource, type SeasonInk } from '../seasonPalette';
+import { SeasonColorTable, seasonSource, mapLandSeasonRevision, type SeasonInk } from '../seasonPalette';
 import { applyRenderColors } from '../customColors';
 import { renderTerrainPixels } from '../raster';
 import { worldWaterPixels } from '../terrainWater';
@@ -27,6 +27,7 @@ import { legendModel, type Panel } from '../legend';
 import { FONT_STACKS } from '../labelStyles';
 import { RecOnlyPath2D, RecPath2D } from '../gpu/path';
 import { RecordingContext } from '../gpu/recorder';
+import type { LandTint } from '../gpu/contract';
 import { noteLiveUnit } from '../live/liveStats';
 import type { World } from '../../gen/types';
 import type { Palette, MapStyle } from '../styles';
@@ -34,10 +35,11 @@ import type { Rect4, View } from '../view';
 import type { Label } from '../labels';
 import { RasterTileCache } from '../rasterTiles';
 import { LAYER_TILE_BYTES } from './woods';
+import { LayerTileCache } from './penTiles';
 import type { ParchmentSymbols } from '../parchmentSymbols';
 import type { ForestRoom } from '../forestRoom';
 import { addRing, polyPath } from './geometry';
-import type { CanvasLike, CanvasRendererDeps, FrameStats, Overlays } from './contract';
+import type { CanvasLike, CanvasRendererDeps, FrameStats, LandBackdrop, Overlays } from './contract';
 import type { ForestWash } from './forest';
 import type { PenMark } from './symbols';
 
@@ -77,8 +79,22 @@ export class CartographyContext {
   pal: Palette;
   private inks: SeasonColorTable;
   readonly ink = (name: SeasonInk) => this.inks.ink(name);
-  /** Identity of the palette (the same object, the same id): part of the keys of everything painted. */
+  /** Identity of the palette used to validate finished pixels. */
   paletteId: number;
+  /** Stable for a seasonal change. Explicit changes to custom colours or symbol settings start a new look. */
+  lookId: number;
+  private lastPalette = -1;
+  private lastLandSeason = -1;
+  private paintVersion = 0;
+  readonly paintRevision = (): number => {
+    const season = this.deps.terrain ? mapLandSeasonRevision() : 0;
+    if (this.lastPalette !== this.paletteId || (this.backdrop && this.lastLandSeason !== season)) {
+      this.lastPalette = this.paletteId;
+      this.paintVersion++;
+    }
+    this.lastLandSeason = season;
+    return this.paintVersion;
+  };
   /** Side of the map square (m). */
   readonly S: number;
   /** Same unit as svg.ts, used for a few decorative widths. */
@@ -91,7 +107,9 @@ export class CartographyContext {
   readonly makeCanvas: (w: number, h: number) => CanvasLike | null;
   canopy: CanvasCanopy | undefined;
   brushes: CanvasBrushes | undefined;
-  readonly family: string;
+  get family(): string {
+    return FONT_STACKS[this.pal.name] ?? this.pal.fontFamily;
+  }
   readonly overlays: Overlays;
 
   sourceWorld: World;
@@ -125,6 +143,11 @@ export class CartographyContext {
   /** Land = the map minus the sea and lakes (landClip); undefined: not built yet. */
   landPath: Path2D | null | undefined;
   terrainImg: CanvasImageSource | null | undefined;
+  private backdrop?: LandBackdrop;
+  get hasLandBackdrop(): boolean {
+    return !!this.backdrop;
+  }
+  readonly landUniforms = (): LandTint | undefined => this.backdrop?.uniforms();
   waterImg: CanvasImageSource | null | undefined;
   cavernRockImg: CanvasImageSource | null | undefined;
   densityImg: CanvasImageSource | null | undefined;
@@ -135,12 +158,14 @@ export class CartographyContext {
   /** GPU recording: canopy sprite data per index tile and atlas resolution (woods.ts recordTreeSprites). */
   readonly treeSprites = new Map<TextureLayer, Map<string, { image: CanvasImageSource; data: Float32Array; marks: Mark[] } | null>>();
   readonly penMarks = new Map<string, PenMark[]>();
+  readonly penBlocks = new RasterTileCache<{ instances: Float32Array; clip: Path2D } | null>(24 * 1024 * 1024);
   penMask?: ParchmentSymbols;
+  penCoverage?: ParchmentSymbols;
   readonly penSheets = new Map<string, ParchmentSymbols>();
   /** Lone trees stepping out of the woods, per open land layer and index tile. */
   readonly strayMarks = new Map<TextureLayer, Map<number, Mark[]>>();
   /** Pre-composited sprite layers (woods.ts drawLayerTiles); null marks a tile with nothing to draw. */
-  readonly layerTiles = new RasterTileCache<CanvasImageSource | null>(LAYER_TILE_BYTES);
+  readonly layerTiles = new LayerTileCache(LAYER_TILE_BYTES, pigment => [this.ink(pigment), this.ink('sheetWash')]);
   layerTilesFailed = false;
   /** Layer tile canvases drawn into a GPU recording: a recorded list may replay them after their eviction. */
   readonly recordedTiles = new WeakSet<object>();
@@ -166,8 +191,9 @@ export class CartographyContext {
     this.sourceWorld = world0;
     const world = (this.world = cavernDisplayWorld(deps.scene?.renderedWorld ? { ...deps.scene.renderedWorld, options: world0.options, names: world0.names } : renderView(cavernDisplayWorld(world0))));
     this.basePalette = deps.palette?.() ?? biomePalette(style, world.options.biome);
-    this.paletteId = paletteIdOf(this.basePalette);
+    this.lookId = ++paletteCount;
     const pal = (this.pal = applyRenderColors(this.basePalette, deps.colors));
+    this.paletteId = paletteIdOf(pal);
     this.inks = new SeasonColorTable(pal);
     this.scene = deps.scene ?? buildScene(world0, deps.tileSize, { mask: deps.mask });
     this.S = world.mapSize;
@@ -178,22 +204,33 @@ export class CartographyContext {
     this.recordedP = this.P === RecPath2D ? RecOnlyPath2D : this.P;
     this.makeCanvas = deps.createCanvas ?? defaultCreateCanvas;
     this.tintStamps();
-    this.family = FONT_STACKS[pal.name] ?? pal.fontFamily;
     this.overlays = { labels: world.options.labels !== false, legend: !!world.options.legend, cartouche: true };
   }
 
-  /** The stamps tinted by the palette: the canopy sprites and the painted brushes. */
-  private tintStamps(keepBrushes = false): void {
+  private canopyKey = '';
+  private brushSource?: CanvasRendererDeps['brushes'];
+  private brushTint = '';
+  /** Only the pigments used by the canopy or brush atlas invalidate its pixels. */
+  private tintStamps(): void {
     const { deps, world, pal } = this;
-    this.canopy?.dispose();
-
-    this.canopy = deps.vegetation === 'canopy' && !isUnderdarkBiome(world.options.biome) ? new CanvasCanopy(world.seed, pal, this.makeCanvas) : undefined;
-    if (keepBrushes && this.brushes) return;
+    const canopy = deps.vegetation === 'canopy' && !isUnderdarkBiome(world.options.biome);
+    const key = canopy ? JSON.stringify([pal.name, pal.treeFill, pal.treeInk, pal.ink, pal.paper, pal.season]) : '';
+    if (this.canopyKey !== key) {
+      this.canopyKey = key;
+      this.canopy?.dispose();
+      this.canopy = canopy ? new CanvasCanopy(world.seed, pal, this.makeCanvas) : undefined;
+      this.treeSprites.clear();
+    }
+    const source = supportsPaintedBiome(world.options.biome) ? deps.brushes : undefined;
+    const tint = source ? JSON.stringify(brushColorMatrix(pal)) : '';
+    if (this.brushSource === source && this.brushTint === tint) return;
+    this.brushSource = source;
+    this.brushTint = tint;
     this.brushes?.dispose();
     this.brushes = undefined;
-    if (deps.brushes && supportsPaintedBiome(world.options.biome)) {
+    if (source) {
       try {
-        this.brushes = new CanvasBrushes(world, pal, deps.brushes, this.makeCanvas);
+        this.brushes = new CanvasBrushes(world, pal, source, this.makeCanvas);
       } catch {
         /* Vector symbols when allocations/tinting are unavailable. */
       }
@@ -201,24 +238,25 @@ export class CartographyContext {
   }
   /** Takes the palette of the moment (CanvasRendererDeps.palette) at the start of a paint or of a key, and returns its
    * id. Another season only drops what holds colours; the scene, the paths, the marks and the washes are kept. */
-  readonly syncPalette = (): number => {
+  readonly syncPalette = (changedLook = false): number => {
     const next = this.deps.palette?.();
-    if (next && next !== this.basePalette) {
+    if (next && (next !== this.basePalette || changedLook)) {
       const sameSource = seasonSource(next) === seasonSource(this.basePalette);
+      if (!sameSource || changedLook) this.lookId = ++paletteCount;
       this.basePalette = next;
-      this.paletteId = paletteIdOf(next);
       this.pal = applyRenderColors(next, this.deps.colors);
+      this.paletteId = paletteIdOf(this.pal);
       // Old live suffixes can still draw above their old baked prefixes while the replacement is prepared.
       // Keep those slots pinned to this date. Retained land recordings own their mutable table.
       this.inks = new SeasonColorTable(this.pal);
-      // Only monochrome styles have a brush colour matrix; their palettes never season.
-      this.tintStamps(sameSource && !brushColorMatrix(this.pal));
-      this.treeSprites.clear();
-      this.layerTiles.clear();
+      this.tintStamps();
+      if (sameSource && !changedLook) this.layerTiles.changePalette();
+      else this.layerTiles.clear();
       this.penSheets.clear();
       this.patterns.clear();
-      this.terrainImg = this.waterImg = undefined;
-      if (!sameSource) this.cavernRockImg = this.densityImg = undefined;
+      if (changedLook || !sameSource || !this.backdrop) this.terrainImg = undefined;
+      this.waterImg = undefined;
+      if (changedLook || !sameSource) this.cavernRockImg = this.densityImg = undefined;
       this.dropPanels();
     }
     return this.paletteId;
@@ -420,9 +458,13 @@ export class CartographyContext {
   readonly getTerrain = (): CanvasImageSource | null => {
     if (this.terrainImg !== undefined) return this.terrainImg;
     const { deps, world, pal } = this;
+    this.backdrop = undefined;
     try {
-      if (deps.terrain) this.terrainImg = deps.terrain(world, pal);
-      else {
+      if (deps.terrain) {
+        const terrain = deps.terrain(world, pal);
+        this.backdrop = terrain && 'summer' in terrain ? terrain : undefined;
+        this.terrainImg = terrain && 'summer' in terrain ? terrain.summer : terrain;
+      } else {
         const shared = !deps.createCanvas && TERRAIN_IMAGES.get(world.terrain)?.get(pal);
         if (shared && shared.mapSize === world.mapSize) return (this.terrainImg = shared.image);
         const r = renderTerrainPixels(world, pal);
@@ -446,6 +488,17 @@ export class CartographyContext {
       this.terrainImg = null;
     }
     return this.terrainImg;
+  };
+  readonly drawTerrain = (ctx: CanvasRenderingContext2D, tex: CanvasImageSource, ...rect: [number, number, number, number] | [number, number, number, number, number, number, number, number]): void => {
+    const backdrop = this.backdrop;
+    if (backdrop && ctx instanceof RecordingContext) {
+      const source: [number, number, number, number, number, number, number, number] = rect.length === 4 ? [0, 0, backdrop.summer.width, backdrop.summer.height, ...rect] : rect;
+      ctx.drawLandImage(tex, backdrop.uniforms(), ...source);
+    } else {
+      const image = backdrop ? backdrop.canvas() : tex;
+      if (rect.length === 4) ctx.drawImage(image, ...rect);
+      else ctx.drawImage(image, ...rect);
+    }
   };
   /** Tiling pattern (tile of `tw` x `th` meters drawn at 14 px/m, rotated `rot` degrees); null where canvases/DOMMatrix are unavailable (Node). */
   readonly getPattern = (ctx: CanvasRenderingContext2D, key: string, tw: number, th: number, rot: number, draw: (c: CanvasRenderingContext2D, k: number) => void): CanvasPattern | null => {

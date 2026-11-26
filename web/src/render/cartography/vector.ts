@@ -19,6 +19,7 @@ import type { CartographyContext, DrawMode } from './context';
 import type { CanvasLike, FrameStats } from './contract';
 import type { FrameBase, VectorFrame } from './frame';
 import { layerTilesFitView } from './woods';
+import type { RoadRecording } from './roadRecording';
 import type { LandRecording } from './landRecording';
 import { landPainters, paintContours, paintLandMask, paintLandUseSteps } from './landuse';
 import { paintFieldNetwork } from './fields';
@@ -38,7 +39,7 @@ export function drawVector(c: CartographyContext, view: View, target: CanvasLike
 }
 
 /** Same calls and draw order as a synchronous vector draw, with boundaries for the drape's idle slices. */
-export function* drawVectorSteps(c: CartographyContext, view: View, target: CanvasLike = c.canvas, mode: DrawMode = 'all', fullRect?: Rect4, retainedLand?: LandRecording): Generator<void, FrameStats> {
+export function* drawVectorSteps(c: CartographyContext, view: View, target: CanvasLike = c.canvas, mode: DrawMode = 'all', fullRect?: Rect4, retainedLand?: LandRecording, retainedRoads?: RoadRecording): Generator<void, FrameStats> {
   c.syncPalette();
   const { deps, pal, S, now, cache, furrowCache, brushes } = c;
   const t0 = now();
@@ -84,7 +85,7 @@ export function* drawVectorSteps(c: CartographyContext, view: View, target: Canv
     if (tex) {
       ctx.imageSmoothingEnabled = true;
       (ctx as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
-      ctx.drawImage(tex, 0, 0, S, S);
+      c.drawTerrain(ctx, tex, 0, 0, S, S);
     }
     const drawVisibleTerrain = (): void => {
       if (!tex) return;
@@ -96,8 +97,8 @@ export function* drawVectorSteps(c: CartographyContext, view: View, target: Canv
       const tw = Number((tex as { width?: unknown }).width),
         th = Number((tex as { height?: unknown }).height);
       if (Number.isFinite(tw) && Number.isFinite(th) && tw > 0 && th > 0) {
-        ctx.drawImage(tex, (x * tw) / S, (y * th) / S, (w * tw) / S, (h * th) / S, x, y, w, h);
-      } else ctx.drawImage(tex, 0, 0, S, S);
+        c.drawTerrain(ctx, tex, (x * tw) / S, (y * th) / S, (w * tw) / S, (h * th) / S, x, y, w, h);
+      } else c.drawTerrain(ctx, tex, 0, 0, S, S);
     };
     const cavernFloor = c.world.terrain.caverns && c.polyL('cavern-floor');
     if (cavernFloor) {
@@ -157,7 +158,8 @@ export function* drawVectorSteps(c: CartographyContext, view: View, target: Canv
     // 4. farmsteads, then regional roads
     paintFarmsteads(c, f);
     yield;
-    paintRegionalRoads(c, f);
+    if (retainedRoads) yield* retainedRoads.paint(c, f);
+    else paintRegionalRoads(c, f);
     yield;
     // 5. urban
     paintUrban(c, f);
@@ -276,6 +278,7 @@ function frameBase(c: CartographyContext, ctx: CanvasRenderingContext2D, view: V
     ctx.setLineDash([]);
   };
   const strokeLines = (ls: LineLayer[], color: MapInk, widthOf: (l: LineLayer) => number, alpha = 1, dash: number[] = [], cap: CanvasLineCap = 'round'): void => {
+    if (!ls.length) return;
     setMapInk(ctx, 'strokeStyle', color);
     ctx.globalAlpha = alpha;
     ctx.setLineDash(dash);

@@ -4,11 +4,13 @@
  */
 import type { World, Settlement, NamesLayer, LandUseLayer } from '../gen/types';
 import type { TerrainData } from '../../../rust/bridge/terrain';
+import type { Decor } from '../ui/decor';
 import type { RenderCapabilities } from '../render/appearanceRecipe';
 import { terrainFromDecor } from '../ui/benchTerrainTransfer';
 import type { V2Settings } from './contracts';
 import type { RustTownSnapshot } from './rustUrban';
 import { nativeCityRecords, nativeCitiesOf, nativeTerrainOf, worldCapabilities } from './nativeProducts';
+import { retainedDecorOf } from './decorTerrain';
 import { v2WorldDecor } from './worldDecor';
 
 export interface SceneRevisions {
@@ -57,6 +59,8 @@ interface Entry {
   fallback?: { key: string; data: TerrainData };
 }
 const scenes = new WeakMap<World, Entry>();
+// Local edits keep the decor. Keep its display terrain too, so the compositor can retain the baked ground.
+const decorTerrains = new WeakMap<Decor, TerrainData>();
 const EMPTY: Readonly<Record<string, RustTownSnapshot>> = Object.freeze({});
 const climateKey = (settings: V2Settings): string => JSON.stringify([settings.terrain?.climate, settings.terrain?.climateValues, settings.terrain?.motifSize, settings.terrain?.refine, settings.terrain?.relief]);
 
@@ -68,7 +72,8 @@ export function renderScene(world: World, settings?: V2Settings): RenderScene {
   }
   const records = nativeCityRecords(world) ?? EMPTY,
     cities = nativeCitiesOf(world),
-    native = nativeTerrainOf(world);
+    native = nativeTerrainOf(world),
+    decor = native || !world.terrain ? undefined : retainedDecorOf(world.terrain);
   const self: Entry = { scene: undefined as unknown as RenderScene, settings };
   const cityRevisions: Record<string, number> = {};
   for (const [key, city] of Object.entries(records)) cityRevisions[key] = revisionOf(city);
@@ -83,6 +88,14 @@ export function renderScene(world: World, settings?: V2Settings): RenderScene {
     names: world.names,
     get terrain(): TerrainData {
       if (native) return native;
+      if (decor) {
+        let terrain = decorTerrains.get(decor);
+        if (!terrain) {
+          terrain = terrainFromDecor(decor);
+          decorTerrains.set(decor, terrain);
+        }
+        return terrain;
+      }
       const current = self.settings;
       if (!current) throw new Error('A scene without native terrain needs the V2 settings.');
       const key = climateKey(current);
@@ -90,7 +103,7 @@ export function renderScene(world: World, settings?: V2Settings): RenderScene {
       return self.fallback.data;
     },
     capabilities: Object.freeze(worldCapabilities(world)),
-    revisions: Object.freeze({ terrain: revisionOf(native ?? world.terrain?.height), roads: revisionOf(world.roads), landuse: revisionOf(world.landuse), settlements: revisionOf(world.settlements), names: revisionOf(world.names), cities: Object.freeze(cityRevisions) }),
+    revisions: Object.freeze({ terrain: revisionOf(native ?? decor ?? world.terrain?.height), roads: revisionOf(world.roads), landuse: revisionOf(world.landuse), settlements: revisionOf(world.settlements), names: revisionOf(world.names), cities: Object.freeze(cityRevisions) }),
     extensions: Object.freeze({ debug: world.debug }),
   };
   self.scene = scene;

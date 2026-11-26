@@ -53,6 +53,7 @@ interface LiveCompositorOptions {
   /** Asks the page for a new animation frame (the viewer's invalidate): the compositor never draws by itself. */
   invalidate(): void;
   quality(): 'full' | 'light';
+  refineAtRest?(): boolean;
   /** The relief the camera of a tilted frame stands on; undefined: a flat map. Only asked for a tilted view. */
   relief(): WorldRelief | undefined;
   /** Side of the map in metres (0: no map), for the tiles of the map drape. */
@@ -216,6 +217,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     frame.now = now;
     frame.moving = moving;
     frame.quality = options.quality();
+    frame.refineAtRest = options.refineAtRest?.() ?? true;
     frameValid = true;
   };
 
@@ -438,7 +440,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     const started = performance.now(),
       last = frameValid ? frame : undefined;
     // The group of the next frame with an isolated layer, allocated here rather than in that frame.
-    if (last && !group.failed && !group.target) group.ensure(last.width, last.height, last.quality === 'light' ? 0 : Math.min(4, maxSamples));
+    if (last && !group.failed && !group.target) group.ensure(last.width, last.height, last.refineAtRest === false || last.quality === 'light' ? 0 : Math.min(4, maxSamples));
     let pending = false,
       othersPending = false;
     const drapeFirst = drapeWaited;
@@ -450,7 +452,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     for (let i = 0; i < LIVE_LAYER_ORDER.length; i++) {
       const name = LIVE_LAYER_ORDER[i],
         layer = layers[name];
-      if (!layer?.work) {
+      if (!layer?.work || (last?.refineAtRest === false && !last.moving && !last.camera.tilted && layer.tiltOnly)) {
         stats.pending[name] = false;
         continue;
       }
@@ -863,7 +865,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     }
     // Light quality drops the multisampling of a moving view only: a live layer is also the picture at rest, where
     // the edges are looked at and the fill cost is paid once.
-    const samples = frame.quality === 'light' && moving ? 0 : Math.min(4, maxSamples);
+    const samples = frame.refineAtRest === false || (frame.quality === 'light' && moving) ? 0 : Math.min(4, maxSamples);
 
     timer.poll();
     timer.begin();

@@ -42,8 +42,7 @@ const optionFields: ParameterField[] = [
   { path: 'sprawl', label: 'sprawl', type: 'number', min: 0.25, max: 4 },
 ];
 const deleted: ParameterField = { path: 'deleted', label: 'deleted', type: 'boolean' };
-/** What the inspector sets on one quarter or block as parameters. Their house model is a record (action "H"); their
- * outlines stay in the project file (NOT_IN_CODE). */
+/** What the inspector sets on one quarter or block as parameters. House models and drawn subdivisions have edit records. */
 const subdivisionFields = (): Record<'quarter' | 'block', readonly ParameterField[]> => ({
   quarter: [
     urbanField('tissue', 'culture', 'quarter'),

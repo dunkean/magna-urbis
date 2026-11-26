@@ -27,6 +27,7 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
    * changes besides its scale (its key). */
   const drapeRevision = new RegionalRevision();
   let drapeKey: string | undefined,
+    seenPaint = host.paintRevision?.(),
     seenContent = host.contentRevision?.();
   /** The drape tile recorded in bands: the recorded row its next band starts at, and what the last band cost per row. */
   let drapeRow = 0,
@@ -46,7 +47,7 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
    * recorded at about the tile's scale. */
   const regionFor = (tile: DrapeCanvas): Region | undefined => {
     const r = retained.shown;
-    if (!r || r.stale || r.draft || !retained.current(r) || r.key !== host.key(r.scale, r.dpr, r.light)) return undefined;
+    if (!r || r.stale || r.draft || r.key !== host.key(r.scale, r.dpr, r.light) || !retained.current(r)) return undefined;
     if (host.fixedRaster?.()) return r.parts.every(b => !!b.snapshot) ? r : undefined;
     return r.dpr === tile.dpr && r.light === tile.light && covers(r.rect, tile.rect) && reusable(tile.scale / r.scale) ? r : undefined;
   };
@@ -86,7 +87,7 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
       scissor[2] = b.rect.maxX * s + tx;
       scissor[3] = b.rect.maxY * s + ty;
       part.baked = b.baked;
-      part.list = b.suffix;
+      part.list = b.drapeSuffix ?? b.suffix;
     }
     raster.replayLive(r.live as readonly LivePart[], target, tile.pixels, tile.pixels);
     tile.putGroup(1);
@@ -97,8 +98,10 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
       // Content only: a product made per scale (contour paths) repaints the tiles painted without it (`arrivals`).
       const key = isFailed() || raster.lost || !host.active() ? undefined : host.key(1, 1, false),
         content = host.contentRevision?.();
-      if (key !== drapeKey) {
+      const paint = host.paintRevision?.();
+      if (key !== drapeKey || seenPaint !== paint) {
         drapeKey = key;
+        seenPaint = paint;
         drapeRevision.bump();
       } else if (key !== undefined && content !== seenContent) {
         drapeRevision.bump(seenContent === undefined ? undefined : host.contentChanges?.(seenContent));

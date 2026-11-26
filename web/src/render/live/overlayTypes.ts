@@ -15,6 +15,10 @@ export interface OverlayPlan {
 }
 /** One recorded band: `w` x `h` device pixels at the plan's scale and pixel ratio, centred on (`cx`, `cy`). */
 export interface OverlayBand {
+  /** The host rebound an existing display list without running the cartography painters. */
+  replayed?: boolean;
+  /** Whether a different date still gives the same finished pixels. */
+  pixelsMatch?: () => boolean;
   list: DisplayList;
   rect: Rect4;
   cx: number;
@@ -37,6 +41,7 @@ export interface OverlayHost {
   key(scale: number, dpr: number, light: boolean): string | undefined;
   /** Region-limited changes to otherwise compatible recordings. */
   contentRevision?(): number;
+  paintRevision?(): number;
   contentChanges?(since: number): readonly Rect4[] | undefined;
   /** Changes when a product made per view arrives (contour paths, the water raster of the view): a region with a
    * provisional band, recorded before, is made again; the others stay valid. */
@@ -58,8 +63,9 @@ export interface OverlayHost {
   readonly maxWaitMs: number;
 }
 
-export type MutablePart = { list: DisplayList; post: [number, number, number, number, number, number]; scissor: [number, number, number, number]; baked?: BakedPrefix; prefix?: BakedPrefix; suffix?: DisplayList };
+export type MutablePart = { list: DisplayList; post: [number, number, number, number, number, number]; scissor: [number, number, number, number]; baked?: BakedPrefix; prefix?: BakedPrefix; suffix?: DisplayList; symbols?: DisplayList };
 export interface Band {
+  pixelsMatch?: () => boolean;
   rect: Rect4;
   cx: number;
   cy: number;
@@ -68,6 +74,9 @@ export interface Band {
   /** The area ops, until they are baked. Absent: the band has none (outside the map, or a look without tints). */
   prefix?: DisplayList;
   suffix: DisplayList;
+  /** Retained pen blocks below the separate world ink; drape replays them with the crisp suffix. */
+  symbols?: DisplayList;
+  drapeSuffix?: DisplayList;
   /** Texels per recorded pixel of the bakes of this band. */
   density: number;
   /** Next step: 0 cut the suffix polygons to the band, 1 upload the prefix, 2 upload the suffix, 3 bake the prefix, 4 done. */
@@ -79,6 +88,7 @@ export interface Band {
   part: MutablePart;
 }
 export interface Region extends OverlayPlan {
+  paint?: number;
   light: boolean;
   stale: boolean;
   /** A region with repeated vector work prepares a motion snapshot during idle slices. */
@@ -93,7 +103,7 @@ export interface Region extends OverlayPlan {
   arrivals: number;
   content?: number;
   /** A pending refresh borrows unchanged bands from the shown region until it completes. */
-  reuse?: { source: Region; boxes: readonly Rect4[]; bands: Set<Band> };
+  reuse?: { source: Region; boxes: readonly Rect4[]; repaint?: ReadonlySet<Band>; bands: Set<Band> };
 }
 
 export const covers = (outer: Rect4, inner: Rect4): boolean => outer.minX <= inner.minX && outer.minY <= inner.minY && outer.maxX >= inner.maxX && outer.maxY >= inner.maxY;

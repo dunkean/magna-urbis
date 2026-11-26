@@ -15,14 +15,15 @@ import type { CartographyContext } from './context';
 import type { LiveTextPlacement } from '../live/contract';
 
 export function createNames(c: CartographyContext) {
-  const { pal, deps, makeCanvas, family, overlays } = c;
+  const { deps, makeCanvas, overlays } = c;
   let text = DEFAULT_TEXT;
-  let mapLabels: MapLabel[] = buildMapLabels(c.world, pal.name, pal, text);
+  let mapLabels: MapLabel[] = buildMapLabels(c.world, c.pal.name, c.pal, text);
   const widthCache = new Map<string, number>();
   let placedLast: PlacedMapLabel[] = [];
   // One measure function for the renderer's life (its identity keys the layout memo); it measures on the context of the current draw.
   let measureCtx: CanvasRenderingContext2D | undefined;
   const measureLabel = (text: string, size: number, st: KindStyle): number => {
+    const family = c.family;
     const key = `${st.family ?? family}|${st.italic ? 'i' : ''}${st.bold ? 'b' : ''}|${Math.round(size * 10)}|${text}`;
     let w = widthCache.get(key);
     if (w === undefined) {
@@ -64,6 +65,7 @@ export function createNames(c: CartographyContext) {
   let ownMeasureCtx: CanvasRenderingContext2D | null | undefined;
   /** Places the names for the view into `placedLast` (and `liveTextLast` when placed anew); false when names are off. */
   function placeNames(measure: CanvasRenderingContext2D | null | undefined, view: View, cssW: number, cssH: number, moving: boolean): boolean {
+    const { pal, family } = c;
     const sources = deps.textSources?.();
     if (sources !== textSourcesOf || textLabelsOf !== mapLabels) {
       textSourcesOf = sources;
@@ -91,7 +93,7 @@ export function createNames(c: CartographyContext) {
     return true;
   }
   function drawText(ctx: CanvasRenderingContext2D, view: View, cssW: number, cssH: number, moving = false): void {
-    if (placeNames(ctx, view, cssW, cssH, moving)) drawMapLabels(ctx, placedLast, pal, family);
+    if (placeNames(ctx, view, cssW, cssH, moving)) drawMapLabels(ctx, placedLast, c.pal, c.family);
   }
   function placeText(view: View, cssW: number, cssH: number): void {
     if (ownMeasureCtx === undefined) ownMeasureCtx = makeCanvas(1, 1)?.getContext('2d') ?? null;
@@ -100,11 +102,11 @@ export function createNames(c: CartographyContext) {
   /** New text settings: the names are built again. */
   const setText = (next: Readonly<TextSettings>): void => {
     text = next;
-    mapLabels = buildMapLabels(c.world, pal.name, pal, text);
+    mapLabels = buildMapLabels(c.world, c.pal.name, c.pal, text);
     widthCache.clear();
   };
   /** A new world: its names (built before the update commits, so a failure leaves the renderer as it was). */
-  const namesOf = (next: World): MapLabel[] => buildMapLabels(next, pal.name, pal, text);
+  const namesOf = (next: World): MapLabel[] => buildMapLabels(next, c.pal.name, c.pal, text);
   const setNames = (next: MapLabel[]): void => {
     mapLabels = next;
   };

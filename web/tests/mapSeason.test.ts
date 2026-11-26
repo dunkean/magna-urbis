@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { LayerTileCache } from '../src/render/cartography/penTiles';
 import { SeasonColorTable, applySeason, mapLandSeason, mapSnowCover, roofSeasonKey, seasonPaint, setMapClimateZone, setMapSeason } from '../src/render/seasonPalette';
 import { CLIMATE_ZONE_VALUES } from '../../rust/bridge/terrainClimate';
 import { ParchmentSymbols } from '../src/render/parchmentSymbols';
@@ -12,6 +13,48 @@ import { PALETTES } from '../src/render/styles';
 import { fakeWorld, mockCanvas, MockPath2D } from '../scripts/fakeworld';
 
 const parchment = PALETTES.parchment;
+it('recolours the same composed Canvas grass tile lazily and releases dated tree tiles', () => {
+  const table = new SeasonColorTable(parchment);
+  const cache = new LayerTileCache(1024, pigment => [table.ink(pigment), table.ink('sheetWash')]);
+  const canvas = { width: 3, height: 1 } as HTMLCanvasElement;
+  // Three final samples after source-over stamping: ink, wash, and both in a partially covered pixel.
+  const bytes = new Uint8ClampedArray([255, 0, 0, 215, 0, 0, 0, 81, 155, 0, 0, 124]);
+  const read = vi.fn(() => ({ width: 3, height: 1, data: bytes.slice() }));
+  const write = vi.fn((_image: ImageData) => {});
+  const target = { canvas, getImageData: read, createImageData: () => ({ width: 3, height: 1, data: new Uint8ClampedArray(12) }), putImageData: write } as unknown as CanvasRenderingContext2D;
+  const bounds = { minX: 0, maxX: 3, minY: 0, maxY: 1 };
+  cache.recordPen(target, 'sheetGrass');
+  cache.put('pen', { value: canvas, bytes: 12, bounds, release() {} });
+  const releaseTree = vi.fn();
+  cache.put('trees', { value: {} as HTMLCanvasElement, bytes: 12, bounds, release: releaseTree });
+  expect(cache.bytes).toBe(30);
+  for (const [i, date] of [0, 0.75, 0.5].entries()) {
+    table.update(at(date, 'nordic'));
+    cache.changePalette();
+    expect(write).toHaveBeenCalledTimes(i + 1);
+    expect(cache.get('pen')).toBe(canvas);
+    const out = write.mock.lastCall![0].data;
+    for (let p = 0; p < 12; p += 4) {
+      expect(out[p + 3]).toBe(bytes[p + 3]);
+      for (let k = 0; k < 3; k++) expect(out[p + k]).toBeCloseTo(table.ink('sheetGrass').rgba[k] * bytes[p] + table.ink('sheetWash').rgba[k] * (255 - bytes[p]), 0);
+    }
+    expect(cache.get('pen')).toBe(canvas);
+    expect(write).toHaveBeenCalledTimes(i + 2);
+  }
+  expect(read).toHaveBeenCalledTimes(1);
+  cache.changePalette();
+  expect(cache.get('pen')).toBe(canvas);
+  expect(write).toHaveBeenCalledTimes(4);
+  expect(releaseTree).toHaveBeenCalledTimes(1);
+  expect(cache.bytes).toBe(18);
+  // A nearly full cache keeps the drawable RGBA tiles. Discarding the old mask only costs
+  // a fresh grass composition on the next date.
+  cache.put('large', { value: {} as HTMLCanvasElement, bytes: 1010, bounds, release() {} });
+  expect(cache.get('pen')).toBe(canvas);
+  expect(cache.bytes).toBe(1022);
+  cache.changePalette();
+  expect(cache.get('pen')).toBeUndefined();
+});
 const at = (season: number, zone: Parameters<typeof seasonPaint>[1]) => applySeason(parchment, seasonPaint(season, zone));
 const light = (hex: string) => [1, 3, 5].reduce((sum, i) => sum + parseInt(hex.slice(i, i + 2), 16), 0);
 

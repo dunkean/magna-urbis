@@ -114,7 +114,7 @@ export interface V2Settings {
   appearance?: V2Appearance;
   /** Cartographic names can be edited without regenerating terrain or buildings. */
   naming?: import('../gen/names/types').NamingSettings;
-  /** Map pins in integer world metres; their coordinates travel in the short code, their texts only in the project. */
+  /** Map pins in integer world metres. Coordinates and optional text travel in the share code. */
   pins?: { x: number; y: number; text?: string }[];
   runtime?: {
     compute: 'auto' | 'cpu' | 'gpu';

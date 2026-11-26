@@ -3,6 +3,10 @@
 - Town streets render again on WebGL2 devices that enforce reserved shader names.
 - The live map keeps its cartographic overlay when town buildings first appear.
 - Selecting a map feature keeps its outline aligned as you move or tilt the camera and lets the page rest when the view is still.
+- City share codes carry drawn outlines and splits, custom names, pin text, and road and wall edits. Maps with nested edits preserve the contour precision needed to find the same lots and buildings when reopened.
+- Local building, parcel and block edits on saved landscapes reuse the ground already drawn in the top and tilted views.
+- Changing the Parchment map date reuses the summer relief, grass and reed marks, and overlay tiles whose colours stay the same.
+- Switching map colours reuses overlay geometry, and Parchment reuses grass and reed drawings when zooming. Fast looks render at a lower resolution and skip a second quality pass when the map stops moving.
 
 - Low riverbank shrubs rise from their painted crowns in tilted satellite views. Dense conifer stands retain distant silhouettes across the field of view, and tree crowns follow local snow conditions in every climate. Modelled foliage takes its colour from the matching crown in the current map style.
 - Close satellite views reveal gravel bars, scoured bends and shallow side channels in dry riverbeds. Low water tapers through tributary junctions and opens into lakes across exposed shores.

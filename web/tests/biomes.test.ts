@@ -35,21 +35,21 @@ describe('biomes', () => {
     expect(biomeLandKind('orchard', 'tundra', dry)).not.toBe('orchard');
   });
   it('uses the same biome palette in SVG and Canvas without changing registered styles', () => {
+    const w = fakeWorld({ mapSize: 1600, buildings: 0, streets: 0, landAreas: 0 });
+    w.options.biome = 'desert';
+    w.landuse!.areas.push({
+      kind: 'commons',
+      poly: [
+        { x: 50, y: 50 },
+        { x: 100, y: 50 },
+        { x: 100, y: 100 },
+        { x: 50, y: 100 },
+      ],
+    });
     for (const { id } of STYLE_LIST) {
       expect(biomePalette(id)).toBe(PALETTES[id]);
       expect(biomePalette(id, 'temperate')).toBe(PALETTES[id]);
       const before = JSON.stringify(PALETTES[id]);
-      const w = fakeWorld();
-      w.options.biome = 'desert';
-      w.landuse!.areas.push({
-        kind: 'commons',
-        poly: [
-          { x: 50, y: 50 },
-          { x: 100, y: 50 },
-          { x: 100, y: 100 },
-          { x: 50, y: 100 },
-        ],
-      });
       const p = biomePalette(id, 'desert');
       const r = createCanvasRenderer(mockCanvas(800, 800).canvas as unknown as CanvasLike, w, id, { Path2D: MockPath2D as unknown as typeof Path2D });
       expect(r.palette).toBe(p);

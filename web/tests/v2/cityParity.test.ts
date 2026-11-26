@@ -1303,6 +1303,7 @@ describe('retained city environment parity', () => {
       expect(source).toContain('cityWaterCutsLand(');
       expect(source).toContain('cityCountrysideCanvasOptions(');
     }
+    for (const source of [read('../../src/v2/display/composedView.ts'), read('../../src/ui/urbanLanduse.ts')]) expect(source).toContain('liveLookPixelRatio(');
     expect(cityCountrysideTextureVisible('forest', 0.607)).toBe(true);
     expect(cityCountrysideTextureVisible('orchard', 0.767)).toBe(true);
     expect(cityCountrysideTextureVisible('field', 0.607)).toBe(false);

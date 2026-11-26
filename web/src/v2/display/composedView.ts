@@ -53,6 +53,7 @@ import { createWorldTreesLayer, type WorldTreesLayer } from '../../render/world/
 import { createWorldBankPlantsLayer } from '../../render/world/bankPlantsLayer';
 import { createWorldCaveLayer } from '../../render/world/caveLayer';
 import { getDisplayQuality } from '../../render/displayQuality';
+import { LIVE_LOOK_QUALITY, liveLookPixelRatio } from '../../render/composition';
 import { StepwisePaint } from '../../render/stepwisePaint';
 import { isFantasyStyle } from '../../../../rust/bridge/fantasyTerrain';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
@@ -247,6 +248,12 @@ export class ComposedView {
     return this.pitch !== 0 || this.yaw !== 0;
   }
 
+  private get presentation() {
+    return LIVE_LOOK_QUALITY[this.map.resolved?.quality ?? 'full'];
+  }
+  private liveRatio(dpr: number): number {
+    return liveLookPixelRatio(dpr, this.map.resolved?.quality);
+  }
   /** Why this frame cannot be composed (undefined: it can). Creates the compositor and its layers on the way. */
   blocked(view: View, w: number, h: number, dpr: number): string | undefined {
     const map = this.map,
@@ -261,6 +268,7 @@ export class ComposedView {
     const live = (this.live ??= createLiveCompositor({
       invalidate: map.compose,
       quality: getDisplayQuality,
+      refineAtRest: () => this.presentation.refineAtRest,
       relief: () => this.relief(),
       mapSize: () => map.world?.mapSize ?? 0,
       restPending: () => this.motion.restOwed || this.rest === 'due' || this.rest === 'painting' || !!this.awaited,
@@ -290,7 +298,7 @@ export class ComposedView {
     if (!live.hasLayer('ground')) return 'no ground layer';
     // No baked tile covers the view yet and nothing stands in for the ground: a composed frame would show bare paper.
     // The miniature's capture stands in for the top view only; a tilted frame draws no stand-in.
-    if (!live.layerReady('ground', view, w, h, Math.min(2, dpr)) && (isTilted(view) || !ground.miniGround())) return GROUND_WARMING;
+    if (!live.layerReady('ground', view, w, h, this.liveRatio(dpr)) && (isTilted(view) || !ground.miniGround())) return GROUND_WARMING;
     return undefined;
   }
 
@@ -370,8 +378,7 @@ export class ComposedView {
         if (layer && layer === this.liveCity) live.invalidateLayer('city');
         else live.setLayer('city', layer);
         this.liveCity = layer;
-      }
-      else live.invalidateLayer('city');
+      } else live.invalidateLayer('city');
     }
   }
 
@@ -575,7 +582,7 @@ export class ComposedView {
 
   /** One compositor frame: ground, water, and the live layers whose exact canvas is not shown. */
   private composeFrame(live: LiveCompositor, view: View, w: number, h: number, dpr: number, moving: boolean, now: number, repaintFurniture = false): void {
-    const ratio = Math.min(2, dpr),
+    const ratio = this.liveRatio(dpr),
       map = this.map,
       { ground, water } = this.parts,
       tilted = isTilted(view);
@@ -584,9 +591,9 @@ export class ComposedView {
     // while it is tilted (another raster would bake every tile of the map drape again). That raster has metres per pixel:
     // at rest the raster of the view, the one of the top view it tilts from, goes over it on the tiles it covers.
     const size = map.world!.mapSize,
-      vectors = tilted ? water.vectorRaster({ cx: size / 2, cy: size / 2, scale: DRAPED_WATER_PIXELS / size }, DRAPED_WATER_PIXELS, DRAPED_WATER_PIXELS, 1, false) : water.vectorRaster(view, w, h, dpr, !moving);
+      vectors = tilted ? water.vectorRaster({ cx: size / 2, cy: size / 2, scale: DRAPED_WATER_PIXELS / size }, DRAPED_WATER_PIXELS, DRAPED_WATER_PIXELS, 1, false) : water.vectorRaster(view, w, h, dpr, !moving && this.presentation.refineAtRest);
     live.setWater(vectors?.image, vectors?.region);
-    if (!tilted) live.setWaterDetail(undefined);
+    if (!tilted || !this.presentation.refineAtRest) live.setWaterDetail(undefined);
     else if (!moving) {
       const detail = water.drapedDetail(view, w, h, dpr);
       live.setWaterDetail(detail?.image, detail?.region, water.vectorDue);
@@ -658,7 +665,7 @@ export class ComposedView {
       map = this.map,
       { cartography, town } = this.parts,
       renderer = cartography.renderer,
-      ratio = Math.min(2, dpr);
+      ratio = this.liveRatio(dpr);
     this.motion.restDone();
     // Taken before the paints: an invalidation they raise makes the picture due again.
     this.paintedRevision = map.paintRevision;
@@ -737,6 +744,13 @@ export class ComposedView {
     for (const layer of EXACT_LAYERS) {
       // Without a cartography there is no overlay and no name to paint; a hidden town has nothing to paint either.
       if (layer === 'city' ? !cityOn || !town.city : !cartography.renderer) continue;
+      if (!this.presentation.refineAtRest) {
+        if (live.layerPending(layer)) {
+          awaited ??= layer;
+          continue;
+        }
+        if (live.layerReady(layer, view, w, h, ratio)) continue;
+      }
       if (live.restExact(layer, view, w, h, ratio)) continue;
       // The live layer holds another region, mesh tier or placement (it keeps following the map meanwhile): it gets
       // a slice of work now, and the layer is painted exact only once it has nothing left to do and still cannot
@@ -808,8 +822,8 @@ export class ComposedView {
     if (!this.onPage || !shown || !live?.active()) return undefined;
     // The ground of a new terrain has no tile yet (the view holds its last picture, mapView.ts): a frame drawn now
     // would be bare paper. Nothing is frozen: the canvases stay as they are through the passes.
-    if (!live.layerReady('ground', shown.view, shown.w, shown.h, Math.min(2, shown.dpr))) return undefined;
-    if (!live.draw(shown.view, shown.w, shown.h, Math.min(2, shown.dpr), false)) return undefined;
+    if (!live.layerReady('ground', shown.view, shown.w, shown.h, this.liveRatio(shown.dpr))) return undefined;
+    if (!live.draw(shown.view, shown.w, shown.h, this.liveRatio(shown.dpr), false)) return undefined;
     const sources = [live.canvas];
     if (!this.volumeBuildings && atOrAbove('overlay', this.shownFrom) && this.overlayOnPage) sources.push(this.overlayOnPage);
     if (!this.volumeBuildings && atOrAbove('city', this.shownFrom)) sources.push(this.cityCanvas);

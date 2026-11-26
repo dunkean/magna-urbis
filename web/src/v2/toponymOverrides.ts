@@ -6,11 +6,9 @@ import type { LabelEdit } from './mapLabels';
  * - a settlement name lives in `naming.places[settlementKey]` (the generator uses it as the place's name);
  * - any other toponym lives in `naming.labels[nameEntryId].text` (applied after generation);
  * - visibility is `naming.labels[id].hidden` (true hidden, false always shown, absent automatic).
- * They are keyed by the stable name-entry id or settlement key, kept by the project file,
- * and left out of the short share code (see `stripToponymOverrides`).
+ * Stable name-entry ids and settlement keys let project files and share codes restore the authored names.
  */
 export const TOPONYM_MAX_LENGTH = 200;
-type Naming = NonNullable<V2Settings['naming']>;
 /** Label kinds whose name is attached to a native city object without a generated name entry. */
 const OBJECT_KINDS = new Set(['quarter', 'parcel', 'building']);
 
@@ -101,11 +99,4 @@ export function setToponymHidden(settings: V2Settings, target: ToponymTarget, hi
     delete edit.hidden;
     prune(settings, target.id);
   }
-}
-
-/** Short codes carry the generation recipe only: settlement renames and edits of generated labels
- * (names, visibility, position, style) stay in the project. Author free labels keep travelling. */
-export function stripToponymOverrides(naming: Naming): void {
-  delete naming.places;
-  if (naming.labels) for (const id of Object.keys(naming.labels)) if (!id.startsWith('free:')) delete naming.labels[id];
 }

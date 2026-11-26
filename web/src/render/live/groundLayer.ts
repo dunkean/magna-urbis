@@ -216,7 +216,8 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     wantedDepth = new Float32Array(MAX_WANTED);
   let wantedCount = 0;
   /** Bumped whenever a tile is baked, dropped or made stale (DrapeTiles.revision). */
-  let tileRevision = 0, paintIndexRevision = -1;
+  let tileRevision = 0,
+    paintIndexRevision = -1;
   let paintTiers: number[] = [];
   // Scan result of nextBake.
   let foundTier = 0,
@@ -259,7 +260,20 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, staging, 0);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
     sentCount = -1;
-    state = { program, uSize: gl.getUniformLocation(program, 'uSize'), uOrigin: gl.getUniformLocation(program, 'uOrigin'), uScale: gl.getUniformLocation(program, 'uScale'), uTiles: gl.getUniformLocation(program, 'uTiles'), vao, instances, staging, stagingFbo, pages: [], crownPages: new Map(), free: [] };
+    state = {
+      program,
+      uSize: gl.getUniformLocation(program, 'uSize'),
+      uOrigin: gl.getUniformLocation(program, 'uOrigin'),
+      uScale: gl.getUniformLocation(program, 'uScale'),
+      uTiles: gl.getUniformLocation(program, 'uTiles'),
+      vao,
+      instances,
+      staging,
+      stagingFbo,
+      pages: [],
+      crownPages: new Map(),
+      free: [],
+    };
     return state;
   }
 
@@ -450,6 +464,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
         ay = frame.moving ? velY * LEAD_S : 0;
       if (scan(k, Math.min(minX, minX + ax), Math.min(minY, minY + ay), Math.max(maxX, maxX + ax), Math.max(maxY, maxY + ay), cx + ax, cy + ay, 0)) return true;
     }
+    if (frame?.refineAtRest === false && !frame.moving) return false;
     const coarse = Math.min(frame?.quality === 'light' ? 1 : COARSE_TIERS - 1, frame ? finestTier(frame.dpr) : COARSE_TIERS - 1);
     for (let tier = 1; tier <= coarse; tier++) {
       const n = 2 ** tier;
@@ -469,13 +484,14 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
   /** Visible tiles of the wanted tier and coarse tiles still to bake (stats only). */
   function countPending(frame: LiveFrame | undefined): number {
     let count = 0;
-    for (let tier = 0; tier < (frame?.quality === 'light' ? 2 : COARSE_TIERS); tier++) {
+    const coarse = frame?.refineAtRest === false && !frame.moving ? 1 : frame?.quality === 'light' ? 2 : COARSE_TIERS;
+    for (let tier = 0; tier < coarse; tier++) {
       const n = 2 ** tier;
       for (let iy = 0; iy < n; iy++) for (let ix = 0; ix < n; ix++) if (needs(tier, ix, iy)) count++;
     }
     if (!frame) return count;
     if (frame.camera.tilted) {
-      for (let i = 0; i < wantedCount; i++) if (wantedTier[i] >= COARSE_TIERS && needs(wantedTier[i], wantedX[i], wantedY[i])) count++;
+      for (let i = 0; i < wantedCount; i++) if (wantedTier[i] >= coarse && needs(wantedTier[i], wantedX[i], wantedY[i])) count++;
       return count;
     }
     const [sx, sy, tx, ty] = frame.worldToPixel,
@@ -486,7 +502,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       x1 = Math.min(n - 1, Math.ceil((frame.width - tx) / sx / ts) - 1);
     const y0 = Math.max(0, Math.floor(-ty / sy / ts)),
       y1 = Math.min(n - 1, Math.ceil((frame.height - ty) / sy / ts) - 1);
-    if (k >= COARSE_TIERS) for (let iy = y0; iy <= y1; iy++) for (let ix = x0; ix <= x1; ix++) if (needs(k, ix, iy)) count++;
+    if (k >= coarse) for (let iy = y0; iy <= y1; iy++) for (let ix = x0; ix <= x1; ix++) if (needs(k, ix, iy)) count++;
     return count;
   }
 
@@ -661,10 +677,16 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
           paintIndexRevision = tileRevision;
         }
         for (const tier of paintTiers) {
-          const scale = 2 ** tier / gridSize, u = x * scale, v = y * scale;
-          const ix = Math.floor(u), iy = Math.floor(v), tile = tiles.get(tileKey(tier, ix, iy));
+          const scale = 2 ** tier / gridSize,
+            u = x * scale,
+            v = y * scale;
+          const ix = Math.floor(u),
+            iy = Math.floor(v),
+            tile = tiles.get(tileKey(tier, ix, iy));
           if (!tile?.crowns || tile.generation !== generation) continue;
-          const page = Math.floor(tile.slot / LAYERS), colour = state.pages[page], crowns = state.crownPages.get(page);
+          const page = Math.floor(tile.slot / LAYERS),
+            colour = state.pages[page],
+            crowns = state.crownPages.get(page);
           if (!crowns) continue;
           let index = pages.findIndex(p => p.colour === colour);
           if (index < 0) {
@@ -674,7 +696,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
           target[offset] = Math.min(TILE - 1, Math.floor((u - ix) * TILE));
           target[offset + 1] = Math.min(TILE - 1, Math.floor((v - iy) * TILE));
           const radiusTexels = Math.min(TILE, Math.ceil(radius * scale * TILE));
-          target[offset + 2] = (radiusTexels * TREE_PAINT_PAGES + index) * LAYERS + tile.slot % LAYERS;
+          target[offset + 2] = (radiusTexels * TREE_PAINT_PAGES + index) * LAYERS + (tile.slot % LAYERS);
           return true;
         }
         return false;
@@ -835,8 +857,10 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       // the light budget (96 tiles) would evict, as the camera moves, tiles a few frames from being shown again.
       if (frame) maxPages = pagesFor(frame.camera.tilted ? 'full' : frame.quality);
       // The relief goes up once per terrain, before the camera first tilts.
-      const heights = options.terrain();
-      if (heights) (draped ??= new DrapedGround(gl, drapeTiles)).prepare(heights);
+      if (frame?.refineAtRest !== false || frame.camera.tilted) {
+        const heights = options.terrain();
+        if (heights) (draped ??= new DrapedGround(gl, drapeTiles)).prepare(heights);
+      }
       const renderer = options.renderer();
       if (!renderer) return false;
       const revision = renderer.contentRevision();

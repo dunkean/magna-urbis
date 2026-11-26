@@ -81,6 +81,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       const p = (underPool[underLive.length] ??= { list: NOTHING, post: [1, 0, 0, 1, 0, 0], scissor: [0, 0, 0, 0] }),
         snapshot = host.fixedRaster?.() || far || frame.moving ? b.snapshot : undefined;
       p.prefix = b.baked;
+      p.symbols = b.symbols;
       p.suffix = b.suffix;
       p.baked = snapshot ?? (host.ink ? undefined : b.baked);
       p.list = snapshot ? NOTHING : b.suffix;
@@ -154,6 +155,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
         // Reuse prepared snapshots during motion too; missing or failed bakes still replay the exact suffix.
         const snapshot = host.fixedRaster?.() || far || frame.moving ? b.snapshot : undefined;
         part.prefix = b.baked;
+        part.symbols = b.symbols;
         part.suffix = b.suffix;
         if (snapshot) {
           part.baked = snapshot;
@@ -183,9 +185,10 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
           for (const b of r.parts) diagnostics.bandDrawn(b, undefined, far, frame);
           prefixLive.length = 0;
           for (const part of parts) {
-            if (!part.prefix) continue;
+            if (!part.prefix && !part.symbols) continue;
             const prefix = (prefixPool[prefixLive.length] ??= { list: NOTHING, post: part.post, scissor: part.scissor });
             prefix.baked = part.prefix;
+            prefix.list = part.symbols ?? NOTHING;
             prefix.post = part.post;
             prefix.scissor = part.scissor;
             prefixLive.push(prefix);
@@ -242,7 +245,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
         drape.wanted(frame, wanted);
         more = wanted || !warm || inkWork;
         // Idle and at rest: a slice of what the next recordings would make in one block, at most WARM_SLICE_MS.
-        if (!more && !recording.moving) more = !host.warm(Math.min(start + budgetMs, host.now() + WARM_SLICE_MS));
+        if (!more && !recording.moving && frame.refineAtRest !== false) more = !host.warm(Math.min(start + budgetMs, host.now() + WARM_SLICE_MS));
         if (recording.snapshots(frame, start + budgetMs)) more = true;
       } catch (error) {
         fail(error);

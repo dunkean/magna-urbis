@@ -14,7 +14,8 @@ type Box = readonly [number, number, number, number];
 export function boundedList(list: DisplayList): DisplayList {
   const ops: DrawOp[] = [];
   for (const op of list.ops) {
-    if (op.type === 'sprites') {
+    if (op.type === 'sprites' && op.count <= 1024) ops.push(op);
+    else if (op.type === 'sprites') {
       for (let i = 0; i < op.count; i += 1024) {
         const count = Math.min(1024, op.count - i);
         ops.push({ ...op, count, instances: op.instances.subarray(i * SPRITE_STRIDE, (i + count) * SPRITE_STRIDE) });

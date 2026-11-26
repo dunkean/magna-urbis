@@ -8,7 +8,35 @@ import { biomePalette } from './biomes';
 import type { BiomeName } from '../gen/biomes';
 import { PALETTES, ruralInk } from './styles';
 import { regionalRoadSurface } from './roadSurfaces';
-import { LAND_SNOW_ALPHA, landSnowRagged, mapLandSeason, mapSeasonKey, mapSnowCover } from './seasonPalette';
+import { LAND_SNOW_ALPHA, landSnowRagged, mapLandSeason, mapLandSeasonRevision, mapSnowCover } from './seasonPalette';
+import type { LandBackdrop } from './cartography/contract';
+
+const landHeights = new WeakMap<SettlementRaster, { heights: ImageData; maxHeight: number }>();
+
+/** Date-free relief for the overlay shader. Packing both bytes into opaque texels permits
+ * linear interpolation on any WebGL2 device. The native Canvas path needs no height texture. */
+export function landBackdrop(summer: HTMLCanvasElement, raster: SettlementRaster, top?: number): LandBackdrop {
+  return {
+    summer,
+    canvas: () => seasonLand(summer, raster),
+    uniforms() {
+      let relief = landHeights.get(raster);
+      if (!relief || (top !== undefined && relief.maxHeight !== Math.max(1, top))) {
+        let maxHeight = Math.max(1, top ?? 1);
+        if (top === undefined) for (const h of raster.height) maxHeight = Math.max(maxHeight, h);
+        const heights = new ImageData(raster.n, raster.n);
+        for (let i = 0; i < raster.height.length; i++) {
+          const h = Math.round(65535 * Math.max(0, Math.min(1, raster.height[i] / maxHeight)));
+          heights.data[4 * i] = h >>> 8;
+          heights.data[4 * i + 1] = h & 255;
+          heights.data[4 * i + 3] = 255;
+        }
+        landHeights.set(raster, (relief = { heights, maxHeight }));
+      }
+      return { ...relief, ...mapLandSeason() };
+    },
+  };
+}
 
 export type V1LandscapeStyle = 'parchment' | 'atlas';
 export function v1RoadPaint(kind: 'major' | 'minor' | 'track', width: number, scale: number, style: V1LandscapeStyle) {
@@ -203,11 +231,11 @@ function snowSheet(r: SettlementRaster): HTMLCanvasElement | undefined {
   ctx.putImageData(image, 0, 0);
   return sheet;
 }
-const seasonSheets = new WeakMap<HTMLCanvasElement, { key: string; canvas: HTMLCanvasElement }>();
+const seasonSheets = new WeakMap<HTMLCanvasElement, { key: number; canvas: HTMLCanvasElement }>();
 /** A lit land at the date of the map: the tint of its open ground and the snow of the zone's calendar, over the kept
  * summer sheet. Two fills and a stretched snow sheet: the relief and the water mask are never computed again. */
 export function seasonLand(land: HTMLCanvasElement, r: SettlementRaster): HTMLCanvasElement {
-  const key = mapSeasonKey(),
+  const key = mapLandSeasonRevision(),
     found = seasonSheets.get(land);
   if (found?.key === key) return found.canvas;
   const tint = mapLandSeason().tint.slice(0, 3),

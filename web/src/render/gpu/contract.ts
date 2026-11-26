@@ -139,6 +139,15 @@ export interface StrokeOp extends OpState {
 /** Premultiplied pen-sheet coverage in R (ink) and G (wash). */
 export type SpriteTint = readonly [ink: ColorSlot, wash: ColorSlot];
 
+/** The summer sprite supplies premultiplied land and its punched alpha. The second texture
+ * encodes altitude / maxHeight as two opaque bytes, most significant first. */
+export interface LandTint {
+  heights: ImageData;
+  maxHeight: number;
+  tint: Rgba;
+  snow: Rgba;
+}
+
 /**
  * drawImage calls with the same source, composite, clip and smoothing, merged in call order.
  * Per instance (SPRITE_STRIDE floats): sx, sy, sw, sh (source pixels), dx, dy, dw, dh (user units),
@@ -148,6 +157,9 @@ export type SpriteTint = readonly [ink: ColorSlot, wash: ColorSlot];
  */
 export interface SpriteOp {
   readonly type: 'sprites';
+  readonly landTint?: LandTint;
+  /** World-space instances share their storage across bands; only this draw's map-to-device matrix differs. */
+  readonly transform?: Mat;
   readonly contourTint?: ContourTint;
   readonly tint?: SpriteTint;
   readonly source: ImageSource;
@@ -173,6 +185,7 @@ interface ClearOp {
 export type DrawOp = FillOp | StrokeOp | SpriteOp | ClearOp;
 
 export interface DisplayList {
+  readonly bakedSeason?: boolean;
   /** Device pixel size of the recorded canvas. */
   readonly width: number;
   readonly height: number;
@@ -244,6 +257,8 @@ export interface LivePart {
 
 export interface LiveBakeOptions {
   under?: BakedPrefix;
+  /** Prepared world symbols above the area texture and below the retained contour pass. */
+  symbols?: DisplayList;
   samples?: number;
   /** Retained world ink between the prefix and the list; `post` maps recorded pixels into this bake's target. */
   between?(target: WebGLFramebuffer, width: number, height: number, post: Mat): void;

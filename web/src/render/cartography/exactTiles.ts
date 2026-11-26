@@ -32,6 +32,7 @@ import { getVectorEngine, noteCpuTile, noteGpuFailure, noteGpuFallback, noteGpuT
 import type { CanvasLike, FrameStats } from './contract';
 import type { CartographyContext } from './context';
 import { drawVector } from './vector';
+import { nativeTilePaint, seasonRecording, type SeasonRecording } from './seasonRecording';
 import { releaseDrapeTemps, layerTilesFitView } from './woods';
 import { forestWashSteps } from './forest';
 import { BUILDING_BUDGET_FULL, BUILDING_BUDGET_MAX, BUILDING_BUDGET_INDIV } from './urban/frame';
@@ -40,6 +41,24 @@ export function createExactTiles(c: CartographyContext) {
   const { deps, makeCanvas, now, canvas, cache, polyL, paintMargin } = c;
   /** Tiles per key (scale, pixel ratio, tile geometry, engine, quality, detail budgets, semantic key, position). */
   const rasterCache = new RasterTileCache<CanvasImageSource>(deps.rasterBytes);
+  // The tile address identifies geometry. Its RGBA image also has to match the pigments of the draw.
+  const paints = new WeakMap<CanvasImageSource, { revision: number; rejected?: number; pixelsMatch?: () => boolean; stats: FrameStats }>();
+  // Keep the working set of visible RGBA tiles intact even when their recordings are large.
+  const recordings = new RasterTileCache<SeasonRecording>(Math.min(rasterCache.maxBytes / 4, 16 * 2 ** 20));
+  const tileAt = (key: string, revision: number): CanvasImageSource | undefined => {
+    const image = rasterCache.get(key);
+    if (!image) return;
+    const paint = paints.get(image);
+    if (!paint || paint.revision === revision) return image;
+    if (paint.rejected === revision) return;
+    if (!paint.pixelsMatch?.()) {
+      paint.rejected = revision;
+      return;
+    }
+    paint.revision = revision;
+    return image;
+  };
+  const semanticKeyOf = () => `${c.lookId}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${whiteWaterRevision()}`;
   /** Where each stepwise tile lies and at which density: the stand-in of the 3D drape and of the miniature. */
   const mapPyramid = new Map<string, { x: number; y: number; span: number; pixels: number; gutter: number; density: number; semantic: string; light: boolean }>();
   const tileFill = new StepwisePaint(now);
@@ -122,7 +141,9 @@ export function createExactTiles(c: CartographyContext) {
     const budget = rasterBudget(rect, scale);
     c.layerTilesFit = (c.activeLight && scale < 1) || layerTilesFitView(c, rect, k);
     const requests: { key: string; x: number; y: number }[] = [];
-    const semanticKey = `${c.syncPalette()}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${whiteWaterRevision()}`;
+    c.syncPalette();
+    const revision = c.paintRevision(),
+      semanticKey = semanticKeyOf();
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) requests.push({ key: `${scale}|${dpr}|${tilePx}/${gutter}|${engine}|${c.activeLight}|${budget}|${semanticKey}|${x},${y}`, x, y });
     if (requests.length * (tilePx + 2 * gutter) ** 2 * 4 > rasterCache.maxBytes) return drawVector(c, view);
     const buildTile = (request: (typeof requests)[number]): CanvasImageSource => {
@@ -130,17 +151,31 @@ export function createExactTiles(c: CartographyContext) {
         bytes = side * side * 4;
       const tileView = { cx: (request.x + 0.5) * tileSize, cy: (request.y + 0.5) * tileSize, scale };
       let resource: CanvasImageSource | undefined,
+        recording: SeasonRecording | undefined,
+        pixelsMatch: (() => boolean) | undefined,
         release = (): void => {};
       if (getVectorEngine() === 'gpu') {
         // GPU engine: record the same drawVector calls, replay them on WebGL2. Unsupported lists and errors fall back to the CPU below.
         try {
-          const t0 = now(),
-            rec = new RecordingCanvas(side, side);
+          const t0 = now();
           // A recording failure (a Canvas call the recorder lacks) costs this tile only; a raster failure demotes the engine.
           let st: FrameStats | undefined, list: DisplayList | undefined;
           try {
-            st = drawVector(c, tileView, rec as unknown as CanvasLike, 'map', rect);
-            list = rec.finish();
+            const previous = rasterCache.get(request.key),
+              held = previous && paints.get(previous);
+            const previousRecording = held && recordings.get(request.key);
+            const replay = previousRecording?.replay();
+            list = replay?.list;
+            if (replay) {
+              recording = previousRecording;
+              pixelsMatch = replay.pixelsMatch;
+            }
+            if (list && held) st = { ...held.stats, pathsBuilt: 0 };
+            else {
+              const rec = new RecordingCanvas(side, side);
+              st = drawVector(c, tileView, rec as unknown as CanvasLike, 'map', rect);
+              list = rec.finish();
+            }
           } catch (error) {
             noteGpuFallback(`record: ${error instanceof Error ? error.message : String(error)}`);
           }
@@ -154,6 +189,8 @@ export function createExactTiles(c: CartographyContext) {
               pathsBuilt += st.pathsBuilt;
               mapStats = st;
               resource = bitmap;
+              recording ??= seasonRecording(c, list);
+              pixelsMatch ??= recording?.pixelsMatch;
               release = () => bitmap.close();
             } catch (error) {
               noteGpuFailure(error);
@@ -164,12 +201,16 @@ export function createExactTiles(c: CartographyContext) {
         }
       }
       if (!resource) {
+        recording = undefined;
         const t0 = now(),
           target = makeCanvas(side, side);
         // Keep vector replay local to a small CPU surface. Only the finished tile
         // is uploaded; multiply display lists cannot accumulate in Chrome's GPU queue.
-        if (!target?.getContext('2d', { willReadFrequently: true })) throw new Error('Overlay tile allocation failed');
-        const st = drawVector(c, tileView, target, 'map', rect);
+        const tx = target?.getContext('2d', { willReadFrequently: true });
+        if (!target || !tx) throw new Error('Overlay tile allocation failed');
+        const captured = nativeTilePaint(c, tx, () => drawVector(c, tileView, target, 'map', rect));
+        const st = captured.result;
+        pixelsMatch = captured.pixelsMatch;
         pathsBuilt += st.pathsBuilt;
         mapStats = st;
         // The finished CPU tile becomes an ImageBitmap here: its deferred raster runs inside this step (one tile), not
@@ -187,7 +228,18 @@ export function createExactTiles(c: CartographyContext) {
         noteCpuTile(now() - t0, side * side);
       }
       const margin = paintMargin(scale) + gutter / k;
-      rasterCache.put(request.key, { value: resource, bytes, bounds: { minX: request.x * tileSize - margin, minY: request.y * tileSize - margin, maxX: (request.x + 1) * tileSize + margin, maxY: (request.y + 1) * tileSize + margin }, release });
+      const bounds = { minX: request.x * tileSize - margin, minY: request.y * tileSize - margin, maxX: (request.x + 1) * tileSize + margin, maxY: (request.y + 1) * tileSize + margin };
+      paints.set(resource, { revision, pixelsMatch, stats: mapStats! });
+      rasterCache.put(request.key, {
+        value: resource,
+        bytes,
+        bounds,
+        release() {
+          recordings.delete(request.key);
+          release();
+        },
+      });
+      if (recording && recording.bytes <= recordings.maxBytes) recordings.put(request.key, { value: recording, bytes: recording.bytes, bounds, release() {} });
       if (stepwise) {
         mapPyramid.set(request.key, { x: request.x * tileSize, y: request.y * tileSize, span: tileSize, pixels: tilePx, gutter, density: k, semantic: semanticKey, light: c.activeLight });
         // Metadata owns no images; prune descriptors when their LRU images have gone away.
@@ -204,7 +256,7 @@ export function createExactTiles(c: CartographyContext) {
     let mapStats: FrameStats | undefined;
     try {
       for (const request of requests) {
-        let image = rasterCache.get(request.key);
+        let image = tileAt(request.key, revision);
         if (image) rasterHits++;
         else if (stepwise) {
           missing++;
@@ -213,7 +265,7 @@ export function createExactTiles(c: CartographyContext) {
         tiles.push({ image, x: request.x, y: request.y });
       }
       if (stepwise && missing) {
-        const jobKey = requests.map(r => r.key).join(';') + `|${rect.minX},${rect.minY},${rect.maxX},${rect.maxY}`;
+        const jobKey = requests.map(r => r.key).join(';') + `|${revision}|${rect.minX},${rect.minY},${rect.maxX},${rect.maxY}`;
         const light = c.activeLight,
           fit = c.layerTilesFit;
         tileFill.start(
@@ -226,7 +278,7 @@ export function createExactTiles(c: CartographyContext) {
             }
             const cx = view.cx / tileSize - 0.5,
               cy = view.cy / tileSize - 0.5;
-            const queue = requests.filter(r => !rasterCache.get(r.key)).sort((a, b) => (a.x - cx) ** 2 + (a.y - cy) ** 2 - (b.x - cx) ** 2 - (b.y - cy) ** 2);
+            const queue = requests.filter(r => !tileAt(r.key, revision)).sort((a, b) => (a.x - cx) ** 2 + (a.y - cy) ** 2 - (b.x - cx) ** 2 - (b.y - cy) ** 2);
             // The last picture stands in meanwhile: the view sharpens at once when its tiles are ready (a long job shows
             // its progress once a second), instead of a repaint per tile that shows the tiles filling one by one.
             let shown = now();
@@ -237,7 +289,9 @@ export function createExactTiles(c: CartographyContext) {
               c.activeDpr = dpr;
               c.layerTilesFit = fit;
               try {
-                if (!rasterCache.get(request.key)) buildTile(request);
+                c.syncPalette();
+                if (c.paintRevision() !== revision) return;
+                if (!tileAt(request.key, revision)) buildTile(request);
               } finally {
                 c.stepwise = c.activeLight = false;
                 c.activeDpr = undefined;
@@ -312,7 +366,9 @@ export function createExactTiles(c: CartographyContext) {
     syncRoadCanopy();
     const ctx = target.getContext('2d');
     if (!ctx) return false;
-    const semantic = `${c.syncPalette()}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${whiteWaterRevision()}`;
+    c.syncPalette();
+    const semantic = semanticKeyOf(),
+      revision = c.paintRevision();
     const light = displayQualityFor(true) === 'light',
       density = target.width / (box.maxX - box.minX);
     const tiles = [...mapPyramid].filter(([, t]) => t.semantic === semantic && t.light === light && t.density <= density * 2 && t.x < box.maxX && t.y < box.maxY && t.x + t.span > box.minX && t.y + t.span > box.minY).sort((a, b) => a[1].density - b[1].density);
@@ -322,9 +378,9 @@ export function createExactTiles(c: CartographyContext) {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     for (const [key, tile] of tiles) {
-      const image = rasterCache.get(key);
+      const image = tileAt(key, revision);
       if (!image) {
-        mapPyramid.delete(key);
+        if (!rasterCache.has(key)) mapPyramid.delete(key);
         continue;
       }
       const x = (tile.x - box.minX) * density,
@@ -405,6 +461,6 @@ export function createExactTiles(c: CartographyContext) {
     return drawn(fs);
   }
   /** Bytes held by the tiles and the last picture. */
-  const bytes = (): number => rasterCache.bytes + (lastPicture ? lastPicture.canvas.width * lastPicture.canvas.height * 4 : 0);
+  const bytes = (): number => rasterCache.bytes + recordings.bytes + (lastPicture ? lastPicture.canvas.width * lastPicture.canvas.height * 4 : 0);
   return { rasterCache, mapPyramid, suspendStepwise, dropLastPicture, draw, drawCachedMap, drawGround, bytes };
 }

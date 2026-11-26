@@ -15,6 +15,8 @@ import { paintBuildings } from './urban/buildings';
 import { paintPlanLines } from './urban/planLines';
 
 export function paintUrban(c: CartographyContext, f: VectorFrame): void {
+  // buildScene emits the urban layers and density only for a rendered world with an urban plan.
+  if (!c.world.urban) return;
   const { S, getDensity, linesOf } = c;
   const { ctx, lod, land, roadGroup } = f;
   if (lod.densityAlpha > 0) {

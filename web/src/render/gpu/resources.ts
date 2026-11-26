@@ -138,10 +138,10 @@ export class GpuResources {
   private cache = new Map<RecordedPath, GeometryData>();
   /** Entries a replay is about to draw: a later upload must not evict them. */
   readonly pinned = new Set<GeometryData>();
-  private textures = new Map<ImageSource, TextureData>();
+  private textures = new Map<ImageSource | ImageData, TextureData>();
   private textureBytes = 0;
-  /** Sprite instance buffers per op (LRU, never evicted during the render that uses them). */
-  private spriteBuffers = new Map<SpriteOp, { buffer: WebGLBuffer; bytes: number; used: number }>();
+  /** Sprite buffers per immutable instance array (LRU, never evicted during the render that uses them). */
+  private spriteBuffers = new Map<Float32Array, { buffer: WebGLBuffer; bytes: number; used: number }>();
   private spriteCapacity = 0;
   /** Render counter: textures and sprite buffers used by the current render are never evicted. */
   epoch = 0;
@@ -222,10 +222,10 @@ export class GpuResources {
 
   /** Binds the texture of `source` on unit 0 with these sampling parameters, uploading it (with mipmaps) on first use.
    * Null for a source without pixels (an emptied canvas): its draw is skipped instead of failing the whole replay. */
-  texture(source: ImageSource, smoothing: boolean, repeatX = false, repeatY = false): TextureData | null {
+  texture(source: ImageSource | ImageData, smoothing: boolean, repeatX = false, repeatY = false, unit = 0): TextureData | null {
     const gl = this.gl;
     let t = this.textures.get(source);
-    gl.activeTexture(gl.TEXTURE0);
+    gl.activeTexture(gl.TEXTURE0 + unit);
     if (!t) {
       const dimensions = source as { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number; videoWidth?: number; videoHeight?: number; displayWidth?: number; displayHeight?: number };
       const width = dimensions.naturalWidth ?? dimensions.videoWidth ?? dimensions.displayWidth ?? dimensions.width ?? 0;
@@ -275,20 +275,20 @@ export class GpuResources {
 
   /** The instance buffer of a sprite op for a draw: made on first use (a retained list replays it at every frame). */
   spriteBuffer(op: SpriteOp): WebGLBuffer {
-    let held = this.spriteBuffers.get(op);
+    let held = this.spriteBuffers.get(op.instances);
     if (!held) {
       this.noteLate();
       held = this.makeSpriteBuffer(op);
     } else {
-      this.spriteBuffers.delete(op);
-      this.spriteBuffers.set(op, held);
+      this.spriteBuffers.delete(op.instances);
+      this.spriteBuffers.set(op.instances, held);
       held.used = this.epoch;
     }
     return held.buffer;
   }
   /** The instance buffer of a sprite op, made ahead of its first draw. */
   uploadSprites(op: SpriteOp): void {
-    if (!op.count || this.spriteBuffers.has(op)) return;
+    if (!op.count || this.spriteBuffers.has(op.instances)) return;
     this.makeSpriteBuffer(op);
   }
   private makeSpriteBuffer(op: SpriteOp): { buffer: WebGLBuffer; bytes: number; used: number } {
@@ -298,7 +298,7 @@ export class GpuResources {
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, op.instances.subarray(0, op.count * SPRITE_STRIDE), gl.STATIC_DRAW);
     const held = { buffer, bytes: op.count * SPRITE_STRIDE * 4, used: this.epoch };
-    this.spriteBuffers.set(op, held);
+    this.spriteBuffers.set(op.instances, held);
     this.spriteCapacity += held.bytes;
     this.evictSprites();
     return held;

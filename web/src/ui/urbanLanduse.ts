@@ -2,7 +2,7 @@ import { cityOverlayLandKinds, cityOverlayLandKey, cityWaterCutsLand, cityCountr
 import { executionRuntime } from './executionProfile';
 import { benchOverlayChange } from './benchComposition';
 import { feedLanduse } from '../render/groundTone';
-import { seasonLand, v1LandCanvas, v1LandscapeCanvas, type V1LandscapeStyle } from '../render/v1Landscape';
+import { landBackdrop, v1LandCanvas, v1LandscapeCanvas, type V1LandscapeStyle } from '../render/v1Landscape';
 import { CityGround } from '../render/cityGround';
 import { bindGear, gearButton } from './mapGroup';
 import { localizeCityInspector } from './cityInspectorLocale';
@@ -12,7 +12,8 @@ import LanduseWorker from './urbanLanduseWorker?worker&inline';
 import { BIOME_NAMES, isUnderdarkBiome, type BiomeName } from '../gen/biomes';
 import { SIZE_PRESETS } from '../gen/options';
 import { getBenchRenderColors } from './benchRenderColors';
-import { resolveBenchAppearance } from './benchComposition';
+import { liveLookPixelRatio } from '../render/composition';
+import { getBenchComposition, resolveBenchAppearance } from './benchComposition';
 import { drawRuralSemantic } from '../render/semanticLayer';
 import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import type { VegetationStyle } from '../render/canopy';
@@ -60,6 +61,7 @@ const landKinds: [LandKind, string][] = [
   ['commons', 'Terrains communaux'],
 ];
 
+const benchLiveDpr = (): number => liveLookPixelRatio(window.devicePixelRatio || 1, getBenchComposition().quality);
 export function createUrbanLanduse(options: {
   map: SVGSVGElement;
   before: Element;
@@ -320,7 +322,7 @@ export function createUrbanLanduse(options: {
     if (renderWorld.landuse && (settings.visiblePaddocks || settings.concreteFieldBoundaries)) (renderWorld.landuse as RuralRenderLayer).ruralDetails = { visiblePaddocks: settings.visiblePaddocks, concreteFieldBoundaries: settings.concreteFieldBoundaries };
     const pal = { ...biomePalette(appearance.palette.mapStyle, scene.options.biome), frameKind: 'none' as const };
     const background = options.getBackground();
-    rendererDpr = window.devicePixelRatio || 1;
+    rendererDpr = benchLiveDpr();
     renderer = createCanvasRenderer(canvas, renderWorld, pal, {
       colors: getBenchRenderColors(),
       dpr: rendererDpr,
@@ -330,7 +332,7 @@ export function createUrbanLanduse(options: {
       terrain: () => {
         if (v1Style) return v1LandscapeCanvas(context!.raster, v1Style, scene!.options.biome);
         // The parchment tints multiply over the lit ground: a transparent canvas has nothing to multiply with.
-        if (composition.variant === 'parchment' && appearance.ground.layers.relief) return seasonLand(v1LandCanvas(context!.raster, 'parchment', scene!.options.biome), context!.raster);
+        if (composition.variant === 'parchment' && appearance.ground.layers.relief) return landBackdrop(v1LandCanvas(context!.raster, 'parchment', scene!.options.biome), context!.raster);
         if (!background.image || background.opacity <= 0) return null;
         if (background.opacity === 1) return background.image;
         const base = document.createElement('canvas');
@@ -357,7 +359,7 @@ export function createUrbanLanduse(options: {
     visibility();
     cancelAnimationFrame(frame);
     if (!renderer || !canvas || !host || !active() || !settings.visible) return;
-    if (rendererDpr !== (window.devicePixelRatio || 1)) {
+    if (rendererDpr !== benchLiveDpr()) {
       draw();
       return;
     }

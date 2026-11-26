@@ -502,16 +502,24 @@ export abstract class ListReplayer {
   private sprites(op: SpriteOp): void {
     if (!op.count) return;
     const gl = this.gl,
-      p = this.program(op.tint ? 'pen' : op.contourTint ? 'contour' : 'sprite'),
+      p = this.program(op.landTint ? 'land' : op.tint ? 'pen' : op.contourTint ? 'contour' : 'sprite'),
       t = this.resources.texture(op.source, op.smoothing);
     if (!t) return;
-    // Instances are uploaded once per op and kept (a retained list replays them at every frame); the view goes in uPost.
+    // World instance buffers survive a new recording transform. Ordinary image batches already include that transform.
     gl.bindBuffer(gl.ARRAY_BUFFER, this.resources.spriteBuffer(op));
     gl.uniform1i(p.u('uImage'), 0);
     gl.uniform2f(p.u('uImageSize'), t.width, t.height);
-    gl.uniformMatrix3fv(p.u('uPost'), false, this.mat3(this.post));
+    gl.uniformMatrix3fv(p.u('uPost'), false, this.mat3(op.transform ? compose(this.post, op.transform) : this.post));
     gl.uniform1i(p.u('uFull'), op.composite === 'destination-in' ? 1 : 0);
-    if (op.tint) {
+    if (op.landTint) {
+      const { heights, maxHeight, tint, snow } = op.landTint;
+      this.resources.texture(heights, true, false, false, 1);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.uniform1i(p.u('uHeight'), 1);
+      gl.uniform1f(p.u('uMaxH'), maxHeight);
+      gl.uniform4f(p.u('uLandTint'), ...tint);
+      gl.uniform4f(p.u('uLandSnow'), ...snow);
+    } else if (op.tint) {
       gl.uniform4fv(p.u('uInk'), op.tint[0].rgba);
       gl.uniform4fv(p.u('uWash'), op.tint[1].rgba);
     } else if (op.contourTint) {

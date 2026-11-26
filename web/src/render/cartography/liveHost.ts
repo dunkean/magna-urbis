@@ -5,7 +5,9 @@
  * Reads: everything drawVector reads, the host's semantic and road keys. Writes: stepwise, activeLight, activeDpr,
  * recordingClip, markCrisp and recordingNow for the duration of a recording step (restored after it).
  */
-import { roadCanopyRevision } from '../roadStyle';
+import { roadCanopyRevision, roadGroundKey } from '../roadStyle';
+import { groundRoadLook } from '../composition';
+import { getLanduseForestTone } from '../landuseForestTone';
 import { whiteWaterRevision } from '../whiteWater';
 import { View, Rect4 } from '../view';
 import type { LiveLayer } from '../live/contract';
@@ -14,12 +16,17 @@ import { liveVectorEngine, noteGpuFallback } from '../vectorEngine';
 import { noteLiveUnit } from '../live/liveStats';
 import { CanvasLike } from './contract';
 import type { CartographyContext } from './context';
-import { LandRecording } from './landRecording';
+import { RasterTileCache } from '../rasterTiles';
+import type { Scene } from '../scene';
+import { RoadRecording } from './roadRecording';
+import { LandRecording, landRecordingLook } from './landRecording';
+import { BandLook } from './bandRecording';
+import { seasonRecording, type SeasonRecording } from './seasonRecording';
 import { drawVectorSteps } from './vector';
 import { growRect } from './geometry';
 import { releaseDrapeTemps, warmTreeMarks } from './woods';
 import { createMapRecording } from './mapRecording';
-import { roadCanopyRegions } from './roads';
+import { materialBedSlot, roadCanopyRegions, trackSlot } from './roads';
 import { RegionalRevision } from '../../ui/terrain/revision';
 
 export function createLiveHost(c: CartographyContext) {
@@ -33,9 +40,51 @@ export function createLiveHost(c: CartographyContext) {
   const REGION_BANDS = 4;
   // One set of land ops per visible band. Captures, drapes and fixed sheets never populate this cache.
   const landBands: LandRecording[] = [];
+  const roadBands: RoadRecording[] = [];
+  // Paint variants share a geometry key. Region and fixed-sheet recordings use the same bounded LRU.
+  const bands = new RasterTileCache<SeasonRecording[]>(32 * 1024 * 1024);
+  const sceneIds = new WeakMap<Scene, number>();
+  let nextSceneId = 0;
+  function bandKey(plan: OverlayPlan, band: Rect4, light: boolean, ink: boolean): string {
+    let id = sceneIds.get(c.scene);
+    if (id === undefined) sceneIds.set(c.scene, (id = ++nextSceneId));
+    const road = deps.roadStyle?.(),
+      roadLook = road?.look ?? deps.roadLook;
+    return JSON.stringify([
+      id,
+      plan.scale,
+      plan.dpr,
+      band,
+      light,
+      contentRevision(),
+      ink,
+      deps.semantic?.key(),
+      deps.semantic?.arrivals(),
+      deps.urbanPlan?.(),
+      deps.buildingRoofs?.(),
+      deps.volumeBuildings?.(),
+      deps.groundCaverns?.(),
+      deps.groundTrees?.(),
+      deps.regionalRoadsOnGround?.(),
+      !!c.brushes,
+      !!c.canopy,
+      landRecordingLook(c.pal),
+      getLanduseForestTone(),
+      whiteWaterRevision(),
+      roadLook,
+      road?.emphasis,
+      road?.night,
+      road?.simple,
+      road?.snow,
+      road?.pavement,
+      road?.urban,
+      groundRoadLook(roadLook) ? [roadGroundKey(), road && !c.world.urban && materialBedSlot(c, road, false) ? true : road?.colors?.road, road && !c.world.urban && materialBedSlot(c, road, true) ? true : road?.colors?.track] : trackSlot(c.pal),
+    ]);
+  }
   const fixedRaster = (): boolean => c.pal.name === 'cadastre';
   /** A recording of the map for the live overlay layer has failed under this key: not tried again until it changes. */
   let regionFailed = '';
+  let failedPaint = -1;
   /** Layers made by createLiveLayer and not yet disposed: a scene update makes their regions stale too. */
   const liveLayers = new Set<LiveLayer>();
   const content = new RegionalRevision();
@@ -50,8 +99,10 @@ export function createLiveHost(c: CartographyContext) {
     return content.value();
   };
   /** Everything a recorded region depends on besides its rectangle and the products made per view (`arrivals`). */
-  const regionKey = (scale: number, dpr: number, light: boolean): string =>
-    `${c.syncPalette()}|${fixedRaster() ? 'fixed-cadastre' : `${scale}|${dpr}|${light}`}|${deps.semantic?.look() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${whiteWaterRevision()}`;
+  const regionKey = (scale: number, dpr: number, light: boolean): string => {
+    c.syncPalette();
+    return `${c.lookId}|${fixedRaster() ? 'fixed-cadastre' : `${scale}|${dpr}|${light}`}|${deps.semantic?.look() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${whiteWaterRevision()}`;
+  };
   /** The region recorded for a view: a margin around it, edges on a lattice, the half-octave scale, horizontal bands. */
   function regionPlan(view: View, cssW: number, cssH: number, dpr: number, key: string): OverlayPlan {
     if (fixedRaster()) {
@@ -82,14 +133,23 @@ export function createLiveHost(c: CartographyContext) {
       cy = (band.minY + band.maxY) / 2;
     const w = Math.max(1, Math.ceil((band.maxX - band.minX) * plan.scale * plan.dpr)),
       h = Math.max(1, Math.ceil((band.maxY - band.minY) * plan.scale * plan.dpr));
-    const rec = createMapRecording(w, h, ink),
-      provisional = deps.semantic?.provisional() ?? 0,
+    const provisional = deps.semantic?.provisional() ?? 0,
       unit = drape ? 'record:drape' : 'record:band';
     // Nearby tiles share their clipped paths across bands. Coarse map-wide tiles must cut to the band itself.
     const clip = drape ? growRect(plan.rect.maxX - plan.rect.minX <= 4 * c.scene.tileSize ? plan.rect : band, Math.max(16, 4 / (plan.scale * plan.dpr))) : undefined;
-    const index = !drape && deps.palette && !fixedRaster() ? plan.bands.indexOf(band) : -1;
-    const land = index >= 0 ? (landBands[index] ??= new LandRecording()) : undefined;
-    const steps = drawVectorSteps(c, { cx, cy, scale: plan.scale }, rec as unknown as CanvasLike, 'map', band, land);
+    c.syncPalette();
+    const index = !drape && deps.palette ? plan.bands.indexOf(band) : -1;
+    const sourcePalette = c.pal,
+      key = index >= 0 ? bandKey(plan, band, light, ink) : undefined;
+    const variants = key ? bands.get(key) : undefined;
+    for (const held of variants ?? []) {
+      const replay = held.replay();
+      if (replay) return { ...replay, rect: band, cx, cy, w, h, provisional: false, replayed: true };
+    }
+    const rec = createMapRecording(w, h, ink);
+    const look = key ? new BandLook(sourcePalette) : undefined;
+    const land = index >= 0 && !fixedRaster() ? (landBands[index] ??= new LandRecording()) : undefined;
+    const steps = drawVectorSteps(c, { cx, cy, scale: plan.scale }, rec as unknown as CanvasLike, 'map', band, land, land ? (roadBands[index] ??= new RoadRecording()) : undefined);
     try {
       for (;;) {
         const before = { stepwise: c.stepwise, light: c.activeLight, dpr: c.activeDpr, clip: c.recordingClip, crisp: c.markCrisp, recording: c.recordingNow },
@@ -101,9 +161,11 @@ export function createLiveHost(c: CartographyContext) {
         c.recordingClip = clip;
         c.markCrisp = true;
         c.recordingNow = true;
+        if (look && c.pal === sourcePalette) c.pal = look.palette;
         try {
           done = steps.next().done;
         } finally {
+          if (look && c.pal === look.palette) c.pal = sourcePalette;
           c.stepwise = before.stepwise;
           c.activeLight = before.light;
           c.activeDpr = before.dpr;
@@ -117,10 +179,22 @@ export function createLiveHost(c: CartographyContext) {
       }
       const list = rec.finish();
       if (list.unsupported) throw new Error(list.unsupported);
-      return { list, rect: band, cx, cy, w, h, provisional: (deps.semantic?.provisional() ?? 0) !== provisional };
+      const partial = (deps.semantic?.provisional() ?? 0) !== provisional;
+      const recording = look && !partial && sourcePalette === c.pal ? seasonRecording(c, list, look) : undefined;
+      if (key && recording) {
+        const bytes = recording.bytes;
+        if (bytes <= bands.maxBytes) {
+          const held = [recording];
+          const previous = variants?.[0];
+          if (previous && bytes + previous.bytes <= bands.maxBytes) held.push(previous);
+          bands.put(key, { value: held, bytes: bytes + (held[1]?.bytes ?? 0), bounds: band, release() {} });
+        }
+      }
+      return { list, rect: band, cx, cy, w, h, provisional: partial, pixelsMatch: recording?.pixelsMatch };
     } catch (error) {
       noteGpuFallback(`record: ${error instanceof Error ? error.message : String(error)}`);
       regionFailed = plan.key;
+      failedPaint = c.paintRevision();
       return undefined;
     } finally {
       steps.return(c.stats);
@@ -138,9 +212,10 @@ export function createLiveHost(c: CartographyContext) {
       active: () => !c.disposed && !c.rasterFailed && liveVectorEngine() === 'gpu',
       key: (scale, dpr, light) => {
         const key = regionKey(scale, dpr, light);
-        return key === regionFailed ? undefined : key;
+        return key === regionFailed && failedPaint === c.paintRevision() ? undefined : key;
       },
       plan: regionPlan,
+      paintRevision: c.paintRevision,
       contentRevision,
       contentChanges: since => content.changesSince(since),
       arrivals: () => deps.semantic?.arrivals() ?? 0,
@@ -164,20 +239,22 @@ export function createLiveHost(c: CartographyContext) {
     liveLayers.add(layer);
     const end = layer.dispose;
     layer.dispose = (): void => {
-      landBands.length = 0;
+      landBands.length = roadBands.length = 0;
+      bands.clear();
       liveLayers.delete(layer);
       end();
     };
     return layer;
   }
   /** A scene update: the regions of every live layer become stale (they keep showing until replaced). */
-  const invalidateLayers = (boxes?: readonly Rect4[]): void => {
-    landBands.length = 0;
+  const invalidateLayers = (boxes?: readonly Rect4[], sameContent = false): void => {
+    landBands.length = roadBands.length = 0;
+    if (!sameContent) bands.clear();
     if (boxes) {
       if (boxes.length) content.bump(boxes);
       return;
     }
     for (const layer of liveLayers) layer.invalidate?.();
   };
-  return { createLiveLayer, invalidateLayers };
+  return { createLiveLayer, invalidateLayers, retainedBytes: () => bands.bytes };
 }

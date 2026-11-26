@@ -4,6 +4,7 @@
  * disc and join instances), sprite (instanced images), clear and baked (a baked band texture of the live overlay).
  */
 import { CONTOUR_THIN_OPACITY } from './contract';
+import { TREE_SYMBOLS_GLSL } from '../treeSymbolsGlsl';
 
 const COMMON_VS = `
 precision highp float;
@@ -230,6 +231,25 @@ void main() {
   outColor = insideSprite() ? texture(uImage, vUV) * vAlpha : vec4(0.0);
 }
 `;
+// The ground declares the land filter alongside the woodland shader. Use the same
+// function and hash on both sides of a punched edge. The sprite's UV is world / mapWidth.
+const landStart = TREE_SYMBOLS_GLSL.indexOf('uniform vec4 uLandTint;');
+const landEnd = TREE_SYMBOLS_GLSL.indexOf('\n}', TREE_SYMBOLS_GLSL.indexOf('vec3 landSeason(')) + 2;
+const LAND_FS = `#version 300 es
+precision highp int;
+${SPRITE_SAMPLE}
+const float uMapW = 1.;
+uniform float uMaxH;
+uniform sampler2D uHeight;
+${TREE_SYMBOLS_GLSL.slice(landStart, landEnd)}
+void main() {
+  vec4 land = texture(uImage, vUV);
+  vec2 height = textureLod(uHeight, vUV, 0.).rg;
+  float h = dot(height, vec2(256., 1.) / 257.) * uMaxH;
+  vec3 rgb = landSeason(land.rgb / max(land.a, 1e-3), vUV, h);
+  outColor = insideSprite() ? vec4(rgb, 1.) * (land.a * vAlpha) : vec4(0.);
+}
+`;
 const PEN_FS = `#version 300 es
 ${SPRITE_SAMPLE}
 uniform vec4 uInk, uWash;
@@ -269,13 +289,14 @@ in vec2 vUV;
 out vec4 outColor;
 void main() { outColor = texture(uImage, vUV); }
 `;
-export type ProgramKind = 'fan' | 'cover' | 'stroke' | 'sprite' | 'pen' | 'contour' | 'clear' | 'baked';
+export type ProgramKind = 'fan' | 'cover' | 'stroke' | 'sprite' | 'pen' | 'land' | 'contour' | 'clear' | 'baked';
 export const SHADERS: Record<ProgramKind, readonly [string, string]> = {
   fan: [FAN_VS, EMPTY_FS],
   cover: [COVER_VS, COVER_FS],
   stroke: [STROKE_VS, STROKE_FS],
   sprite: [SPRITE_VS, SPRITE_FS],
   pen: [SPRITE_VS, PEN_FS],
+  land: [SPRITE_VS, LAND_FS],
   contour: [SPRITE_VS, CONTOUR_FS],
   clear: [COVER_VS, EMPTY_FS],
   baked: [BAKED_VS, BAKED_FS],

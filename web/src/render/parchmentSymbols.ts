@@ -1,6 +1,6 @@
 import { unzlibSync } from 'fflate';
 import sheet from './assets/parchment-symbols.json';
-import type { SpriteTint } from './gpu/contract';
+import { SPRITE_STRIDE, type SpriteTint } from './gpu/contract';
 import { RecordingContext } from './gpu/recorder';
 import type { CanvasLike } from './canvas';
 
@@ -26,7 +26,7 @@ export class ParchmentSymbols {
     private makeCanvas: (w: number, h: number) => CanvasLike | null,
   ) {}
 
-  private sheetImage(): CanvasImageSource | null {
+  sheetImage(): CanvasImageSource | null {
     if (this.atlas !== undefined) return this.atlas;
     this.atlas = null;
     if (this.colors && !this.colors.every(color => /^#[\da-f]{6}/i.test(color))) return null;
@@ -80,10 +80,26 @@ export class ParchmentSymbols {
     const n = sheet.size,
       sx = (cell % this.columns) * this.stride + 1,
       sy = Math.floor(cell / this.columns) * this.stride + 1;
-    if (tint && ctx instanceof RecordingContext) {
-      ctx.drawImage(image, sx, sy, n, n, x - size / 2, y - size / 2, size, size, tint);
-      return;
+    if (tint && ctx instanceof RecordingContext) ctx.drawImage(image, sx, sy, n, n, x - size / 2, y - size / 2, size, size, tint);
+    else ctx.drawImage(image, sx, sy, n, n, x - size / 2, y - size / 2, size, size);
+  }
+
+  /** Instance attributes for the mask atlas in map metres, sorted in the Canvas painter's order. */
+  instances(marks: { cell: number; x: number; y: number; size: number }[]): Float32Array {
+    const data = new Float32Array(marks.length * SPRITE_STRIDE);
+    marks.sort((a, b) => a.y - b.y);
+    let i = 0;
+    for (const { cell, x, y, size } of marks) {
+      data[i] = (cell % this.columns) * this.stride + 1;
+      data[i + 1] = Math.floor(cell / this.columns) * this.stride + 1;
+      data[i + 2] = data[i + 3] = sheet.size;
+      data[i + 4] = x - size / 2;
+      data[i + 5] = y - size / 2;
+      data[i + 6] = data[i + 7] = size;
+      data[i + 8] = data[i + 11] = 1;
+      data[i + 14] = 0.8;
+      i += SPRITE_STRIDE;
     }
-    ctx.drawImage(image, sx, sy, n, n, x - size / 2, y - size / 2, size, size);
+    return data;
   }
 }

@@ -42,6 +42,17 @@ export function createOverlayRegions(raster: LiveRasterizer, host: OverlayHost, 
   const arrivalsCurrent = (r: Region): boolean => !r.provisional || r.arrivals === host.arrivals();
   const unchanged: readonly Rect4[] = [];
   const checked = new WeakMap<Region, { revision: number | undefined; boxes: readonly Rect4[] | undefined }>();
+  const paintChecks = new WeakMap<Region, { paint: number | undefined; bands: Set<Band> }>();
+  const repaint = (r: Region): ReadonlySet<Band> | undefined => {
+    const paint = host.paintRevision?.();
+    if (r.paint === paint) return;
+    const previous = paintChecks.get(r);
+    if (previous && previous.paint === paint) return previous.bands;
+    const bands = new Set(r.parts.filter(b => !b.pixelsMatch?.()));
+    if (bands.size) paintChecks.set(r, { paint, bands });
+    else r.paint = paint;
+    return bands;
+  };
   const changes = (r: Region): readonly Rect4[] | undefined => {
     const revision = host.contentRevision?.();
     if (r.content === revision) return unchanged;
@@ -55,7 +66,7 @@ export function createOverlayRegions(raster: LiveRasterizer, host: OverlayHost, 
     r.content = revision;
     return unchanged;
   };
-  const current = (r: Region): boolean => arrivalsCurrent(r) && changes(r)?.length === 0;
+  const current = (r: Region): boolean => arrivalsCurrent(r) && changes(r)?.length === 0 && !repaint(r)?.size;
   /** Shows `next` (complete) in place of the region shown, which goes to the cache unless stale or held by `next`. */
   const show = (next: Region): void => {
     const old = shown;
@@ -84,6 +95,7 @@ export function createOverlayRegions(raster: LiveRasterizer, host: OverlayHost, 
     },
     current,
     changes,
+    repaint,
     arrivalsCurrent,
     show,
     release,

@@ -11,6 +11,7 @@ import { brushTextureOn, type BrushKind } from '../brushes';
 import { isUnderdarkBiome } from '../../gen/biomes';
 import { forestLandPaint, getLanduseForestTone } from '../landuseForestTone';
 import { CANVAS_MAP_STROKES as MAP_STROKES, mapStrokeWidth } from '../strokes';
+import { literalPalette } from './bandRecording';
 import { LAND_ORDER } from '../scene';
 import type { Palette } from '../styles';
 import type { CartographyContext } from './context';
@@ -99,7 +100,7 @@ export function landPainters(c: CartographyContext, f: FrameBase): LandPainters 
   const luAlpha = pal.landOpacity;
   // Forest class: tone chosen by the shared « forest land use » setting (landuseForestTone.ts).
 
-  const landAlpha = (kind: keyof Palette['land']): number => (kind === 'forest' ? forestLandPaint(pal).alpha : luAlpha);
+  const landAlpha = (kind: keyof Palette['land']): number => (kind === 'forest' ? forestLandPaint(literalPalette(pal)).alpha : luAlpha);
   const fillLandSteps = function* (name: string, kind: keyof Palette['land'], ink = c.ink): Generator<void> {
     const landFill = (kind: keyof Palette['land']) => ink(kind === 'forest' ? (getLanduseForestTone() === 'ground' ? 'groundForest' : 'markedForest') : kind);
     if (c.activeLight) {
@@ -156,7 +157,7 @@ export function landPainters(c: CartographyContext, f: FrameBase): LandPainters 
             ctx.restore();
           };
           if (wash.fringe[0]) {
-            for (let k = 1; k <= 3; k++) stamp(-3.5 * k, -4 * k, pal.paper, 0.05, 'source-over');
+            for (let k = 1; k <= 3; k++) stamp(-3.5 * k, -4 * k, ink('paper'), 0.05, 'source-over');
             for (let k = 0; k <= 6; k++) stamp(1.8 * k, 2.1 * k, ink('treeInk'), 0.042, 'multiply');
           }
         }

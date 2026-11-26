@@ -20,7 +20,7 @@ export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
     const drives = linesOf(l => l.role === 'drive');
     if (natural) {
       if (drives.length) strokeEarthRoads(drives, 'track', drives[0].width);
-    } else strokeLines(drives, pal.trackFill, l => Math.min(lw(l.width * 0.7, 1), px(2.4)), 0.55 * Math.min(1, inkAlpha), [], 'butt');
+    } else strokeLines(drives, c.ink('trackFill'), l => Math.min(lw(l.width * 0.7, 1), px(2.4)), 0.55 * Math.min(1, inkAlpha), [], 'butt');
     fillPolys('farm-platforms', FARM_PLATFORM_EARTH, 0.48);
     // On a natural ground the lot belongs to the photograph (farmRoofs.ts drawFarmLots): beaten earth that fades
     // at its edge, a muted garden with its bed rows, grass under the orchard, a dark pond in a wet bank; no plan
@@ -49,11 +49,11 @@ export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
         for (const p of polyPaths(l)) ctx.fill(p, 'evenodd');
       }
     }
-    strokePolys('farm-platforms', pal.farmInk, lw(0.5, 0.4), 0.7, [px(3), px(2)]);
+    strokePolys('farm-platforms', c.ink('farmInk'), lw(0.5, 0.4), 0.7, [px(3), px(2)]);
     if (!natural) {
-      fillPolys('farm-yards', pal.farmYard, 0.9);
-      fillPolys('farm-pens', pal.farmYard);
-      strokePolys('farm-pens', pal.farmInk, lw(0.3, 0.3));
+      fillPolys('farm-yards', c.ink('farmYard'), 0.9);
+      fillPolys('farm-pens', c.ink('farmYard'));
+      strokePolys('farm-pens', c.ink('farmInk'), lw(0.3, 0.3));
       fillPolys('farm-ponds', c.ink('waterShore'));
       strokePolys('farm-ponds', c.ink('waterEdge'), lw(0.5, 0.4));
     }
@@ -62,7 +62,7 @@ export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
       for (const line of linesOf(l => l.role === 'farm')) {
         if (!isFarmEnclosureKind(line.kind)) continue;
         const look = FARM_ENCLOSURES[line.kind];
-        strokeLines([line], natural || line.kind !== 'wall' ? look.color : pal.farmInk, () => lw(look.width, look.minPx), look.alpha, [], 'butt');
+        strokeLines([line], natural || line.kind !== 'wall' ? look.color : c.ink('farmInk'), () => lw(look.width, look.minPx), look.alpha, [], 'butt');
       }
     if (natural) {
       if (lod.band >= 2) timedRec('farm-trees', () => drawFarmLots(ctx, c.world, { part: 'trees', viewport: pathRect, mpp: px(1), night: roadStyle.night, Path: P }));
@@ -78,14 +78,14 @@ export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
       // light, grain by cover and culture, weathering, snow); paths of the class this renderer records.
       timedRec('farm-roofs', () => drawFarmRoofs(ctx, c.world, { viewport: pathRect, mpp: px(1), dpr, palette: 'terrain', night: roadStyle.night, Path: P, roofAppearance: c.deps.buildingRoofs?.() }));
     } else if (roofs) {
-      fillPolys('farm-buildings', pal.farmRoof);
+      fillPolys('farm-buildings', c.ink('farmRoof'));
       // Further out a natural ground keeps the plain roof tint without ink, like the few pixels of a town roof.
       if (!natural && !c.activeLight) {
-        strokePolys('farm-buildings', pal.farmInk, lw(0.5, 0.6));
+        strokePolys('farm-buildings', c.ink('farmInk'), lw(0.5, 0.6));
         if (lod.band >= 2)
           strokeLines(
             linesOf(l => l.name === 'farm-ridges'),
-            pal.farmInk,
+            c.ink('farmInk'),
             () => lw(0.35, 0.4),
             0.8,
             [],
@@ -94,5 +94,5 @@ export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
       }
     }
   }
-  if (!c.activeLight && luOn && lod.strips) timedRec('rural', () => drawRuralDetails(ctx, c.world, pal));
+  if (!c.activeLight && luOn && lod.strips) timedRec('rural', () => drawRuralDetails(ctx, c.world, pal, c.ink('furrow')));
 }

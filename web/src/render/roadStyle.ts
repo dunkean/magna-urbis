@@ -12,7 +12,8 @@ import { climatePalette } from './biomes';
 import type { RenderColors } from './customColors';
 import type { Palette } from './styles';
 import { URBAN_SNOW, mapGroundSnow, mapLandSnow, mapLandSnowGrid, mapLandSnowKey } from './seasonPalette';
-import { RecordingContext } from './gpu/recorder';
+import { RecordingContext, setMapInk } from './gpu/recorder';
+import { ColorSlot } from './gpu/contract';
 import { ROAD_GRID as GRID, roadTerrain } from './roadTerrain';
 import type { RoadPavement } from './roadPavement';
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
@@ -798,9 +799,15 @@ export function roadCanopyLineChanged(pts: readonly Pt[], since: number): boolea
     })
   );
 }
+type RoadPaint = string | CanvasPattern | ColorSlot;
+function setRoadPaint(ctx: CanvasRenderingContext2D, paint: RoadPaint): void {
+  if (paint instanceof ColorSlot) setMapInk(ctx, 'strokeStyle', paint);
+  else ctx.strokeStyle = paint;
+}
+
 /** One paved regional road class: verge, clean-edged bed, then markings and wear once they resolve. */
-function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0, metres = width): void {
-  const paint = roadPaint(ctx, rank, style),
+function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0, metres = width, bed?: ColorSlot): void {
+  const paint = bed ?? roadPaint(ctx, rank, style),
     marks = pavedMarks(rank, width, scale, style),
     snow = styleSnow(style);
   // A paved road clears its corridor (forestRoom.ts): the crowns only take a little off its edges.
@@ -813,8 +820,8 @@ function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: Road
     if (cover < 1) marks.strokes.length = 0;
   }
   // Asphalt stops square: a round cap as wide as the road reads as a drawn lollipop at a loose end or a change of surface.
-  const stroke = (color: string | CanvasPattern, w: number, alpha: number, cap: CanvasLineCap = 'square'): void => {
-    ctx.strokeStyle = color;
+  const stroke = (color: RoadPaint, w: number, alpha: number, cap: CanvasLineCap = 'square'): void => {
+    setRoadPaint(ctx, color);
     ctx.lineWidth = w;
     ctx.globalAlpha = alpha;
     ctx.lineCap = cap;
@@ -845,21 +852,21 @@ function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: Road
 /** One natural road class: shoulder, bed with an uneven edge, wear, and wheel ruts on earth tracks up close. `canopy`
  * (0 open … 1 closed, canopyRuns): under closed woods the way is a fainter continuous trace, the gap in the crowns.
  * Earth beds end butt: the runs of one way meet end to end, and round caps would bead at every change of level. */
-export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0, metres = width): void {
+export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0, metres = width, bed?: ColorSlot): void {
   if (style.simple && style.look === 'rendered') {
-    const paint = roadPaint(ctx, rank, style);
+    const paint = bed ?? roadPaint(ctx, rank, style);
     const alpha = Math.min(1, RENDERED_BED[rank] * emphasisAlpha(style.emphasis)) * roadCanopyOpacity(rank, canopy) * clamp(metres / width, 0.1, 1);
     const feather = roadFeather(rank, width, scale);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'butt';
     ctx.setLineDash([]);
     if (feather) {
-      ctx.strokeStyle = !style.night && !styleSnow(style) ? roadVergePaint(ctx) : paint;
+      setRoadPaint(ctx, !style.night && !styleSnow(style) ? roadVergePaint(ctx) : paint);
       ctx.lineWidth = width + feather;
       ctx.globalAlpha = alpha * 0.72;
       ctx.stroke(path);
     }
-    ctx.strokeStyle = paint;
+    setRoadPaint(ctx, paint);
     ctx.lineWidth = width - feather;
     ctx.globalAlpha = alpha;
     ctx.stroke(path);
@@ -868,10 +875,10 @@ export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, r
     return;
   }
   if (pavedRank(rank, style.pavement)) {
-    strokePavedRoad(ctx, path, rank, width, scale, style, canopy, metres);
+    strokePavedRoad(ctx, path, rank, width, scale, style, canopy, metres, bed);
     return;
   }
-  const paint = roadPaint(ctx, rank, style),
+  const paint = bed ?? roadPaint(ctx, rank, style),
     marks = naturalMarks(rank, width, scale, style),
     px = width * scale,
     earthen = rank === 'track' || rank === 'path',
@@ -885,8 +892,8 @@ export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, r
     under = roadCanopyOpacity(rank, canopy) * cover;
   marks.bed.alpha *= under;
   if (rendered && marks.shadow) marks.shadow.alpha *= cover;
-  const stroke = (color: string | CanvasPattern, w: number, alpha: number, dash: readonly number[] = [], cap: CanvasLineCap = 'butt'): void => {
-    ctx.strokeStyle = color;
+  const stroke = (color: RoadPaint, w: number, alpha: number, dash: readonly number[] = [], cap: CanvasLineCap = 'butt'): void => {
+    setRoadPaint(ctx, color);
     ctx.lineWidth = w;
     ctx.globalAlpha = alpha;
     ctx.setLineDash(dash as number[]);

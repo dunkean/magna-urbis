@@ -12,6 +12,11 @@ import type { OverlayDiagnostics } from './overlayDiagnostics';
 import type { OverlayRegions } from './overlayRegions';
 import { beyond, boxOf, covers, meetsChange, type Band, type OverlayBand, type OverlayHost, type Region } from './overlayTypes';
 
+function joinMarks(marks: DisplayList, suffix: DisplayList): DisplayList {
+  const ops = [...marks.ops, ...suffix.ops];
+  return { ...suffix, ops, stats: { ...suffix.stats, ops: ops.length } };
+}
+
 /** Pixels of one baked band (four per region). */
 const BAKE_PIXELS = 4e6,
   BAKE_PIXELS_LIGHT = 1.5e6;
@@ -40,12 +45,14 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
   let pending: Region | undefined;
   /** A key the recorder could not represent: not tried again until the key changes. */
   let failedKey: string | undefined;
+  let failedPaint: number | undefined;
   let lastCx = NaN,
     lastCy = NaN,
     lastScale = NaN,
     movedAt = -Infinity,
     needSince = -1;
   let moving = false;
+  let refineAtRest = true;
   /** The band of `pending` being recorded, one drawVector step per `advance`, and its longest step (the main-thread
    * block it cost): a slice budget bounds the recording, the next slice resumes it, a drop of the region cancels it. */
   let job: { steps: Generator<void, OverlayBand | undefined>; longest: number } | undefined;
@@ -69,15 +76,42 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
   const bandOf = (made: OverlayBand, light: boolean): Band => {
     const box = boxOf(made),
       at = markIndex(made.list, CRISP_MARK);
-    let prefix: DisplayList | undefined, suffix: DisplayList;
+    let prefix: DisplayList | undefined, symbols: DisplayList | undefined, suffix: DisplayList;
     if (at > 0) {
       const [area, crisp] = splitList(made.list, at);
       prefix = cullList(area, box);
       suffix = cullList(crisp, box);
+      // Peel off the world draws above the area paint. Earlier marks that overlap a subsequent
+      // tree pass keep their original compositing order; they still reference the same world buffers.
+      let cut = prefix.ops.length;
+      while (cut && !host.fixedRaster?.()) {
+        const op = prefix.ops[cut - 1];
+        if (op.type !== 'sprites' || !op.transform || !op.tint) break;
+        cut--;
+      }
+      if (cut < prefix.ops.length) {
+        const [below, marks] = splitList(prefix, cut);
+        prefix = below;
+        if (host.ink) symbols = marks;
+        else suffix = joinMarks(marks, suffix);
+      }
       // A band outside the map: the map clip misses it, nothing is left to bake.
       if (!prefix.ops.length) prefix = undefined;
     } else suffix = cullList(made.list, box);
-    return { rect: made.rect, cx: made.cx, cy: made.cy, w: made.w, h: made.h, prefix, suffix, stage: BandStage.ClipSuffix, density: densityFor(made.w, made.h, light ? BAKE_PIXELS_LIGHT : BAKE_PIXELS), part: { list: suffix, post: [1, 0, 0, 1, 0, 0], scissor: [0, 0, 0, 0] } };
+    return {
+      rect: made.rect,
+      cx: made.cx,
+      cy: made.cy,
+      w: made.w,
+      h: made.h,
+      prefix,
+      suffix,
+      symbols,
+      pixelsMatch: made.pixelsMatch,
+      stage: BandStage.ClipSuffix,
+      density: densityFor(made.w, made.h, light ? BAKE_PIXELS_LIGHT : BAKE_PIXELS),
+      part: { list: suffix, post: [1, 0, 0, 1, 0, 0], scissor: [0, 0, 0, 0] },
+    };
   };
 
   /** Program compilation stops this work slice without advancing any remaining recording stages. */
@@ -93,12 +127,16 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
     needSince = -1;
     if (!host.fixedRaster?.()) {
       let cost = 0;
-      p.motionSnapshot = p.parts.some(b =>
-        b.suffix.ops.some(op => {
-          cost += op.type === 'stroke' || op.type === 'fill' ? op.paths.length : 1;
-          return cost >= MOTION_SNAPSHOT_OPS;
-        }),
-      );
+      p.motionSnapshot = p.parts.some(b => {
+        cost += b.symbols?.ops.length ?? 0;
+        return (
+          cost >= MOTION_SNAPSHOT_OPS ||
+          b.suffix.ops.some(op => {
+            cost += op.type === 'stroke' || op.type === 'fill' ? op.paths.length : 1;
+            return cost >= MOTION_SNAPSHOT_OPS;
+          })
+        );
+      });
     }
     retained.show(p);
     return true;
@@ -111,7 +149,7 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
       const band = p.bands[p.parts.length],
         reuse = p.reuse,
         previous = reuse?.source.parts[p.parts.length];
-      if (reuse && previous && !reuse.boxes.some(box => meetsChange(band, box, 32 / p.scale))) {
+      if (reuse && previous && !reuse.repaint?.has(previous) && !reuse.boxes.some(box => meetsChange(band, box, 32 / p.scale))) {
         reuse.bands.add(previous);
         p.parts.push(previous);
         p.live.push(previous.part);
@@ -129,11 +167,12 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
         step = job.steps.next();
       job.longest = Math.max(job.longest, host.now() - t);
       if (!step.done) return false;
-      diagnostics?.recorded(job.longest);
+      if (!step.value?.replayed) diagnostics?.recorded(job.longest);
       job = undefined;
       const made = step.value;
       if (!made) {
         failedKey = p.key;
+        failedPaint = p.paint;
         dropPending();
         return true;
       }
@@ -145,11 +184,13 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
       // The sea, the land clip, a lake: fanned for what this band can show, not for the whole map at every frame.
       b.suffix = clipList(b.suffix, boxOf(b));
       b.part.list = b.suffix;
+      if (b.symbols) b.drapeSuffix = joinMarks(b.symbols, b.suffix);
       b.stage = b.prefix ? BandStage.PreparePrefix : BandStage.PrepareSuffix;
     } else if (b.stage === BandStage.PreparePrefix) {
       if (b.prefix) raster.prepare(b.prefix);
       b.stage = BandStage.PrepareSuffix;
     } else if (b.stage === BandStage.PrepareSuffix) {
+      if (b.symbols) raster.prepare(b.symbols);
       raster.prepare(b.suffix);
       b.stage = b.prefix ? BandStage.BakePrefix : BandStage.Complete;
     } else if (b.stage === BandStage.BakePrefix && b.prefix) {
@@ -159,10 +200,11 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
         return false;
       }
       // A bake while the view moves is bounded (pixels, samples); the region is then a draft.
-      if (moving && !host.fixedRaster?.()) p.draft = true;
+      const bounded = (moving || !refineAtRest) && !host.fixedRaster?.();
+      if (bounded && refineAtRest) p.draft = true;
       const t = host.now(),
-        samples = moving && !host.fixedRaster?.() ? MOVING_SAMPLES : 4;
-      let density = moving && !host.fixedRaster?.() ? Math.min(b.density, densityFor(b.w, b.h, MOVING_PIXELS)) : b.density;
+        samples = bounded ? MOVING_SAMPLES : 4;
+      let density = bounded ? Math.min(b.density, densityFor(b.w, b.h, MOVING_PIXELS)) : b.density;
       let baked = raster.bake(b.prefix, density, { samples });
       for (let i = 1; !baked && i < BAKE_TRIES; i++) {
         density /= 2;
@@ -192,7 +234,7 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
       light = !host.fixedRaster?.() && frame.quality === 'light';
     const scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2),
       key = host.key(scale, frame.dpr, light);
-    if (key === undefined || key === failedKey) {
+    if (key === undefined || (key === failedKey && failedPaint === host.paintRevision?.())) {
       dropPending();
       return false;
     }
@@ -223,7 +265,8 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
     const p0 = pending;
     if (
       p0 &&
-      (retained.changes(p0)?.length !== 0 ||
+      (p0.paint !== host.paintRevision?.() ||
+        retained.changes(p0)?.length !== 0 ||
         (host.fixedRaster?.() ? p0.key !== key : p0.dpr !== frame.dpr || !covers(p0.rect, frame.rect) || (p0.key !== key && (p0.light !== light || host.key(p0.scale, p0.dpr, p0.light) !== p0.key || Math.abs(Math.log2(p0.scale / view.scale)) > KEEP_OCTAVES))))
     )
       dropPending();
@@ -232,9 +275,22 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
       const nothing = !cur || cur.dpr !== frame.dpr;
       if (!nothing && start - movedAt < host.settleMs && start - needSince < host.maxWaitMs) return true;
       const boxes = cur && !cur.draft && fitsView(cur) && retained.arrivalsCurrent(cur) ? retained.changes(cur) : undefined;
-      const source = boxes?.length ? cur : undefined;
+      const repaint = boxes && cur ? retained.repaint(cur) : undefined;
+      const source = boxes && (boxes.length || repaint?.size) ? cur : undefined;
       const plan = source ? { key, rect: source.rect, scale: source.scale, dpr: source.dpr, bands: source.bands } : host.plan(view, frame.cssW, frame.cssH, frame.dpr, key);
-      pending = { ...plan, light, stale: false, parts: [], live: [], draft: false, provisional: source?.provisional ?? false, arrivals: host.arrivals(), content: host.contentRevision?.(), reuse: source && boxes ? { source, boxes, bands: new Set() } : undefined };
+      pending = {
+        ...plan,
+        light,
+        stale: false,
+        parts: [],
+        live: [],
+        draft: false,
+        provisional: source?.provisional ?? false,
+        arrivals: host.arrivals(),
+        content: host.contentRevision?.(),
+        paint: host.paintRevision?.(),
+        reuse: source && boxes ? { source, boxes, repaint, bands: new Set() } : undefined,
+      };
       diagnostics?.regionStarted();
     }
     blocked = false;
@@ -255,6 +311,7 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
       const t = host.now();
       const baked = raster.bake(b.suffix, host.fixedRaster?.() ? densityFor(b.w, b.h, BAKE_PIXELS * 1.1) : Math.min(b.density, densityFor(b.w, b.h, MOVING_PIXELS)), {
         under: b.baked,
+        symbols: b.symbols,
         samples: MOVING_SAMPLES,
         between: host.ink
           ? (target, width, height, post) => {
@@ -288,12 +345,13 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
       return pending;
     },
     get failedKey(): string | undefined {
-      return failedKey;
+      return failedKey && failedPaint === host.paintRevision?.() ? failedKey : undefined;
     },
     get moving(): boolean {
       return moving;
     },
     track(frame: LiveFrame, start: number): void {
+      refineAtRest = frame.refineAtRest !== false;
       const view = frame.view;
       if (view.cx !== lastCx || view.cy !== lastCy || view.scale !== lastScale) {
         // The first view seen is not a movement (the first region would be made as a draft, then again).
@@ -310,10 +368,10 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
       if (!r) return false;
       const fixed = !!host.fixedRaster?.();
       if (fixed && pending) return false;
-      const ahead = r.dpr === frame.dpr && beyond(frame.view.scale / r.scale, SNAPSHOT_AHEAD);
+      const ahead = (refineAtRest || frame.moving) && r.dpr === frame.dpr && beyond(frame.view.scale / r.scale, SNAPSHOT_AHEAD);
       // A stroke-heavy region can be expensive even at its original scale. Warm it before the first gesture,
       // using only spare slice time; the exact resting view keeps drawing the original lists.
-      const idle = !moving && !pending && !r.stale && !r.draft && !!r.motionSnapshot;
+      const idle = refineAtRest && !moving && !pending && !r.stale && !r.draft && !!r.motionSnapshot;
       if (!(fixed || ahead || idle) || !r.parts.some(b => needsSnapshot(b, fixed))) return false;
       if (host.now() >= deadline) return true;
       const did = snap(r, fixed || idle, fixed);

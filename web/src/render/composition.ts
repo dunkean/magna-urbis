@@ -112,6 +112,9 @@ interface PresetValues {
   building: BuildingLook;
   text: TextSettings;
 }
+/** Live presentation of a recipe. Captures and exports supply their own density. */
+export const LIVE_LOOK_QUALITY = { full: { pixelScale: 1, refineAtRest: true }, light: { pixelScale: 0.75, refineAtRest: false } } as const;
+export const liveLookPixelRatio = (dpr: number, quality: ResolvedDisplayQuality = 'full'): number => Math.min(2, dpr) * LIVE_LOOK_QUALITY[quality].pixelScale;
 /** Hides every text group but the listed ones. */
 const only = (...shown: TextGroup[]) => Object.fromEntries(TEXT_GROUPS.map(g => [g, shown.includes(g)])) as Record<TextGroup, boolean>;
 const PRESETS: Readonly<Record<StyleId, PresetValues>> = {

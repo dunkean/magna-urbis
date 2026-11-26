@@ -188,6 +188,10 @@ export function mockCanvas(w: number, h: number): { canvas: { width: number; hei
           if (k === 'fill') log.fills.push({ path: p, style: t.fillStyle, alpha: Number(t.globalAlpha) });
         }
         if (k === 'measureText') return { width: String(args[0]).length * 6 };
+        if (k === 'createImageData') {
+          const [width, height] = args.map(Number);
+          return { width, height, data: new Uint8ClampedArray(width * height * 4) };
+        }
         if (k === 'getTransform') return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
         return undefined;
       };

@@ -65,4 +65,12 @@ export class RasterTileCache<T> {
   clear(): void {
     for (const key of this.entries.keys()) this.drop(key);
   }
+
+  retain(keep: (value: T) => boolean): void {
+    for (const [key, entry] of this.entries) if (!keep(entry.value)) this.drop(key);
+  }
+
+  trim(bytes: number): void {
+    while (this.entries.size && this.used > bytes) this.drop(this.entries.keys().next().value!);
+  }
 }

@@ -38,7 +38,7 @@ describe('V2 toponym overrides', () => {
     expect(settings.naming?.places?.east).toBeUndefined();
   });
 
-  it('is kept by the project file and left out of the short code', () => {
+  it('keeps authored names in project files and share codes', () => {
     const settings = base();
     renameToponym(settings, town, 'Le Gué');
     renameToponym(settings, river, 'Blackwater');
@@ -50,9 +50,8 @@ describe('V2 toponym overrides', () => {
     expect(restored.naming?.labels?.['hill:x']).toEqual({ hidden: true });
     const code = encodeCityCode(settings),
       shared = decodeCityCode(code).settings;
-    expect(code).not.toContain('Blackwater');
-    expect(shared.naming?.places).toBeUndefined();
-    expect(shared.naming?.labels).toBeUndefined();
+    expect(shared.naming?.places).toEqual({ east: 'Le Gué' });
+    expect(shared.naming?.labels).toEqual({ [river.id]: { text: 'Blackwater', mode: 'label' }, 'free:note': { kind: 'free', text: 'Camp', anchor: { x: 1, y: 2 } } });
     expect(settings.naming?.places).toEqual({ east: 'Le Gué' });
   });
 
