@@ -10,7 +10,7 @@ import { renameLocalTown, renameMap } from '../src/v2/mapNaming';
 import { nativeCityRecords } from '../src/v2/nativeProducts';
 import type { RustTownSnapshot } from '../src/v2/rustUrban';
 import { defaultSettings } from '../src/v2/settings';
-import { mergeEditTarget } from '../src/v2/urbanEditMerge';
+import { editTarget, mergeEditTarget, townEditState } from '../src/v2/urbanEditMerge';
 
 const ring = (x: number, y = 100, w = 12) => [
   { x, y },
@@ -96,6 +96,37 @@ it.each(['main', 'other'])('names the changed objects of %s with full-run identi
   expect(local.landuse).toBe(previous.landuse);
   expect(local.terrain).toBe(previous.terrain);
   expect(local.settlements!.find(place => place.key !== key)).toBe(previous.settlements!.find(place => place.key !== key));
+});
+
+it('shows both ends of an automatic elite-role transfer after a quarter edit and its undo', () => {
+  const makeTown = (elite: number) => {
+    const quarters = [0, 1, 2].map(q => ({ shape: { outer: ring(100 * q), holes: [] } }));
+    const blocks = quarters.map((quarter, q) => ({ shape: quarter.shape, kind: 'block', quarter: q }));
+    const districts = quarters.map((_, q) => ({ id: q, quarters: [q], role: q === elite ? 'elite' : 'commoner' }));
+    const parcels = blocks.map((b, i) => ({ id: 'lot-' + i, block: i, shape: b.shape }));
+    const allocations = districts.map((d, i) => ({ parcelId: parcels[i].id, role: d.role }));
+    const programme = { allocations, reservations: [], environment: [], demands: [], adjacency: [] };
+    const sites = allocations.map(a => ({ id: a.parcelId, parcel_id: a.parcelId, programme: { role: a.role } }));
+    const buildings = allocations.map((a, i) => ({ ...house(a.parcelId, i * 100), function: a.role }));
+    return {
+      layouts: [{ key: 'main', streets: [], blocks, quarters, structure: { districts } }],
+      partitions: [{ key: 'main', parcels, programme }],
+      sites,
+      scene: { buildings, materials: [], refusals: [], open_spaces: [] },
+    } as unknown as RustTownSnapshot;
+  };
+  const previous = makeTown(2), edited = makeTown(1);
+  const before = townEditState('same', {}), after = townEditState('same', { quarters: { 1: { wealth: 0.9 } } });
+  for (const [old, fresh, from, to] of [[previous, edited, before, after], [edited, previous, after, before]] as const) {
+    const target = editTarget(from, to, [old.layouts, fresh.layouts], [old.sites])!;
+    expect([...target.blocks.get('main')!].sort()).toEqual([1, 2]);
+    const { snapshot, lots } = mergeEditTarget(old, fresh, target);
+    expect([...lots!].sort()).toEqual(['lot-1', 'lot-2']);
+    expect(snapshot.partitions![0].programme!.allocations).toEqual(fresh.partitions![0].programme!.allocations);
+    expect(snapshot.sites).toEqual(fresh.sites);
+    expect(snapshot.scene!.buildings).toEqual(fresh.scene!.buildings);
+    expect(snapshot.scene!.buildings[0]).toBe(old.scene!.buildings[0]);
+  }
 });
 
 it('splices a local reply into page objects and transfers only the new records of a merged site array', () => {

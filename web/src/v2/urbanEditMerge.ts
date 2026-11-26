@@ -1,8 +1,7 @@
 /**
- * Local edit invariant: editing a house, lot, block or quarter changes only that element and the buildings on it.
- * Whatever the engine had to recompute for the edit, the town keeps the previous snapshot's objects outside the edit's
- * target (lots, allocations, sites, requests, buildings, open spaces, streets, blocks) and takes only the target from
- * the fresh result. The display and the page interning then see the same objects for everything else.
+ * Local edits replace the selected house, lot, block or quarter and the buildings on it.
+ * A quarter edit can also move a town-wide role to or from another quarter. Both quarters then
+ * need fresh allocations and buildings. The display keeps the previous objects outside the affected blocks and lots.
  */
 import type { Layout, Partition, UrbanProgramme } from '../../../rust/bridge/urban';
 import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
@@ -43,12 +42,35 @@ export function townEditState(rest: string, edits: { quarters?: Record<string, u
   return { rest, quarters: prints(edits.quarters), blocks: prints(edits.blocks), parcels: prints(edits.parcels), reshaped: Object.entries(edits.parcels ?? {}).flatMap(([id, edit]) => (edit.shape || edit.parts || edit.deleted ? [id] : [])), buildings: prints(edits.buildings) };
 }
 
+/** Per-quarter inputs assigned by the town-wide district pass. Splitting a district can also renumber later ones. */
+function districtAssignments(layout: Layout): Map<number, string> {
+  const assignments = new Map<number, string>();
+  for (const district of layout.structure?.districts ?? []) {
+    const signature = JSON.stringify([district.id, district.role, district.wealth, district.tissue, district.phase, district.center]);
+    for (const quarter of district.quarters) assignments.set(quarter, signature);
+  }
+  return assignments;
+}
+
 /** Elements a local edit targets, from the edits of two runs; undefined when anything else changed (the whole result
  * then stands) or when an edit cannot be placed on the retained blocks. */
 export function editTarget(before: TownEditState | undefined, after: TownEditState, layouts: readonly (readonly Layout[])[], sites: readonly (readonly { id: string; parcel_id: string }[] | undefined)[]): EditTarget | undefined {
   if (!before || before.rest !== after.rest) return;
   const target: EditTarget = { blocks: new Map(), parcels: new Set(), reshaped: new Set() };
-  for (const id of changed(before.quarters, after.quarters)) for (const own of layouts) addQuarter(target.blocks, own, id);
+  const editedQuarters = changed(before.quarters, after.quarters);
+  for (const id of editedQuarters) for (const group of layouts) addQuarter(target.blocks, group, id);
+  if (editedQuarters.length) for (const layout of layouts.at(-1) ?? []) {
+    const old = layouts[0].find(other => other.key === layout.key);
+    if (!old || old.structure?.districts === layout.structure?.districts) continue;
+    const was = districtAssignments(old), now = districtAssignments(layout);
+    const reassigned = new Set<number>();
+    for (const q of new Set([...was.keys(), ...now.keys()])) if (was.get(q) !== now.get(q)) reassigned.add(q);
+    if (reassigned.size) for (const version of [old, layout]) {
+      version.blocks.forEach((block, i) => {
+        if (reassigned.has(block.quarter)) addBlock(target.blocks, layout.key, i);
+      });
+    }
+  }
   for (const id of changed(before.blocks, after.blocks)) {
     if (!/^\d+$/.test(id)) return;
     for (const own of layouts) if (own[0]) addBlock(target.blocks, own[0].key, Number(id));
