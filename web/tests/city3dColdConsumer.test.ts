@@ -21,6 +21,12 @@ vi.mock('../src/ui/terrain3d', () => ({
     setLook() {}
     setTexture() {}
     setGroundMaterial() {}
+    setGroundShape() {}
+    setGroundCuts() {}
+    setRoadSqueeze() {}
+    naturalGroundAt() {
+      return 0;
+    }
     setForest() {}
     setHeightSampler() {}
     setTileLoader() {}
@@ -31,6 +37,9 @@ vi.mock('../src/ui/terrain3d', () => ({
     invalidateTiles() {}
     getCamera() {
       return this.camera;
+    }
+    framingView(x: number, y: number, distance: number) {
+      return { x, y, distance, pitch: this.camera.pitch };
     }
     setCamera(c: typeof this.camera) {
       this.camera = c;
@@ -46,6 +55,9 @@ vi.mock('../src/ui/terrain3d', () => ({
     }
     getLodInfo() {
       return {};
+    }
+    getShaderProfile() {
+      return 'map';
     }
     dispose() {}
     pickBuilding() {
@@ -100,6 +112,7 @@ function environment() {
   const elements: ElementSink[] = [];
   vi.stubGlobal('document', {
     getElementById: () => ({}),
+    createElementNS: () => new ElementSink(),
     createElement: () => {
       const e = new ElementSink();
       elements.push(e);
