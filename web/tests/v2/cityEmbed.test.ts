@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { cityEmbedHints, cityEmbedEditorUrl, cityEmbedSource, cityEmbedView } from '../../src/v2/cityEmbedInput';
-import { detailCityPreview, generateCityPreview } from '../../src/v2/cityPreviewPlan';
-import { bbox, polygonCentroid, polygonContains } from '../../src/gen/core/geom';
+import { cityEmbedBounds, cityEmbedHints, cityEmbedEditorUrl, cityEmbedSettings, cityEmbedSource, cityEmbedView } from '../../src/v2/cityEmbedInput';
+import type { World } from '../../src/gen/types';
+import { worldToScreen } from '../../src/render/view';
 import { decodeCityCode } from '../../src/v2/cityCode';
 import { randomCityEmbedUrl } from '../../src/v2/cityEmbedDemo';
 import { cityEmbedSummary, cityEmbedText } from '../../src/v2/cityEmbedMessages';
@@ -10,7 +10,7 @@ const read = (url: URL) => cityEmbedHints(cityEmbedSource(url));
 
 describe('city iframe contract', () => {
   it('registers French UI copy and preserves the requested language in navigation', () => {
-    expect(cityEmbedText('Schematic preview', 'fr')).toBe('Aperçu schématique');
+    expect(cityEmbedText('City preview', 'fr')).toBe('Aperçu de la ville');
     expect(cityEmbedText('Open in Magna Urbis ↗', 'fr')).toBe('Ouvrir dans Magna Urbis ↗');
     expect(cityEmbedText('🎲 Randomize city', 'fr')).toBe('🎲 Tout changer');
     const url = new URL('https://example.org/sub/embed.html?preview=1&name=Harbour&population=2500&lang=fr');
@@ -43,27 +43,13 @@ describe('city iframe contract', () => {
     expect(full.terrain?.climateValues).toMatchObject({ temperature: 8, precipitation: 900 });
   });
 
-  it('preserves the source payload and the side of a lake shore, including zero east', () => {
-    const data = {
-      format: 'fmg-burg-v1',
-      i: 7,
-      name: 'Skarholm',
-      population: 2500,
-      mfcgSeed: 'map0007',
-      river: false,
-      coast: { water: 'lake', sea: 0 },
-      elevation: 100,
-      temperature: 5,
-      precipitation: 800,
-      culture: { base: 'Nordic', type: 'Generic' },
-      biome: { id: 9, name: 'Taiga' },
-    };
+  it('preserves the source payload and coast direction, including zero east', () => {
+    const data = { format: 'fmg-burg-v1', i: 7, name: 'Skarholm', population: 2500, mfcgSeed: 'map0007', river: false, coast: { water: 'ocean', sea: 0 }, culture: { base: 'Nordic', type: 'Generic' } };
     const url = new URL('https://example.org/embed.html?preview=1&population=1');
     url.hash = new URLSearchParams({ burg: JSON.stringify(data) }).toString();
-    expect(read(url)).toMatchObject({ population: 2500, river: 'none', coast: 'none', lakeShore: 'E', language: 'norse' });
-    const draft = generateCityPreview(read(url));
-    expect(draft.plan.water).toHaveLength(1);
-    expect(bbox(draft.plan.water[0]).maxX).toBeGreaterThan(draft.plan.bounds.maxX);
+    expect(read(url)).toMatchObject({ population: 2500, river: 'none', coast: 'E', language: 'norse' });
+    expect(cityEmbedSettings(read(url), false)).toMatchObject({ runtime: { backend: 'rust', compute: 'cpu' }, urban: { backend: 'rust', architecture: 'silhouette', through: 'buildings' } });
+    expect(cityEmbedSettings(read(url), true)).toMatchObject({ runtime: { backend: 'native' }, urban: { backend: 'native' } });
     expect(new URLSearchParams(new URL(cityEmbedEditorUrl(url)).hash.slice(1)).get('city')).toBe(JSON.stringify(data));
   });
 
@@ -74,40 +60,35 @@ describe('city iframe contract', () => {
     expect(() => read(new URL('https://example.org/embed.html#burg=' + 'x'.repeat(65537)))).toThrow('too large');
   });
 
-  it('fits the dry town bounds and handles a very small iframe', () => {
-    const bounds = { minX: -100, minY: -40, maxX: 100, maxY: 60 };
-    expect(cityEmbedView(bounds, 400, 320)).toEqual({ cx: 0, cy: 10, scale: 1.52 });
-    expect(cityEmbedView(bounds, 0, 0).scale).toBeGreaterThan(0);
-  });
-});
-
-describe('two-stage schematic city plan', () => {
-  it('keeps the plan, bridges and roads fixed as it adds detail on dry land', () => {
-    const hints = read(new URL('https://example.org/embed.html?name=Port&population=10000&seed=12340012&river=1&coast=1&sea=0.5&port=1&walls=1'));
-    const draft = generateCityPreview(hints);
-    const first = structuredClone(draft.plan);
-    expect(first.water).toHaveLength(2);
-    expect(first.bridges).toHaveLength(1);
-    expect(first.docks.length).toBeGreaterThan(0);
-    expect(first.walls.length).toBeGreaterThan(0);
-    expect(first.gates.length).toBeGreaterThan(0);
-    const detail = detailCityPreview(draft);
-    expect(detail.roofs.length).toBeGreaterThan(70);
-    expect(detail.lanes.length).toBeGreaterThan(0);
-    expect(draft.plan).toEqual(first);
-    expect(generateCityPreview(hints).plan).toEqual(first);
-    expect(detailCityPreview(generateCityPreview(hints))).toEqual(detail);
-    for (const roof of detail.roofs) {
-      expect(first.water.some(water => polygonContains(water, polygonCentroid(roof)))).toBe(false);
+  it('frames built geometry without fitting distant blocks or approaches or stretching the map', () => {
+    const city = {
+      mapSize: 8000,
+      urban: {
+        buildings: [
+          {
+            poly: [
+              { x: 400, y: 400 },
+              { x: 600, y: 500 },
+            ],
+          },
+        ],
+        blocks: [[{ x: 7500, y: 7500 }]],
+        streets: [{ path: [{ x: 8000, y: 8000 }] }],
+      },
+    } as unknown as World;
+    const bounds = cityEmbedBounds(city);
+    expect(bounds.maxX).toBeLessThan(650);
+    for (const [width, height] of [
+      [620, 320],
+      [190, 600],
+    ]) {
+      const view = cityEmbedView(bounds, width, height);
+      expect(view.cx).toBe(500);
+      expect(view.cy).toBe(450);
+      const [cx, cy] = worldToScreen(view, width, height, 500, 450);
+      const [x, y] = worldToScreen(view, width, height, 510, 460);
+      expect(x - cx).toBeCloseTo(y - cy);
     }
-  });
-
-  it('keeps dwellings in small camps with requested landmarks', () => {
-    const hints = read(new URL('https://example.org/embed.html?name=Karak+Ordu&population=100&seed=3521165402&cultureBase=Mongolian&cultureType=Nomadic&coast=0&river=0&temple=1&citadel=1&plaza=1'));
-    const draft = generateCityPreview(hints);
-    expect(draft.plan.blocks.length).toBeGreaterThan(0);
-    expect(draft.plan.walls).toEqual([]);
-    expect(draft.plan.water).toEqual([]);
-    expect(detailCityPreview(draft).roofs.length).toBeGreaterThan(0);
+    expect(cityEmbedView(bounds, 0, 0).scale).toBeGreaterThan(0);
   });
 });

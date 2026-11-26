@@ -47,5 +47,6 @@ export function randomCityEmbedUrl(current: URL, random: () => number = Math.ran
   }).toString();
   const language = current.searchParams.get('lang');
   if (language) url.searchParams.set('lang', language);
+  if (current.searchParams.get('profile') === 'local') url.searchParams.set('profile', 'local');
   return url;
 }

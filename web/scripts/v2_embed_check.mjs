@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gzipSync } from 'node:zlib';
+import { gzipSync, gzip as gzipBuffer } from 'node:zlib';
+import { promisify } from 'node:util';
 
 const web = fileURLToPath(new URL('..', import.meta.url));
 const output = resolve(web, 'dist-v2');
@@ -14,6 +15,13 @@ const artifacts = resolve(web, 'out/city-embed');
 const prefix = '/magna-urbis/v2/';
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp' };
 const compressed = new Map();
+// Prepare the CDN's compressed WASM representation outside the measured navigation.
+const gzipAsync = promisify(gzipBuffer);
+for (const file of await readdir(resolve(output, 'assets'))) {
+  if (!file.endsWith('.wasm')) continue;
+  const path = resolve(output, 'assets', file);
+  compressed.set(path, await gzipAsync(await readFile(path)));
+}
 const addedLatency = Number(process.env.MAGNA_EMBED_TEST_LATENCY_MS ?? 0);
 const assets = createServer(async (request, response) => {
   try {
@@ -22,7 +30,7 @@ const assets = createServer(async (request, response) => {
     const path = resolve(output, decodeURIComponent(url.pathname.slice(prefix.length)));
     if (!path.startsWith(output + sep)) return response.writeHead(404).end();
     const ext = extname(path);
-    const gzip = !!request.headers['accept-encoding']?.includes('gzip') && ['.html', '.js', '.css', '.json'].includes(ext);
+    const gzip = !!request.headers['accept-encoding']?.includes('gzip') && ['.html', '.js', '.css', '.json', '.wasm'].includes(ext);
     const bytes = (gzip && compressed.get(path)) || (await readFile(path));
     const body = gzip && !compressed.has(path) ? gzipSync(bytes) : bytes;
     if (gzip) compressed.set(path, body);
@@ -47,7 +55,8 @@ const parent = createServer((request, response) => {
 await new Promise(ready => parent.listen(0, '127.0.0.1', ready));
 const host = 'http://127.0.0.1:' + parent.address().port + '/';
 const framed = source => host + '?' + new URLSearchParams({ src: source });
-const flat = new URLSearchParams({ preview: '1', name: 'Brackenford', population: '2500', seed: '12340007', river: '0', coast: '0', walls: '1', cultureBase: 'English' });
+const runtime = process.env.MAGNA_EMBED_TEST_PROFILE === 'local' ? 'local' : 'web';
+const flat = new URLSearchParams({ profile: runtime, preview: '1', name: 'Brackenford', population: '2500', seed: '12340007', river: '0', coast: '0', walls: '1', cultureBase: 'English' });
 const flatUrl = base + 'embed.html?' + flat;
 const result = { base, latencyMs: addedLatency, cases: [], errors: [], missing: [] };
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -58,12 +67,29 @@ try {
   browser = await chromium.launch({ channel: process.env.MAGNA_BROWSER_CHANNEL ?? 'msedge', headless: true });
   const context = await browser.newContext({ viewport: { width: 700, height: 500 } });
   await context.addInitScript(() => {
-    if (!new URLSearchParams(location.search).has('holdDetail')) return;
+    const captureFirst = new MutationObserver(() => {
+      if (document.documentElement?.dataset.state !== 'ready') return;
+      const canvas = document.querySelector('#map canvas');
+      if (canvas) window.__townFirstImage = canvas.toDataURL('image/png').split(',')[1];
+      captureFirst.disconnect();
+    });
+    captureFirst.observe(document, { subtree: true, attributes: true, attributeFilter: ['data-state'] });
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener('message', ({ data }) => {
+          if (data.type === 'progress') (window.__townProgress ??= []).push([data.progress.stage, Math.round(performance.now())]);
+          if (data.type === 'result' || data.type === 'city-preview') {
+            const native = data.world.debug?.v2RustCities?.main;
+            const town = { buildings: native?.scene?.buildings?.length ?? data.world.urban?.buildings?.length ?? 0, streets: native?.layouts?.[0]?.streets?.length ?? 0, layouts: native?.layouts?.length ?? 0 };
+            if (data.type === 'city-preview') window.__townFirstResult = town;
+            else window.__townResult = town;
+          }
+        });
+      }
       postMessage(message, ...rest) {
-        if (message.type === 'detail') window.__releasePreviewDetail = () => super.postMessage(message, ...rest);
-        else super.postMessage(message, ...rest);
+        if (!new URLSearchParams(location.search).has('holdGeneration')) super.postMessage(message, ...rest);
       }
     };
   });
@@ -77,30 +103,29 @@ try {
   page.on('response', response => {
     if (response.status() >= 400) result.missing.push(response.url());
   });
-  async function preview(name, source, hold = false) {
+  async function preview(name, source) {
     const requests = [];
     const responses = [];
     const remember = request => requests.push(request.url());
-    const size = response => responses.push(response.headerValue('content-length').then(value => Number(value ?? 0)));
+    const size = response => responses.push(response.headerValue('content-length').then(value => ({ url: response.url(), bytes: Number(value ?? 0) })));
     page.on('request', remember);
     page.on('response', size);
     const started = performance.now();
     await page.goto(framed(source), { waitUntil: 'commit' });
     const root = page.frameLocator('iframe').locator('html');
-    await root.and(page.frameLocator('iframe').locator('[data-state="ready"]')).waitFor({ timeout: 4000 });
+    await root.and(page.frameLocator('iframe').locator('[data-state="ready"]')).waitFor({ timeout: 30000 });
     const frame = page.frames().find(candidate => candidate.url().startsWith(base));
     assert.equal(await frame.evaluate(() => crossOriginIsolated), false);
     assert.equal(await frame.locator('#status').isVisible(), false);
     assert.equal(await frame.locator('#demo-controls').isVisible(), false);
-    if (hold) {
-      assert.equal(await root.getAttribute('data-detail'), null);
-      await capture(page, name + '-first');
-      await frame.evaluate(() => window.__releasePreviewDetail());
-    }
     await root.and(page.frameLocator('iframe').locator('[data-detail="ready"]')).waitFor({ timeout: 15000 });
-    const timing = await root.evaluate(el => ({ firstMs: Number(el.dataset.readyMs), detailMs: Number(el.dataset.detailMs) }));
-    assert.ok(timing.firstMs < 4000);
-    if (!hold) assert.ok(timing.detailMs < 15000);
+    const timing = await root.evaluate(el => ({ firstMs: Number(el.dataset.readyMs), detailMs: Number(el.dataset.detailMs), runtime: el.dataset.runtime }));
+    if (runtime === 'local') assert.equal(timing.runtime, 'native');
+    const { town, first, image } = await frame.evaluate(() => ({ town: window.__townResult, first: window.__townFirstResult, image: window.__townFirstImage }));
+    assert.deepEqual(first, town, 'The first published view must already have the final street and building counts.');
+    assert.ok(image, 'A completed first canvas paint must precede the context view.');
+    await writeFile(resolve(artifacts, name + '-first.png'), Buffer.from(image, 'base64'));
+    assert.ok(town?.layouts && town.buildings > 0, 'The map must come from the Rust settlement and contain actual building footprints.');
     assert.ok(timing.detailMs > timing.firstMs);
     const pixels = await frame.locator('#map canvas').evaluate(canvas => {
       const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
@@ -110,13 +135,15 @@ try {
     });
     assert.ok(pixels > 20, 'The map must contain visible geometry.');
     assert.equal(workers.size, 0, 'The preview must release its worker after enrichment.');
-    assert.ok(!requests.some(url => /\.wasm|\/(?:studio-|engine\.worker-|brushAssets-|neuralRuntime-|terrainGpu-)/.test(url)), 'The preview must only load its lightweight generation entry.');
+    assert.ok(!requests.some(url => /\/(?:studio-|brushAssets-|neuralRuntime-|terrainGpu-)/.test(url)), 'The preview must not load the studio, brush libraries or neural runtime.');
     page.off('request', remember);
     page.off('response', size);
-    const bytes = (await Promise.all(responses)).reduce((sum, count) => sum + count, 0);
-    assert.ok(bytes < 300_000, 'Keep the full compressed preview within 300 KB.');
-    const report = { name, ...timing, checkedMs: Math.round(performance.now() - started), bytes, pixels, requests: requests.length };
-    console.log(JSON.stringify(report));
+    const assets = await Promise.all(responses);
+    const bytes = assets.reduce((sum, asset) => sum + asset.bytes, 0);
+    const largest = assets.sort((a, b) => b.bytes - a.bytes).slice(0, 6);
+    const progress = await frame.evaluate(() => window.__townProgress);
+    const report = { name, ...timing, checkedMs: Math.round(performance.now() - started), bytes, pixels, requests: requests.length, town, progress, largest };
+    console.log(JSON.stringify({ ...report, progress: undefined, largest: undefined }));
     result.cases.push(report);
     return { frame, pixels: hash(await capture(page, name)) };
   }
@@ -139,8 +166,24 @@ try {
     element.style.width = '620px';
     element.style.height = '420px';
   });
-  await repeat.frame.waitForFunction(() => document.querySelector('#map canvas')?.getBoundingClientRect().width === 620);
+  async function backingAspect(width, height) {
+    await repeat.frame.waitForFunction(
+      ([w, h]) => {
+        const canvas = document.querySelector('#map canvas');
+        const rect = canvas?.getBoundingClientRect();
+        return rect?.width === w && rect.height === h && Math.abs(canvas.width / canvas.height - w / h) < 0.005;
+      },
+      [width, height],
+    );
+  }
+  await backingAspect(620, 420);
   await capture(page, 'town-resized');
+  await page.locator('iframe').evaluate(element => {
+    element.style.width = '190px';
+    element.style.height = '440px';
+  });
+  await backingAspect(190, 440);
+  await capture(page, 'town-tall');
 
   const data = {
     format: 'fmg-burg-v1',
@@ -160,19 +203,14 @@ try {
     precipitation: 900,
     culture: { base: 'Nordic', type: 'Naval' },
   };
-  const rich = new URL(base + 'embed.html?preview=1&lang=fr');
+  const rich = new URL(base + 'embed.html?preview=1&lang=fr&profile=' + runtime);
   rich.hash = new URLSearchParams({ burg: JSON.stringify(data) }).toString();
   const port = await preview('port-rich', rich.href);
-  const held = new URL(rich);
-  held.searchParams.set('holdDetail', '1');
-  const firstPort = await preview('port-phases', held.href, true);
-  assert.notEqual(hash(await readFile(resolve(artifacts, 'port-phases-first.png'))), firstPort.pixels, 'The detail phase must change the map.');
-  assert.equal(firstPort.pixels, port.pixels, 'Holding detail does not change its result.');
-  assert.equal(await firstPort.frame.locator('#open').innerText(), 'Ouvrir dans Magna Urbis ↗');
+  assert.equal(await port.frame.locator('#open').innerText(), 'Ouvrir dans Magna Urbis ↗');
 
   // Verify the iframe can open the actual studio, preserving its source data and locale.
   const opened = page.waitForEvent('popup');
-  await firstPort.frame.locator('#open').click();
+  await port.frame.locator('#open').click();
   const studio = await opened;
   await studio.waitForURL(url => url.pathname.endsWith('/v2.html'));
   const target = new URL(studio.url());
@@ -185,20 +223,20 @@ try {
     headings,
     [...notes.matchAll(/^## (.+)$/gm)].slice(0, 4).map(match => match[1].trim()),
   );
-  assert.match(await studio.locator('.changelog-versions').textContent(), /lightweight schematic city map/);
+  assert.match(await studio.locator('.changelog-versions').textContent(), /generated town/);
   result.changelog = headings;
   await studio.close();
 
-  // Closing the burg while the second phase is pending releases the old worker.
-  await page.goto(framed(held.href));
-  await page.frameLocator('iframe').locator('html[data-state="ready"]').waitFor();
+  // A discarded frame releases its worker, including when the result is pending.
+  const startedWorker = page.waitForEvent('worker');
+  await page.goto(framed(flatUrl + '&holdGeneration=1'));
+  const worker = await startedWorker;
   assert.equal(workers.size, 1);
-  const [worker] = workers;
   await Promise.all([new Promise(done => worker.once('close', done)), page.locator('iframe').evaluate(iframe => iframe.remove())]);
   assert.equal(workers.size, 0);
 
-  await preview('river-town', base + 'embed.html?preview=1&name=Longxi&seed=1288490188&population=3050&river=1&coast=0&walls=1&cultureBase=Chinese&temple=1');
-  await preview('nomad-camp', base + 'embed.html?preview=1&name=Karak%20Ordu&seed=3521165402&population=1250&river=0&coast=0&walls=0&cultureBase=Mongolian&cultureType=Nomadic&temple=1');
+  await preview('river-town', base + 'embed.html?profile=' + runtime + '&preview=1&name=Longxi&seed=1288490188&population=3050&river=1&coast=0&walls=1&cultureBase=Chinese&temple=1');
+  await preview('nomad-camp', base + 'embed.html?profile=' + runtime + '&preview=1&name=Karak%20Ordu&seed=3521165402&population=1250&river=0&coast=0&walls=0&cultureBase=Mongolian&cultureType=Nomadic&temple=1');
   await page.goto(framed(base + 'embed.html?preview=1#burg=bad'));
   await page.frameLocator('iframe').locator('html[data-state="error"]').waitFor();
   assert.equal(workers.size, 0);

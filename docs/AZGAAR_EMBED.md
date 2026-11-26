@@ -1,20 +1,18 @@
 # City iframe preview
 
-The V2 build includes `embed.html`. It draws a schematic Canvas 2D plan on flat
-ground, with the burg's approximate water, primary streets, blocks, and requested walls
-and landmarks. After the first paint, the preview worker adds lanes and roofs to that
-same plan. The canvas keeps its framing, water, roads and gates. Both passes use a
-small deterministic TypeScript worker. It exits after the detail pass. The WASM city
-engine is loaded by the full editor when the user opens it.
+The V2 build includes `embed.html`. It generates a procedural town with the V2 Rust
+pipeline and draws it with the shared Minimal Canvas renderer. The preview uses flat procedural relief and the regular city footprint and building-site generation.
+The first paint shows
+the actual streets, walls and building footprints. The following paint adds the
+terrain shading and land use from the same result and keeps the city and camera in
+place. Window resizing redraws the same geometry at a uniform scale.
 
 The public endpoint is `https://magna-urbis.org/embed.html` after publication.
-In the development checkout, run `npm run dev:v2` in `web/` and open
-`http://127.0.0.1:5174/embed.html?preview=1&name=Brackenford&population=2500&seed=12340007&walls=1`.
-
-Opened directly, the preview includes **Randomize city** (French: **Tout changer**).
-An embedded iframe hides these demonstration controls unless it receives `demo=1`.
-The map supports drag, wheel, touch pinch, double-click, zoom buttons, and keyboard
-navigation. English and French follow the `lang` query parameter or the stored V2 preference.
+For an internal native performance run, start the existing V2 engine and open
+`http://127.0.0.1:5174/embed.html?profile=local&preview=1&name=Brackenford&population=2500&seed=12340007&walls=1`.
+The explicit local profile is accepted on loopback only. The ordinary web preview uses
+browser WASM. Direct previews include **Randomize city** (French: **Tout changer**).
+An embedded iframe hides demonstration controls unless it receives `demo=1`.
 
 ## Simple link
 
@@ -22,7 +20,7 @@ navigation. English and French follow the `lang` query parameter or the stored V
 <iframe title="City map" src="https://magna-urbis.org/embed.html?preview=1&amp;name=Brackenford&amp;population=2500&amp;seed=12340007&amp;coast=0&amp;river=0&amp;walls=1" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" style="width:440px;height:320px;border:0"></iframe>
 ```
 
-`preview=1` displays the schematic map and the **Open in Magna Urbis** link.
+`preview=1` displays the 2D town map and the **Open in Magna Urbis** link.
 Without `preview=1`, the same endpoint opens V2 in the current tab. The iframe link
 opens V2 in a new tab. Both hand the original burg constraints to the regular city
 importer. The full terrain can change where streets and buildings are laid out.
@@ -37,7 +35,7 @@ Flat query parameters reuse the existing Watabou city importer:
 
 Boolean parameters accept `0`/`1` or `false`/`true`. The shared importer determines which fields
 affect generation: currently `plaza` and `farms` are parsed but do not force generation options,
-`hub=1` requests four regional exits, and a coast angle is reduced to a cardinal side. The schematic preview uses the plaza flag and can place a lake shore from a rich payload.
+`hub=1` requests four regional exits, and a coast angle is reduced to a cardinal side.
 Missing parameters retain the importer's defaults. These links describe constraints, not an
 exact terrain, coastline or river course.
 
@@ -118,7 +116,8 @@ node scripts/v2_embed_check.mjs
 The check serves a compressed production build under a subpath, with an FMG-sized iframe
 on a second origin. It records first-plan and detail timings and bytes, checks phase order,
 repeatability, resize, worker shutdown, invalid input and studio navigation from the iframe.
-It also checks the four bundled changelog sections. Reports and screenshots are written to
+It also checks the four bundled changelog sections. Set MAGNA_EMBED_TEST_PROFILE=local to test the loopback native engine.
+The default exercises browser WASM. Reports and screenshots are written to
 `web/out/city-embed/`. Set `MAGNA_EMBED_TEST_LATENCY_MS` to add an HTTP response delay.
 These are local measurements. The archived WASM generation profiles are documented in
 [the previous handoff](HANDOFF_AZGAAR_EMBED_2026-11-19.md).

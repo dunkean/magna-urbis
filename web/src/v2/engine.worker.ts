@@ -64,7 +64,7 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest | V2ResourceR
       // A world sent by the page carries its town partitions packed (urbanPack.ts).
       let world = retained.resolve(request.retainedWorldId, unpackWorldPartitions(request.world));
       const local = action === 'town' && request.localEdit && request.key && world ? { key: request.key, base: world } : undefined;
-      if (action === 'terrain' || action === 'all') world = await stage(effective => generateTerrain(effective, progress, undefined, request.assetBase, request.terrainStage));
+      if (action === 'terrain' || action === 'all') world = await stage(effective => generateTerrain(effective, progress, undefined, request.assetBase, request.terrainStage, !request.cityPreview));
       if (!world) throw new Error('No map to process.');
       if (action === 'region' || action === 'settlements' || action === 'all') world = await stage(effective => planRegion(world!, effective, progress, action === 'all'));
       if (action === 'roads') world = await stage(effective => rerouteRegion(world!, effective, progress));
@@ -77,7 +77,17 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest | V2ResourceR
           /* The progress line then shows the provisional names of the placement. */
         }
       if (action === 'towns' && request.roadEdit) world = await stage(effective => updateRoadTowns(world!, effective, request.keys ?? [], request.roadEdit!, progress));
-      else if (action === 'towns' || action === 'all') world = await stage(effective => generateTowns(world!, effective, progress, action === 'towns' ? request.keys : undefined, action === 'towns' ? request.townStage : undefined, !!request.keepUrbanLanes));
+      else if (action === 'towns' || action === 'all') {
+        const published =
+          request.cityPreview && action === 'all'
+            ? (built: typeof world) => {
+                if (!built?.urban?.buildings?.length) return;
+                const packed = packWorldPartitions({ ...built, landuse: undefined });
+                scope.postMessage({ id, type: 'city-preview', world: packed.world } satisfies V2WorkerResponse, packed.transfer);
+              }
+            : undefined;
+        world = await stage(effective => generateTowns(world!, effective, progress, action === 'towns' ? request.keys : undefined, action === 'towns' ? request.townStage : undefined, !!request.keepUrbanLanes, published));
+      }
       if (action === 'town') {
         if (!request.key) throw new Error('Choose a settlement.');
         world = await stage(effective =>

@@ -28,11 +28,6 @@
         user-select: none;
         outline: none;
       }
-      #map canvas {
-        display: block;
-        width: 100%;
-        height: 100%;
-      }
       #map:focus-visible {
         outline: 2px solid #725c47;
         outline-offset: -2px;
@@ -92,6 +87,11 @@
         background: #f4f1ead9;
         padding: 6px;
         border-radius: 3px;
+      }
+      @media (max-width: 250px) {
+        #open {
+          bottom: 44px;
+        }
       }
       #open:not([href]) {
         display: none;
@@ -170,7 +170,7 @@
   <body>
     <div id="map" tabindex="0" aria-label="City map: drag to pan, scroll to zoom"></div>
     <div id="status" role="status" data-embed-text>Generating city…</div>
-    <div id="caption"><strong id="burg-name" hidden></strong><small data-embed-text>Schematic preview</small></div>
+    <div id="caption"><strong id="burg-name" hidden></strong><small data-embed-text>City preview</small></div>
     <div id="demo-controls" hidden>
       <button id="randomize" type="button" data-embed-text title="Randomize culture, population, geography and buildings">🎲 Randomize city</button>
       <span id="demo-params"></span>

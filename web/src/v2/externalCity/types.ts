@@ -16,8 +16,6 @@ export interface ExternalCityHints {
   population?: number;
   river?: RiverOpt;
   coast?: CoastOpt;
-  /** Direction of a lake shore, retained for schematic imports. */
-  lakeShore?: Exclude<CoastOpt, 'none'>;
   walls?: boolean;
   /** Light wooden enclosure instead of a curtain wall (village `palisade` tag). */
   palisade?: boolean;

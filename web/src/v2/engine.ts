@@ -192,7 +192,7 @@ export function resolveModelAssets(value: string | undefined, assetBase?: string
   }
 }
 
-export async function generateTerrain(settings: V2Settings, onProgress?: ProgressCallback, cache: TerrainCache = terrainCache, assetBase?: string, terrainStage?: string): Promise<World> {
+export async function generateTerrain(settings: V2Settings, onProgress?: ProgressCallback, cache: TerrainCache = terrainCache, assetBase?: string, terrainStage?: string, prepareDisplay = true): Promise<World> {
   validateSettings(settings);
   if (settings.generation === 'neural' && !settings.options.importedHeight && (!settings.runtime || settings.runtime.source === 'procedural')) throw new Error('Le modèle neuronal doit d’abord fournir une heightmap. Aucun calcul procédural ne remplace silencieusement le modèle.');
   const t0 = performance.now(),
@@ -319,14 +319,14 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       report(onProgress, 'terrain-projection', 'Preparing the map, coastlines and water network…', 0, 0);
       nativeTerrain = projectEngineTerrain(generated.terrain);
       // Overlap style-independent display fields with cover, regional and urban generation.
-      if (includeCover) startTerrainDisplayPreparation(nativeTerrain, options.mapSize!);
+      if (includeCover && prepareDisplay) startTerrainDisplayPreparation(nativeTerrain, options.mapSize!);
     } else if (!options.importedHeight && settings.runtime?.compute === 'gpu') {
       throw new Error('Le moteur TypeScript fonctionne sur CPU. Choisissez Rust pour utiliser le GPU.');
     }
     terrain = nativeTerrain ?? terrainForExtent({ ...options, seed: configuration.seed }, options.mapSize!, new Rng('magna-urbis:' + configuration.seed)).terrain;
     // Rust results retain their own hydrology; only the explicitly selected classic engine runs TS drainage.
     (terrain as TerrainLayer & { v2EngineStats?: Record<string, string | number> }).v2EngineStats = engineStats;
-    if (includeCover) startTerrainDisplayPreparation(terrain, options.mapSize!);
+    if (includeCover && prepareDisplay) startTerrainDisplayPreparation(terrain, options.mapSize!);
     report(onProgress, 'terrain-cache', 'Saving terrain and hydrology…', 1, 3);
     if (!terrainStage || includeCover) persisted = await cache.put(key, terrain);
   }
@@ -354,7 +354,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       },
     };
   }
-  startTerrainDisplayPreparation(terrain, options.mapSize!);
+  if (prepareDisplay) startTerrainDisplayPreparation(terrain, options.mapSize!);
   report(onProgress, 'biome', 'Classifying the biome and natural cover…', 2, 3);
   const retained = terrain as V2TerrainLayer;
   if (nativeEngine) {
@@ -814,7 +814,7 @@ export async function generateTown(regionWorld: World, settings: V2Settings, key
   world.stats['ms.towns'] = Math.round(performance.now() - t0);
   return world;
 }
-export async function generateTowns(regionWorld: World, settings: V2Settings, onProgress?: ProgressCallback, keys?: readonly string[], through?: V2TownStage, keepUrbanLanes = false): Promise<World> {
+export async function generateTowns(regionWorld: World, settings: V2Settings, onProgress?: ProgressCallback, keys?: readonly string[], through?: V2TownStage, keepUrbanLanes = false, onBuilt?: (world: World) => void): Promise<World> {
   if (regionWorld.settlements?.length === 0 && regionWorld.stats['v2.stage'] === 'region') return cloneV2WorldForGeneration(regionWorld);
   validateSettings(settings);
   assertRegion(regionWorld, settings);
@@ -927,6 +927,7 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
     }
   }
   world.stats['ms.townLoop'] = Math.round(performance.now() - t0);
+  onBuilt?.(world);
   await finishTowns(world, settings, onProgress);
   world.stats['ms.towns'] = Math.round(performance.now() - t0);
   return world;

@@ -6,7 +6,7 @@ const rows = [
   ['Magna Urbis · City preview', 'Magna Urbis · Aperçu de ville'],
   ['City map: drag to pan, scroll to zoom', 'Carte de la ville : glisser pour déplacer, molette pour zoomer'],
   ['Generating city…', 'Génération de la ville…'],
-  ['Schematic preview', 'Aperçu schématique'],
+  ['City preview', 'Aperçu de la ville'],
   ['Open in Magna Urbis ↗', 'Ouvrir dans Magna Urbis ↗'],
   ['The city map could not be drawn.', 'Impossible de dessiner la carte de la ville.'],
   ['Randomize culture, population, geography and buildings', 'Changer la culture, la population, la géographie et les bâtiments'],
@@ -53,7 +53,7 @@ export function cityEmbedSummary(hints: ExternalCityHints, cultureBase: string |
   return [
     cultureBase ?? hints.culture?.replaceAll('-', ' '),
     `${(hints.population ?? 2500).toLocaleString(numberLocale)} ${translate('people')}`,
-    (hints.lakeShore ?? hints.coast ?? 'none') !== 'none' ? `${translate('Coast')} ${hints.lakeShore ?? hints.coast}` : translate('Inland'),
+    (hints.coast ?? 'none') !== 'none' ? `${translate('Coast')} ${hints.coast}` : translate('Inland'),
     hints.river && hints.river !== 'none' ? translate('River') : '',
     hints.walls ? translate('Walls') : '',
   ].filter(Boolean).join(' · ');

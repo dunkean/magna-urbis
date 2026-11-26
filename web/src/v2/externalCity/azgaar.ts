@@ -36,7 +36,6 @@ interface BurgFields {
   /** Measured geography (export script); overrides the watabou link and type keywords. */
   river?: RiverOpt;
   coast?: CoastOpt;
-  lakeShore?: ExternalCityHints['lakeShore'];
   elevationM?: number;
   temperatureC?: number;
   capital?: boolean;
@@ -351,7 +350,6 @@ function parseFmgExport(d: Json): ExternalCityHints {
     river: typeof d.river === 'boolean' ? (d.river ? (d.confluence === true ? 'major' : 'river') : 'none') : undefined,
     // A lake shore is not a sea coast.
     coast: coast === null ? 'none' : coast.water === 'ocean' ? (sea !== undefined ? coastSide(sea) : 'random') : coast.water === 'lake' ? 'none' : undefined,
-    lakeShore: coast?.water === 'lake' ? (sea === undefined ? 'random' : coastSide(sea)) : undefined,
     capital: bool(d.capital),
     port: bool(d.port),
     citadel: bool(d.citadel),
@@ -487,7 +485,6 @@ function toHints(b: BurgFields): ExternalCityHints {
   }
   if (b.river) hints.river = b.river;
   if (b.coast) hints.coast = b.coast;
-  if (b.lakeShore) hints.lakeShore = b.lakeShore;
   // Culture type (Naval, River, Nomadic, Hunting, Highland) where the geography leaves a choice.
   if (keywords.has('naval')) {
     if (hints.coast === undefined) hints.coast = 'random';

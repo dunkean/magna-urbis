@@ -149,7 +149,7 @@ export class MinimalRenderer {
         this.contours = undefined;
         this.terrainKey = scene.revisions.terrain;
       }
-      if (resolved.composition.recipe.ground.contours && !this.contours) {
+      if (layers.terrain !== false && resolved.composition.recipe.ground.contours && !this.contours) {
         const terrain = scene.terrain;
         if (this.contourPainter === undefined) this.contourPainter = createMinimalContourPainter() ?? null;
         const contours = await retainedMinimalContours({ data: terrain.height, n: terrain.resolution, width: world.mapSize, maxHeight: terrain.maxHeight }, !!this.contourPainter);
@@ -157,7 +157,7 @@ export class MinimalRenderer {
         this.contours = contours;
         this.contourPainter?.set(contours);
       }
-      if (resolved.composition.recipe.effects.relief && !this.relief) {
+      if (layers.terrain !== false && resolved.composition.recipe.effects.relief && !this.relief) {
         const terrain = scene.terrain,
           canvas = document.createElement('canvas');
         await this.slices(bakeMinimalRelief({ data: terrain.height, n: terrain.resolution, width: terrain.width, maxHeight: terrain.maxHeight }, canvas), serial);

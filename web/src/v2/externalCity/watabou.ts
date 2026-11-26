@@ -18,8 +18,8 @@ function seedOf(params: URLSearchParams, prefix: string): string {
   return `${prefix}-${new URLSearchParams(rest).toString() || '0'}`;
 }
 /** MFCG `sea` direction (0 = east, 0.5 = north, 1 = west, 1.5 = south) to the nearest coast side. */
-export function coastSide(sea: number): Exclude<CoastOpt, 'none' | 'random'> {
-  const quadrant = ((Math.round((sea % 2) * 2) % 4) + 4) % 4;
+export function coastSide(sea: number): CoastOpt {
+  const quadrant = ((Math.round(sea * 2) % 4) + 4) % 4;
   return (['E', 'N', 'W', 'S'] as const)[quadrant];
 }
 /** Inverse of Azgaar FMG's MFCG size: size = 2.13 · (people / density)^0.385 with its default urban density 10. */
