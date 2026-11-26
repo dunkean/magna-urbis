@@ -283,6 +283,7 @@ try {
   await repeat.frame.locator('html[data-detail-style="satellite-2"][data-detail="ready"]').waitFor({ timeout: 120000 });
   result.switchMs = Math.round(performance.now() - switchStart);
   result.backgroundPasses = await repeat.frame.evaluate(() => performance.getEntriesByType('measure').map(e => e.name).filter(name => name.startsWith('v2pass:')));
+  assert.ok(!result.backgroundPasses.includes('v2pass:city'), 'Switching satellite quality must not rebuild the town layer.');
   const paintedPixels = await mapPixels();
   result.satelliteChangedFraction = (await compareMapPixels(fastSatellite, paintedPixels)).changed;
   assert.ok(result.satelliteChangedFraction > 0.2, 'Painted satellite must visibly repaint the town.');

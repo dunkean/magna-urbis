@@ -6,6 +6,7 @@ import { BenchRenderer } from './benchRenderer';
 import { packWorldLanduse, unpackWorldLanduse } from './landusePack';
 import { packWorldPartitions, unpackWorldPartitions } from './urbanPack';
 import type { World } from '../gen/types';
+import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import { nativeCityRecords } from './nativeProducts';
 import type { CityDetailStyle, DetailedCityResult } from './cityPreviewMap';
 
@@ -28,6 +29,7 @@ export function detailedCityMap(data: DetailedCityResult, invalidate: () => void
     }
   }
   const renderer = previous?.renderer ?? new BenchRenderer(invalidate);
+  let satelliteTown: ResolvedAppearance | undefined;
   const setStyle = async (style: CityDetailStyle) => {
     await loadRenderGeometry();
     // A live embed hides map text in its recipe. An explicit export layer mask would
@@ -40,7 +42,12 @@ export function detailedCityMap(data: DetailedCityResult, invalidate: () => void
     composition.text.visible = false;
     const settings = { ...data.settings, appearance: { style: data.settings.options.style, ...data.settings.appearance, composition } };
     const appearance = resolveSettingsAppearance(settings, world, 'view2d');
-    await renderer.set(world, settings, appearance);
+    if (style === 'minimal') await renderer.set(world, settings, appearance);
+    else {
+      // Both satellite buttons switch the background behind exactly the same town ink and roofs.
+      satelliteTown ??= style === 'satellite-2' ? appearance : resolveSettingsAppearance({ ...settings, appearance: { ...settings.appearance, composition: presetComposition('satellite-2') } }, world, 'view2d');
+      await renderer.set(world, settings, { ...appearance, city: satelliteTown.city, keys: { ...appearance.keys, city: satelliteTown.keys.city } });
+    }
   };
   const packForUpgrade = () => {
     const cover = packWorldLanduse(world);
