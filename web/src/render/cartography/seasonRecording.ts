@@ -1,20 +1,42 @@
 import { isUnderdarkBiome } from '../../gen/biomes';
 import { groundRoadLook } from '../composition';
 import type { ColorSlot, DisplayList, DrawOp, LandTint } from '../gpu/contract';
-import { mapLandSeasonRevision, mapSeasonKey, seasonInkOf, type SeasonInk } from '../seasonPalette';
+import { mapLandSeasonRevision, mapLandSnowKey, mapSeasonKey, seasonInkOf, type SeasonInk } from '../seasonPalette';
+import { isRecordedRoadSurface, roadGroundKey } from '../roadStyle';
+import type { DensityMap } from '../scene';
 import { nativeTileInks } from '../gpu/recorder';
 import type { BandLook } from './bandRecording';
 import { whiteWaterRevision } from '../whiteWater';
 import type { CartographyContext } from './context';
 
+interface BitmapInputs {
+  brushPigments?: object;
+  density?: WeakRef<DensityMap>;
+  road?: { ground: string; snow: string };
+}
+
 /** A baked surface only needs this small set of pigment and image identities. In particular
  * its validity check must not retain a discarded list's paths or instance arrays. */
-function paintInputs(c: CartographyContext, seasonal: boolean, lookInputs: BandLook | undefined, slots: Map<SeasonInk, Float32Array>, backdrop: LandTint | number | undefined, terrain: CartographyContext['terrainImg'], mask: CartographyContext['terrainImg']) {
+function paintInputs(
+  c: CartographyContext,
+  seasonal: boolean,
+  lookInputs: BandLook | undefined,
+  slots: Map<SeasonInk, Float32Array>,
+  backdrop: LandTint | number | undefined,
+  terrain: CartographyContext['terrainImg'],
+  mask: CartographyContext['terrainImg'],
+  bitmaps?: BitmapInputs,
+) {
   const look = c.lookId,
     date = lookInputs && mapSeasonKey();
-  const sameSources = () => ((seasonal && c.lookId === look) || (lookInputs && date === mapSeasonKey() && lookInputs.matches(c.pal))) && c.getTerrain() === terrain && (c.deps.land?.() ?? terrain) === mask;
+  const sameSources = () =>
+    ((seasonal && c.lookId === look) || (lookInputs && date === mapSeasonKey() && lookInputs.matches(c.pal))) &&
+    c.getTerrain() === terrain &&
+    (c.deps.land?.() ?? terrain) === mask &&
+    (!bitmaps?.density || (!!c.scene.density && c.scene.density === bitmaps.density.deref())) &&
+    (!bitmaps?.road || (roadGroundKey() === bitmaps.road.ground && mapLandSnowKey() === bitmaps.road.snow));
   const pixelsMatch = () => {
-    if (!sameSources()) return false;
+    if (!sameSources() || (bitmaps?.brushPigments && bitmaps.brushPigments !== c.brushes?.pigments)) return false;
     if (typeof backdrop === 'number') {
       if (mapLandSeasonRevision() !== backdrop) return false;
     } else if (backdrop) {
@@ -68,7 +90,10 @@ export function seasonRecording(c: CartographyContext, list: DisplayList, bandLo
   const terrain = c.terrainImg,
     mask = c.deps.land?.() ?? terrain;
   const slots = new Map<SeasonInk, Float32Array>();
-  const bindings: { at: number; bind: (land?: LandTint) => DrawOp }[] = [];
+  const bindings: { at: number; bind: (land?: LandTint) => DrawOp | undefined }[] = [];
+  const bitmaps: BitmapInputs = {};
+  const countedSources = new Set<CanvasImageSource>();
+  let opaqueImage = false;
   let bytes = 256;
   let backdrop: LandTint | undefined;
   const nameOf = (slot: ColorSlot) => {
@@ -88,17 +113,74 @@ export function seasonRecording(c: CartographyContext, list: DisplayList, bandLo
           wash = nameOf(op.tint[1]);
         if (!ink || !wash) return;
         bindings.push({ at, bind: () => ({ ...op, tint: [c.ink(ink), c.ink(wash)] }) });
+      } else if (bandLook && c.scene.density && op.source === c.densityImg) {
+        if (!bitmaps.density) {
+          bitmaps.density = new WeakRef(c.scene.density);
+          bytes += 4 * c.scene.density.w * c.scene.density.h;
+        }
+        nameOf(c.ink('densityInk'));
+        bindings.push({
+          at,
+          bind: () => {
+            const source = c.getDensity();
+            return source ? (source === op.source ? op : { ...op, source }) : undefined;
+          },
+        });
       } else if (op.contourTint) {
         bandLook = undefined;
         if (!seasonal) return;
-      } else if (!(op.composite === 'destination-in' && op.source === mask) && op.composite !== 'destination-out') {
+      } else if (op.composite === 'destination-out') {
+        // An external eraser can carry different alpha coverage for a different clipped row.
+        opaqueImage ||= op.source !== mask;
+      } else if (!(op.composite === 'destination-in' && op.source === mask)) {
         if (op.source !== terrain || !bandLook) return;
         seasonal = false; // A legacy terrain provider can bake the date into the source.
+        opaqueImage = true;
       }
     } else if (op.type !== 'clear' && op.paint.kind === 'pattern') {
-      // An existing Canvas pattern can bypass the brush painter (and its literal colour reads).
-      bandLook = undefined;
-      if (!seasonal) return;
+      const paint = op.paint,
+        motif = c.brushes?.recordedMotifs.get(paint.source),
+        swatch = c.patternInks.get(paint.source);
+      let bitmapBytes = 0;
+      if (motif) {
+        bitmapBytes = 4 * motif.width * motif.width;
+        bitmaps.brushPigments = c.brushes!.pigments;
+        bindings.push({
+          at,
+          bind: () => {
+            if (c.brushes?.pigments === bitmaps.brushPigments) return op;
+            const source = c.brushes?.rebind(motif);
+            return source && { ...op, paint: { ...paint, source } };
+          },
+        });
+      } else if (swatch) {
+        const slot = c.ink(swatch.ink);
+        if (!slot.valid || slot.css !== swatch.css) return;
+        nameOf(slot);
+        bitmapBytes = swatch.bytes;
+        bindings.push({
+          at,
+          bind: () => {
+            if (c.ink(swatch.ink).css === swatch.css) return op;
+            const source = swatch.rebind();
+            return source && { ...op, paint: { ...paint, source } };
+          },
+        });
+      } else if (bandLook && isRecordedRoadSurface(paint.source) && groundRoadLook(c.deps.roadStyle?.().look ?? c.deps.roadLook)) {
+        // The band key covers the stroke recipe, including custom vs ground-sampled beds.
+        // Its material pixels also depend on the land-cover grid, relief and snow.
+        bitmaps.road ??= { ground: roadGroundKey(), snow: mapLandSnowKey() };
+        bitmapBytes = 4 * paint.source.width * paint.source.height;
+        seasonal = false;
+      } else {
+        // A warm legacy pattern may hide literal reads made when its bitmap was first painted.
+        bandLook = undefined;
+        if (!seasonal) return;
+      }
+      if (bitmapBytes && !countedSources.has(paint.source)) {
+        bytes += bitmapBytes;
+        countedSources.add(paint.source);
+      }
     } else if (op.type !== 'clear' && op.paint.kind !== 'pattern' && op.paint.slot) {
       const paint = op.paint,
         name = nameOf(op.paint.slot);
@@ -112,7 +194,7 @@ export function seasonRecording(c: CartographyContext, list: DisplayList, bandLo
       });
     }
   }
-  const { sameSources, pixelsMatch } = paintInputs(c, seasonal, bandLook, slots, backdrop, terrain, mask);
+  const { sameSources, pixelsMatch } = paintInputs(c, seasonal, bandLook, slots, backdrop, terrain, mask, bitmaps);
   const replay = (): { list: DisplayList; pixelsMatch: () => boolean } | undefined => {
     if (!sameSources()) return;
     const current = new Map<SeasonInk, Float32Array>();
@@ -123,13 +205,17 @@ export function seasonRecording(c: CartographyContext, list: DisplayList, bandLo
     }
     const land = backdrop && c.landUniforms();
     if (backdrop && !land) return;
-    const evidence = paintInputs(c, seasonal && seasonalOverlay(c), bandLook, current, land, terrain, mask);
+    const evidence = paintInputs(c, seasonal && seasonalOverlay(c), bandLook, current, land, terrain, mask, bitmaps.brushPigments ? { ...bitmaps, brushPigments: c.brushes?.pigments } : bitmaps);
     if (!bindings.length) return { list, pixelsMatch: evidence.pixelsMatch };
     const ops = list.ops.slice();
-    for (const { at, bind } of bindings) ops[at] = bind(land);
+    for (const { at, bind } of bindings) {
+      const op = bind(land);
+      if (!op) return;
+      ops[at] = op;
+    }
     return { list: { ...list, ops }, pixelsMatch: evidence.pixelsMatch };
   };
-  return { replay, pixelsMatch, bytes };
+  return { replay, pixelsMatch, bytes, drapeCompatible: !!bandLook && !opaqueImage };
 }
 
 export type SeasonRecording = NonNullable<ReturnType<typeof seasonRecording>>;

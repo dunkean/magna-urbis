@@ -48,6 +48,37 @@ export interface UrbanFrame {
   readonly hatched: (name: string) => void;
 }
 
+function drawPaving(cx: CanvasRenderingContext2D, k: number): void {
+  cx.globalAlpha = 0.55;
+  cx.beginPath();
+  cx.arc(1.5 * k, 1.5 * k, 0.28 * k, 0, TAU);
+  cx.fill();
+}
+
+function drawGraves(cx: CanvasRenderingContext2D, k: number): void {
+  cx.globalAlpha = 0.8;
+  cx.lineWidth = 0.25 * k;
+  cx.beginPath();
+  cx.moveTo(1.2 * k, 1.2 * k);
+  cx.lineTo(1.2 * k, 2.8 * k);
+  cx.moveTo(0.6 * k, 1.8 * k);
+  cx.lineTo(1.8 * k, 1.8 * k);
+  cx.moveTo(3.7 * k, 3.1 * k);
+  cx.lineTo(3.7 * k, 3.9 * k);
+  cx.moveTo(3.3 * k, 3.4 * k);
+  cx.lineTo(4.1 * k, 3.4 * k);
+  cx.stroke();
+}
+
+function drawLandmarkHatch(cx: CanvasRenderingContext2D, k: number): void {
+  cx.globalAlpha = 0.55;
+  cx.lineWidth = 0.35 * k;
+  cx.beginPath();
+  cx.moveTo(0, 0.8 * k);
+  cx.lineTo(1.6 * k, 0.8 * k);
+  cx.stroke();
+}
+
 /** The urban frame of a drawVector call at the block level of detail. */
 export function urbanFrame(c: CartographyContext, f: VectorFrame): UrbanFrame {
   const { pal, brushes, family, polyL, linesOf, getPattern } = c;
@@ -75,15 +106,7 @@ export function urbanFrame(c: CartographyContext, f: VectorFrame): UrbanFrame {
       }
     }
   };
-  const pave = near
-    ? getPattern(ctx, 'pave', 3, 3, 0, (cx, k) => {
-        cx.globalAlpha = 0.55;
-        cx.fillStyle = U.placeInk;
-        cx.beginPath();
-        cx.arc(1.5 * k, 1.5 * k, 0.28 * k, 0, TAU);
-        cx.fill();
-      })
-    : null;
+  const pave = near ? getPattern(ctx, 'pave', 3, 3, 0, drawPaving, 'placeInk') : null;
   const gardenPat =
     near && brushes
       ? brushes.pattern(ctx, 'garden', sc, dpr)
@@ -104,35 +127,9 @@ export function urbanFrame(c: CartographyContext, f: VectorFrame): UrbanFrame {
             cx.stroke();
           })
         : null;
-  const gravePat = near
-    ? getPattern(ctx, 'grave', 5, 4, 0, (cx, k) => {
-        cx.globalAlpha = 0.8;
-        cx.strokeStyle = U.gardenInk;
-        cx.lineWidth = 0.25 * k;
-        cx.beginPath();
-        cx.moveTo(1.2 * k, 1.2 * k);
-        cx.lineTo(1.2 * k, 2.8 * k);
-        cx.moveTo(0.6 * k, 1.8 * k);
-        cx.lineTo(1.8 * k, 1.8 * k);
-        cx.moveTo(3.7 * k, 3.1 * k);
-        cx.lineTo(3.7 * k, 3.9 * k);
-        cx.moveTo(3.3 * k, 3.4 * k);
-        cx.lineTo(4.1 * k, 3.4 * k);
-        cx.stroke();
-      })
-    : null;
+  const gravePat = near ? getPattern(ctx, 'grave', 5, 4, 0, drawGraves, 'gardenInk') : null;
   const natural = polyL('u-landscape-ground') ?? polyL('u-natural-ground');
-  const lmHatch = lod.fine
-    ? getPattern(ctx, 'lmhatch', 1.6, 1.6, 45, (cx, k) => {
-        cx.globalAlpha = 0.55;
-        cx.strokeStyle = U.landmarkEdge;
-        cx.lineWidth = 0.35 * k;
-        cx.beginPath();
-        cx.moveTo(0, 0.8 * k);
-        cx.lineTo(1.6 * k, 0.8 * k);
-        cx.stroke();
-      })
-    : null;
+  const lmHatch = lod.fine ? getPattern(ctx, 'lmhatch', 1.6, 1.6, 45, drawLandmarkHatch, 'landmarkEdge') : null;
   const hatched = (name: string): void => {
     const l = polyL(name);
     if (!l || !lmHatch) return;

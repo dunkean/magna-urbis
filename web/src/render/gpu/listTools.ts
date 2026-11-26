@@ -7,6 +7,7 @@
  */
 import { SPRITE_STRIDE, type ClipNode, type DisplayList, type DrawOp, type Mat, type PathGeometry, type RecordedPath } from './contract';
 import { tolerance } from './transforms';
+import { PlainPath, RecPath2D } from './path';
 
 type Box = readonly [number, number, number, number];
 
@@ -117,6 +118,29 @@ class FixedPath implements RecordedPath {
   geometry(): PathGeometry {
     return this.outline;
   }
+}
+
+/** Storage a cached drape row can pin after the path cache evicts it. Never flatten a path to measure it. */
+export function drapePathBytes(list: DisplayList): number {
+  const paths = new Set<RecordedPath>(),
+    clips = new Set<ClipNode>();
+  for (const op of list.ops) {
+    for (let clip = op.clip; clip && !clips.has(clip); clip = clip.parent) {
+      clips.add(clip);
+      paths.add(clip.path);
+    }
+    if (op.type === 'fill' || op.type === 'stroke') for (const path of op.paths) paths.add(path);
+  }
+  const outlineBytes = (g: PathGeometry) => g.points.byteLength + g.starts.byteLength + g.closed.byteLength;
+  let bytes = 0;
+  for (const path of paths) {
+    if (path instanceof FixedPath) bytes += outlineBytes(path.geometry());
+    else if (path instanceof RecPath2D || path instanceof PlainPath) {
+      bytes += 8 * path.cmds.length;
+      if (path.geo) for (const g of path.geo.values()) bytes += outlineBytes(g);
+    } else return Infinity;
+  }
+  return bytes;
 }
 const NO_OUTLINE: PathGeometry = { points: new Float32Array(0), starts: new Uint32Array([0]), closed: new Uint8Array(0), bbox: [Infinity, Infinity, -Infinity, -Infinity] };
 

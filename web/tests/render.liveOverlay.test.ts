@@ -534,6 +534,26 @@ describe('live overlay layer', () => {
     expect(tile.put).toHaveBeenCalled();
   });
 
+  it('starts the next drape band at the end of the replayed rows when the estimated height changes', () => {
+    const f = fixture(),
+      tile = f.tile(),
+      painted: number[][] = [];
+    tile.rect = { minX: 500, maxX: 600, minY: 500, maxY: 600 };
+    f.host.recordSteps = function* (plan, requested, light) {
+      if (!painted.length) expect(requested.maxY).toBe(548);
+      const rect = painted.length ? requested : { ...requested, maxY: 524 };
+      painted.push([rect.minY, rect.maxY]);
+      return { ...f.host.record(plan, rect, light)!, replayed: painted.length === 1, clippedDrape: painted.length === 1 };
+    };
+    let more = true;
+    for (; more && tile.step < 64; tile.step++) more = f.layer.drape!.paint(tile) === true;
+    expect(more).toBe(false);
+    expect(painted[1][0]).toBe(524);
+    for (let i = 1; i < painted.length; i++) expect(painted[i][0]).toBe(painted[i - 1][1]);
+    expect(painted.at(-1)![1]).toBe(600);
+    expect(f.raster.releaseBaked).toHaveBeenCalledTimes(painted.length);
+  });
+
   it('keeps rendering decisions independent of probe fields and supports recording without a sink', () => {
     const f = fixture();
     f.layer.work!(10000, f.frame());

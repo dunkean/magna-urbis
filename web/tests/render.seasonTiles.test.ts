@@ -5,6 +5,10 @@ import type { CanvasLike, LandBackdrop } from '../src/render/cartography/contrac
 import { createExactTiles } from '../src/render/cartography/exactTiles';
 import { createMapRecording } from '../src/render/cartography/mapRecording';
 import { seasonRecording } from '../src/render/cartography/seasonRecording';
+import { BandLook } from '../src/render/cartography/bandRecording';
+import { urbanFrame } from '../src/render/cartography/urban/frame';
+import type { VectorFrame } from '../src/render/cartography/frame';
+import { selectLod } from '../src/render/lod';
 import { setMapInk } from '../src/render/gpu/recorder';
 import type { DisplayList, GpuRasterizer } from '../src/render/gpu/contract';
 import { applySeason, mapLandSeason, seasonPaint, setMapClimateZone, setMapSeason } from '../src/render/seasonPalette';
@@ -80,6 +84,116 @@ it('rebinds cropped summer relief and furrow pigments without moving the old dra
   expect(replay.pixelsMatch()).toBe(true);
   expect(seasonRecording(c, { ...winter, bakedSeason: true })).toBeUndefined();
   expect(backdrop.canvas).not.toHaveBeenCalled();
+});
+
+it('rebinds density coverage and warm town paving to their current inks, keeping both sets of geometry', () => {
+  vi.stubGlobal(
+    'ImageData',
+    class {
+      constructor(readonly data: Uint8ClampedArray) {}
+    },
+  );
+  vi.stubGlobal(
+    'DOMMatrix',
+    class {
+      rotate() {
+        return this;
+      }
+      scale(a: number) {
+        return { a, b: 0, c: 0, d: a, e: 0, f: 0 };
+      }
+    },
+  );
+  try {
+    const pixels = new WeakMap<object, number[]>();
+    const traces = new WeakMap<object, ReturnType<typeof mockCanvas>['log']>();
+    let pal = { ...PALETTES.engraving, ink: '#123456', urban: { ...PALETTES.engraving.urban, placeInk: '#567812' } };
+    const world = fakeWorld({ buildings: 0, streets: 0, landAreas: 0 });
+    const c = new CartographyContext(createMapRecording(4, 4), world, 'engraving', {
+      palette: () => pal,
+      terrain: () => null,
+      createCanvas: (width, height) => {
+        const { canvas, log } = mockCanvas(width, height);
+        const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+        ctx.putImageData = (data: ImageData) => {
+          pixels.set(canvas, [...data.data]);
+        };
+        traces.set(canvas, log);
+        return canvas as unknown as CanvasLike;
+      },
+    });
+    c.scene.density = { w: 2, h: 1, cov: new Float32Array([0, 1]), max: 1, cell: 1 };
+    c.getTerrain();
+    const paving = (ctx: CanvasRenderingContext2D) => urbanFrame(c, { ctx, sc: 1, lod: selectLod(1), dpr: 1 } as VectorFrame).pave!;
+    paving(createMapRecording(4, 4).getContext('2d')!);
+    const record = () => {
+      const look = new BandLook(c.pal),
+        base = c.pal,
+        canvas = createMapRecording(4, 4);
+      c.pal = look.palette;
+      try {
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(c.getDensity()!, 0, 0, 4, 4);
+        ctx.fillStyle = paving(ctx);
+        ctx.fillRect(0, 0, 2, 2);
+      } finally {
+        c.pal = base;
+      }
+      return { list: canvas.finish(), look };
+    };
+    const cold = record(),
+      retained = seasonRecording(c, cold.list, cold.look)!;
+    const original = cold.list.ops[0];
+    if (original.type !== 'sprites') throw Error('Missing density image');
+    expect(pixels.get(original.source)).toEqual([18, 52, 86, 0, 18, 52, 86, 128]);
+    pal = { ...pal, paper: '#cccccc' };
+    c.syncPalette();
+    expect(retained.pixelsMatch()).toBe(true);
+    expect(c.getDensity()).toBe(original.source);
+    pal = { ...pal, ink: '#ab1357', urban: { ...pal.urban, placeInk: '#ef3412' } };
+    c.syncPalette();
+    expect(retained.pixelsMatch()).toBe(false);
+    const rebound = retained.replay()!,
+      op = rebound.list.ops[0];
+    if (op.type !== 'sprites') throw Error('Missing rebound density');
+    expect(op.instances).toBe(original.instances);
+    expect(op.source).toBe(c.getDensity());
+    expect(op.source).not.toBe(original.source);
+    expect(pixels.get(op.source)).toEqual([171, 19, 87, 0, 171, 19, 87, 128]);
+    const oldPave = cold.list.ops[1],
+      newPave = rebound.list.ops[1];
+    if (oldPave.type !== 'fill' || newPave.type !== 'fill' || oldPave.paint.kind !== 'pattern' || newPave.paint.kind !== 'pattern') throw Error('Missing town paving');
+    expect(newPave.paths).toBe(oldPave.paths);
+    expect(newPave.paint).toEqual({ ...oldPave.paint, source: newPave.paint.source });
+    expect(traces.get(oldPave.paint.source)?.fills).toEqual([{ style: '#567812', alpha: 0.55, path: undefined }]);
+    expect(traces.get(newPave.paint.source)?.fills).toEqual([{ style: '#ef3412', alpha: 0.55, path: undefined }]);
+    expect(rebound.pixelsMatch()).toBe(true);
+    c.scene.density = { ...c.scene.density, cov: new Float32Array([1, 0]) };
+    expect(rebound.pixelsMatch()).toBe(false);
+    expect(retained.replay()).toBeUndefined();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('rejects independent drape reuse for an unknown pattern and an externally painted erase mask', () => {
+  const { c } = fixture(false);
+  c.getTerrain();
+  const source = { width: 8, height: 8 } as HTMLCanvasElement;
+  const make = (erase: boolean) => {
+    const canvas = createMapRecording(8, 8),
+      ctx = canvas.getContext('2d')!;
+    if (erase) {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.drawImage(source, 0, 0);
+    } else {
+      ctx.fillStyle = ctx.createPattern(source, 'repeat')!;
+      ctx.fillRect(0, 0, 8, 8);
+    }
+    return seasonRecording(c, canvas.finish(), new BandLook(c.pal));
+  };
+  expect(make(true)?.drapeCompatible).toBe(false);
+  expect(make(false)?.drapeCompatible).toBe(false);
 });
 
 it('preserves unchanged exact tiles across dates and replays, then caches, a tile with new snow', () => {

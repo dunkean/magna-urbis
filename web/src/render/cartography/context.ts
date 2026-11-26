@@ -45,6 +45,8 @@ import type { PenMark } from './symbols';
 
 /** Paths kept per (layer, LOD band, index tile) before the oldest quarter is dropped. */
 const CACHE_MAX = 8000;
+const PATTERN_PIXELS_PER_METRE = 14;
+type PatternTile = { source: CanvasImageSource; pattern?: CanvasPattern | null };
 const FURROW_CACHE_MAX = FURROW_HOLDER_BUDGET * 2;
 /** Terrain bitmaps shared by every renderer of one terrain and palette (the default hillshade only). */
 const TERRAIN_IMAGES = new WeakMap<World['terrain'], WeakMap<Palette, { mapSize: number; image: CanvasImageSource }>>();
@@ -139,7 +141,8 @@ export class CartographyContext {
 
   readonly cache = new Map<string, Path2D | null>();
   readonly furrowCache = new Map<number, FurrowPaths>();
-  readonly patterns = new Map<string, CanvasPattern | null>();
+  readonly patterns = new Map<string, PatternTile | null>();
+  readonly patternInks = new WeakMap<CanvasImageSource, { ink: SeasonInk; css: string; bytes: number; rebind: () => CanvasImageSource | undefined }>();
   /** Land = the map minus the sea and lakes (landClip); undefined: not built yet. */
   landPath: Path2D | null | undefined;
   terrainImg: CanvasImageSource | null | undefined;
@@ -241,6 +244,7 @@ export class CartographyContext {
   readonly syncPalette = (changedLook = false): number => {
     const next = this.deps.palette?.();
     if (next && (next !== this.basePalette || changedLook)) {
+      const densityInk = this.densityImg && this.ink('densityInk').css;
       const sameSource = seasonSource(next) === seasonSource(this.basePalette);
       if (!sameSource || changedLook) this.lookId = ++paletteCount;
       this.basePalette = next;
@@ -256,7 +260,8 @@ export class CartographyContext {
       this.patterns.clear();
       if (changedLook || !sameSource || !this.backdrop) this.terrainImg = undefined;
       this.waterImg = undefined;
-      if (changedLook || !sameSource) this.cavernRockImg = this.densityImg = undefined;
+      if (changedLook || !sameSource) this.cavernRockImg = undefined;
+      if ((densityInk && this.ink('densityInk').css !== densityInk) || (this.densityImg === null && (changedLook || !sameSource))) this.densityImg = undefined;
       this.dropPanels();
     }
     return this.paletteId;
@@ -501,35 +506,50 @@ export class CartographyContext {
     }
   };
   /** Tiling pattern (tile of `tw` x `th` meters drawn at 14 px/m, rotated `rot` degrees); null where canvases/DOMMatrix are unavailable (Node). */
-  readonly getPattern = (ctx: CanvasRenderingContext2D, key: string, tw: number, th: number, rot: number, draw: (c: CanvasRenderingContext2D, k: number) => void): CanvasPattern | null => {
+  readonly getPattern = (ctx: CanvasRenderingContext2D, key: string, tw: number, th: number, rot: number, draw: (c: CanvasRenderingContext2D, k: number) => void, ink?: SeasonInk): CanvasPattern | null => {
     // A pattern made by a native context never goes to the recorder, nor the reverse: one cache per engine.
     key = (ctx instanceof RecordingContext ? 'rec|' : 'cpu|') + key;
-    let p = this.patterns.get(key);
-    if (p !== undefined) return p;
-    p = null;
+    const tile = this.patternTile(key, tw, th, draw, ink);
+    if (!tile) return null;
+    if (tile.pattern !== undefined) return tile.pattern;
     try {
-      const k = 14;
+      const pattern = ctx.createPattern(tile.source, 'repeat');
+      pattern?.setTransform(new DOMMatrix().rotate(rot).scale(1 / PATTERN_PIXELS_PER_METRE));
+      return (tile.pattern = pattern);
+    } catch {
+      return (tile.pattern = null);
+    }
+  };
+
+  /** A named single-ink tile uses the same Canvas painter on replay, including its original coverage and alpha. */
+  private patternTile(key: string, tw: number, th: number, draw: (c: CanvasRenderingContext2D, k: number) => void, ink?: SeasonInk) {
+    const held = this.patterns.get(key);
+    if (held !== undefined) return held;
+    let tile: PatternTile | null = null;
+    try {
+      const k = PATTERN_PIXELS_PER_METRE;
       const c = this.makeCanvas(Math.ceil(tw * k), Math.ceil(th * k));
       const cx = c?.getContext('2d');
       if (c && cx && typeof DOMMatrix !== 'undefined') {
         cx.lineCap = 'round';
+        const css = ink && this.ink(ink).css;
+        if (css) cx.strokeStyle = cx.fillStyle = css;
         draw(cx, k);
-        p = ctx.createPattern(c as unknown as CanvasImageSource, 'repeat');
-        p?.setTransform(new DOMMatrix().rotate(rot).scale(1 / k));
+        tile = { source: c as unknown as CanvasImageSource };
+        if (ink && css) this.patternInks.set(tile.source, { ink, css, bytes: 4 * c.width * c.height, rebind: (): CanvasImageSource | undefined => this.patternTile(key, tw, th, draw, ink)?.source });
       }
     } catch {
-      p = null;
+      tile = null;
     }
-    this.patterns.set(key, p ?? null);
-    return p ?? null;
-  };
+    this.patterns.set(key, tile);
+    return tile;
+  }
   readonly getDensity = (): CanvasImageSource | null => {
     if (this.densityImg !== undefined) return this.densityImg;
     this.densityImg = null;
     const d = this.scene.density;
     if (!d) return null;
-    const m = /^#([0-9a-f]{6})$/i.exec(this.pal.ink);
-    const v = m ? parseInt(m[1], 16) : 0x3d2f20;
+    const v = parseInt(this.ink('densityInk').css.slice(1), 16);
     const rgba = new Uint8ClampedArray(d.w * d.h * 4);
     for (let i = 0; i < d.cov.length; i++) {
       const c = d.cov[i];

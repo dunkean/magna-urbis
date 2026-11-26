@@ -400,6 +400,8 @@ function texture(rank: RoadRank | 'bare', emphasis: number, paved = false, rende
 const patterns = new WeakMap<CanvasRenderingContext2D, WeakMap<Surface, CanvasPattern>>();
 /** Recorded patterns (GPU engine) are shared by every recording context but never mixed with the native ones. */
 const recordedPatterns = new WeakMap<Surface, CanvasPattern>();
+/** Only the material-road producer puts these immutable surfaces into a recorded pattern. */
+export const isRecordedRoadSurface = (source: CanvasImageSource): source is Surface => recordedPatterns.has(source as Surface);
 function pattern(ctx: CanvasRenderingContext2D, surface: Surface, metresPerTexel = ground!.size / GRID): CanvasPattern | undefined {
   const recording = ctx instanceof RecordingContext;
   let own = patterns.get(ctx);

@@ -189,12 +189,14 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
             return false;
           }
           j.made = next.value;
+          // A hit starting at this row may span a different number of rows than today's timing estimate.
+          if (j.made.clippedDrape) j.rows = Math.round(((j.made.rect.maxY - j.made.rect.minY) * recorded) / side);
           if (j.made.provisional) tile.provisional();
           return true;
         }
         const made = j.made!;
         if (!j.list) {
-          j.list = boundedList(clipList(cullList(made.list, boxOf(made)), boxOf(made)));
+          j.list = made.clippedDrape ? made.list : boundedList(clipList(cullList(made.list, boxOf(made)), boxOf(made)));
           j.prepare = raster.prepareSteps(j.list);
           return true;
         }
@@ -229,6 +231,7 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
           tile.put(baked.texture, u0, 1 - (-top - baked.box[1]) / h, u1, 1 - (recorded - top - baked.box[1]) / h, 1, u0, v0, u1, v1);
           raster.releaseBaked(baked);
         }
+        made.retainDrape?.(j.list);
         drapeRow = top + j.rows;
         job = undefined;
         return drapeRow < j.recorded;

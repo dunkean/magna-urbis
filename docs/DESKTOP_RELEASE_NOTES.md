@@ -8,6 +8,7 @@
 - Local building, parcel and block edits on saved landscapes reuse the ground already drawn in the top and tilted views.
 - Changing the Parchment map date reuses the summer relief, grass and reed marks, and overlay tiles whose colours stay the same.
 - Switching map colours reuses overlay geometry, and Parchment reuses grass and reed drawings when zooming. Fast looks render at a lower resolution and skip a second quality pass when the map stops moving.
+- Changing map colours now reuses the outlines of painted fields, patterned town grounds and textured roads, including on compatible tilted-map tiles.
 
 - Low riverbank shrubs rise from their painted crowns in tilted satellite views. Dense conifer stands retain distant silhouettes across the field of view, and tree crowns follow local snow conditions in every climate. Modelled foliage takes its colour from the matching crown in the current map style.
 - Close satellite views reveal gravel bars, scoured bends and shallow side channels in dry riverbeds. Low water tapers through tributary junctions and opens into lakes across exposed shores.

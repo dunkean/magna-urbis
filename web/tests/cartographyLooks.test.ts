@@ -10,7 +10,9 @@ import { PALETTES } from '../src/render/styles';
 import { GpuResources, RECORDED_TOLERANCE } from '../src/render/gpu/resources';
 import { SPRITE_STRIDE } from '../src/render/gpu/contract';
 import type { DisplayList } from '../src/render/gpu/contract';
-import { boundedList } from '../src/render/gpu/listTools';
+import { boundedList, clipList, cullList } from '../src/render/gpu/listTools';
+import { boxOf } from '../src/render/live/overlayTypes';
+import type { BrushImages } from '../src/render/brushes';
 import { CartographyProducts } from '../src/v2/display/cartographyProducts';
 import { resolveAppearance } from '../src/render/appearanceRecipe';
 import { presetComposition } from '../src/render/composition';
@@ -132,7 +134,156 @@ it('rebinds a live band to new road ink in place and records a different road st
   const changedBed = record();
   expect(changedBed.paint.slot?.css).toBe(materialColor);
   expect(changedBed.paths).toBe(material.paths);
+  dated = false;
+  // A material verge is a real bitmap even with an explicitly coloured bed.
+  vi.stubGlobal('DOMMatrix', class {});
+  vi.stubGlobal(
+    'OffscreenCanvas',
+    class {
+      constructor(
+        readonly width: number,
+        readonly height: number,
+      ) {}
+      getContext() {
+        return { createImageData: () => ({ data: new Uint8ClampedArray(this.width * this.height * 4) }), putImageData() {} };
+      }
+    },
+  );
+  try {
+    plan.scale = 2;
+    const textured = host.record(plan, rect, false)!,
+      calls = draw.mock.calls.length;
+    const verge = textured.list.ops.find(op => op.type === 'stroke' && op.paint.kind === 'pattern');
+    expect(verge).toBeDefined();
+    materialColor = '#bb7733';
+    renderer.setLook({ palette, colors: { road: materialColor } });
+    const rebound = host.record(plan, rect, false)!;
+    expect(rebound.replayed).toBe(true);
+    expect(draw).toHaveBeenCalledTimes(calls);
+    expect(rebound.list.ops[textured.list.ops.indexOf(verge!)]).toBe(verge);
+    expect(record().paint.slot?.css).toBe(materialColor);
+    materialColor = undefined;
+    renderer.setLook({ palette, colors: {} });
+    expect(host.record(plan, rect, false)?.replayed).toBeFalsy();
+    expect(draw).toHaveBeenCalledTimes(calls + 1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
   renderer.dispose();
+});
+
+it('rebinds the sampled field motif on a clipped drape row and keeps its original extent and draw order', () => {
+  vi.stubGlobal(
+    'DOMMatrix',
+    class {
+      scale(a: number) {
+        return { a, d: a };
+      }
+    },
+  );
+  try {
+    // Trace the atlas sample, crop and destination of every native motif stamp. The tint uses a single RGBA texel.
+    const createCanvas = (width: number, height: number) => {
+      const tile = { width, height, sample: [120, 96, 80, 255], stamps: [] as number[][] };
+      const ctx = {
+        globalAlpha: 1,
+        drawImage(image: typeof tile, ...args: number[]) {
+          if (args.length === 8) tile.stamps.push([...image.sample, this.globalAlpha, ...args]);
+        },
+        getImageData: () => ({ data: new Uint8ClampedArray(tile.sample) }),
+        putImageData(data: ImageData) {
+          tile.sample = Array.from(data.data);
+        },
+      };
+      return Object.assign(tile, { getContext: () => ctx });
+    };
+    const brushes = { terrain: {}, vegetation: {}, sources: {} } as BrushImages;
+    const world = regionWorld();
+    world.landuse!.areas = [
+      {
+        kind: 'field',
+        poly: [
+          { x: 5, y: 5 },
+          { x: 180, y: 5 },
+          { x: 180, y: 140 },
+          { x: 5, y: 140 },
+        ],
+      },
+    ];
+    const palette = () => PALETTES.engraving;
+    const make = (forest: string) => {
+      const draw = vi.fn();
+      const renderer = createCanvasRenderer(createMapRecording(256, 256), world, 'engraving', {
+        palette,
+        brushes,
+        colors: { forest },
+        transparentBackground: true,
+        terrain: () => null,
+        mask: { water: false },
+        createCanvas: (w, h) => createCanvas(w, h) as unknown as CanvasLike,
+        invalidate() {},
+        semantic: { draw, look: () => '', key: () => '', arrivals: () => 0, provisional: () => 0 },
+      });
+      renderer.createLiveLayer({} as WebGL2RenderingContext);
+      const host = vi.mocked(createOverlayLayer).mock.calls.at(-1)![1];
+      const record = (height: number, drape = true, width = 256) => {
+        const rect = { minX: 0, minY: 0, maxX: width, maxY: width },
+          band = { ...rect, maxY: height };
+        const steps = host.recordSteps!({ key: 'test', scale: 1, dpr: 1, rect, bands: [band] }, band, false, drape);
+        let next = steps.next();
+        while (!next.done) next = steps.next();
+        const made = next.value!;
+        if (made.retainDrape) {
+          const box = boxOf(made),
+            prepared = boundedList(clipList(cullList(made.list, box), box));
+          made.retainDrape(prepared);
+          return { ...made, list: prepared };
+        }
+        return made;
+      };
+      return { renderer, draw, record };
+    };
+    const first = make('#779944'),
+      cold = first.record(48);
+    const motif = (list: DisplayList) => {
+      const op = list.ops.find(op => op.type === 'fill' && op.paint.kind === 'pattern');
+      if (op?.type !== 'fill' || op.paint.kind !== 'pattern') throw Error('Missing field pattern');
+      return { op, paint: op.paint, tile: op.paint.source as unknown as ReturnType<typeof createCanvas> };
+    };
+    const old = motif(cold.list),
+      originalStamps = structuredClone(old.tile.stamps);
+    expect(originalStamps.length).toBeGreaterThan(0);
+    first.renderer.setLook({ palette, colors: { forest: '#bb1177' } });
+    const replay = first.record(16),
+      changed = motif(replay.list);
+    expect(first.draw).toHaveBeenCalledTimes(1);
+    expect(replay.replayed).toBe(true);
+    expect(replay.rect).toEqual(cold.rect);
+    expect(replay.h).toBe(48);
+    expect(changed.op.paths).toBe(old.op.paths);
+    expect(changed.op.clip).toBe(old.op.clip);
+    expect(changed.paint.transform).toBe(old.paint.transform);
+    expect(changed.paint.source).not.toBe(old.paint.source);
+    expect(changed.tile.stamps).not.toEqual(originalStamps);
+    expect(old.tile.stamps).toEqual(originalStamps);
+    const reference = make('#bb1177'),
+      fresh = reference.record(48);
+    expect(changed.tile.stamps).toEqual(motif(fresh.list).tile.stamps);
+    expect(replay.list.ops.map(op => op.type)).toEqual(fresh.list.ops.map(op => op.type));
+    // Different tile clips, top-view bands and newly selected atlases all take their own recording.
+    expect(first.record(48, true, 512).replayed).toBeFalsy();
+    expect(first.record(48, false).replayed).toBeFalsy();
+    first.renderer.setLook({ palette, brushes: { ...brushes, terrain: {} as CanvasImageSource } });
+    expect(first.record(48).replayed).toBeFalsy();
+    first.renderer.setLook({ palette, fullLanduse: () => false });
+    const transferred = first.record(48);
+    expect(transferred.replayed).toBeFalsy();
+    expect(transferred.list.ops.some(op => op.type === 'fill' && op.paint.kind === 'pattern')).toBe(false);
+    first.renderer.dispose();
+    reference.renderer.dispose();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 it('reuses y-sorted world-space pen instances across pan, zoom and pigment changes, including GPU uploads', () => {

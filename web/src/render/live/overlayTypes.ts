@@ -17,6 +17,10 @@ export interface OverlayPlan {
 export interface OverlayBand {
   /** The host rebound an existing display list without running the cartography painters. */
   replayed?: boolean;
+  /** This list is already clipped and batched for the returned independent drape row. */
+  clippedDrape?: boolean;
+  /** Give the host the finished independent drape row after clipping, batching and baking. */
+  retainDrape?: (prepared: DisplayList) => void;
   /** Whether a different date still gives the same finished pixels. */
   pixelsMatch?: () => boolean;
   list: DisplayList;

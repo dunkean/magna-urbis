@@ -8,19 +8,18 @@ import type { VectorFrame } from '../frame';
 import { TAU } from '../geometry';
 import type { UrbanFrame } from './frame';
 
+function drawCorn(cx: CanvasRenderingContext2D, k: number): void {
+  cx.globalAlpha = 0.75;
+  cx.beginPath();
+  cx.arc(1.3 * k, 1.3 * k, 0.6 * k, 0, TAU);
+  cx.fill();
+}
+
 export function paintPlanGrounds(c: CartographyContext, f: VectorFrame, u: UrbanFrame): void {
   const { pal, polyL, linesOf, getPattern } = c;
   const { ctx, lod, lw, fillPolys, strokePolys, strokeLines } = f;
   const { U, open, near, paved, pave, gardenPat, gravePat } = u;
-  const cornPat = near
-    ? getPattern(ctx, 'corn', 2.6, 2.6, 12, (cx, k) => {
-        cx.globalAlpha = 0.75;
-        cx.fillStyle = U.gardenInk;
-        cx.beginPath();
-        cx.arc(1.3 * k, 1.3 * k, 0.6 * k, 0, TAU);
-        cx.fill();
-      })
-    : null;
+  const cornPat = near ? getPattern(ctx, 'corn', 2.6, 2.6, 12, drawCorn, 'gardenInk') : null;
   if (polyL('u-terraces')) {
     const tt = c.ink('terrace');
     fillPolys('u-terraces', tt);

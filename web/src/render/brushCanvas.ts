@@ -2,12 +2,31 @@ import type { World } from '../gen/types';
 import type { Palette } from './styles';
 import type { CanvasLike } from './canvas';
 import { RecordingContext } from './gpu/recorder';
-import { BRUSH_ATLAS, BRUSH_CELL, brushCell, brushColorMatrix, brushMotif, type BrushImages, type BrushKind } from './brushes';
+import { BRUSH_ATLAS, BRUSH_CELL, brushCell, brushColorMatrix, brushMotif, type BrushImages, type BrushKind, type BrushMotif } from './brushes';
 
 const PATTERN_BYTES = 16 * 1024 * 1024;
+interface MotifTile {
+  image: CanvasImageSource;
+  bytes: number;
+  native?: CanvasPattern;
+  recorded?: CanvasPattern;
+}
+interface RecordedMotif {
+  kind: BrushKind;
+  width: number;
+  motif: BrushMotif;
+  seed: string;
+  biome: World['options']['biome'];
+  source: WeakRef<BrushImages>;
+}
 /** One active renderer owns bounded motifs; decoded atlas images are shared by the UI/worker. */
 export class CanvasBrushes {
-  private motifs = new Map<string, { pattern: CanvasPattern; bytes: number }>();
+  private motifs = new Map<string, MotifTile>();
+  private readonly layouts = new Map<BrushKind, BrushMotif>();
+  readonly recordedMotifs = new WeakMap<CanvasImageSource, RecordedMotif>();
+  /** Finished pixels can retain this identity without keeping the tinted atlases alive. */
+  readonly pigments = {};
+  private readonly source: WeakRef<BrushImages>;
   private bytes = 0;
   private tintBytes = 0;
   private atlases: Pick<BrushImages, 'vegetation' | 'terrain'>;
@@ -18,6 +37,7 @@ export class CanvasBrushes {
     private makeCanvas: (w: number, h: number) => CanvasLike | null,
   ) {
     const matrix = brushColorMatrix(pal);
+    this.source = new WeakRef(images);
     this.atlases = { vegetation: images.vegetation, terrain: images.terrain };
     if (!matrix) return;
     // Once per appearance, never during a frame. Alpha and each atlas cell remain unchanged.
@@ -51,21 +71,44 @@ export class CanvasBrushes {
   }
 
   pattern(ctx: CanvasRenderingContext2D, kind: BrushKind, scale: number, dpr: number): CanvasPattern | null {
-    const motif = brushMotif(this.world, kind);
+    let motif = this.layouts.get(kind);
+    if (!motif) this.layouts.set(kind, (motif = brushMotif(this.world, kind)));
     // Exact world origin and width; only sampling resolution changes with zoom/DPR. No viewport seam.
     const width = Math.min(1024, Math.max(1, Math.ceil(motif.width * Math.max(1, Math.min(8, scale * dpr)))));
-    // Native and recorded patterns never mix: one motif cache entry per engine.
-    const key = `${ctx instanceof RecordingContext ? 'rec' : 'cpu'}:${kind}:${width}`;
+    const tile = this.tile(kind, width, motif);
+    if (!tile) return null;
+    const engine = ctx instanceof RecordingContext ? 'recorded' : 'native';
+    if (tile[engine]) return tile[engine];
+    try {
+      const pattern = ctx.createPattern(tile.image, 'repeat');
+      if (!pattern) return null;
+      pattern.setTransform(new DOMMatrix().scale(motif.width / width));
+      if (engine === 'recorded' && kind !== 'forest' && kind !== 'orchard') this.recordedMotifs.set(tile.image, { kind, width, motif, seed: this.world.seed, biome: this.world.options.biome, source: this.source });
+      return (tile[engine] = pattern);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Stamp the same motif with this owner's atlas. Its crop, repeat and transform stay in the recorded op. */
+  rebind(recorded: RecordedMotif): CanvasImageSource | undefined {
+    const source = this.source.deref();
+    if (!source || source !== recorded.source.deref() || this.world.seed !== recorded.seed || this.world.options.biome !== recorded.biome) return;
+    return this.tile(recorded.kind, recorded.width, recorded.motif)?.image;
+  }
+
+  private tile(kind: BrushKind, width: number, motif: BrushMotif): MotifTile | undefined {
+    const key = `${kind}:${width}`;
     const old = this.motifs.get(key);
     if (old) {
       this.motifs.delete(key);
       this.motifs.set(key, old);
-      return old.pattern;
+      return old;
     }
     try {
       const c = this.makeCanvas(width, width),
         cx = c?.getContext('2d');
-      if (!c || !cx || typeof DOMMatrix === 'undefined') return null;
+      if (!c || !cx || typeof DOMMatrix === 'undefined') return;
       const k = width / motif.width;
       cx.imageSmoothingEnabled = true;
       cx.imageSmoothingQuality = 'high';
@@ -80,20 +123,18 @@ export class CanvasBrushes {
             this.stamp(cx, stamp.atlas, stamp.cell, x * k, y * k, stamp.size * k);
           }
       }
-      const pattern = ctx.createPattern(c as unknown as CanvasImageSource, 'repeat');
-      if (!pattern) return null;
-      pattern.setTransform(new DOMMatrix().scale(1 / k));
       const bytes = width * width * 4;
       while (this.bytes + bytes > PATTERN_BYTES && this.motifs.size) {
         const first = this.motifs.keys().next().value!;
         this.bytes -= this.motifs.get(first)!.bytes;
         this.motifs.delete(first);
       }
-      this.motifs.set(key, { pattern, bytes });
+      const tile = { image: c as unknown as CanvasImageSource, bytes };
+      this.motifs.set(key, tile);
       this.bytes += bytes;
-      return pattern;
+      return tile;
     } catch {
-      return null;
+      return;
     }
   }
 

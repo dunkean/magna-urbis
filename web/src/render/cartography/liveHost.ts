@@ -5,8 +5,9 @@
  * Reads: everything drawVector reads, the host's semantic and road keys. Writes: stepwise, activeLight, activeDpr,
  * recordingClip, markCrisp and recordingNow for the duration of a recording step (restored after it).
  */
-import { roadCanopyRevision, roadGroundKey } from '../roadStyle';
+import { roadCanopyRevision, roadGroundKey, type RoadStyle } from '../roadStyle';
 import { groundRoadLook } from '../composition';
+import { mapLandSnowKey, mapSeasonKey } from '../seasonPalette';
 import { getLanduseForestTone } from '../landuseForestTone';
 import { whiteWaterRevision } from '../whiteWater';
 import { View, Rect4 } from '../view';
@@ -17,7 +18,9 @@ import { noteLiveUnit } from '../live/liveStats';
 import { CanvasLike } from './contract';
 import type { CartographyContext } from './context';
 import { RasterTileCache } from '../rasterTiles';
-import type { Scene } from '../scene';
+import type { DisplayList } from '../gpu/contract';
+import { drapePathBytes } from '../gpu/listTools';
+import { LAND_ORDER, type Scene } from '../scene';
 import { RoadRecording } from './roadRecording';
 import { LandRecording, landRecordingLook } from './landRecording';
 import { BandLook } from './bandRecording';
@@ -41,20 +44,20 @@ export function createLiveHost(c: CartographyContext) {
   // One set of land ops per visible band. Captures, drapes and fixed sheets never populate this cache.
   const landBands: LandRecording[] = [];
   const roadBands: RoadRecording[] = [];
-  // Paint variants share a geometry key. Region and fixed-sheet recordings use the same bounded LRU.
-  const bands = new RasterTileCache<SeasonRecording[]>(32 * 1024 * 1024);
+  // Region, sheet and clipped drape rows share the budget. Each row retains the extent it actually painted.
+  type HeldBand = SeasonRecording & { frame: Pick<OverlayBand, 'rect' | 'cx' | 'cy' | 'w' | 'h'> };
+  const bands = new RasterTileCache<HeldBand[]>(32 * 1024 * 1024);
   const sceneIds = new WeakMap<Scene, number>();
   let nextSceneId = 0;
-  function bandKey(plan: OverlayPlan, band: Rect4, light: boolean, ink: boolean): string {
+  function bandKey(plan: OverlayPlan, band: Rect4, light: boolean, ink: boolean, drape: boolean): string {
     let id = sceneIds.get(c.scene);
     if (id === undefined) sceneIds.set(c.scene, (id = ++nextSceneId));
-    const road = deps.roadStyle?.(),
-      roadLook = road?.look ?? deps.roadLook;
+    const road: RoadStyle = deps.roadStyle?.() ?? { look: deps.roadLook ?? 'ink', emphasis: 1, night: false, colors: deps.colors };
     return JSON.stringify([
       id,
       plan.scale,
       plan.dpr,
-      band,
+      drape ? [plan.rect, band.minX, band.maxX, band.minY, mapSeasonKey()] : band,
       light,
       contentRevision(),
       ink,
@@ -66,19 +69,21 @@ export function createLiveHost(c: CartographyContext) {
       deps.groundCaverns?.(),
       deps.groundTrees?.(),
       deps.regionalRoadsOnGround?.(),
+      deps.mask?.landuse,
+      !light && deps.fullLanduse ? LAND_ORDER.filter(deps.fullLanduse) : undefined,
       !!c.brushes,
       !!c.canopy,
       landRecordingLook(c.pal),
       getLanduseForestTone(),
       whiteWaterRevision(),
-      roadLook,
-      road?.emphasis,
-      road?.night,
-      road?.simple,
-      road?.snow,
-      road?.pavement,
-      road?.urban,
-      groundRoadLook(roadLook) ? [roadGroundKey(), road && !c.world.urban && materialBedSlot(c, road, false) ? true : road?.colors?.road, road && !c.world.urban && materialBedSlot(c, road, true) ? true : road?.colors?.track] : trackSlot(c.pal),
+      road.look,
+      road.emphasis,
+      road.night,
+      road.simple,
+      road.snow,
+      road.pavement,
+      road.urban,
+      groundRoadLook(road.look) ? [roadGroundKey(), mapLandSnowKey(), !c.world.urban && materialBedSlot(c, road, false) ? true : road.colors?.road, !c.world.urban && materialBedSlot(c, road, true) ? true : road.colors?.track] : trackSlot(c.pal),
     ]);
   }
   const fixedRaster = (): boolean => c.pal.name === 'cadastre';
@@ -140,11 +145,12 @@ export function createLiveHost(c: CartographyContext) {
     c.syncPalette();
     const index = !drape && deps.palette ? plan.bands.indexOf(band) : -1;
     const sourcePalette = c.pal,
-      key = index >= 0 ? bandKey(plan, band, light, ink) : undefined;
+      sourceLook = c.lookId,
+      key = deps.palette && (drape || index >= 0) ? bandKey(plan, band, light, ink, drape) : undefined;
     const variants = key ? bands.get(key) : undefined;
     for (const held of variants ?? []) {
       const replay = held.replay();
-      if (replay) return { ...replay, rect: band, cx, cy, w, h, provisional: false, replayed: true };
+      if (replay) return { ...replay, ...held.frame, provisional: false, replayed: true, clippedDrape: drape };
     }
     const rec = createMapRecording(w, h, ink);
     const look = key ? new BandLook(sourcePalette) : undefined;
@@ -180,17 +186,23 @@ export function createLiveHost(c: CartographyContext) {
       const list = rec.finish();
       if (list.unsupported) throw new Error(list.unsupported);
       const partial = (deps.semantic?.provisional() ?? 0) !== provisional;
-      const recording = look && !partial && sourcePalette === c.pal ? seasonRecording(c, list, look) : undefined;
-      if (key && recording) {
-        const bytes = recording.bytes;
-        if (bytes <= bands.maxBytes) {
-          const held = [recording];
-          const previous = variants?.[0];
-          if (previous && bytes + previous.bytes <= bands.maxBytes) held.push(previous);
-          bands.put(key, { value: held, bytes: bytes + (held[1]?.bytes ?? 0), bounds: band, release() {} });
-        }
-      }
-      return { list, rect: band, cx, cy, w, h, provisional: partial, pixelsMatch: recording?.pixelsMatch };
+      const frame = { rect: band, cx, cy, w, h };
+      const cache = (prepared: DisplayList) => {
+        if (!key || !look || partial || list.bakedSeason || sourcePalette !== c.pal || sourceLook !== c.lookId || c.disposed) return;
+        // A drape bake finishes on a later idle slice. A scene edit or semantic arrival can supersede its source.
+        if (drape && bandKey(plan, band, light, ink, true) !== key) return;
+        const recording = seasonRecording(c, prepared, look);
+        if (!recording || (drape && !recording.drapeCompatible)) return;
+        const bytes = recording.bytes + (drape ? drapePathBytes(prepared) : 0);
+        if (bytes > bands.maxBytes) return recording;
+        const held = [{ ...recording, bytes, frame }];
+        const previous = variants?.[0];
+        if (previous && bytes + previous.bytes <= bands.maxBytes) held.push(previous);
+        bands.put(key, { value: held, bytes: bytes + (held[1]?.bytes ?? 0), bounds: band, release() {} });
+        return recording;
+      };
+      if (drape) return { list, ...frame, provisional: partial, retainDrape: cache };
+      return { list, ...frame, provisional: partial, pixelsMatch: cache(list)?.pixelsMatch };
     } catch (error) {
       noteGpuFallback(`record: ${error instanceof Error ? error.message : String(error)}`);
       regionFailed = plan.key;

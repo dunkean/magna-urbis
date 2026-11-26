@@ -401,6 +401,7 @@ const token =
 const pen = (key: 'treeFill' | 'treeInk' | 'grass' | 'reed' | 'orchardDot') => (p: Palette) => mixHex(p[key], p.inkSoft, 0.32);
 const inks = {
   ink: token('ink'),
+  densityInk: (p: Palette) => (/^#[0-9a-f]{6}$/i.test(p.ink) ? p.ink : '#3d2f20'),
   paper: token('paper'),
   roadEdge: token('roadEdge'),
   roadFill: token('roadFill'),
@@ -411,6 +412,9 @@ const inks = {
   bridgeDeck: token('bridgeDeck'),
   bridgeInk: token('bridgeInk'),
   wall: (p: Palette) => p.urban.wall,
+  placeInk: (p: Palette) => p.urban.placeInk,
+  gardenInk: (p: Palette) => p.urban.gardenInk,
+  landmarkEdge: (p: Palette) => p.urban.landmarkEdge,
   wallFill: (p: Palette) => p.urban.wallFill,
   ruralInk: (p: Palette) => p.rural.ink ?? p.trackFill,
   field: landColor('field'),
