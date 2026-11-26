@@ -56,9 +56,13 @@ describe('developer generation stages', () => {
     expect(roads.names).toBeUndefined();
     const full = session.advance(4);
     expect(terrainHash(full.terrain)).toEqual(terrainHash(rivers.terrain));
-    expect(full.terrain.rivers.every(r => r.name && r.nameKey)).toBe(true);
+    expect(full.terrain.rivers.every(r => r.name && 'nameKey' in r && typeof r.nameKey === 'string' && r.nameKey.length > 0)).toBe(true);
     expect(full.settlements!.map(s => s.center)).toEqual(centers);
-    expect(full.roads!.map(({ nameKey: _nameKey, ...road }) => road)).toEqual(roads.roads);
+    expect(full.roads!.some(road => 'nameKey' in road && typeof road.nameKey === 'string' && road.nameKey.length > 0)).toBe(true);
+    expect(full.roads!.map(road => {
+      const { nameKey: _nameKey, ...geometry } = road as typeof road & { nameKey?: string };
+      return geometry;
+    })).toEqual(roads.roads);
     expect(full.urban!.buildings.length).toBeGreaterThan(0);
     expect(full.settlements![1].urban).toBeDefined();
     expect(full.landuse).toBeDefined();
