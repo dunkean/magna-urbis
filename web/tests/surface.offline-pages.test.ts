@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { exportSurfaceInputPacket, exportSurfacePacket } from '../src/surface/adapters/export';
 import { cropTerrain } from '../src/ui/benchTerrainTransfer';
+import { encodeWaterField } from '../src/render/terrainWater';
 import { createSurfaceWorkerProcessor } from '../src/surface/workerProcessor';
 import { SURFACE_WORKER_PROTOCOL, type PreparedSurfaceWorkerSource } from '../src/surface/workerProtocol';
 import { occupationFromMagnaScene } from '../src/surface/adapters/occupation';
@@ -23,7 +24,11 @@ function input(n = 20, spacingM = 50): SurfaceCompileInput {
 }
 function decor(): Decor {
   return {
-    meta: { id: 'source-frame', seed: 'page-frame', created: '2026-10-24', label: 'source', query: 'width=512&climate=temperate', width: 512, tags: {}, stats: {}, settlements: [], waterSvg: '', regeneration: { query: 'width=512', crops: [] } },
+    meta: {
+      id: 'source-frame', seed: 'page-frame', created: '2026-10-24', label: 'source', query: 'width=512&climate=temperate', width: 512, tags: {}, stats: {}, settlements: [], waterSvg: '',
+      waterMaterial: { field: encodeWaterField(new Float32Array(16 * 16).fill(-1)), n: 16, width: 512, referenceWidth: 512, path: '' },
+      regeneration: { query: 'width=512', crops: [] },
+    },
     raster: { n: 16, width: 512, height: new Float32Array(256).fill(100), water: new Uint8Array(256), waterLevel: new Float32Array(256).fill(NaN), riverWidth: new Float32Array(256), riverIds: new Int32Array(256), geometry: { land: [], water: [] } },
   } as unknown as Decor;
 }
