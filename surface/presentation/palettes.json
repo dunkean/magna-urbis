@@ -3,9 +3,9 @@
   "version": 1,
   "paletteSource": "web/src/render/styles.ts",
   "sourceFilesSha256": {
-    "web/src/render/styles.ts": "a29152ea4f0e787b633520856eefd0970f709ec4fe80d16e4e7de77929398fc7",
+    "web/src/render/styles.ts": "bf8a488941f2ff1d35db33bd0d9a0878158231426ea587575e15c07bb7dacaf7",
     "web/src/render/waterStyle.ts": "1acbd9730ad38970e8ca8243f63fe67b3a8049c2a8f24f40c5cbdc14c43244ce",
-    "web/src/render/terrainStyle.ts": "caba0071fefd9b266f02556f5e39b0705cdedf9edfa0288f1c22df1e27a804c5"
+    "web/src/render/terrainStyle.ts": "33d5cd6166ad9d762d0ad8032058dcfab9bfd50c2ce921261beac52ef44befaf"
   },
   "palettes": {
     "minimal": {
@@ -36,7 +36,7 @@
         "stops": [
           [
             0,
-            "#9fc3d8"
+            "#a9cde2"
           ],
           [
             1,
@@ -386,7 +386,7 @@
         "bandFraction": 0.016
       },
       "lakeFill": "#6aa5d6",
-      "waterEdge": "#5f7a7d",
+      "waterEdge": "#4f8fc2",
       "ripple": "#e9f4fb",
       "rippleOpacity": [
         0,
@@ -1799,7 +1799,7 @@
           "stops": [
             [
               0,
-              "#9fc3d8"
+              "#a9cde2"
             ],
             [
               1,
@@ -1943,7 +1943,7 @@
         "stops": [
           [
             0,
-            "#9fc3d8"
+            "#a9cde2"
           ],
           [
             1,
@@ -2215,7 +2215,7 @@
           "bandFraction": 0.016
         },
         "lakeFill": "#6aa5d6",
-        "waterEdge": "#5f7a7d",
+        "waterEdge": "#4f8fc2",
         "ripple": "#e9f4fb",
         "rippleOpacity": [
           0,
