@@ -4,140 +4,37 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Magna Urbis · City preview</title>
-    <style>
-      html,
-      body,
-      #map {
-        margin: 0;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background: #f4f1ea;
-      }
-      body {
-        font:
-          13px system-ui,
-          sans-serif;
-        color: #534d43;
-      }
-      #map {
-        position: absolute;
-        inset: 0;
-        cursor: grab;
-        touch-action: none;
-        user-select: none;
-        outline: none;
-      }
-      #map.dragging {
-        cursor: grabbing;
-      }
-      #status {
-        position: absolute;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        padding: 20px;
-        text-align: center;
-        pointer-events: none;
-      }
-      #status[hidden] {
-        display: none;
-      }
-      #open {
-        position: absolute;
-        bottom: 6px;
-        right: 8px;
-        color: inherit;
-        font-size: 10px;
-        text-decoration: none;
-        background: #f4f1ead9;
-        padding: 2px 5px;
-        border-radius: 3px;
-      }
-      #demo-controls {
-        position: absolute;
-        top: 10px;
-        left: 10px;
-        right: 10px;
-        display: flex;
-        align-items: flex-start;
-        gap: 8px;
-        pointer-events: none;
-      }
-      #demo-controls[hidden] {
-        display: none;
-      }
-      #randomize {
-        pointer-events: auto;
-        flex: none;
-        border: 1px solid #b9a58d;
-        border-radius: 6px;
-        background: #fffaf0;
-        color: #49372a;
-        padding: 8px 12px;
-        font: 600 12px system-ui;
-        cursor: pointer;
-        box-shadow: 0 2px 6px #49372a18;
-      }
-      #randomize:hover {
-        background: #f0e4d0;
-        border-color: #725c47;
-      }
-      #randomize:focus-visible {
-        outline: 2px solid #725c47;
-        outline-offset: 2px;
-      }
-      #demo-params {
-        font-size: 11px;
-        line-height: 1.5;
-        background: #f4f1eae8;
-        padding: 5px 8px;
-        border-radius: 4px;
-        max-width: 360px;
-      }
-      #map-navigation {
-        position: absolute;
-        left: 10px;
-        bottom: 10px;
-        display: flex;
-        gap: 3px;
-      }
-      #map-navigation button {
-        width: 29px;
-        height: 29px;
-        border: 1px solid #b9a58d;
-        border-radius: 4px;
-        background: #fffaf0e8;
-        color: #49372a;
-        font: 18px system-ui;
-        cursor: pointer;
-      }
-      #map-navigation button:hover {
-        background: #f0e4d0;
-      }
-      #map-navigation button:disabled {
-        opacity: 0.4;
-        cursor: default;
-      }
-      #map-navigation button:focus-visible {
-        outline: 2px solid #725c47;
-        outline-offset: 2px;
-      }
-    </style>
+    <link rel="stylesheet" href="./city-embed.css" />
   </head>
   <body>
     <div id="map" tabindex="0" aria-label="City map: drag to pan, scroll to zoom"></div>
-    <div id="status" role="status">Generating city…</div>
+    <div id="status">
+      <span id="progress-label" role="status" data-embed-text>Generating city…</span>
+      <progress id="city-progress" aria-labelledby="progress-label" max="7"></progress>
+    </div>
+    <div id="caption"><strong id="burg-name" hidden></strong></div>
     <div id="demo-controls" hidden>
-      <button id="randomize" type="button" title="Randomize culture, population, geography and buildings">🎲 Randomize city</button>
+      <button id="randomize" type="button" class="icon" data-icon="dice" aria-label="Randomize culture, population, geography and buildings"></button>
+      <form id="population-form">
+        <label for="preview-population" data-embed-text>Population</label>
+        <input id="preview-population" type="number" min="1" max="5000000" step="1" required />
+        <button type="submit" class="icon" data-icon="apply" aria-label="Apply"></button>
+      </form>
       <span id="demo-params"></span>
     </div>
-    <div id="map-navigation" aria-label="Navigation">
-      <button id="zoom-in" type="button" disabled aria-label="Zoom in" title="Zoom in (+)">+</button>
-      <button id="zoom-out" type="button" disabled aria-label="Zoom out" title="Zoom out (−)">−</button>
-      <button id="fit-view" type="button" disabled aria-label="Recenter city" title="Recenter city (0)">⌖</button>
+    <div id="detail-actions" class="rail" role="group" aria-label="Map views">
+      <button id="plan" type="button" class="icon" data-icon="plan" aria-label="City plan" aria-pressed="false" disabled></button>
+      <button id="detailed" type="button" class="icon stars" aria-label="Satellite · Fast" aria-pressed="false" disabled>★</button>
+      <button id="painted" type="button" class="icon stars" aria-label="Painted satellite" aria-pressed="false" disabled>★★</button>
+      <button id="expand-preview" type="button" class="icon" data-icon="expand" aria-label="Enlarge" aria-expanded="false" hidden></button>
     </div>
-    <a id="open" target="_blank" rel="noopener">Magna Urbis ↗</a>
+    <div id="map-navigation" class="rail" role="group" aria-label="Navigation">
+      <button id="zoom-in" type="button" class="icon navigation-icon" data-icon="plus" disabled aria-label="Zoom in"></button>
+      <button id="zoom-out" type="button" class="icon navigation-icon" data-icon="minus" disabled aria-label="Zoom out"></button>
+      <button id="fit-view" type="button" class="icon navigation-icon" data-icon="compass" disabled aria-label="Recenter city"></button>
+    </div>
+    <button id="houses" type="button" class="icon" data-icon="houses" aria-label="Architectural houses" disabled></button>
+    <a id="open" target="_blank" rel="noopener" aria-label="Open in Magna Urbis ↗">magna-urbis</a>
     <script type="module" src="../v2/cityEmbed.ts"></script>
   </body>
 </html>

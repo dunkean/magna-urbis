@@ -820,9 +820,9 @@ describe('V2 and City Bench stay in sync', () => {
     expect(inspected.city.layers).toMatchObject({ quarters: true, blocks: false, parcels: true, parcelOverlay: true, streets: true });
     expect(inspected.composition.buildings).toMatchObject({ districts: true, blocks: false, parcels: true, visible: false });
     expect(inspected.keys.roads).toBe(plain.keys.roads);
-    // Plan-less grounds offer no switch; Minimal has no lots.
+    // Plan-less grounds offer no switch. Minimal can draw the retained cadastre.
     for (const look of ['satellite', 'satellite-2', 'atlas'] as const) expect(townPlanSwitches(look), look).toEqual([]);
-    expect(townPlanSwitches('minimal')).toEqual(['districts', 'blocks']);
+    expect(townPlanSwitches('minimal')).toEqual(['districts', 'blocks', 'parcels']);
   });
 
   it('builds the drawCity options of both pages with the shared function only', () => {

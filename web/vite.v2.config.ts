@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { defineConfig, normalizePath, type Plugin } from 'vite';
+import { defineConfig, normalizePath, type Connect, type Plugin } from 'vite';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { cp, mkdir, rename } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -60,13 +60,22 @@ function wasmReload(): Plugin {
 }
 
 function v2Resources(): Plugin {
+  // Isolated local hosts need explicit permission to embed the preview across sites.
+  const embedPolicy: Connect.NextHandleFunction = (req, res, next) => {
+    if (new URL(req.url ?? '/', 'http://localhost').pathname.endsWith('/embed.html')) res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  };
   const sources = [
     { prefix: '/scientific/', directory: resolve(root, 'docs/scientific') },
     { prefix: '/neural/', directory: resolve(root, 'rust/pkg/neural-web') },
   ];
   return {
     name: 'v2-resources',
+    configurePreviewServer(server) {
+      server.middlewares.use(embedPolicy);
+    },
     configureServer(server) {
+      server.middlewares.use(embedPolicy);
       server.middlewares.use((req, res, next) => {
         const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
         if (pathname === '/' || pathname === '/index.html') {
@@ -139,6 +148,13 @@ export default defineConfig({
   // Cross-origin isolation for the WASM threads package (static hosting: public/coi-serviceworker.js).
   server: { host: '127.0.0.1', port: 5174, strictPort: true, fs: { allow: [root] }, headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'credentialless' } },
   preview: { headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'credentialless' } },
-  build: { outDir: output, emptyOutDir: true, target: 'es2022', chunkSizeWarningLimit: 6000, rollupOptions: { input: { studio: resolve(web, 'src/ui/v2.html'), embed: resolve(web, 'src/ui/embed.html') }, output: { banner: vendorNotice } } },
+  build: {
+    outDir: output, emptyOutDir: true, target: 'es2022', chunkSizeWarningLimit: 6000,
+    rollupOptions: {
+      preserveEntrySignatures: 'exports-only',
+      input: { studio: resolve(web, 'src/ui/v2.html'), embed: resolve(web, 'src/ui/embed.html'), 'city-embed-host': resolve(web, 'src/v2/cityEmbedOverlay.ts') },
+      output: { banner: vendorNotice, entryFileNames: chunk => chunk.name === 'city-embed-host' ? 'city-embed-host.js' : 'assets/[name]-[hash].js' },
+    },
+  },
   worker: { format: 'es', plugins: () => [externalAssets()], rollupOptions: { output: { banner: vendorNotice } } },
 });

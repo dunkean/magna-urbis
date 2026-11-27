@@ -1,5 +1,7 @@
-/** cityEmbed's pointer and keyboard navigation; the shared view math drives both retained maps and cached thumbnails. */
+/** Pointer and keyboard navigation for the two preview phases. */
 import { panBy, zoomAt, type View } from '../render/view';
+
+const MAX_ZOOM = 36;
 
 export function mountCityEmbedNavigation(host: HTMLElement, draw: () => void, enabled: () => boolean) {
   let camera: View = { cx: 0, cy: 0, scale: 1 };
@@ -14,7 +16,8 @@ export function mountCityEmbedNavigation(host: HTMLElement, draw: () => void, en
   };
   const size = () => host.getBoundingClientRect();
   const zoom = (factor: number, x = host.clientWidth / 2, y = host.clientHeight / 2) => {
-    const scale = Math.min(24, Math.max(0.5, camera.scale * factor));
+    const scale = Math.min(MAX_ZOOM, Math.max(0.5, camera.scale * factor));
+    if (scale === camera.scale) return;
     camera = zoomAt(camera, scale / camera.scale, x, y, host.clientWidth, host.clientHeight);
     changed();
   };
@@ -110,8 +113,12 @@ export function mountCityEmbedNavigation(host: HTMLElement, draw: () => void, en
   return {
     zoom,
     reset,
+    camera: () => ({ ...camera }),
+    restore: (saved: View) => {
+      camera = { ...saved };
+      changed();
+    },
     view: (base: View): View => ({ cx: base.cx + camera.cx / base.scale, cy: base.cy + camera.cy / base.scale, scale: base.scale * camera.scale }),
-    bitmapTransform: () => `translate(${-camera.cx * camera.scale}px,${-camera.cy * camera.scale}px) scale(${camera.scale})`,
     dispose: () => controller.abort(),
   };
 }

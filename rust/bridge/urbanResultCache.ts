@@ -141,17 +141,22 @@ export function cacheValueBytes(value: unknown): number {
 /** `knownBytes`: size of the value when the caller already knows it (Rust texts,
  * pack byte lengths), sparing a JSON.stringify of megabytes of geometry. */
 export async function writeUrbanCache(key: string, value: unknown, knownBytes?: number): Promise<void> {
+  await tryWriteUrbanCache(key, value, knownBytes);
+}
+
+export async function tryWriteUrbanCache(key: string, value: unknown, knownBytes?: number): Promise<boolean> {
   try {
     const db = await openDb();
-    if (!db) return;
+    if (!db) return false;
     const bytes = knownBytes ?? cacheValueBytes(value);
-    if (bytes > URBAN_CACHE_MAX_BYTES / 2) return;
-    await new Promise<void>(resolve => {
+    if (bytes > URBAN_CACHE_MAX_BYTES / 2) return false;
+    return await new Promise<boolean>(resolve => {
       const tx = db.transaction([STORE, META], 'readwrite');
       const store = tx.objectStore(STORE),
         meta = tx.objectStore(META);
       const all = meta.getAll();
-      tx.oncomplete = tx.onabort = () => resolve();
+      tx.oncomplete = () => resolve(true);
+      tx.onabort = tx.onerror = () => resolve(false);
       all.onsuccess = () => {
         try {
           const entries = all.result as UrbanCacheEntryMeta[];
@@ -170,6 +175,6 @@ export async function writeUrbanCache(key: string, value: unknown, knownBytes?: 
       };
     });
   } catch {
-    /* cache is optional */
+    return false;
   }
 }

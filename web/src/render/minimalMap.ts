@@ -192,7 +192,7 @@ export function paintMinimalMap(
     dpr: number;
     recipe: CompositionRecipe;
     /** The town plan layers shown (composition `townPlanOf`); absent: blocks under shown houses only. */
-    plan?: Pick<TownPlan, 'districts' | 'blocks'>;
+    plan?: Pick<TownPlan, 'districts' | 'blocks'> & Partial<Pick<TownPlan, 'parcels'>>;
     places: readonly MinimalPlace[];
     textLayout: MinimalTextLayout;
     layoutText?: boolean;
@@ -272,6 +272,8 @@ export function paintMinimalMap(
   }
   const plan = options.plan ?? { districts: false, blocks: recipe.buildings.visible };
   if (plan.blocks && layers.city !== false) fill('block', palette.urban.yard);
+  // At town scale the lots read as blocks. Resolve individual boundaries as the camera moves closer.
+  if (plan.parcels && layers.city !== false) stroke('parcel', palette.inkSoft, 0.55, 0.1, 3, 0.48 * fade((scale - 0.12) / 0.3));
   const localAlpha = fade((scale * 8 - 1) / 0.8);
   if (recipe.networks.roads.visible) {
     if (layers.roads !== false) {

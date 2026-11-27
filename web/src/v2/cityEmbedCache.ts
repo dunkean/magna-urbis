@@ -1,39 +1,63 @@
-/** cityEmbed's bounded, build-specific preview thumbnails. Avoid regenerating repeat inputs without retaining worlds or engine workers. */
-const KEY = 'magna-urbis-city-previews-v1',
-  LIMIT = 6,
-  MAX_IMAGE = 256000;
-const build = `${import.meta.env.VITE_BUILD_COMMIT ?? 'dev'}:${import.meta.env.VITE_BUILD_DATE ?? 'dev'}`;
-interface Thumbnail {
-  source: string;
+import { digestValue, readUrbanCache, writeUrbanCache, tryWriteUrbanCache } from '../../../rust/bridge/urbanResultCache';
+import type { ExternalCityHints } from './externalCity/types';
+import type { Rect4, View } from '../render/view';
+import type { World } from '../gen/types';
+import type { CityDetailStyle, DetailedCityResult, CityPreviewResult } from './cityPreviewMap';
+
+const build = import.meta.env.VITE_BUILD_COMMIT + ':' + import.meta.env.VITE_BUILD_DATE;
+const MAX_MAP_BYTES = 2 * 1024 * 1024;
+
+export async function compactPreviewKey(hints: ExternalCityHints, threaded: boolean, local = false): Promise<string | undefined> {
+  // The built artifact identifies its renderer, generator and geometry format.
+  if (!globalThis.crypto?.subtle) return undefined;
+  let engine = 'web';
+  if (local) {
+    const response = await fetch('http://127.0.0.1:8791/status', { cache: 'no-store', signal: AbortSignal.timeout(1200) });
+    const status = await response.json();
+    if (!response.ok || typeof status.build !== 'string') return undefined;
+    engine = 'native:' + status.build;
+  }
+  return 'fmg-preview:' + (await digestValue([build, engine, threaded, hints]));
+}
+
+export async function readCompactPreview(key: string): Promise<CityPreviewResult | undefined> {
+  // Third-party storage can be unavailable or slow. Do not hold up a cold generation.
+  let timeout: number | undefined;
+  try {
+    return await Promise.race([
+      readUrbanCache<CityPreviewResult>(key),
+      new Promise<undefined>(resolve => {
+        timeout = window.setTimeout(resolve, 80);
+      }),
+    ]);
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+export function saveCompactPreview(key: string, view: CityPreviewResult): void {
+  const geometry = view.map.geometry;
+  const bytes = geometry.coords.byteLength + geometry.rings.byteLength + 2048;
+  if (bytes <= MAX_MAP_BYTES) void writeUrbanCache(key, view, bytes);
+}
+export const readCityLayout = (key: string) => readUrbanCache<World>(key + ':layout');
+export const saveCityLayout = (key: string, world: World) => tryWriteUrbanCache(key + ':layout', world);
+
+export interface SavedCityView {
+  image: Blob;
+  tier: DetailedCityResult['mode'];
+  style: CityDetailStyle;
+  bounds: Rect4;
+  camera: View;
+  view: View;
   width: number;
   height: number;
-  image: string;
 }
-interface Cache {
-  build: string;
-  thumbnails: Thumbnail[];
-}
-function read(): Thumbnail[] {
-  try {
-    const saved = localStorage.getItem(KEY);
-    if (!saved || saved.length > 2000000) return [];
-    const cache = JSON.parse(saved) as Cache;
-    return cache.build === build && Array.isArray(cache.thumbnails) ? cache.thumbnails.slice(0, LIMIT) : [];
-  } catch {
-    return [];
-  }
-}
-export function cachedCityPreview(source: string, width: number, height: number): string | undefined {
-  const item = read().find(item => item.source === source && item.width === width && item.height === height);
-  return typeof item?.image === 'string' && item.image.length <= MAX_IMAGE && item.image.startsWith('data:image/png;base64,') ? item.image : undefined;
-}
-export function cacheCityPreview(source: string, width: number, height: number, canvas: HTMLCanvasElement): void {
-  try {
-    const image = canvas.toDataURL('image/png');
-    if (image.length > MAX_IMAGE || source.length > 65536 || width <= 0 || height <= 0) return;
-    const thumbnails = [{ source, width, height, image }, ...read().filter(item => item.source !== source || item.width !== width || item.height !== height)].slice(0, LIMIT);
-    localStorage.setItem(KEY, JSON.stringify({ build, thumbnails }));
-  } catch {
-    /* Third-party storage, private browsing or a full quota must not block a city. */
-  }
+
+export const readCityView = (key: string) => readUrbanCache<SavedCityView>(key + ':view');
+export const readCityWorld = (key: string, tier: DetailedCityResult['mode']) => readUrbanCache<DetailedCityResult>(key + ':' + tier);
+export const saveCityWorld = (key: string, data: DetailedCityResult) => writeUrbanCache(key + ':' + data.mode, data);
+
+export async function saveCityView(key: string, value: SavedCityView): Promise<boolean> {
+  return tryWriteUrbanCache(key + ':view', value, value.image.size + 512);
 }

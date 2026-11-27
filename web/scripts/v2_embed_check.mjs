@@ -1,211 +1,513 @@
-/** Manual production-embed qualification CLI. Serves the existing Vite artifact in a sandboxed iframe; never builds the engine. */
-import { chromium } from 'playwright';
+/** Exercise the built preview in a sandboxed, cross-origin FMG-sized iframe. */
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { chromium } from 'playwright';
 import { createServer } from 'node:http';
-import { readFile, stat, mkdir, writeFile } from 'node:fs/promises';
-import { resolve, sep, extname } from 'node:path';
+import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
+import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
+import { gzipSync, gzip as gzipBuffer } from 'node:zlib';
+import { promisify } from 'node:util';
 
 const web = fileURLToPath(new URL('..', import.meta.url));
-const output = resolve(web, 'dist-v2'),
-  artifacts = resolve(web, 'out/city-embed');
+const output = resolve(web, 'dist-v2');
+const artifacts = resolve(web, 'out/city-embed');
 const prefix = '/magna-urbis/v2/';
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp' };
+const compressed = new Map();
+// Prepare the CDN's compressed WASM representation outside the measured navigation.
+const gzipAsync = promisify(gzipBuffer);
+for (const file of await readdir(resolve(output, 'assets'))) {
+  if (!file.endsWith('.wasm')) continue;
+  const path = resolve(output, 'assets', file);
+  compressed.set(path, await gzipAsync(await readFile(path)));
+}
+const addedLatency = Number(process.env.MAGNA_EMBED_TEST_LATENCY_MS ?? 0);
+const servedAssets = [];
 const assets = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, 'http://localhost');
-    if (!url.pathname.startsWith(prefix)) {
-      response.writeHead(404).end();
-      return;
-    }
-    const path = resolve(output, decodeURIComponent(url.pathname.slice(prefix.length)) || 'index.html');
-    if (!path.startsWith(output + sep) || !(await stat(path)).isFile()) {
-      response.writeHead(404).end();
-      return;
-    }
-    response.writeHead(200, { 'Content-Type': mime[extname(path)] ?? 'application/octet-stream', 'Cache-Control': 'public, max-age=3600' });
-    response.end(await readFile(path));
+    if (!url.pathname.startsWith(prefix)) return response.writeHead(404).end();
+    const path = resolve(output, decodeURIComponent(url.pathname.slice(prefix.length)));
+    if (!path.startsWith(output + sep)) return response.writeHead(404).end();
+    const ext = extname(path);
+    const gzip = !!request.headers['accept-encoding']?.includes('gzip') && ['.html', '.js', '.css', '.json', '.wasm'].includes(ext);
+    const bytes = (gzip && compressed.get(path)) || (await readFile(path));
+    const body = gzip && !compressed.has(path) ? gzipSync(bytes) : bytes;
+    if (gzip) compressed.set(path, body);
+    if (addedLatency > 0) await new Promise(done => setTimeout(done, addedLatency));
+    const embedPolicy = url.pathname.endsWith('/embed.html') ? { 'Cross-Origin-Resource-Policy': 'cross-origin' } : {};
+    response.writeHead(200, { 'Content-Type': mime[ext] ?? 'application/octet-stream', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'credentialless', ...embedPolicy, 'Cache-Control': 'public, max-age=3600', 'Content-Length': body.length, Vary: 'Accept-Encoding', ...(gzip ? { 'Content-Encoding': 'gzip' } : {}) });
+    servedAssets.push({ url: url.pathname, bytes: body.length });
+    response.end(body);
   } catch {
     response.writeHead(404).end();
   }
 });
 await new Promise(ready => assets.listen(0, '127.0.0.1', ready));
-const base = `http://127.0.0.1:${assets.address().port}${prefix}`;
-const parent = createServer((request, response) => {
-  const source = new URL(request.url, 'http://localhost').searchParams.get('src');
+const base = 'http://127.0.0.1:' + assets.address().port + prefix;
+const parent = createServer(async (request, response) => {
+  const url = new URL(request.url, 'http://localhost');
+  if (url.pathname === '/city-embed-host.js') {
+    response.writeHead(200, { 'Content-Type': 'text/javascript' });
+    response.end(await readFile(resolve(output, 'city-embed-host.js')));
+    return;
+  }
+  const src = url.searchParams.get('src');
   response.writeHead(200, { 'Content-Type': 'text/html' });
+  if (url.searchParams.has('hostLocale')) {
+    response.end('<!doctype html><html lang="de"><iframe></iframe><script type="module">import {mountCityEmbedOverlay} from "/city-embed-host.js"; const frame=document.querySelector("iframe");frame.src=' + JSON.stringify(src).replaceAll('<', '\\u003c') + ';mountCityEmbedOverlay(frame);</script></html>');
+    return;
+  }
   response.end(
-    `<!doctype html><style>body{margin:0;background:#ddd}iframe{width:440px;height:320px;border:0;pointer-events:auto}</style><iframe title="City preview" sandbox="allow-scripts allow-same-origin"></iframe><script>document.querySelector('iframe').src=${JSON.stringify(source)};</script>`,
+    '<!doctype html><style>body{margin:0}iframe{width:440px;height:320px;border:0}</style><iframe title="City preview" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe><script>document.querySelector("iframe").src=' +
+      JSON.stringify(src).replaceAll('<', '\\u003c') +
+      '</script>',
   );
 });
 await new Promise(ready => parent.listen(0, '127.0.0.1', ready));
-const host = `http://127.0.0.1:${parent.address().port}/`;
-const result = { base, cases: [], errors: [], missing: [] };
+const host = 'http://127.0.0.1:' + parent.address().port + '/';
+const framed = source => host + '?' + new URLSearchParams({ src: source });
+const runtime = process.env.MAGNA_EMBED_TEST_PROFILE === 'local' ? 'local' : 'web';
+const flat = new URLSearchParams({ profile: runtime, preview: '1', name: 'Brackenford', population: '2500', seed: '12340007', river: '0', coast: '0', walls: '1', cultureBase: 'English' });
+const flatUrl = base + 'embed.html?' + flat;
+const result = { base, latencyMs: addedLatency, cases: [], errors: [], missing: [] };
+const capture = (page, name) => page.locator('iframe').screenshot({ path: resolve(artifacts, name + '.png') });
 let browser;
 try {
   await mkdir(artifacts, { recursive: true });
   browser = await chromium.launch({ channel: process.env.MAGNA_BROWSER_CHANNEL ?? 'msedge', headless: true });
   const context = await browser.newContext({ viewport: { width: 700, height: 500 } });
   await context.addInitScript(() => {
+    const captureFirst = new MutationObserver(() => {
+      if (document.documentElement?.dataset.state !== 'ready') return;
+      const canvas = document.querySelector('#map canvas');
+      if (canvas) window.__townFirstImage = canvas.toDataURL('image/png').split(',')[1];
+      captureFirst.disconnect();
+    });
+    captureFirst.observe(document, { subtree: true, attributes: true, attributeFilter: ['data-state'] });
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
       constructor(...args) {
         super(...args);
+        if (args[1]?.name?.startsWith('magna-city-')) window.__cityGenerations = (window.__cityGenerations ?? 0) + 1;
         this.addEventListener('message', ({ data }) => {
-          if (data.type === 'progress') (window.__embedProgress ??= []).push({ ms: Math.round(performance.now()), ...data.progress });
-          if (data.type === 'result') window.__embedStats = Object.fromEntries(Object.entries(data.world.stats).filter(([key]) => key.startsWith('ms.')));
+          if (data.type === 'progress') (window.__townProgress ??= []).push([data.progress.stage, Math.round(performance.now())]);
+          if (data.type === 'city-preview') {
+            if (data.mode === 'compact') {
+              window.__townResult = data.town;
+              window.__townLayers = data.map.geometry.layers;
+            } else if (data.mode === 'detailed') {
+              window.__townDetailed = data.town;
+              window.__detailedGenerations = (window.__detailedGenerations ?? 0) + 1;
+            } else if (data.mode === 'houses') {
+              window.__houseScene = Object.values(data.world.debug.v2RustCities)[0].scene?.generator_version;
+              window.__houseCount = data.town.buildings;
+              window.__keptLayout = data.world.stats['fmg.keptLayout'];
+            }
+          }
         });
+      }
+      postMessage(message, ...rest) {
+        if (!new URLSearchParams(location.search).has('holdGeneration')) super.postMessage(message, ...rest);
       }
     };
   });
-  const page = await context.newPage(),
-    liveWorkers = new Set();
+  const page = await context.newPage();
+  const workers = new Set();
   page.on('worker', worker => {
-    liveWorkers.add(worker);
-    worker.on('close', () => liveWorkers.delete(worker));
+    workers.add(worker);
+    worker.on('close', () => workers.delete(worker));
   });
   page.on('pageerror', error => result.errors.push(error.message));
   page.on('response', response => {
     if (response.status() >= 400) result.missing.push(response.url());
   });
-  const flat = `${base}embed.html?preview=1&name=Brackenford&population=2500&seed=12340007&river=0&coast=0&walls=1&cultureBase=English`;
-  async function preview(name, source) {
-    const requested = [];
-    const record = request => requested.push(request.url());
-    page.on('request', record);
+  async function assertCenteredProgress(frame) {
+    const bar = frame.getByRole('progressbar');
+    await bar.waitFor();
+    const centered = await frame.locator('#status').evaluate(el => {
+      const rect = el.getBoundingClientRect();
+      return Math.abs(rect.left + rect.width / 2 - innerWidth / 2) < 1 && Math.abs(rect.top + rect.height / 2 - innerHeight / 2) < 1;
+    });
+    assert.ok(centered, 'Progress must be centered within this viewport.');
+  }
+  async function preview(name, source, blocksOnly = false) {
+    const firstAsset = servedAssets.length;
+    const requests = [];
+    const responses = [];
+    const remember = request => requests.push(request.url());
+    const size = response => responses.push(response.headerValue('content-length').then(value => ({ url: response.url(), bytes: Number(value ?? 0) })));
+    page.on('request', remember);
+    page.on('response', size);
     const started = performance.now();
-    await page.goto(`${host}?${new URLSearchParams({ src: source })}`, { waitUntil: 'domcontentloaded' });
-    const iframe = page.frameLocator('iframe');
-    await iframe.locator('html[data-state="ready"],html[data-state="error"]').waitFor({ timeout: 180000 });
-    const state = await iframe.locator('html').getAttribute('data-state');
-    assert.equal(state, 'ready', await iframe.locator('#status').textContent());
+    await page.goto(framed(source), { waitUntil: 'commit' });
+    const root = page.frameLocator('iframe').locator('html');
+    await root.and(page.frameLocator('iframe').locator('[data-state="ready"]')).waitFor({ timeout: blocksOnly ? 120000 : 30000 });
     const frame = page.frames().find(candidate => candidate.url().startsWith(base));
     assert.equal(await frame.evaluate(() => crossOriginIsolated), false);
     assert.equal(await frame.locator('#status').isVisible(), false);
+    assert.equal(await frame.locator('#demo-controls').isVisible(), false);
+    assert.equal(await root.getAttribute('data-detail'), blocksOnly ? 'blocks' : 'idle', 'The richer generation must be opt-in.');
+    const timing = await root.evaluate(el => ({ firstMs: Number(el.dataset.readyMs), runtime: el.dataset.runtime, cached: el.dataset.previewCache === 'hit', threads: Number(el.dataset.wasmThreads) || undefined }));
+    if (runtime === 'local') assert.equal(timing.runtime, 'native');
+    const { generated, image } = await frame.evaluate(() => ({ generated: window.__townResult, image: window.__townFirstImage }));
+    const town = timing.cached ? result.cases[0].town : generated;
+    if (runtime === 'web') assert.equal(timing.threads, 1, 'An ordinary FMG sandbox must run single-threaded.');
+    if (timing.cached) assert.equal(generated, undefined, 'A cached vector map draws without a generation worker.');
+    assert.ok(image, 'A completed first canvas paint must precede the context view.');
+    await writeFile(resolve(artifacts, name + '-first.png'), Buffer.from(image, 'base64'));
+    if (blocksOnly) {
+      assert.ok(town.layouts && town.streets);
+      assert.equal(town.buildings, 0);
+      assert.ok(await frame.evaluate(() => window.__townLayers.includes('block') && !window.__townLayers.includes('building') && !window.__townProgress.some(([stage]) => ['urban-parcels', 'urban-building-sites', 'urban-buildings'].includes(stage))));
+      assert.equal(await frame.locator('#detailed').isEnabled(), true);
+      assert.equal(await frame.locator('#houses').isEnabled(), true);
+    } else assert.ok(town?.layouts && town.buildings > 0, 'The map must come from the Rust settlement and contain actual building footprints.');
     const pixels = await frame.locator('#map canvas').evaluate(canvas => {
       const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
       const colors = new Set();
-      for (let i = 0; i < data.length; i += 16) colors.add(`${data[i]},${data[i + 1]},${data[i + 2]}`);
+      for (let i = 0; i < data.length; i += 16) colors.add((data[i] << 16) + (data[i + 1] << 8) + data[i + 2]);
       return colors.size;
     });
-    assert.ok(pixels > 20, 'The city must contain visible geometry.');
-    const png = await page.locator('iframe').screenshot({ path: resolve(artifacts, `${name}.png`) });
-    const readyMs = Number(await iframe.locator('html').getAttribute('data-ready-ms'));
-    const timing = await frame.evaluate(() => performance.getEntriesByType('resource').map(entry => ({ name: entry.name, bytes: entry.encodedBodySize })));
-    assert.ok(!requested.some(url => /\/(?:studio-|brushAssets-|fantasyBrushAssets-|neuralRuntime-|terrainGpu-)/.test(url)), 'The preview must not load the workbench or optional painters/models.');
-    assert.equal(liveWorkers.size, 0, 'The preview must release its generation worker.');
-    result.cases.push({
-      name,
-      readyMs,
-      navigationMs: Math.round(performance.now() - started),
-      pixels,
-      requests: requested.length,
-      resourceBytes: timing.reduce((sum, entry) => sum + entry.bytes, 0),
-      stats: await frame.evaluate(() => window.__embedStats),
-      progress: await frame.evaluate(() => window.__embedProgress),
-    });
-    page.off('request', record);
-    console.log(JSON.stringify({ name, readyMs, cached: await frame.locator('html').getAttribute('data-cached'), stats: result.cases.at(-1).stats }));
-    return { frame, hash: createHash('sha256').update(png).digest('hex') };
+    assert.ok(pixels > 20, 'The map must contain visible geometry.');
+    if (workers.size) await Promise.all([...workers].map(worker => once(worker, 'close', { signal: AbortSignal.timeout(30000) })));
+    assert.equal(workers.size, 0, 'The preview releases its worker after storing the blocks.');
+    assert.ok(!requests.some(url => /\/(?:studio-|brushAssets-|neuralRuntime-|terrainGpu-)/.test(url)), 'The preview must not load the studio, brush libraries or neural runtime.');
+    page.off('request', remember);
+    page.off('response', size);
+    const assets = await Promise.all(responses);
+    const bytes = assets.reduce((sum, asset) => sum + asset.bytes, 0);
+    const largest = assets.sort((a, b) => b.bytes - a.bytes).slice(0, 6);
+    const served = servedAssets.slice(firstAsset);
+    const staticBytes = served.reduce((sum, asset) => sum + asset.bytes, 0);
+    const wasmDownloads = served.filter(asset => asset.url.endsWith('.wasm')).length;
+    const progress = await frame.evaluate(() => window.__townProgress);
+    const report = { name, ...timing, checkedMs: Math.round(performance.now() - started), bytes, staticBytes, wasmDownloads, pixels, requests: requests.length, town, progress, largest };
+    console.log(JSON.stringify({ ...report, progress: undefined, largest: undefined }));
+    result.cases.push(report);
+    await capture(page, name);
+    return { frame, image };
   }
-  async function navigation(frame) {
-    const box = await frame.locator('#map').boundingBox();
-    await page.mouse.move(box.x + box.width * 0.65, box.y + box.height * 0.55);
-    await page.mouse.wheel(0, -350);
-    await frame.waitForFunction(() => Number(document.querySelector('#map').dataset.zoom) > 1);
-    const before = await frame.locator('#map').getAttribute('data-pan-x');
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.65 + 45, box.y + box.height * 0.55 + 30, { steps: 5 });
-    await page.mouse.up();
-    assert.notEqual(await frame.locator('#map').getAttribute('data-pan-x'), before, 'Dragging must pan the city.');
-    await frame.locator('#fit-view').click();
-    assert.equal(await frame.locator('#map').getAttribute('data-zoom'), '1');
-    assert.equal(await frame.locator('#map').getAttribute('data-pan-x'), '0');
-    await page.mouse.move(680, 480);
+
+  const cold = await preview('town-cold', flatUrl);
+  const repeat = await preview('town-repeat', flatUrl);
+  if (runtime === 'web') assert.equal(result.cases[1].cached, true);
+  // At the same camera the cached geometry must give the same drawing. Canvas can
+  // choose different antialiasing backends as the worker and page settle.
+  const drawingDelta = await repeat.frame.evaluate(
+    async ([left, right]) => {
+      const read = async encoded => {
+        const image = new Image();
+        image.src = 'data:image/png;base64,' + encoded;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(image, 0, 0);
+        return ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      };
+      const [a, b] = await Promise.all([read(left), read(right)]);
+      if (a.length !== b.length) return Infinity;
+      return a.reduce((sum, row, index) => sum + Math.abs(row - b[index]), 0) / a.length;
+    },
+    [cold.image, repeat.image],
+  );
+  assert.ok(drawingDelta < 0.25, 'The reopened burg must keep the same proportions and visual detail.');
+  const compactMap = await repeat.frame.locator('#map canvas').evaluate(canvas => canvas.toDataURL());
+  const compactPixels = await page.screenshot({ clip: { x: 30, y: 70, width: 380, height: 180 } });
+  const detailStart = performance.now();
+  const detailStarted = page.waitForEvent('worker');
+  await repeat.frame.locator('#detailed').click();
+  const detailWorker = await detailStarted;
+  await repeat.frame.locator('html[data-detail="loading"]').waitFor();
+  assert.equal(await repeat.frame.locator('#map canvas').evaluate(canvas => canvas.toDataURL()), compactMap, 'Keep the compact map while Detailed runs.');
+  assert.equal(await repeat.frame.locator('#detailed').isDisabled(), true);
+  await assertCenteredProgress(repeat.frame);
+  await repeat.frame.locator('html[data-detail="ready"]').waitFor({ timeout: 120000 });
+  assert.equal(workers.has(detailWorker), false, 'Release the detailed generation worker.');
+  const detailTown = await repeat.frame.evaluate(() => window.__townDetailed);
+  assert.ok(detailTown?.buildings > 0, 'Detailed must return real Rust building footprints.');
+  assert.deepEqual(detailTown, result.cases[1].town, 'The two V2 passes must retain the same streets and buildings.');
+  assert.equal(await repeat.frame.locator('#detailed').getAttribute('aria-pressed'), 'true');
+  result.detailedMs = Math.round(performance.now() - detailStart);
+  result.detailPasses = await repeat.frame.evaluate(() =>
+    Object.fromEntries(
+      performance
+        .getEntriesByType('measure')
+        .filter(m => m.name.startsWith('v2pass:'))
+        .map(m => [m.name, Math.round(m.duration)]),
+    ),
+  );
+  // Compare the composited map between the toolbars. A control, an extra outline or a cleared canvas
+  // cannot satisfy the requirement for a visibly different cartographic style.
+  const mapPixels = () => page.screenshot({ clip: { x: 30, y: 70, width: 380, height: 180 } });
+  async function compareMapPixels(first, second) {
+    return repeat.frame.evaluate(
+      async encoded => {
+        const pixels = await Promise.all(
+          encoded.map(async data => {
+            const image = new Image();
+            image.src = 'data:image/png;base64,' + data;
+            await image.decode();
+            const canvas = Object.assign(document.createElement('canvas'), { width: image.width, height: image.height });
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+            return ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          }),
+        );
+        const [a, b] = pixels;
+        let changed = 0,
+          roofPixels = 0;
+        for (let i = 0; i < a.length; i += 4) {
+          if (Math.max(...[0, 1, 2].map(c => Math.abs(a[i + c] - b[i + c]))) >= 16) changed++;
+          // In this English burg the fast satellite roofs are terracotta, distinct from the ochre lots.
+          if (b[i] > b[i + 1] + 25 && b[i + 1] > 1.35 * b[i + 2] && b[i + 1] < 125) roofPixels++;
+        }
+        return { changed: changed / (a.length / 4), roofs: roofPixels / (a.length / 4) };
+      },
+      [first, second].map(buffer => buffer.toString('base64')),
+    );
   }
-  const cold = await preview('town-cold', flat);
-  await navigation(cold.frame);
-  const warm = await preview('town-cached', flat);
-  assert.equal(warm.hash, cold.hash, 'The same city input must reproduce the same preview.');
-  await navigation(warm.frame);
+  const fastSatellite = await mapPixels();
+  const fastPixels = await compareMapPixels(compactPixels, fastSatellite);
+  assert.ok(fastPixels.roofs > 0.02, 'The ready Fast Satellite frame must include visible town roofs.');
+  result.fastSatelliteChangedFraction = fastPixels.changed;
+  assert.ok(result.fastSatelliteChangedFraction > 0.2, 'Fast Satellite must visibly repaint the town.');
+  await capture(page, 'town-satellite-fast');
+  const switchStart = performance.now();
+  await repeat.frame.evaluate(() => performance.clearMeasures());
+  await repeat.frame.locator('#painted').click();
+  await assertCenteredProgress(repeat.frame);
+  await repeat.frame.locator('html[data-detail-style="satellite-2"][data-detail="ready"]').waitFor({ timeout: 120000 });
+  result.switchMs = Math.round(performance.now() - switchStart);
+  result.backgroundPasses = await repeat.frame.evaluate(() => performance.getEntriesByType('measure').map(e => e.name).filter(name => name.startsWith('v2pass:')));
+  assert.ok(!result.backgroundPasses.includes('v2pass:city'), 'Switching satellite quality must not rebuild the town layer.');
+  const paintedPixels = await mapPixels();
+  result.satelliteChangedFraction = (await compareMapPixels(fastSatellite, paintedPixels)).changed;
+  assert.ok(result.satelliteChangedFraction > 0.2, 'Painted satellite must visibly repaint the town.');
+  assert.equal(await repeat.frame.evaluate(() => window.__detailedGenerations), 1);
+  await capture(page, 'town-painted-satellite');
+  const housesStart = performance.now();
+  await repeat.frame.evaluate(() => { window.__townProgress = []; window.__rendererBeforeHouses = document.querySelector('.viewer-direct'); performance.clearMeasures(); });
+  await repeat.frame.locator('#houses').click();
+  await repeat.frame.locator('html[data-tier="houses"][data-detail="ready"]').waitFor({ timeout: 150000 });
+  assert.match(await repeat.frame.evaluate(() => window.__houseScene), /architectural|houses/);
+  assert.ok(await repeat.frame.evaluate(() => window.__rendererBeforeHouses === document.querySelector('.viewer-direct')));
+  assert.equal(await repeat.frame.evaluate(() => window.__keptLayout), 1, 'The engine reused the existing layout object.');
+  assert.ok(await repeat.frame.evaluate(() => !window.__townProgress.some(([stage]) => ['terrain-cache', 'sites', 'urban-layout'].includes(stage))));
+  result.housePasses = await repeat.frame.evaluate(() => performance.getEntriesByType('measure').map(e => e.name).filter(name => name.startsWith('v2pass:')));
+  assert.ok(!result.housePasses.includes('v2pass:terrainData'), 'Keep the uploaded ground when adding roofs.');
+  result.housesMs = Math.round(performance.now() - housesStart);
+  result.housesChangedFraction = (await compareMapPixels(paintedPixels, await mapPixels())).changed;
+  assert.ok(result.housesChangedFraction > 0.01, 'Architectural roofs should visibly change the painted view.');
+  await capture(page, 'town-houses');
+  if (runtime === 'web') {
+    await repeat.frame.locator('html[data-saved="yes"]').waitFor({ timeout: 15000 });
+    await repeat.frame.locator('#zoom-in').click();
+    await repeat.frame.locator('html[data-saved="yes"]').waitFor({ timeout: 30000 });
+    const before = await mapPixels();
+    await page.reload();
+    await page.frameLocator('iframe').locator('html[data-preview-cache="render"]').waitFor({ timeout: 15000 });
+    const reopened = page.frames().find(frame => frame.url().startsWith(base));
+    await reopened.locator('html[data-preview-cache="render"][data-tier="houses"]').waitFor({ timeout: 15000 });
+    assert.equal(await reopened.evaluate(() => window.__townResult || window.__houseScene), undefined);
+    assert.equal(await reopened.evaluate(() => window.__cityGenerations ?? 0), 0);
+    assert.equal(await reopened.locator('#map').getAttribute('data-zoom'), '1.5');
+    // The reopened bitmap must actually contain the same rendered roofs and ground.
+    repeat.frame = reopened;
+    assert.ok((await compareMapPixels(before, await mapPixels())).changed < 0.02);
+    result.houseReopenMs = Number(await reopened.locator('html').getAttribute('data-ready-ms'));
+    await reopened.locator('#zoom-in').click();
+    await reopened.locator('html[data-detail-ms][data-detail="ready"][data-saved="yes"]').waitFor({ timeout: 120000 });
+    assert.equal(await reopened.evaluate(() => window.__houseScene), undefined, 'Navigation must restore the cached world.');
+    await reopened.locator('#fit-view').click();
+  }
+
+  await repeat.frame.locator('#zoom-in').click();
+  assert.equal(await repeat.frame.locator('#map').getAttribute('data-zoom'), '1.5');
+  const pos = await repeat.frame.locator('#map').boundingBox();
+  await page.mouse.move(pos.x + 100, pos.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(pos.x + 135, pos.y + 110);
+  await page.mouse.up();
+  assert.notEqual(await repeat.frame.locator('#map').getAttribute('data-pan-x'), '0');
+  await repeat.frame.locator('#fit-view').click();
+  assert.equal(await repeat.frame.locator('#map').getAttribute('data-zoom'), '1');
+  assert.equal(await repeat.frame.locator('#map').getAttribute('data-pan-x'), '0');
   await page.locator('iframe').evaluate(element => {
     element.style.width = '620px';
     element.style.height = '420px';
   });
-  await warm.frame.waitForFunction(() => document.querySelector('#map canvas')?.getBoundingClientRect().width === 620);
-  await page.locator('iframe').screenshot({ path: resolve(artifacts, 'town-resized.png') });
+  async function backingAspect(width, height) {
+    await repeat.frame.waitForFunction(
+      ([w, h]) => {
+        return [...document.querySelectorAll('#map canvas')].some(canvas => {
+          const rect = canvas.getBoundingClientRect();
+          return rect.width === w && rect.height === h && Math.abs(canvas.width / canvas.height - w / h) < 0.005;
+        });
+      },
+      [width, height],
+    );
+  }
+  await backingAspect(620, 420);
+  await capture(page, 'town-resized');
+  await page.locator('iframe').evaluate(element => {
+    element.style.width = '190px';
+    element.style.height = '440px';
+  });
+  await backingAspect(190, 440);
+  await capture(page, 'town-tall');
+
   const data = {
     format: 'fmg-burg-v1',
     i: 12,
     name: 'Port Skarholm',
-    population: 5000,
+    population: 20001,
     mfcgSeed: '12340012',
     capital: true,
     port: true,
     citadel: true,
     walls: true,
-    river: false,
+    plaza: true,
+    river: true,
     coast: { sea: 0.5, water: 'ocean' },
     elevation: 40,
     temperature: 8,
     precipitation: 900,
     culture: { base: 'Nordic', type: 'Naval' },
-    biome: { id: 6, name: 'Temperate deciduous forest' },
   };
-  const rich = new URL(`${base}embed.html?preview=1`);
+  const rich = new URL(base + 'embed.html?preview=1&lang=fr&profile=' + runtime);
   rich.hash = new URLSearchParams({ burg: JSON.stringify(data) }).toString();
-  await preview('port-rich', rich.href);
-  // The direct preview is an exploration surface; the ordinary FMG iframe keeps the controls hidden.
-  assert.equal(await page.frameLocator('iframe').locator('#demo-controls').isVisible(), false);
-  await page.goto(flat + '&demo=1', { waitUntil: 'domcontentloaded' });
-  await page.locator('html[data-state="ready"]').waitFor({ timeout: 180000 });
-  assert.equal(await page.locator('#randomize').isVisible(), true);
-  await page.evaluate(() => {
-    Math.random = () => 0.3;
-  });
-  await page.locator('#randomize').click();
-  await page.waitForURL(url => url.searchParams.get('cultureBase') === 'Chinese');
-  await page.locator('html[data-state="ready"],html[data-state="error"]').waitFor({ timeout: 180000 });
-  assert.equal(await page.locator('html').getAttribute('data-state'), 'ready', await page.locator('#status').textContent());
-  assert.match(await page.locator('#demo-params').textContent(), /Chinese.*people/);
-  await page.screenshot({ path: resolve(artifacts, 'randomized.png') });
-  result.randomized = page.url();
-  await page.goto(`${host}?${new URLSearchParams({ src: `${base}embed.html?preview=1#burg=bad` })}`);
-  await page.frameLocator('iframe').locator('html[data-state="error"]').waitFor();
-  assert.equal(liveWorkers.size, 0);
-  assert.deepEqual(result.errors, []);
-  assert.deepEqual(result.missing, []);
-  // The build still bundles the intended four latest changelog sections.
-  const studio = await context.newPage();
-  await studio.setViewportSize({ width: 1440, height: 960 });
-  await studio.goto(`${base}v2.html?test=1&threads=off`, { waitUntil: 'domcontentloaded' });
-  await studio.locator('#changelog-open').waitFor();
+  const port = await preview('port-rich', rich.href, true);
+  assert.equal(await port.frame.locator('#open').innerText(), 'magna-urbis');
+  assert.ok(await port.frame.locator('#houses').evaluate(el => el.classList.contains('blocks-only')));
+  await port.frame.evaluate(() => { window.__townProgress = []; });
+  await port.frame.getByRole('button', { name: 'Générer les maisons détaillées' }).click();
+  await port.frame.locator('html[data-tier="houses"][data-detail="ready"]').waitFor({ timeout: 240000 });
+  assert.match(await port.frame.evaluate(() => window.__houseScene), /architectural|houses/);
+  result.largeHouseCount = await port.frame.evaluate(() => window.__houseCount);
+  assert.ok(result.largeHouseCount > 0);
+  assert.equal(await port.frame.locator('#houses').isVisible(), false);
+  assert.equal(await port.frame.evaluate(() => window.__keptLayout), 1);
+  assert.equal(await port.frame.locator('#plan').getAttribute('aria-pressed'), 'true');
+  assert.ok(await port.frame.evaluate(() => !window.__townProgress.some(([stage]) => ['terrain-cache', 'sites', 'urban-layout'].includes(stage))), 'Unlock on the retained city blocks.');
+  await capture(page, 'large-town-houses');
+  const countBeforeBackground = await port.frame.evaluate(() => window.__cityGenerations);
+  await port.frame.locator('#detailed').click();
+  await port.frame.locator('html[data-tier="houses"][data-detail-style="satellite-light"][data-detail="ready"]').waitFor({ timeout: 120000 });
+  assert.equal(await port.frame.evaluate(() => window.__cityGenerations), countBeforeBackground);
+
+  // Verify the iframe can open the actual studio, preserving its source data and locale.
+  const opened = page.waitForEvent('popup');
+  await port.frame.locator('#open').click();
+  const studio = await opened;
+  await studio.waitForURL(url => url.pathname.endsWith('/v2.html'));
+  const target = new URL(studio.url());
+  assert.equal(target.searchParams.get('lang'), 'fr');
+  assert.equal(new URLSearchParams(target.hash.slice(1)).get('city'), JSON.stringify(data));
+  await studio.locator('#changelog-open').waitFor({ state: 'attached' });
   const headings = await studio.locator('.changelog-versions h3').allTextContents();
   const notes = await readFile(resolve(web, '../docs/DESKTOP_RELEASE_NOTES.md'), 'utf8');
   assert.deepEqual(
     headings,
     [...notes.matchAll(/^## (.+)$/gm)].slice(0, 4).map(match => match[1].trim()),
   );
-  assert.match(await studio.locator('.changelog-versions').textContent(), /compact city preview/);
+  assert.match(await studio.locator('.changelog-versions').textContent(), /generated town/);
   result.changelog = headings;
-  console.log(JSON.stringify({ changelog: headings }));
-  // Review the shared Minimal changes on the V2 reference page too.
-  await studio.waitForFunction(() => window.__v2Test?.ready);
-  await studio.locator('#map-style').selectOption('minimal');
-  await studio.evaluate(async () => {
-    await window.__v2Test.runRegion({
-      options: { seed: 'embed-outline-review', population: 500, culture: 'european-organic', coast: 'none', river: 'none' },
-      extent: 2000,
-      places: 'main',
-      runtime: { backend: 'rust', autoBackend: false, compute: 'cpu', source: 'procedural' },
-      terrain: { resolution: 128, erosion: 0, generationCompute: 'cpu', forest: { enabled: false } },
-      region: { resolution: 128, autoBuildPopulation: 0, placement: { mode: 'list', farmDensity: 0, remotePlaces: 0, list: [{ key: 'main', name: 'Outline review', population: 500, culture: 'european-organic', siteType: 'auto', sitePrefs: {} }] } },
-    });
-    await window.__v2Test.view('2d-core');
-    await window.__v2Test.prepareCapture();
+  await studio.close();
+
+  // A discarded frame releases its worker, including when the result is pending.
+  const startedWorker = page.waitForEvent('worker');
+  const cancelled = new URL(flatUrl);
+  cancelled.searchParams.set('population', '2501');
+  cancelled.searchParams.set('holdGeneration', '1');
+  await page.goto(framed(cancelled.href));
+  const worker = await startedWorker;
+  assert.equal(workers.size, 1);
+  await assertCenteredProgress(page.frameLocator('iframe'));
+  await Promise.all([new Promise(done => worker.once('close', done)), page.locator('iframe').evaluate(iframe => iframe.remove())]);
+  assert.equal(workers.size, 0);
+
+  await preview('river-town', base + 'embed.html?profile=' + runtime + '&preview=1&name=Longxi&seed=1288490188&population=3050&river=1&coast=0&walls=1&cultureBase=Chinese&temple=1');
+  await preview('nomad-camp', base + 'embed.html?profile=' + runtime + '&preview=1&name=Karak%20Ordu&seed=3521165402&population=1250&river=0&coast=0&walls=0&cultureBase=Mongolian&cultureType=Nomadic&temple=1');
+  await page.goto(framed(base + 'embed.html?preview=1#burg=bad'));
+  await page.frameLocator('iframe').locator('html[data-state="error"]').waitFor();
+  assert.equal(workers.size, 0);
+  const heldDemo = new URL(cancelled);
+  heldDemo.searchParams.set('demo', '1');
+  heldDemo.searchParams.set('lang', 'fr');
+  await page.goto(heldDemo.href);
+  const demoFrame = page.frameLocator('#test-frame');
+  await assertCenteredProgress(demoFrame);
+  assert.equal(await demoFrame.locator('#progress-label').textContent(), 'Génération de la ville…');
+  await page.goto(flatUrl + '&demo=1&lang=fr');
+  await demoFrame.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
+  assert.equal(await page.locator('#randomize').isVisible(), true);
+  assert.equal(await demoFrame.locator('#detailed').isEnabled(), true);
+  assert.equal(await demoFrame.locator('#detailed').innerText(), '★');
+  assert.equal(await demoFrame.locator('#painted').innerText(), '★★');
+  assert.equal(await demoFrame.locator('#save-view').count(), 0);
+  assert.equal(await page.locator('#preview-population').inputValue(), '2500');
+  assert.notEqual(await demoFrame.locator('html').evaluate(() => location.origin), new URL(page.url()).origin);
+  assert.equal(await demoFrame.locator('html').evaluate(() => crossOriginIsolated), false);
+  const size = () => page.locator('#test-frame').evaluate(f => [f.clientWidth, f.clientHeight]);
+  assert.deepEqual(await size(), [360, 300]);
+  assert.ok(await demoFrame.locator('#open').evaluate(el => innerHeight - el.getBoundingClientRect().bottom <= 6));
+  const maximize = demoFrame.locator('#expand-preview');
+  await demoFrame.locator('#zoom-in').click();
+  const instance = await demoFrame.locator('html').evaluate(() => performance.timeOrigin);
+  await maximize.click();
+  await page.locator('#test-frame:popover-open').waitFor();
+  assert.ok((await size())[0] > 360);
+  await page.mouse.click(2, 2);
+  await page.locator('#test-frame:popover-open').waitFor({ state: 'detached' });
+  assert.deepEqual(await size(), [360, 300]);
+  assert.equal(await demoFrame.locator('html').evaluate(() => performance.timeOrigin), instance);
+  assert.equal(await demoFrame.locator('#map').getAttribute('data-zoom'), '1.5');
+  await maximize.click();
+  await page.locator('#test-frame:popover-open').waitFor();
+  await maximize.press('Escape');
+  await page.locator('#test-frame:popover-open').waitFor({ state: 'detached' });
+  await page.locator('#preview-population').fill('1250');
+  await page.getByRole('button', { name: 'Appliquer' }).click();
+  await page.waitForURL(url => url.searchParams.get('population') === '1250');
+  await demoFrame.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
+  assert.equal(await page.locator('#preview-population').inputValue(), '1250');
+  assert.equal(new URL(page.url()).searchParams.get('seed'), '12340007');
+  await page.evaluate(() => {
+    Math.random = () => 0.3;
   });
-  await studio.locator('#map').screenshot({ path: resolve(artifacts, 'v2-minimal.png') });
+  await page.locator('#randomize').click();
+  await page.waitForURL(url => url.searchParams.get('cultureBase') === 'Chinese');
+  await demoFrame.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
+  assert.match(await page.locator('#demo-params').textContent(), /Chinese.*hab\./);
+
+  const demoBurg = { format: 'fmg-burg-v1', i: 19, name: 'Demo Burg', population: 700, mfcgSeed: '12340019', river: false, coast: null };
+  const richDemo = new URL(base + 'embed.html?preview=1&demo=1&lang=fr&profile=' + runtime);
+  richDemo.hash = new URLSearchParams({ burg: JSON.stringify(demoBurg) }).toString();
+  await page.goto(richDemo.href);
+  await demoFrame.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
+  assert.equal(await page.locator('#preview-population').inputValue(), '700');
+  await page.evaluate(() => {
+    window.__beforePopulationEdit = true;
+  });
+  await page.locator('#preview-population').fill('850');
+  await page.locator('#preview-population').press('Enter');
+  await page.waitForFunction(() => !window.__beforePopulationEdit);
+  await demoFrame.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
+  const chosen = JSON.parse(new URLSearchParams(new URL(page.url()).hash.slice(1)).get('burg'));
+  assert.deepEqual(chosen, { ...demoBurg, population: 850 });
+  assert.equal(await page.locator('#preview-population').inputValue(), '850');
+  await page.goto(framed(flatUrl) + '&hostLocale=1');
+  const german = page.frameLocator('iframe');
+  await german.locator('html[lang="de"][data-state="ready"]').waitFor({ timeout: 40000 });
+  assert.equal(await german.locator('#houses').getAttribute('title'), 'Detaillierte Häuser');
+  assert.equal(await german.locator('#open').innerText(), 'magna-urbis');
+  assert.equal(new URL(await german.locator('#open').getAttribute('href')).searchParams.get('lang'), 'de');
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.missing, []);
 } finally {
   await writeFile(resolve(artifacts, 'report.json'), JSON.stringify(result, null, 2));
   await browser?.close();

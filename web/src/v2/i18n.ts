@@ -1,6 +1,6 @@
 import { interfaceEnglish, interfaceFrench } from './interfaceMessages';
 import { translateRuntimeMessage } from './runtimeMessages';
-import { LANGUAGES, isLanguage, type Language } from './languages';
+import { LANGUAGES, LANGUAGE_STORAGE_KEY, isLanguage, preferredLanguage, type Language } from './languages';
 import { localeMessages } from './localeMessages';
 import { onUnitsChange } from './units';
 import { editingMessages } from './editingMessages';
@@ -9,20 +9,9 @@ import { isolatedPlaceMessages } from './isolatedPlaceMessages';
 import { activityKindNames, activityResourceNames, urbanActivityNames, urbanCultureNames } from './urbanLabelNames';
 
 export type { Language } from './languages';
-export { LANGUAGES } from './languages';
-export const LANGUAGE_STORAGE_KEY = 'magna-urbis-v2-language';
+export { LANGUAGES, LANGUAGE_STORAGE_KEY, resolveLanguage } from './languages';
 const supported = isLanguage;
-export function resolveLanguage(search: string, stored?: string | null): Language {
-  const explicit = new URLSearchParams(search).get('lang');
-  return supported(explicit) ? explicit : supported(stored) ? stored : 'en';
-}
-let retained: string | null = null;
-try {
-  retained = globalThis.localStorage?.getItem(LANGUAGE_STORAGE_KEY) ?? null;
-} catch {
-  /* Storage is optional. */
-}
-let language: Language = resolveLanguage(typeof location === 'undefined' ? '' : location.search, retained);
+let language: Language = preferredLanguage(typeof location === 'undefined' ? '' : location.search);
 const listeners = new Set<() => void>();
 const dynamicBindings = new Map<Element, () => string>();
 const registeredMessages: Record<string, { en: string; fr: string }> = Object.create(null);

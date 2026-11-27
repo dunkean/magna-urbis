@@ -17,6 +17,14 @@
 - Town edits require a valid terrain after a replacement fails to load.
 - Canals in classic Venetian lagoon towns reach open water and leave houses and private passages dry.
 - Fantasy maps keep brush marks in the same positions where detailed views overlap.
+
+- The Azgaar FMG iframe fits the generated town and its nearby countryside. The plan starts with blocks at 20,000 inhabitants. A separate house icon adds architectural buildings to the existing blocks at any population.
+- One star opens fast satellite and two stars open painted satellite. Both keep unlocked houses and the camera. The lower-right magna-urbis link opens the full editor.
+- The preview follows the Azgaar interface language. Its expand icon floats the map over a participating host page. Click outside or press Escape to dock it at the same zoom.
+- The test page lets you choose the population. The iframe shows progress in the center and automatically remembers the detailed view and its last framing.
+- The FMG iframe zooms in farther to show individual buildings.
+- The Minimal map can show parcel boundaries when that layer is enabled.
+
 - Town streets render again on WebGL2 devices that enforce reserved shader names.
 - The live map keeps its cartographic overlay when town buildings first appear.
 - Selecting a map feature keeps its outline aligned as you move or tilt the camera and lets the page rest when the view is still.

@@ -150,6 +150,9 @@ export class BenchRenderer {
   draw(view: View, w: number, h: number, dpr: number, canvas = this.surface): HTMLCanvasElement {
     return this.exact.paint(canvas, view, w, h, dpr, { stepwise: false, groundBeneath: false });
   }
+  snapshot(): HTMLCanvasElement | undefined {
+    return this.view.snapshot();
+  }
   /** The export frame, defaulting to the whole map at the given size. */
   async capture(size: number, layers?: Partial<ExportLayers>, frame?: ExportFrame): Promise<HTMLCanvasElement> {
     const capture = new RenderReadiness('capture');

@@ -77,7 +77,8 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest | V2ResourceR
           /* The progress line then shows the provisional names of the placement. */
         }
       if (action === 'towns' && request.roadEdit) world = await stage(effective => updateRoadTowns(world!, effective, request.keys ?? [], request.roadEdit!, progress));
-      else if (action === 'towns' || action === 'all') world = await stage(effective => generateTowns(world!, effective, progress, action === 'towns' ? request.keys : undefined, action === 'towns' ? request.townStage : undefined, !!request.keepUrbanLanes));
+      else if (action === 'towns' || action === 'all')
+        world = await stage(effective => generateTowns(world!, effective, progress, action === 'towns' ? request.keys : undefined, action === 'towns' ? request.townStage : undefined, !!request.keepUrbanLanes));
       if (action === 'town') {
         if (!request.key) throw new Error('Choose a settlement.');
         world = await stage(effective =>
