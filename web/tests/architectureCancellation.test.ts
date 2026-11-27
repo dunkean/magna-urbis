@@ -7,12 +7,13 @@ afterEach(() => vi.unstubAllGlobals());
 it('does not dispatch cancelled work and drains in-flight native work before freeing a scheduler slot', async () => {
   let finish!: (response: Response) => void;
   let posted!: () => void;
+  let transportSignal: AbortSignal | null | undefined;
   const dispatched = new Promise<void>(resolve => {
     posted = resolve;
   });
   const fetch = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.endsWith('/status')) return new Response(JSON.stringify({ service: 'magna-urbis-local', capabilities: ['houses.placement', 'houses.style-index'] }));
-    expect(init?.signal).toBeUndefined();
+    transportSignal = init?.signal;
     posted();
     return new Promise<Response>(resolve => {
       finish = resolve;
@@ -36,9 +37,16 @@ it('does not dispatch cancelled work and drains in-flight native work before fre
       settled = true;
     },
   );
+  await Promise.race([
+    dispatched,
+    pending.then(() => {
+      throw new Error('Architecture call finished before dispatch');
+    }),
+  ]);
   const rejection = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
-  await dispatched;
   controller.abort();
+  expect(transportSignal).toBeInstanceOf(AbortSignal);
+  expect(transportSignal!.aborted).toBe(false);
   await Promise.resolve();
   expect(settled).toBe(false);
   finish(new Response(JSON.stringify({ ok: true, data: {} })));

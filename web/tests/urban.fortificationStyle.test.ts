@@ -23,7 +23,7 @@ describe('fortification style configuration', () => {
   });
 
   it('exposes exactly the native styles, with auto as the only additional choice', () => {
-    const source = readFileSync(new URL('../../rust/crates/core/src/urban/fortification.rs', import.meta.url), 'utf8');
+    const source = readFileSync(new URL('../../rust/crates/core/src/urban/fortification/style.rs', import.meta.url), 'utf8');
     const styles = source.match(/const STYLES:[^=]+=[\s\S]*?\[([\s\S]*?)\];/)?.[1];
     expect(styles).toBeDefined();
     const native = [...styles!.matchAll(/"([a-z-]+)"/g)].map(match => match[1]);
