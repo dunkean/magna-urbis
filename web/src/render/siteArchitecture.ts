@@ -18,6 +18,7 @@ export type SiteBuilding = PlacedBuilding & { sitePart?: SitePart; programme?: {
 function ruralUse(part: SitePart): SiteUse | undefined {
   const form = part.form.replaceAll('_', '-'),
     use = part.use.replaceAll('_', '-');
+  if (form === 'silo') return; // The bin has a discharge gate in place of a human-scale loading bay.
   if (/(?:^|-)(?:ruin|rubble)(?:$|-)/.test(form)) return;
   if (part.installation || hasRuralInstallation(form) || /(?:^|-)(?:wall|mound|kerb|cairn|grove|hayrick|wellhead|well|standing-stone|menhir|dolmen|altar|court|terrace|step|plinth)(?:$|-)/.test(form)) return;
   if (/column|obelisk|stele|wayside-cross|calvary-cross/.test(form)) return 'marker';

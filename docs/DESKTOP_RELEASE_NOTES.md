@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Round steel grain silos have a discharge chute in detailed 3D farm views.
 - The surface viewer uses the web map’s colours for Atlas shorelines and Minimal water.
 - Choose a map style for visual exports and include optional 3D trees in mesh exports.
 - VTT and 3D exports can include the names, types and geometry of map features, including buildings, roads and rivers.

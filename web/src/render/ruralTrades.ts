@@ -3,7 +3,7 @@
 const groups = {
   lodging:
     'field_shelter farm_steward farm_worker_hut summer_pasture_hut shepherd_hut logger_hut forest_camp_lodge ranger_lodge hunting_lodge miners_barracks mine_overseer_house waterworks_keeper harbour_master_house ferry_keeper_house bridge_keeper_house village_assembly_hall road_hospice healer_house schoolhouse court_house cemetery_keeper_house public_guesthouse council_house roadside_inn caravanserai waystation trade_office porter_shelter monastic_dormitory monastic_refectory monastic_infirmary monastic_scriptorium monastery_guesthouse hermitage house longhouse roundhouse ger hut pit_house farmhouse isolated_farm inn isolated_inn',
-  grain: 'barn_harvest barn_hay barn_tithe granary_ground granary_raised granary_fortified seed_store farm_warehouse date_store rice_store root_crop_store fodder_barn animal_feed_shed monastery_barn granary raised_granary barn hayrick',
+  grain: 'barn_harvest barn_hay barn_tithe granary_ground granary_raised granary_fortified seed_store farm_warehouse date_store rice_store root_crop_store fodder_barn animal_feed_shed monastery_barn granary raised_granary barn hayrick silo',
   bench: 'farm_workhouse tool_shed cart_shed orchard_shed vegetable_garden_shed veterinary_shelter mining_toolhouse town_maintenance_shed weigh_house shed lean_to covered_yard stilt_river_workshop',
   drying: 'hop_drying_house fruit_drying_house malt_house oast_house brick_drying_shed ice_house',
   mill: 'water_gristmill wind_gristmill animal_gristmill boat_gristmill tidal_gristmill hand_grinding_house rice_pounding_shed threshing_barn mill isolated_mill',

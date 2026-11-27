@@ -4,7 +4,7 @@ import { hash } from './city3d/massing';
 import { orientedBox, ringArea } from './city3d/roofGeometry';
 import { buildHouseFront } from './houseFrontKit';
 import { ruralWorkFrame } from './houseFronts';
-import { drawRuralEquipment } from './ruralEquipment';
+import { drawRuralEquipment, drawSiloChute } from './ruralEquipment';
 import { partTrade, ruralTrade } from './ruralTrades';
 import { drawRuralInstallation, hasRuralInstallation, replaceRuralInstallation } from './ruralInstallations';
 import type { OverviewVolume } from './urbanBuildingGeometry';
@@ -99,6 +99,7 @@ function makeDetail(b: SiteBuilding, part: NonNullable<SiteBuilding['sitePart']>
     const tall = trade === 'hoist' || trade === 'crane' || trade === 'adit';
     const height = Math.min(tall ? 4.4 : 2.2, Math.max(0.85, frame.width * (tall ? 1.05 : 0.65)));
     const mesh = buildHouseFront(frame, { ...kit, width: frame.width, depth: frame.depth, height }, g => {
+      if (form === 'silo') return drawSiloChute(g);
       // A stone footing with a projecting course, a raised timber sill with cross
       // ties, or a solid apron. The local equipment stands on the top.
       const familyStone = /classical|ancient|andean|mesoamerican|islamic|indian/.test(family ?? '');

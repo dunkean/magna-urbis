@@ -10,6 +10,34 @@ const cloth = 'city3d:detail:canvas@ccc0a2';
 const reed = 'city3d:detail:wicker@b49860';
 const rope = 'city3d:detail:rope@92734d';
 
+/** A slide gate feeds a short, open steel chute on one facet of the grain bin. */
+export function drawSiloChute(g: HouseFront) {
+  const half = Math.min(0.25, g.width * 0.35);
+  const lip = half * 0.7;
+  const reach = Math.min(0.65, g.depth);
+  const steel = 'city3d:detail:steel@68665c';
+  // The work frame starts 8 cm outside the wall. Seat the gate plate against it.
+  g.box(-half - 0.03, half + 0.03, -0.1, 0, 0.78, 1.1, iron);
+  g.face(
+    [
+      [-half, 0, 0.8],
+      [half, 0, 0.8],
+      [lip, reach, 0.55],
+      [-lip, reach, 0.55],
+    ],
+    steel,
+  );
+  for (const side of [-1, 1]) {
+    const cheek: V[] = [
+      [side * half, 0, 0.8],
+      [side * lip, reach, 0.55],
+      [side * lip, reach, 0.64],
+      [side * half, 0, 0.98],
+    ];
+    g.face(side < 0 ? cheek.reverse() : cheek, steel);
+  }
+}
+
 /** Fit the work to the allotted bay. All positions below are fractions of its measured
  * width, depth and height. Rotated rings are built as faces so their normals follow the model. */
 export function drawRuralEquipment(g: HouseFront, trade: RuralTrade, family?: string) {
