@@ -12,6 +12,8 @@ import { planBuildingColors } from './cityBuildingPalette';
 import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
 import { toneStamp } from './groundTone';
 import { TURF_LOOK, turfCover, turfFarTone } from './city/turfLook';
+import { GROUND_SHADOW_EAST_PER_METRE } from './cityMassing';
+import { SATELLITE_SHADOW_OPACITY } from './city/buildingLook';
 
 // The fade band is the look's (city/farTown.ts); re-exported for the hosts and tests that read it from here.
 export { FAR_TOWN_FADE, farTownAlpha, farTownBuildingsShown } from './city/look';
@@ -21,10 +23,9 @@ const MAX_CELLS = 2048,
   MIN_CELL = 2;
 /** The mean of a detailed roof is darker than its base colour: shaded pans, pan joints, eave lines. */
 const ROOF_MEAN = 0.82;
-/** Ground offset of the cast shadow of a two- or three-storey house (cityMassing pieceShadows: .55 h east, .44 h south,
- * h about 8 m). Its darkness is the cast shadow fill of the detailed drawing (castShadowFill: .2 on parchment, .3 elsewhere). */
-const SHADOW_EAST = 4.4,
-  SHADOW_SOUTH = 3.5;
+/** Ground offset of the cast shadow of a typical 8 m house, in the direction of the detailed pass. */
+const SHADOW_EAST = 8 * GROUND_SHADOW_EAST_PER_METRE,
+  SHADOW_SOUTH = SHADOW_EAST * 0.8;
 /** Mottle of the roofscape: tone of a whole block (±) and of a low-frequency noise (±), in relative luminance. */
 const BLOCK_MOTTLE = 0.02,
   NOISE_MOTTLE = 0.045;
@@ -112,11 +113,11 @@ function buildRaster(scene: CityScene, b: CityBuildings, palette: CityPalette, n
       maxY = Math.max(maxY, box.maxY);
     }
   if (!(maxX > minX && maxY > minY)) return undefined;
-  const cell = Math.max(MIN_CELL, Math.max(maxX - minX, maxY - minY) / (MAX_CELLS - 4));
+  const cell = Math.max(MIN_CELL, Math.max(maxX - minX + SHADOW_EAST, maxY - minY + SHADOW_SOUTH) / (MAX_CELLS - 4));
   const x0 = minX - 2 * cell,
     y0 = minY - 2 * cell,
-    w = Math.ceil((maxX - minX) / cell) + 4,
-    h = Math.ceil((maxY - minY) / cell) + 4;
+    w = Math.ceil((maxX - minX + SHADOW_EAST) / cell) + 4,
+    h = Math.ceil((maxY - minY + SHADOW_SOUTH) / cell) + 4;
   const level0 = surface(w, h);
   if (!level0) return undefined;
   const ctx0 = level0.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
@@ -162,7 +163,7 @@ function buildRaster(scene: CityScene, b: CityBuildings, palette: CityPalette, n
     ctx0.stroke(g.path);
   }
   ctx0.setTransform(1, 0, 0, 1, 0, 0);
-  const shadeAlpha = palette === 'parchment' ? 0.2 : 0.3,
+  const shadeAlpha = palette === 'terrain' ? SATELLITE_SHADOW_OPACITY : palette === 'parchment' ? 0.2 : 0.3,
     image = ctx0.getImageData(0, 0, w, h),
     data = image.data,
     seed = Math.floor(hash(Math.round(x0), Math.round(y0)) * 4096);

@@ -102,13 +102,17 @@ function tintedWall(wall: string, tint: string | undefined, palette: CityPalette
       .join('')
   );
 }
+export const SATELLITE_SHADOW_OPACITY = 0.4;
+
 /** Fill of the height shadows cast on the ground. Neutral attenuation cannot brighten any channel of the receiving
  * ground. On a natural ground the cast is a near-black cool shade, and on snow the blue of skylit shade (snow is
  * lighter than that tint in every channel). */
 export function castShadowFill(palette: CityPalette, night: boolean, snowAltitude?: number): string {
   if (palette === 'parchment') return 'rgba(0,0,0,0.2)';
   const snow = palette === 'terrain' && !night ? mapGroundSnow(snowAltitude) : -1;
-  return snow < 0 ? 'rgba(0,0,0,0.3)' : snow > 0.3 ? 'rgba(22,38,70,0.3)' : 'rgba(10,14,24,0.34)';
+  if (palette !== 'terrain') return 'rgba(0,0,0,0.3)';
+  if (snow > 0.3) return 'rgba(22,38,70,0.36)';
+  return snow >= 0 ? 'rgba(10,14,24,0.4)' : `rgba(0,0,0,${SATELLITE_SHADOW_OPACITY})`;
 }
 
 // ---------------------------------------------------------------- roof pans

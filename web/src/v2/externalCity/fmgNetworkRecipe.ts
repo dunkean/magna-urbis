@@ -1,5 +1,6 @@
 import type { V2Settings } from '../contracts';
 import type { Vec2 } from '../../gen/types';
+import { chaikin } from '../../gen/core/geom';
 import { rasterizeCoastTrace } from '../coastTrace';
 
 type Point = [number, number];
@@ -18,7 +19,7 @@ function path(value: unknown, limit: number, min: number, max: number): value is
 
 export function validateImportedRiver(value: unknown): asserts value is ImportedRiver {
   const river = value as Partial<ImportedRiver> | null;
-  if (!river || !path(river.points, 12, 0, 1) || typeof river.width !== 'number' || !Number.isFinite(river.width) || river.width < 3 || river.width > 100) throw new Error('Invalid imported river.');
+  if (!river || !path(river.points, 48, 0, 1) || typeof river.width !== 'number' || !Number.isFinite(river.width) || river.width < 3 || river.width > 100) throw new Error('Invalid imported river.');
 }
 
 export function parseFmgNetwork(value: unknown): FmgNetwork | undefined {
@@ -39,6 +40,17 @@ const bound = (v: number) => Math.max(0, Math.min(1, v));
 const scalePath = (points: Point[], dx = 0, dy = 0): Vec2[] => points.map(([x, y]) => ({ x: bound(0.5 + x * 0.4 + dx), y: bound(0.5 + y * 0.4 + dy) }));
 const distance = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y);
 const distinct = (line: Vec2[]) => line.filter((p, i) => !i || distance(p, line[i - 1]) > 1e-5);
+
+/** Only the invented approach outside the FMG sample gets a small bend. Its heading at the sample is unchanged. */
+function roadApproach(from: Vec2, to: Vec2, side: number): Vec2[] {
+  const length = distance(from, to);
+  if (length < 0.02) return [to];
+  const amplitude = Math.min(0.014, length * 0.075) * side;
+  return [0.25, 0.5, 0.75, 1].map(t => {
+    const bend = (amplitude * Math.sin(t * Math.PI) ** 2) / length;
+    return { x: bound(from.x + (to.x - from.x) * t - (to.y - from.y) * bend), y: bound(from.y + (to.y - from.y) * t + (to.x - from.x) * bend) };
+  });
+}
 
 /** Preserve the bank the marker occupies. FMG's port marker may be almost on the centreline. */
 function riverBankOffset(points: Point[], width: number, extent: number): [number, number] {
@@ -65,10 +77,12 @@ export function applyFmgNetwork(settings: V2Settings, network: FmgNetwork, exten
   const sea = coast && rasterizeCoastTrace(coast, 96);
   const atSea = ({ x, y }: Vec2) => !!sea?.[Math.min(95, Math.floor(y * 96)) * 96 + Math.min(95, Math.floor(x * 96))];
   if (network.river) {
-    const { points, widthKm } = network.river, width = Math.min(85, 8 + 1.8 * Math.sqrt(widthKm * 1000));
+    const { points, widthKm } = network.river,
+      width = Math.min(85, 8 + 1.8 * Math.sqrt(widthKm * 1000));
     const line = scalePath(points, ...riverBankOffset(points, width, extent));
-    const first = line[0], last = line[line.length - 1];
-    const river = distinct([towardEdge(first, line[1]), ...line, towardEdge(last, line[line.length - 2])]);
+    const first = line[0],
+      last = line[line.length - 1];
+    const river = chaikin(distinct([towardEdge(first, line[1]), ...line, towardEdge(last, line[line.length - 2])]), 2);
     if (river.length >= 2) settings.terrain = {
       ...settings.terrain,
       importedRiver: { points: river.map(({ x, y }) => [x, y]), width },
@@ -76,23 +90,32 @@ export function applyFmgNetwork(settings: V2Settings, network: FmgNetwork, exten
     };
   }
   if (network.roads?.length && settings.region) {
-    const routes = Object.fromEntries(network.roads.flatMap((points, i) => {
-      const line = scalePath(points), first = line[0], last = line[line.length - 1];
-      // Extend through-going routes to the map edge. Retain genuine ends close to town.
-      const center = { x: 0.5, y: 0.5 };
-      if (distance(first, center) > 0.15) {
-        const edge = towardEdge(first, line[1]);
-        if (!atSea(edge)) line.unshift(edge);
-      }
-      if (distance(last, center) > 0.15) {
-        const edge = towardEdge(last, line[line.length - 2]);
-        if (!atSea(edge)) line.push(edge);
-      }
-      const nodes = distinct(line);
-      if (nodes.length < 2) return [];
-      const pieces = [{ path: nodes.map(p => ({ x: p.x * extent, y: p.y * extent })), width: 6, cls: 'main' as const }];
-      return [[`draw:fmg-${i}`, pieces] as const];
-    }));
+    const routes = Object.fromEntries(
+      network.roads.flatMap((points, i) => {
+        const line = scalePath(points),
+          first = line[0],
+          last = line[line.length - 1],
+          side = i % 2 === 0 ? 1 : -1;
+        // Extend through-going routes to the map edge. Retain genuine ends close to town.
+        const center = { x: 0.5, y: 0.5 };
+        if (distance(first, center) > 0.15) {
+          const approach = roadApproach(first, towardEdge(first, line[1]), side);
+          if (approach.every(p => !atSea(p))) line.unshift(...approach.reverse());
+        }
+        if (distance(last, center) > 0.15) {
+          const approach = roadApproach(last, towardEdge(last, line[line.length - 2]), side);
+          if (approach.every(p => !atSea(p))) line.push(...approach);
+        }
+        const pointsWithApproaches = distinct(line);
+        const crossing = pointsWithApproaches.findIndex(p => distance(p, center) < 1e-5);
+        const nodes = crossing > 0 && crossing < pointsWithApproaches.length - 1
+          ? [...chaikin(pointsWithApproaches.slice(0, crossing + 1), 1), ...chaikin(pointsWithApproaches.slice(crossing), 1).slice(1)]
+          : chaikin(pointsWithApproaches, 1);
+        if (nodes.length < 2) return [];
+        const pieces = [{ path: nodes.map(p => ({ x: p.x * extent, y: p.y * extent })), width: 6, cls: 'main' as const }];
+        return [[`draw:fmg-${i}`, pieces] as const];
+      }),
+    );
     if (Object.keys(routes).length) {
       settings.region.roads = { ...settings.region.roads, exits: { highway: 0, main: 0, local: 0, track: 0 } };
       settings.roadOverrides = { ...settings.roadOverrides, routes };

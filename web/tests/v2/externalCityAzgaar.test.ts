@@ -31,11 +31,13 @@ describe('parseAzgaarBurg', () => {
     const preview = cityEmbedSettings(hints, false);
     expect(preview.terrain?.importedRiver?.width).toBeGreaterThan(15);
     const riverPath = preview.terrain!.importedRiver!.points;
+    expect(riverPath.length).toBeGreaterThan(network.river!.points.length * 2);
     expect(riverPath[0][0]).toBe(0);
     expect(riverPath.at(-1)![0]).toBe(1);
     expect(riverPath.find(([x]) => Math.abs(x - 0.5) < 0.02)![1]).toBeGreaterThan(0.54);
     const road = preview.roadOverrides!.routes!['draw:fmg-0'][0];
     expect(road.path).toContainEqual({ x: 900, y: 900 });
+    expect(road.path.some(p => p.y > 1640 && p.y < 1790 && Math.abs(p.x - 900) > 3)).toBe(true);
     expect(road.path.at(-1)).toMatchObject({ x: 900, y: 1800 });
     expect(preview.region?.roads?.exits).toEqual({ highway: 0, main: 0, local: 0, track: 0 });
   });

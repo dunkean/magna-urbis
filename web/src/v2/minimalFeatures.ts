@@ -1,4 +1,5 @@
 import type { World, UrbanLayer } from '../gen/types';
+import { offsetRibbon } from '../gen/core/geom';
 import type { Shape, Street } from '../../../rust/bridge/urban';
 import type { RenderScene } from './renderScene';
 import { minimalWaterPolygons, type MinimalFeature } from '../render/minimalMap';
@@ -10,27 +11,11 @@ export function* minimalFeatures(world: World, scene: Pick<RenderScene, 'cities'
   for (const area of world.landuse?.areas ?? []) yield { layer: area.kind, points: area.poly, holes: area.holes, closed: true };
   // These are the projection's retained coast/lake rings, already derived from native water at generation time.
   yield* minimalWaterPolygons([...world.terrain.coastline, ...(world.terrain.islands ?? []), ...world.terrain.lakes]);
-  for (const river of world.terrain.rivers)
-    for (let i = 1; i < river.path.length; i++) {
-      const a = river.path[i - 1],
-        b = river.path[i],
-        dx = b.x - a.x,
-        dy = b.y - a.y,
-        length = Math.hypot(dx, dy);
-      if (!length) continue;
-      const w0 = Math.max(0.5, river.width[i - 1] ?? 1) / 2,
-        w1 = Math.max(0.5, river.width[i] ?? w0 * 2) / 2;
-      yield {
-        layer: 'river',
-        closed: true,
-        points: [
-          { x: a.x - (dy / length) * w0, y: a.y + (dx / length) * w0 },
-          { x: b.x - (dy / length) * w1, y: b.y + (dx / length) * w1 },
-          { x: b.x + (dy / length) * w1, y: b.y - (dx / length) * w1 },
-          { x: a.x + (dy / length) * w0, y: a.y - (dx / length) * w0 },
-        ],
-      };
-    }
+  for (const river of world.terrain.rivers) {
+    if (river.path.length < 2) continue;
+    const widths = river.path.map((_, i) => Math.max(0.5, river.width[i] ?? 1));
+    yield { layer: 'river', closed: true, points: offsetRibbon(river.path, widths) };
+  }
   // Town streets the road editor exposes as roads (`urban`) are drawn once, as the streets of their layout.
   for (const road of world.roads ?? []) if (!road.urban) for (let i = 1; i < road.path.length; i++) yield { layer: road.kind === 'track' ? 'path' : road.kind, points: [road.path[i - 1], road.path[i]] };
   const nativeKeys = new Set(Object.keys(scene.cityByKey));

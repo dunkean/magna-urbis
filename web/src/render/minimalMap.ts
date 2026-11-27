@@ -268,7 +268,8 @@ export function paintMinimalMap(
   if (layers.water !== false) {
     fill('water', palette.seaFill);
     stroke('water', palette.waterEdge, 1, 0.1, 60);
-    fill('river', palette.riverFill);
+    // A single fill lets the river open the coastline at its mouth and disappear into the sea.
+    fill('river', palette.seaFill);
   }
   const plan = options.plan ?? { districts: false, blocks: recipe.buildings.visible };
   if (plan.blocks && layers.city !== false) fill('block', palette.urban.yard);
@@ -277,9 +278,7 @@ export function paintMinimalMap(
   const localAlpha = fade((scale * 8 - 1) / 0.8);
   if (recipe.networks.roads.visible) {
     if (layers.roads !== false) {
-      stroke('major', palette.roadEdge, 3.8, 3, 28);
       stroke('minor', palette.roadEdge, 2.4, 2, 18, localAlpha);
-      stroke('major', palette.roadFill, 2.5, 2, 22);
       stroke('minor', palette.roadFill, 1.5, 1, 12, localAlpha);
       stroke('path', palette.trackFill, 0.8, 0.4, 5, localAlpha);
     }
@@ -287,6 +286,7 @@ export function paintMinimalMap(
       stroke('streetMajor', palette.roadFill, 2.3, 3, 14);
       stroke('streetMinor', palette.roadFill, 1.2, 1, 8, localAlpha);
     }
+    if (layers.roads !== false) stroke('major', '#9c703a', 1.2, 0.6, 10, 0.63);
   }
   if (recipe.buildings.visible && layers.city !== false) {
     BUILDING_SIZES.forEach((size, i) => {

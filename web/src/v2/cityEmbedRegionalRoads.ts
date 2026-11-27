@@ -1,7 +1,7 @@
 import type { Polyline } from '../gen/types';
 import type { View } from '../render/view';
 
-/** A thin, cased ochre line identifies regional routes over every iframe style, including inside town. */
+/** A light ochre accent identifies regional routes over the iframe's street network. */
 export class CityEmbedRoadInk {
   readonly canvas = document.createElement('canvas');
   private path?: Path2D;
@@ -19,7 +19,8 @@ export class CityEmbedRoadInk {
   draw(view: View, w: number, h: number, dpr: number): void {
     if (!this.path) return;
     dpr = Math.min(2, dpr);
-    const width = Math.max(1, Math.round(w * dpr)), height = Math.max(1, Math.round(h * dpr));
+    const width = Math.max(1, Math.round(w * dpr)),
+      height = Math.max(1, Math.round(h * dpr));
     if (this.canvas.width !== width) this.canvas.width = width;
     if (this.canvas.height !== height) this.canvas.height = height;
     const ctx = this.canvas.getContext('2d')!;
@@ -30,16 +31,14 @@ export class CityEmbedRoadInk {
   paint(canvas: HTMLCanvasElement, view: View, w: number, h: number): void {
     if (!this.path) return;
     const ctx = canvas.getContext('2d')!;
-    const sx = canvas.width / w, sy = canvas.height / h;
+    const sx = canvas.width / w,
+      sy = canvas.height / h;
     ctx.save();
     ctx.setTransform(sx * view.scale, 0, 0, sy * view.scale, sx * (w / 2 - view.cx * view.scale), sy * (h / 2 - view.cy * view.scale));
     ctx.lineCap = ctx.lineJoin = 'round';
-    const line = Math.min(2.5, Math.max(1.35, view.scale * 2.3));
-    ctx.lineWidth = (line + 1.3) / view.scale;
-    ctx.strokeStyle = '#6f542a';
-    ctx.stroke(this.path);
+    const line = Math.min(1.5, Math.max(1.0, view.scale * 1.8));
     ctx.lineWidth = line / view.scale;
-    ctx.strokeStyle = '#e5bc73';
+    ctx.strokeStyle = 'rgba(156,112,58,0.63)';
     ctx.stroke(this.path);
     ctx.restore();
   }

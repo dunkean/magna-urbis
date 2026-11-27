@@ -27,7 +27,6 @@ export interface CityPreviewMap {
   geometry: PackedFeatures;
   recipe: CompositionRecipe;
   plan: TownPlan;
-  regionalRoads: Polyline[];
 }
 export interface CityPreviewResult {
   type: 'city-preview';

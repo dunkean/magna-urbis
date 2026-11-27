@@ -7,7 +7,7 @@ import { retryNativeStage } from './runtimeChoices';
 import { townPlanOf } from '../render/composition';
 import { minimalFeatures } from './minimalFeatures';
 import { cityEmbedShowsStreet } from './cityEmbedStreets';
-import { cityEmbedRegionalRoads, cityEmbedStartsWithBlocks, packMinimalFeatures, type CityPreviewRequest, type CityPreviewResponse } from './cityPreviewMap';
+import { cityEmbedStartsWithBlocks, packMinimalFeatures, type CityPreviewRequest, type CityPreviewResponse } from './cityPreviewMap';
 import { packWorldPartitions, unpackWorldPartitions } from './urbanPack';
 import { packWorldLanduse, unpackWorldLanduse } from './landusePack';
 import { wasmThreadsInfo } from '../../../rust/bridge/wasmThreads';
@@ -88,7 +88,7 @@ scope.onmessage = async ({ data: { hints, local, mode, base, layoutKey, studio }
     const recipe = settings.appearance!.composition!;
     const plan = townPlanOf(recipe);
     const geometry = packMinimalFeatures([...minimalFeatures({ ...world, landuse: undefined }, { cities, cityByKey }, plan.parcels, cityEmbedShowsStreet)]);
-    send({ ...common, mode: 'compact', map: { bounds, size: world.mapSize, recipe, plan, geometry, regionalRoads: cityEmbedRegionalRoads(world) } }, [geometry.rings.buffer, geometry.coords.buffer]);
+    send({ ...common, mode: 'compact', map: { bounds, size: world.mapSize, recipe, plan, geometry } }, [geometry.rings.buffer, geometry.coords.buffer]);
     // The first paint only waits for drawing vectors. Persist the resumable layout from this worker.
     const packed = packWorldPartitions(world);
     if (layoutKey && await saveCityLayout(layoutKey, packed.world)) send({ type: 'layout-ready' });

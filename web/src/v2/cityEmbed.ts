@@ -281,7 +281,7 @@ function start(): void {
     pendingRenderer = next;
     await next.setContent({ key: 'compact', terrainKey: 1, size: map.size, features: unpackMinimalFeatures(map.geometry), places: [] }, map.recipe, map.plan, { terrain: false, landuse: false, labels: false });
     if (disposed) return;
-    roadInk.set(map.regionalRoads);
+    roadInk.set([]);
     install(next, map.bounds);
     cachedFrame = undefined;
     detail = undefined;
@@ -335,6 +335,7 @@ function start(): void {
     if (!restoring) showProgress(style === 'minimal' ? 'Drawing the map…' : style === 'satellite-light' ? 'Rendering fast satellite…' : 'Rendering painted satellite…');
     await detail.setStyle(style);
     if (disposed) return;
+    roadInk.set(style === 'minimal' ? [] : cityEmbedRegionalRoads(detail.world));
     if (restoring) {
       warming = detail.renderer;
       host.prepend(warming.element);
@@ -365,7 +366,6 @@ function start(): void {
     const { detailedCityMap } = await detailModule!;
     if (disposed) return;
     detail = detailedCityMap(data, scheduleDraw, detail);
-    roadInk.set(cityEmbedRegionalRoads(detail.world));
     fromDetailed = data.fromDetailed === true;
     liveLayout = undefined;
     if (renderer !== detail.renderer) pendingRenderer = detail.renderer;

@@ -10,6 +10,9 @@ import { roofPlaneLight } from './roofPlaneLight';
 import { intersectionS, unionS } from '../gen/geo/bool';
 type Shape = Surface[number];
 
+export const GROUND_SHADOW_EAST_PER_METRE = 0.9;
+const ROOF_SHADOW_EAST_PER_METRE = 0.55;
+
 /** Roof-top feature of a flat roof (massing.rs `flat_details`): plan centre, footprint w × d turned by `angle`, height h.
  * `sails` (wind mill, cone roof): hub at (x, y) h above the eave, blades of length w and width d in the vertical plane facing `angle`, cross turned by `turn`. */
 /** `wheel` (water mill): axle centre at (x, y), h above the piece's base; w = wheel radius, d = wheel width, `angle` = direction
@@ -737,7 +740,7 @@ export function planRoof(footprint: Surface, massing: readonly MassingPiece[]): 
           const receiver = slabs.find(t => t.face === face)!;
           const shadows = slabs.flatMap(t => {
             if (t.z <= z + 0.05) return [];
-            const shadow = pieceShadow(t.shape, t.z - z);
+            const shadow = pieceShadow(t.shape, t.z - z, ROOF_SHADOW_EAST_PER_METRE);
             return shadow ? intersectionS(receiver.shape, shadow) : [];
           });
           // Merge overlapping casters: one shade per terrace, clipped around its courts.
@@ -805,7 +808,7 @@ function flatPlanRoof(v: ResolvedVolume, face: RoofFace, roofHoles: Point[][], s
             [1, 1],
             [-1, 1],
           ].map(([s, t]) => ({ x: f.x + ((s * f.w) / 2) * ca - ((t * f.d) / 2) * sa, y: f.y + ((s * f.w) / 2) * sa + ((t * f.d) / 2) * ca }));
-    const shadow = pieceShadow({ outer: top, holes: [] }, f.h);
+    const shadow = pieceShadow({ outer: top, holes: [] }, f.h, ROOF_SHADOW_EAST_PER_METRE);
     if (shadow) for (const s of terrace ? intersectionS({ outer: ring, holes }, shadow) : [shadow]) out.push({ ...base, points: s.outer.map(p => at(p, z)), holes: s.holes, normal: [0, 0, 1], light: terrace ? -0.55 : -0.34 });
     out.push({ ...base, points: top.map(p => at(p, z + f.h)), normal: [0, 0, 1], light: f.kind === 'dome' ? 0.08 : 0.14 });
   }
@@ -841,7 +844,7 @@ export function roofLight(normal: readonly [number, number, number]): number {
 
 /** Ground shadow of a piece (sun from the north-west): the sweep of the outline and
  * its copy shifted by the piece's height. Sweep edges to preserve concavities. */
-export function pieceShadow(shape: Shape, height: number, k = 0.55): Shape | undefined {
+export function pieceShadow(shape: Shape, height: number, k = GROUND_SHADOW_EAST_PER_METRE): Shape | undefined {
   if (height <= 0.05 || shape.outer.length < 3) return undefined;
   const dx = height * k,
     dy = height * k * 0.8;
@@ -856,10 +859,10 @@ export function pieceShadow(shape: Shape, height: number, k = 0.55): Shape | und
 }
 
 /** `pieceShadow` of a convex ring without a polygon boolean: the hull of the ring and its shifted copy. */
-function convexShadow(ring: readonly Point[], height: number, k = 0.55): Shape | undefined {
+function convexShadow(ring: readonly Point[], height: number): Shape | undefined {
   if (height <= 0.05 || ring.length < 3) return undefined;
-  const dx = height * k,
-    dy = height * k * 0.8,
+  const dx = height * GROUND_SHADOW_EAST_PER_METRE,
+    dy = dx * 0.8,
     r = polygonArea(ring) < 0 ? [...ring].reverse() : ring,
     n = r.length,
     outer: Point[] = [];
