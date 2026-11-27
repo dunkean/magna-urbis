@@ -79,6 +79,6 @@ const slow = [
 ];
 
 export default defineWorkspace([
-  { extends: './vitest.config.ts', test: { name: 'fast', include: ['tests/**/*.test.ts'], exclude: [...configDefaults.exclude, ...slow] } },
+  { extends: './vitest.config.ts', test: { name: 'fast', include: ['tests/**/*.test.ts'], exclude: [...configDefaults.exclude, ...slow, 'tests/timing/**'] } },
   { extends: './vitest.config.ts', test: { name: 'slow', include: slow } },
 ]);

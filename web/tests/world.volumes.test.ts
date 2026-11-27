@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PlacementBatch, PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
+import { batch, mockGl, overviewTown, rawOf, relief, sources } from './helpers/worldBuildings';
+import type { PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
 import { eachBuildingTriangle, type Building3dScene, type BuildingTriangle } from '../src/render/urbanBuildingGeometry';
 import { roofEdgeMasks } from '../src/render/roofEdges';
 import type { RoofMode } from '../src/render/roofMode';
@@ -37,53 +38,6 @@ afterEach(() => {
 
 const W = 1600,
   H = 900;
-/** A relief of n x n control heights over `width` metres: a slope up to the east plus a hill. */
-function relief(width: number, n = 64, exaggeration = 1.5): TerrainHeights {
-  const data = new Float32Array(n * n);
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) data[j * n + i] = 40 + (i / n) * 120 + 30 * Math.sin((j / n) * 6);
-  return new TerrainHeights(data, n, width, 0, exaggeration);
-}
-/** The ground of the display scene: the relief in real metres (v2/display/worldVolumes.ts). */
-const rawOf =
-  (heights: TerrainHeights) =>
-  (x: number, y: number): number =>
-    heights.heightAt(x, y) / heights.exaggeration;
-/** Silhouette records of `count` houses on a grid (pyramid roofs on two-storey bodies), placed as the city sends them
- * (ui/urbanSilhouettes.ts): footprints in map metres, the placement origin at the map's corner. */
-function sources(count: number, spacing = 25, origin = 300): PlacedBuilding[] {
-  const side = Math.ceil(Math.sqrt(count));
-  return Array.from({ length: count }, (_, k) => {
-    const x = origin + (k % side) * spacing,
-      y = origin + Math.floor(k / side) * spacing,
-      footprint = [
-        {
-          outer: [
-            { x: x - 5, y: y - 4 },
-            { x: x + 5, y: y - 4 },
-            { x: x + 5, y: y + 4 },
-            { x: x - 5, y: y + 4 },
-          ],
-          holes: [],
-        },
-      ];
-    const source = {
-      id: `house-${k}`,
-      parcel_id: `p${k}`,
-      recipe_id: 'silhouette',
-      ground_z_m: 0,
-      footprint,
-      roof_footprint: footprint,
-      transform: { origin: { x: 0, y: 0 }, orientation_deg: 0 },
-      culture: { culture: 'european-organic' },
-      function: 'domestic',
-      volumes: [],
-      structural_features: [],
-      programme: { role: 'house', massing: [{ floors: 2, eave_m: 6, rise_m: 4, roof: 'pyramid', ridges: [], cover: 'tile', wall: 'plaster', openings: 'none' }] },
-    } as unknown as PlacedBuilding;
-    return source;
-  });
-}
-const batch = (buildings: PlacedBuilding[]): PlacementBatch => ({ schema_version: '1', generator_version: 'silhouette', buildings, refusals: [], open_spaces: [] });
 /** The display scene of those houses, seated on the relief as the page makes it. */
 const town = (count: number, heights: TerrainHeights, spacing?: number) => city3dBuildings(batch(sources(count, spacing)), { heightAt: rawOf(heights) })!;
 /** Every block of a scene, grouped at once. */
@@ -91,16 +45,6 @@ function grouped(scene: Building3dScene, heights: TerrainHeights) {
   const grouping = new BlockGrouping(scene, heights, heights.exaggeration);
   expect(grouping.step(Infinity)).toBe(true);
   return grouping.blocks;
-}
-/** A WebGL2 context that records nothing and answers every query. */
-function mockGl(): WebGL2RenderingContext {
-  return new Proxy({} as WebGL2RenderingContext, {
-    get: (target, name) => {
-      const t = target as unknown as Record<string | symbol, unknown>;
-      if (!(name in t)) t[name] = name === 'getProgramParameter' || name === 'getShaderParameter' ? vi.fn(() => true) : String(name).startsWith('create') || name === 'getUniformLocation' ? vi.fn(() => ({})) : vi.fn();
-      return t[name];
-    },
-  });
 }
 /** The frame the compositor would hand the layers for a view. */
 function frame(gl: WebGL2RenderingContext, view: View, heights: TerrainHeights, width = W, height = H): LiveFrame {
@@ -609,31 +553,9 @@ describe('world buildings by distance', () => {
   });
 
   it('draws a large town as boxes far away, nothing under a pixel, roofs in a turned top view', () => {
-    const heights = relief(40000, 128),
-      scene = city3dBuildings(batch(sources(10000, 22, 18900)), { heightAt: rawOf(heights) })!,
-      gl = mockGl();
-    const buildOverviews = () => {
-      const layer = createWorldBuildingsLayer(gl, { scene: () => scene, appearance: () => ({ style: 'cartographic', diagnostic: 'none' }), terrain: () => heights, invalidate: () => {} });
-      const slices: number[] = [];
-      let more = true;
-      while (more) {
-        const started = performance.now();
-        more = layer.work!(8, undefined);
-        slices.push(performance.now() - started);
-      }
-      // The first slices pay the compiler's warm-up; subsequent slices should stay inside the frame budget.
-      return { layer, longest: Math.max(...slices.slice(3)) };
-    };
-    const limit = 16;
-    let { layer, longest } = buildOverviews();
-    if (longest >= limit) {
-      // One scheduler or GC pause can spoil a wall-clock sample. Retry the full build once at the same limit.
-      layer.dispose();
-      vi.mocked(gl.bufferData).mockClear();
-      vi.mocked(gl.bufferSubData).mockClear();
-      ({ layer, longest } = buildOverviews());
-    }
-    expect(longest).toBeLessThan(limit);
+    const { heights, gl, createLayer } = overviewTown();
+    const layer = createLayer();
+    while (layer.work!(8, undefined));
     const views = {
       whole: frame(gl, { cx: 20000, cy: 20000, scale: 0.04, pitch: Math.PI / 4 }, heights),
       town: frame(gl, { cx: 20000, cy: 20000, scale: 0.6, pitch: (55 * Math.PI) / 180 }, heights),
@@ -645,7 +567,7 @@ describe('world buildings by distance', () => {
     console.info(
       `world buildings, 10000 houses on a 40 km map: ${Object.entries(out)
         .map(([name, s]) => `${name} ${s.drawCalls} draws ${Math.round(s.triangles)} triangles`)
-        .join(', ')}; longest work slice ${longest.toFixed(1)} ms`,
+        .join(', ')}`,
     );
     expect(out.whole.triangles).toBeLessThan(100000);
     expect(out.whole.drawCalls).toBeLessThan(40);

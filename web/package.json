@@ -53,6 +53,7 @@
     "test:v2:urban": "node scripts/v2_rust_urban_check.mjs",
     "test:v2:urban-ui": "node scripts/v2_rust_browser_check.mjs",
     "test:fast": "vitest run --project fast",
+    "test:timing": "vitest run --workspace vitest.timing.ts",
     "test:slow": "vitest run --project slow",
     "typecheck": "tsc --noEmit",
     "check:display": "node scripts/display_check.mjs",
