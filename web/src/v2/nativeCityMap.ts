@@ -43,6 +43,7 @@ import { createStepwiseTown, type NativeCityStepwise } from '../render/city/canv
 import { countWork } from '../render/workCount';
 import { updateYardEnclosures } from '../render/cityLotEnclosures';
 import { FixedTownRaster, fixedTownRasterLayer, type TownRasterTile } from '../render/city/canvas/fixedTownRaster';
+import { SpatialBins } from '../render/city/model/geometry';
 
 export interface NativeCityMapStats {
   native: boolean;
@@ -207,6 +208,7 @@ interface PreparedCities {
   plans: CityScene[];
   buildings: (CityBuildings | undefined)[];
   deferRoofs?: boolean;
+  streetFilter?: (street: Pick<CityScene['streets'][number], 'role'>) => boolean;
 }
 const largeTown = (city: ReturnType<typeof nativeCitiesOf>[number]): boolean => !usesNativeHouseRenderer(city.scene) && (city.scene?.buildings.length ?? 0) > LARGE_TOWN_BUILDINGS;
 const plansByLayouts = new WeakMap<RustTownSnapshot['layouts'], { partitions: RustTownSnapshot['partitions']; raster: object | undefined; plan: CityScene }>();
@@ -231,7 +233,7 @@ function cityPlans(world: World): CityScene[] {
  * some towns changed (a local edit keeps the others' snapshots, localEditIntern.ts) prepares those towns only. */
 const preparedTowns = new WeakMap<RustTownSnapshot, { raster: object | undefined; roofs: boolean; plan: CityScene; buildings: CityBuildings | undefined }>();
 /** `createNativeCityMap` with the city volumes of the unedited native towns built over workers (same result). */
-export async function createNativeCityMapAsync(world: World, onInvalidate: (kind: NativeCityInvalidation) => void, deferRoofs = false): Promise<NativeCityMap> {
+export async function createNativeCityMapAsync(world: World, onInvalidate: (kind: NativeCityInvalidation) => void, deferRoofs = false, streetFilter?: PreparedCities['streetFilter']): Promise<NativeCityMap> {
   const cities = nativeCitiesOf(world),
     raster = cities.length ? cityGroundOf(world) : undefined,
     roofs = (city: RustTownSnapshot): boolean => !deferRoofs && !largeTown(city);
@@ -264,7 +266,7 @@ export async function createNativeCityMapAsync(world: World, onInvalidate: (kind
   } finally {
     releaseCityBuildingWorkers();
   }
-  return createNativeCityMap(world, onInvalidate, { plans, buildings, deferRoofs });
+  return createNativeCityMap(world, onInvalidate, { plans, buildings, deferRoofs, streetFilter });
 }
 /** The activity sites' plan and buildings, by their scene (kept while the sites are: a local edit of a town keeps them). */
 const preparedSites = new WeakMap<object, { roofs: boolean; plan: CityScene; base: CityBuildings }>();
@@ -316,9 +318,17 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       return renderer;
     };
   }
+  const streetFilter = prepared?.streetFilter;
   const entries: Entry[] = cities.map((city, i) => {
-    const plan = plans[i],
-      ready = prepared?.buildings[i];
+    let plan = plans[i];
+    if (streetFilter) {
+      // The lookup bins index the filtered render list. The source layouts and parcel street references stay intact.
+      const shown = plan.streets.flatMap((street, index) => streetFilter(street) ? [index] : []);
+      const streets = shown.map(index => plan.streets[index]);
+      const streetBins = new SpatialBins(shown.map(index => plan.bins.streets.boxes[index]), 128);
+      plan = { ...plan, streets, bins: { ...plan.bins, streets: streetBins } };
+    }
+    const ready = prepared?.buildings[i];
     const large = prepared?.deferRoofs || largeTown(city) ? { base: ready ?? buildCityBuildings(city.scene, plan, { roofs: false }), detail: new Map<string, CityBuildings>() } : undefined;
     return {
       plan,

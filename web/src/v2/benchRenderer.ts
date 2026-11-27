@@ -105,6 +105,9 @@ export class BenchRenderer {
   useCanvasFastSatellite(): void {
     this.map.canvasFastSatellite = true;
   }
+  set townStreetFilter(filter: TownProducts['streetFilter']) {
+    this.products.town.streetFilter = filter;
+  }
   /** Bytes held by the dormant cartography renderers of other looks. */
   /** The relief of the map on screen: the viewer zooms towards the terrain point under the cursor when tilted. */
   relief(): WorldRelief | undefined {

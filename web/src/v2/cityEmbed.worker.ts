@@ -6,6 +6,7 @@ import { nativeCityRecords, nativeCitiesOf } from './nativeProducts';
 import { retryNativeStage } from './runtimeChoices';
 import { townPlanOf } from '../render/composition';
 import { minimalFeatures } from './minimalFeatures';
+import { cityEmbedShowsStreet } from './cityEmbedStreets';
 import { packMinimalFeatures, type CityPreviewRequest, type CityPreviewResponse } from './cityPreviewMap';
 import { packWorldPartitions, unpackWorldPartitions } from './urbanPack';
 import { packWorldLanduse, unpackWorldLanduse } from './landusePack';
@@ -63,7 +64,7 @@ scope.onmessage = async ({ data: { hints, local, mode, base, layoutKey } }: Mess
     }
     const recipe = settings.appearance!.composition!;
     const plan = townPlanOf(recipe);
-    const geometry = packMinimalFeatures([...minimalFeatures({ ...world, landuse: undefined }, { cities, cityByKey }, plan.parcels)]);
+    const geometry = packMinimalFeatures([...minimalFeatures({ ...world, landuse: undefined }, { cities, cityByKey }, plan.parcels, cityEmbedShowsStreet)]);
     send({ ...common, mode: 'compact', map: { bounds, size: world.mapSize, recipe, plan, geometry } }, [geometry.rings.buffer, geometry.coords.buffer]);
     // The first paint only waits for drawing vectors. Persist the resumable layout from this worker.
     const packed = packWorldPartitions(world);

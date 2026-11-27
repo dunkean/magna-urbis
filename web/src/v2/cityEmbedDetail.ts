@@ -11,6 +11,7 @@ import { nativeCityRecords } from './nativeProducts';
 import type { CityDetailStyle, DetailedCityResult } from './cityPreviewMap';
 import { isFirefox } from '../ui/firefox';
 import { CityEmbedFrame } from './cityEmbedFrame';
+import { cityEmbedShowsStreet } from './cityEmbedStreets';
 
 export function detailedCityMap(data: DetailedCityResult, invalidate: () => void, previous?: { source: BenchRenderer; renderer: BenchRenderer | CityEmbedFrame; world: World }) {
   const world = unpackWorldPartitions(unpackWorldLanduse(data.world));
@@ -31,6 +32,7 @@ export function detailedCityMap(data: DetailedCityResult, invalidate: () => void
     }
   }
   const firefox = isFirefox(), source = previous?.source ?? new BenchRenderer(invalidate);
+  source.townStreetFilter = cityEmbedShowsStreet;
   const renderer = previous?.renderer ?? (firefox ? new CityEmbedFrame(source, invalidate) : source);
   if (firefox) source.useCanvasFastSatellite();
   let satelliteTown: ResolvedAppearance | undefined;

@@ -7,6 +7,7 @@ import { writeGenerationSeed } from '../../../../rust/bridge/generationSeed';
 import { CLIMATE_ZONES, CLIMATE_ZONE_VALUES, type ClimateValues } from '../../../../rust/bridge/terrainClimate';
 import { climateZoneBiome, isUnderdarkBiome, type BiomeName } from '../../gen/biomes';
 import type { ExternalCityHints } from './types';
+import { fmgCoastTrace } from './fmgCoast';
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 /** Map width for one imported town, kept tight around it: 3 km at 2,500 inhabitants, about 4 km at
@@ -66,10 +67,15 @@ export function applyExternalCity(hints: ExternalCityHints, base: V2Settings): V
   // Only the imported town for now: a one-place list fixes its population (the automatic plan would
   // derive the places from the map area), with no farmsteads or isolated buildings around it.
   const population = o.population > 0 ? o.population : 2500;
-  settings.extent = importExtent(population);
+  const extent = settings.extent = importExtent(population);
+  const coastTrace = hints.shore && fmgCoastTrace(hints.shore);
+  if (coastTrace) settings.terrain = { ...settings.terrain, coastTrace, coastMask: 0, coastProfile: { ...settings.terrain?.coastProfile, variability: 0 } };
   settings.region = {
     ...settings.region,
-    placement: { ...settings.region?.placement, mode: 'list', farmDensity: 0, remotePlaces: 0, list: [{ key: 'main', name: name ?? '', population, culture: o.culture, siteType: 'auto', sitePrefs: {} }] },
+    placement: { ...settings.region?.placement, mode: 'list', farmDensity: 0, remotePlaces: 0, list: [{
+      key: 'main', name: name ?? '', population, culture: o.culture, siteType: coastTrace && hints.port ? 'harbor' : 'auto', sitePrefs: {},
+      ...(coastTrace ? { position: { x: extent / 2, y: extent / 2 } } : {}),
+    }] },
     // An imported culture is the source's choice: the environment must not re-pick it.
     demography: { ...settings.region?.demography, isolatedCount: 0, ...(hints.culture && o.culture === hints.culture ? { followCulture: false } : {}) },
   };

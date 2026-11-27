@@ -1,6 +1,7 @@
 import type { BiomeName } from '../../gen/biomes';
 import type { CoastOpt, Relief, RiverOpt } from '../../gen/options';
 import type { ClimateZone } from '../../../../rust/bridge/terrainClimate';
+import type { FmgShore } from './fmgCoast';
 
 /**
  * A city described by another generator (watabou MFCG / village generator, Azgaar FMG burg),
@@ -16,6 +17,7 @@ export interface ExternalCityHints {
   population?: number;
   river?: RiverOpt;
   coast?: CoastOpt;
+  shore?: FmgShore;
   walls?: boolean;
   /** Light wooden enclosure instead of a curtain wall (village `palisade` tag). */
   palisade?: boolean;

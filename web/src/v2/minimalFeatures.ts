@@ -1,12 +1,12 @@
 import type { World, UrbanLayer } from '../gen/types';
-import type { Shape } from '../../../rust/bridge/urban';
+import type { Shape, Street } from '../../../rust/bridge/urban';
 import type { RenderScene } from './renderScene';
 import { minimalWaterPolygons, type MinimalFeature } from '../render/minimalMap';
 
 const polygon = (layer: string, shape: Shape): MinimalFeature => ({ layer, points: shape.outer, holes: shape.holes, closed: true });
 
 /** Adapts only retained products. No city renderer, roof builder, naming engine or display worker. */
-export function* minimalFeatures(world: World, scene: Pick<RenderScene, 'cities' | 'cityByKey'>, parcels = false): Generator<MinimalFeature> {
+export function* minimalFeatures(world: World, scene: Pick<RenderScene, 'cities' | 'cityByKey'>, parcels = false, showsStreet?: (street: Pick<Street, 'role'>) => boolean): Generator<MinimalFeature> {
   for (const area of world.landuse?.areas ?? []) yield { layer: area.kind, points: area.poly, holes: area.holes, closed: true };
   // These are the projection's retained coast/lake rings, already derived from native water at generation time.
   yield* minimalWaterPolygons([...world.terrain.coastline, ...(world.terrain.islands ?? []), ...world.terrain.lakes]);
@@ -38,7 +38,10 @@ export function* minimalFeatures(world: World, scene: Pick<RenderScene, 'cities'
     for (const layout of city.layouts) {
       for (const block of layout.blocks) if (block.kind !== 'deleted') yield polygon('block', block.shape);
       for (const quarter of layout.quarters) yield polygon('quarter', quarter.shape);
-      for (const street of layout.streets) for (let i = 1; i < street.path.length; i++) yield { layer: street.rank <= 1 ? 'streetMajor' : 'streetMinor', points: [street.path[i - 1], street.path[i]] };
+      for (const street of layout.streets) {
+        if (showsStreet && !showsStreet(street)) continue;
+        for (let i = 1; i < street.path.length; i++) yield { layer: street.rank <= 1 ? 'streetMajor' : 'streetMinor', points: [street.path[i - 1], street.path[i]] };
+      }
       for (const wall of layout.enclosures ?? []) yield { layer: 'wall', points: wall.path, closed: true };
       for (const waterway of layout.structure?.waterways ?? []) {
         yield polygon('water', waterway.shape);
@@ -53,7 +56,10 @@ export function* minimalFeatures(world: World, scene: Pick<RenderScene, 'cities'
   }
   function* urbanFeatures(urban: UrbanLayer): Generator<MinimalFeature> {
     for (const block of urban.blocks) yield { layer: 'block', points: block, closed: true };
-    for (const street of urban.streets) for (let i = 1; i < street.path.length; i++) yield { layer: street.rank <= 1 ? 'streetMajor' : 'streetMinor', points: [street.path[i - 1], street.path[i]] };
+    for (const street of urban.streets) {
+      if (showsStreet && !showsStreet(street)) continue;
+      for (let i = 1; i < street.path.length; i++) yield { layer: street.rank <= 1 ? 'streetMajor' : 'streetMinor', points: [street.path[i - 1], street.path[i]] };
+    }
     for (const building of urban.buildings) yield { layer: 'building', points: building.poly, holes: building.courtyards, closed: true };
     for (const landmark of urban.landmarks) yield { layer: 'landmark', points: landmark.poly, closed: true };
     for (const wall of urban.walls ?? []) for (const points of wall.pieces ?? [wall.path]) yield { layer: 'wall', points, closed: !wall.pieces && wall.closed };

@@ -1,5 +1,8 @@
 ## Alpha 0.3.11
 
+- Azgaar imports trace the local ocean shoreline and use it to place coastal towns.
+- The Azgaar preview shows the public street network with fewer service paths.
+
 - Painted satellite distinguishes roof slopes more clearly and aligns roof textures with each building.
 - In Firefox, the Azgaar preview keeps the complete map visible during zoom and pan and reuses nearby rendered areas.
 

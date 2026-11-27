@@ -1,3 +1,5 @@
+import { fmgOceanShore } from './fmgShore';
+
 /**
  * Snippet pasted into the Azgaar Fantasy Map Generator browser console (F12). It reads one burg from the
  * page and copies a `fmg-burg-v1` JSON object that `parseAzgaarBurg` (./azgaar.ts) reads.
@@ -41,14 +43,15 @@ export const FMG_EXPORT_SCRIPT = String.raw`(() => {
   const biomeId = c.biome[cell];
   const biomeName = P.biomes && P.biomes[biomeId] ? P.biomes[biomeId].name
     : typeof biomesData !== 'undefined' ? biomesData.name[biomeId] : null;
-  // Coast as in FMG's watabou city links: the nearest water cell (haven) of a coastline cell.
+  // A short arc of the local shore, with the classic haven bearing for maps without that geometry.
   const haven = c.t[cell] === 1 && c.haven ? c.haven[cell] : undefined;
   let coast = null;
   if (haven !== undefined && c.p[haven]) {
     const [x1, y1] = c.p[cell], [x2, y2] = c.p[haven];
     const deg = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
     const feature = P.features[c.f[haven]];
-    coast = { sea: Math.round((deg <= 0 ? -deg / 180 : 2 - deg / 180) * 100) / 100, water: feature ? feature.type : null };
+    coast = (P.vertices && (${fmgOceanShore.toString()})(P, cell, b.x, b.y))
+      || { sea: Math.round((deg <= 0 ? -deg / 180 : 2 - deg / 180) * 100) / 100, water: feature ? feature.type : null };
   }
   const culture = P.cultures[b.culture || 0] || {};
   const state = P.states && P.states[b.state || 0];

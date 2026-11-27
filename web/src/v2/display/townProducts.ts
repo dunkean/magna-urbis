@@ -21,6 +21,7 @@ const CROSSING_ROLES = new Set(['bridge', 'ford', 'causeway', 'pier', 'boardwalk
 
 export class TownProducts implements Town {
   city?: NativeCityMap;
+  streetFilter?: (street: Pick<CityScene['streets'][number], 'role'>) => boolean;
   private exportCity?: NativeCityMap;
   /** The paint being made, or the last one made: the hooks of a stepwise paint are also called after `draw` returned. */
   private painting: TownPaint & { canvas?: HTMLCanvasElement } = {};
@@ -150,6 +151,7 @@ export class TownProducts implements Town {
         else this.map.repaint();
       },
       volumeTownBuildings(this.map.resolved) && this.map.resolved?.target === 'view2d',
+      this.streetFilter,
     );
     // Another pass prepared the same cities while the volumes were built: keep one map.
     if (this.map.ownsShared && shared.city?.key === key) {

@@ -11,7 +11,15 @@ import { polygonArea } from '../gen/core/geom';
 export function cityEmbedSettings(hints: ExternalCityHints, local: boolean, mode: CityPreviewMode = 'compact'): V2Settings {
   const settings = applyExternalCity(hints, defaultSettings());
   // The standalone importer leaves room for a region. An FMG preview shows one town and its near fringe.
-  if (typeof settings.extent === 'number') settings.extent = Math.max(1000, Math.round(settings.extent * 0.6 / 100) * 100);
+  if (typeof settings.extent === 'number') {
+    const extent = Math.max(1000, Math.round(settings.extent * 0.6 / 100) * 100);
+    const site = settings.region?.placement?.list?.[0];
+    if (site?.position && settings.terrain?.coastTrace) {
+      const scale = extent / settings.extent;
+      site.position = { x: site.position.x * scale, y: site.position.y * scale };
+    }
+    settings.extent = extent;
+  }
   const backend = local ? 'native' : 'rust';
   settings.generation = 'procedural';
   delete settings.decor;

@@ -6,10 +6,15 @@ import { worldToScreen } from '../../src/render/view';
 import { decodeCityCode } from '../../src/v2/cityCode';
 import { cityEmbedPopulationUrl, randomCityEmbedUrl } from '../../src/v2/cityEmbedDemo';
 import { cityEmbedSummary, cityEmbedText, embedLocale, loadEmbedLocale } from '../../src/v2/cityEmbedMessages';
+import { cityEmbedShowsStreet } from '../../src/v2/cityEmbedStreets';
 
 const read = (url: URL) => cityEmbedHints(cityEmbedSource(url));
 
 describe('city iframe contract', () => {
+  it('filters small service ways while keeping public streets and crossings', () => {
+    for (const role of ['lane', 'close', 'track', 'wall-lane']) expect(cityEmbedShowsStreet({ role })).toBe(false);
+    for (const role of ['street', 'approach', 'gate-street', 'bridge', 'boardwalk', 'quay']) expect(cityEmbedShowsStreet({ role })).toBe(true);
+  });
   it('uses the preferred FMG language, including regional variants, independently of the city seed', async () => {
     expect(embedLocale('de-AT', 'fr')).toBe('de');
     expect(embedLocale('zh-Hant-HK')).toBe('zh-TW');

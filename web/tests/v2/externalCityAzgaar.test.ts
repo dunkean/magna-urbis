@@ -7,6 +7,10 @@ import cityCodeDefaults from '../../src/v2/cityCodeDefaults.json';
 const oneOf = (pool: readonly string[]) => expect.stringMatching(new RegExp(`^(${pool.join('|')})$`));
 import { FMG_EXPORT_SCRIPT } from '../../src/v2/externalCity/fmgExport';
 import { decodeCityCode, UNRECOGNISED_INPUT } from '../../src/v2/cityCode';
+import { fmgOceanShore } from '../../src/v2/externalCity/fmgShore';
+import { rasterizeCoastTrace } from '../../src/v2/coastTrace';
+import { cityEmbedSettings } from '../../src/v2/cityEmbedGeneration';
+import { effectiveTerrainSettings } from '../../src/v2/terrainSettings';
 
 const HEADER =
   'Id,Burg,Province,Province Full Name,State,State Full Name,Culture,Religion,Group,Type,Population,Market,Product,Wealth,Prosperity,Balance,Adjustments,X,Y,Latitude,Longitude,Elevation (ft),Temperature,Temperature likeness,Capital,Port,Citadel,Walls,Plaza,Temple,Shanty Town,Emblem,Preview link,Tags';
@@ -14,6 +18,30 @@ const LINK = 'https://watabou.github.io/city-generator/?name=Ulmdorf&population=
 const ROW = `7,Ulmdorf,Ulmia,"Margraviate of Ulmia, North",Shwazenland,Kingdom of Shwazenland,Shwazen,Old Faith,city,River,12345,,0,0,,0,,512.3,300.1,48.2,10.1,1968,70°F,Germany,capital,,citadel,walls,plaza,temple,,"{t1:gules;ordinary:[]}",${LINK},"trade, old"`;
 
 describe('parseAzgaarBurg', () => {
+  it('traces a multi-edge ocean shore with a dry burg and preserves its scale in the iframe', () => {
+    const p: [number, number][] = [[-5, -2], [-3, -1], [0, 0], [3, 1.3], [5, 2], [5, 6], [-5, 6]];
+    const graph = {
+      cells: { t: [1, -1], haven: [1, 0], f: [0, 1], area: [16, 16], p: [[0, 0.8], [1, -2]] as [number, number][] },
+      vertices: { p, c: p.map((_, i) => i < 5 ? [0, 1] : [0]) },
+      features: [{ type: 'island', vertices: p.map((_, i) => i) }, { type: 'ocean', vertices: [] }],
+    };
+    const coast = fmgOceanShore(graph, 0, 0, 0.8)!;
+    expect(coast.shore.points).toHaveLength(7);
+    expect(coast.sea).toBeGreaterThan(0.35);
+    expect(coast.sea).toBeLessThan(0.45);
+    const input = { format: 'fmg-burg-v1', i: 6, name: 'Harbour', port: true, population: 2500, coast };
+    const hints = parseAzgaarBurg(JSON.stringify(input))!;
+    const studio = decodeCityCode(JSON.stringify(input)).settings, preview = cityEmbedSettings(hints, false);
+    expect(preview.region?.placement?.list?.[0]).toMatchObject({ population: 2500, position: { x: 900, y: 900 }, siteType: 'harbor' });
+    expect(studio.terrain?.coastTrace).toEqual(preview.terrain?.coastTrace);
+    const mask = rasterizeCoastTrace(preview.terrain!.coastTrace!, 40);
+    expect(mask[20 * 40 + 20]).toBe(0);
+    expect(mask[3 * 40 + 30]).toBe(1);
+    expect(mask[35 * 40 + 12]).toBe(0);
+    expect(effectiveTerrainSettings(preview, 1800).islandMode).toMatch(/^traced:/);
+    graph.features[1].type = 'lake';
+    expect(fmgOceanShore(graph, 0, 0, 0.8)).toBeUndefined();
+  });
   it('reads an FMG Burgs overview CSV row and keeps the watabou link seed', () => {
     const hints = parseAzgaarBurg(`\ufeff${HEADER}\r\n${ROW}\r\n`);
     expect(hints).toMatchObject({
