@@ -6,6 +6,7 @@ Start with the [project README](../README.md), the illustrated atlas [How it wor
 
 - [Repository map and component status](REPOSITORY_LAYOUT.md): maintained applications, developer tools, optional modules and experiments.
 - [Contribution guide](../CONTRIBUTING.md): setup, checks and documentation policy.
+- [Open technical debt for contributors](CONTRIBUTOR_TECHNICAL_DEBT.md) covers city plan operators, terrain passes, editing tools and file formats.
 - [V2 desktop and web setup](../rust/desktop-v2/README.md).
 - [Web publication and custom domains](WEB_PUBLICATION_FR.md).
 - [Repeatable desktop releases with GitHub Actions](DESKTOP_RELEASE.md).
