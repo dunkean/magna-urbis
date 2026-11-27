@@ -1,0 +1,42 @@
+#fmg-dialog:has(#fmg-map-selection:not([hidden])) {
+  width: 720px;
+}
+
+.fmg-map-import {
+  margin-bottom: 18px;
+}
+
+#fmg-map-name {
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}
+
+#fmg-map-draw {
+  margin-top: 4px;
+}
+
+#fmg-map-canvas {
+  display: block;
+  max-width: 100%;
+  max-height: min(48vh, 440px);
+  margin-inline: auto;
+  outline: 1px solid var(--line);
+  border-radius: 4px;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.fmg-map-coordinates {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.fmg-map-coordinates input {
+  width: 100%;
+}
+
+#fmg-map-custom-scale input {
+  display: block;
+  width: 12ch;
+}

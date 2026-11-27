@@ -19,6 +19,7 @@ import { priorityFlood, accumulate } from '../../gen/terrain/hydrology';
 import { cultureHouseLook } from '../../render/farmRoofs';
 import { OSM_ATTRIBUTION, osmProjection, type OsmElement, type OverpassReply } from './osmSources';
 import { HIGHWAY, LANDUSE, NATURAL, RIVER_WIDTH, URBAN_LANDUSE } from './osmTags';
+import { clipOsmArea, clipOsmLine } from './osmCrop';
 
 export interface OsmImportOptions {
   lat: number;
@@ -34,6 +35,8 @@ export interface OsmImportOptions {
 }
 export interface OsmImportInput {
   osm: OverpassReply;
+  /** A local extract may cover a much larger area than the square selected by the user. */
+  cropToSquare?: boolean;
   /** admin_level=8 relation: town content is kept when its centre lies inside it; roads, rivers, water and relief stay. */
   commune?: OsmElement;
   /** DEM, `grid` × `grid`, cell-centred, north-up, metres. */
@@ -86,6 +89,7 @@ const KIND: Record<string, string> = {
 };
 /** OSM barrier → lot boundary material and default height (m). */
 const BARRIER: Record<string, { material: 'fence' | 'wall' | 'hedge'; height: number }> = { fence: { material: 'fence', height: 1.2 }, wall: { material: 'wall', height: 1.8 }, retaining_wall: { material: 'wall', height: 1.2 }, hedge: { material: 'hedge', height: 1.6 } };
+const lookup = <T>(values: Record<string, T>, key: string): T | undefined => (Object.hasOwn(values, key) ? values[key] : undefined);
 const num = (v: unknown): number | undefined => {
   const n = parseFloat(String(v ?? '').replace(',', '.'));
   return Number.isFinite(n) ? n : undefined;
@@ -256,8 +260,13 @@ export function importOsm(input: OsmImportInput): OsmImport {
   const osmTimestamp = osm.osm3s?.timestamp_osm_base ?? '';
   const pts = (geometry: OsmElement['geometry']): P[] => (geometry ?? []).filter((g): g is LatLon => !!g).map(g => project(g.lat, g.lon));
   const inMap = (p: P, m = 0): boolean => p.x >= -m && p.y >= -m && p.x <= SIZE + m && p.y <= SIZE + m;
-  /** Clip a polyline to the map (plus a margin): the runs of consecutive inside points. */
-  const clipLine = (path: P[], margin = 30): P[][] => {
+  const clipLine = (geometry: NonNullable<OsmElement['geometry']>, margin = 30): P[][] => {
+    if (input.cropToSquare)
+      return clipOsmLine(
+        geometry.map(point => point && project(point.lat, point.lon)),
+        SIZE,
+      );
+    const path = pts(geometry);
     const runs: P[][] = [];
     let run: P[] = [];
     for (const p of path) {
@@ -273,24 +282,32 @@ export function importOsm(input: OsmImportInput): OsmImport {
   const memberRings = (el: OsmElement, inner: boolean): LatLon[][] =>
     joinRings(
       (el.members ?? [])
-        .filter(m => m.type === 'way' && (m.role === 'inner') === inner && m.geometry)
+        .filter(m => m.type === 'way' && (m.role === 'inner') === inner && m.geometry && (!input.cropToSquare || m.geometry.every(Boolean)))
         .map(m => m.geometry!.filter((g): g is LatLon => !!g))
         .filter(way => way.length >= 2),
     );
   const areas = (el: OsmElement): Area[] => {
     if (el.type === 'way' && el.geometry && el.geometry.length >= 4) {
-      const ring = openRing(pts(el.geometry));
+      const path = pts(el.geometry);
+      const ring = openRing(path);
+      if (input.cropToSquare && (path.length !== el.geometry.length || ring === path)) return [];
       return ring.length >= 3 ? [{ outer: positive(ring), holes: [] }] : [];
     }
     if (el.type === 'relation' && el.members) {
       const holes = memberRings(el, true).map(r => positive(openRing(pts(r))));
       return memberRings(el, false)
-        .map(r => ({ outer: positive(openRing(pts(r))), holes }))
-        .filter(a => a.outer.length >= 3);
+        .map(r => positive(openRing(pts(r))))
+        .filter(outer => outer.length >= 3)
+        .map(outer => ({ outer, holes: input.cropToSquare ? holes.filter(hole => hole.length >= 3 && pointInRing(outer, hole[0])) : holes }));
     }
     return [];
   };
   const visible = (a: Area): boolean => a.outer.some(p => inMap(p, 200));
+  const mapAreas = (el: OsmElement, building = false): Area[] => {
+    const features = areas(el);
+    if (input.cropToSquare) return features.flatMap(area => clipOsmArea(area, SIZE));
+    return features.filter(building ? a => a.outer.some(p => inMap(p)) : visible);
+  };
   /** Even-odd scanline fill of one area into a grid mask, at cell centres. */
   const rasterize = (mask: Uint8Array, area: Area, value: number): void => {
     const rings = [area.outer, ...area.holes];
@@ -341,28 +358,36 @@ export function importOsm(input: OsmImportInput): OsmImport {
     const t: Tags = el.tags ?? {};
     if (el.type === 'node') {
       const p = project(el.lat!, el.lon!);
+      if (input.cropToSquare && !inMap(p)) continue;
       if (t.barrier === 'city_gate') gatePoints.push(p);
       if (t.man_made === 'tower' || t.historic === 'tower') towerPoints.push(p);
       if (t.place && t.name) places.push({ name: t.name, place: t.place, p });
       continue;
     }
-    if (el.type === 'way' && el.geometry && (t['tower:type'] === 'defensive' || t.historic === 'tower')) towerPoints.push(centroid(pts(el.geometry)));
-    if (el.type === 'way' && el.geometry && (t.historic === 'city_gate' || t.barrier === 'city_gate')) gatePoints.push(centroid(pts(el.geometry)));
+    const identifiesTower = t['tower:type'] === 'defensive' || t.historic === 'tower';
+    const identifiesGate = t.historic === 'city_gate' || t.barrier === 'city_gate';
+    if (el.type === 'way' && el.geometry && (identifiesTower || identifiesGate)) {
+      const position = centroid(pts(el.geometry));
+      if (!input.cropToSquare || inMap(position)) {
+        if (identifiesTower) towerPoints.push(position);
+        if (identifiesGate) gatePoints.push(position);
+      }
+    }
     // Cadastre-traced curtains (Carcassonne): thin building areas tagged defensive_works=curtain_wall, kept as buildings
     // and also turned into wall centre lines.
     if (el.type === 'way' && el.geometry && t.defensive_works === 'curtain_wall') {
       const line = centreLine(openRing(pts(el.geometry)));
-      if (line) wallWays.push({ path: line, closed: false });
+      if (line) for (const path of input.cropToSquare ? clipOsmLine(line, SIZE) : [line]) wallWays.push({ path, closed: false });
     }
     if (t.highway && el.type === 'way' && el.geometry) {
-      const spec = HIGHWAY[t.highway];
+      const spec = lookup(HIGHWAY, t.highway);
       if (t.area === 'yes' && t.highway === 'pedestrian') {
-        squares.push(...areas(el).filter(visible));
+        squares.push(...mapAreas(el));
         continue;
       }
       if (!spec || t.footway === 'sidewalk' || t.footway === 'crossing') continue;
       const width = num(t.width) ?? spec.width;
-      for (const path of clipLine(pts(el.geometry))) {
+      for (const path of clipLine(el.geometry)) {
         if (path.length < 2 || length(path) < 2) continue;
         if (spec.region) roads.push({ path, kind: spec.region, width, editorId: `osm-way-${el.id}-${roadSerial++}`, name: t.name });
         else streets.push({ path, width, widths: path.map(() => width), kind: spec.kind!, rank: spec.rank!, role: spec.role!, phase: 0, name: t.name });
@@ -371,9 +396,9 @@ export function importOsm(input: OsmImportInput): OsmImport {
       continue;
     }
     if (importBuildings && t.building && t.building !== 'no') {
-      for (const a of areas(el)) {
-        if (!a.outer.some(p => inMap(p))) continue;
-        const levels = num(t['building:levels']) ?? (KIND[t.building] === 'workshop' ? 1 : 2);
+      for (const a of mapAreas(el, true)) {
+        const kind = lookup(KIND, t.building);
+        const levels = num(t['building:levels']) ?? (kind === 'workshop' ? 1 : 2);
         const height = num(t.height) ?? levels * 3.1 + 2;
         let best = 0,
           orientation = 0;
@@ -393,10 +418,11 @@ export function importOsm(input: OsmImportInput): OsmImport {
           curtain = t.defensive_works === 'curtain_wall',
           tagged = t.height !== undefined || t['building:levels'] !== undefined;
         const fixedHeight = tagged ? height : tower ? 15 : curtain ? 10 : religious ? 18 : castle ? 16 : height;
+        const osmRoof = lookup(ROOF, t['roof:shape']);
         const building: Building = {
           poly: a.outer,
           courtyards: a.holes,
-          kind: KIND[t.building] ?? (religious || castle ? 'collective' : 'domestic'),
+          kind: kind ?? (religious || castle ? 'collective' : 'domestic'),
           height: round2(fixedHeight),
           arch: 'silhouette',
           roof: tower ? 'cone' : curtain ? 'flat' : 'gable',
@@ -404,7 +430,7 @@ export function importOsm(input: OsmImportInput): OsmImport {
           material: 'stone',
           orientation,
           tagged,
-          ...(ROOF[t['roof:shape']] ? { osmRoof: ROOF[t['roof:shape']] } : {}),
+          ...(osmRoof ? { osmRoof } : {}),
         };
         buildings.push(building);
         buildingRoles.set(building, { osmId: `${el.type}-${el.id}`, function: religious ? 'religious' : castle || tower || curtain ? 'defensive' : building.kind === 'domestic' ? 'domestic' : 'mixed', curtain, tower });
@@ -413,40 +439,48 @@ export function importOsm(input: OsmImportInput): OsmImport {
       continue;
     }
     if (t.barrier === 'city_wall' || t.historic === 'citywalls') {
-      if (el.type === 'way' && el.geometry) for (const path of clipLine(pts(el.geometry), 0)) wallWays.push({ path, closed: el.geometry.length > 3 && el.geometry[0]?.lat === el.geometry.at(-1)?.lat && el.geometry[0]?.lon === el.geometry.at(-1)?.lon });
+      if (el.type === 'way' && el.geometry)
+        for (const path of clipLine(el.geometry, 0)) {
+          const closed = input.cropToSquare ? path.length > 3 && openRing(path) !== path : el.geometry.length > 3 && el.geometry[0]?.lat === el.geometry.at(-1)?.lat && el.geometry[0]?.lon === el.geometry.at(-1)?.lon;
+          wallWays.push({ path, closed });
+        }
       continue;
     }
-    const barrier = BARRIER[t.barrier] ?? (t.natural === 'hedge' ? BARRIER.hedge : undefined);
+    const barrier = lookup(BARRIER, t.barrier) ?? (t.natural === 'hedge' ? BARRIER.hedge : undefined);
     if (barrier && el.type === 'way' && el.geometry) {
       const height = num(t.height) ?? barrier.height;
-      for (const path of clipLine(pts(el.geometry), 0)) if (length(path) >= 1) fences.push({ path, material: barrier.material, side: 'side', height, ...(barrier.material === 'fence' ? { fenceStyle: 'plank' as const } : {}) });
+      for (const path of clipLine(el.geometry, 0)) if (length(path) >= 1) fences.push({ path, material: barrier.material, side: 'side', height, ...(barrier.material === 'fence' ? { fenceStyle: 'plank' as const } : {}) });
       continue;
     }
     if ((t.man_made === 'tower' || t.historic === 'tower') && el.type === 'way' && el.geometry) {
-      if (!(t['tower:type'] === 'defensive' || t.historic === 'tower')) towerPoints.push(centroid(pts(el.geometry)));
+      if (!identifiesTower) {
+        const p = centroid(pts(el.geometry));
+        if (!input.cropToSquare || inMap(p)) towerPoints.push(p);
+      }
       continue;
     }
     if (t.natural === 'water' || t.waterway === 'riverbank' || t.landuse === 'reservoir' || t.landuse === 'basin') {
       const river = t.water === 'river' || t.water === 'canal' || t.waterway === 'riverbank' || t.water === 'stream';
-      for (const a of areas(el).filter(visible)) waterAreas.push({ ...a, river, name: t.name });
+      for (const a of mapAreas(el)) waterAreas.push({ ...a, river, name: t.name });
       continue;
     }
     if (t.waterway && el.type === 'way' && el.geometry) {
-      const width = num(t.width) ?? RIVER_WIDTH[t.waterway];
+      const width = num(t.width) ?? lookup(RIVER_WIDTH, t.waterway);
       if (!width) continue;
-      for (const path of clipLine(pts(el.geometry), 50)) riverLines.push({ path, width, name: t.name, type: t.waterway });
+      for (const path of clipLine(el.geometry, 50)) riverLines.push({ path, width, name: t.name, type: t.waterway });
       continue;
     }
     if (t.place === 'square') {
-      squares.push(...areas(el).filter(visible));
+      squares.push(...mapAreas(el));
       continue;
     }
-    const land = LANDUSE[t.landuse] ?? NATURAL[t.natural] ?? (t.leisure ? 'garden' : undefined);
+    const park = t.leisure && (!input.cropToSquare || t.leisure === 'park' || t.leisure === 'garden');
+    const land = lookup(LANDUSE, t.landuse) ?? lookup(NATURAL, t.natural) ?? (park ? 'garden' : undefined);
     if (land) {
-      for (const a of areas(el).filter(visible)) landAreas.push({ kind: land, poly: a.outer, ...(a.holes.length ? { holes: a.holes } : {}) });
+      for (const a of mapAreas(el)) landAreas.push({ kind: land, poly: a.outer, ...(a.holes.length ? { holes: a.holes } : {}) });
       continue;
     }
-    if (URBAN_LANDUSE.has(t.landuse)) footprint.push(...areas(el).filter(visible));
+    if (URBAN_LANDUSE.has(t.landuse)) footprint.push(...mapAreas(el));
   }
 
   // Commune limit: town content is kept when its centre lies inside the boundary; roads, rivers, water and relief stay

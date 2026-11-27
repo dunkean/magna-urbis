@@ -3,6 +3,7 @@ import { SHARE_CODE_TOO_LARGE } from './cityCodeExtras';
 import { parseAzgaarBurg } from './externalCity/azgaar';
 import { applyExternalCity } from './externalCity/apply';
 import { FMG_EXPORT_SCRIPT } from './externalCity/fmgExport';
+import { mountFmgMapDialog } from './fmg/fmgMapDialog';
 import type { V2Settings } from './contracts';
 import { insertHTML, setText, registerMessages, translate } from './i18n';
 
@@ -32,6 +33,7 @@ const text = {
   copied: copy('Copied.', 'Copié.'),
   clipboard: copy('Select and copy the text below.', 'Sélectionnez et copiez le texte ci-dessous.'),
   fmgScript: copy('Copy the Azgaar export script', 'Copier le script d’export Azgaar'),
+  fmgSingle: copy('Import a single burg', 'Importer un seul bourg'),
   fmgShowScript: copy('View script', 'Voir le script'),
   fmgRun: copy('Open your map in Azgaar FMG. Open the browser console (F12), paste the script and press Enter.', 'Ouvrez votre carte dans Azgaar FMG. Ouvrez la console du navigateur (F12), collez le script et appuyez sur Entrée.'),
   fmgChoose: copy('Enter the burg’s name or ID. The script copies the JSON or prints it in the console for you to copy.', 'Saisissez le nom ou l’identifiant du bourg. Le script copie le JSON ou l’affiche dans la console pour que vous puissiez le copier.'),
@@ -57,18 +59,22 @@ export function mountCityCodeSharing(bindings: CityCodeBindings): { restoreFromL
     'beforebegin',
     `<dialog id="fmg-dialog" aria-labelledby="fmg-title">
       <div class="dialog-head"><h2 id="fmg-title">Azgaar FMG</h2><button id="fmg-close" type="button" aria-label="${text.close}">×</button></div>
-      <ol class="hint"><li>${text.fmgRun}</li><li>${text.fmgChoose}</li></ol>
-      <div class="dialog-actions"><button id="fmg-copy-script" type="button">${text.fmgScript}</button></div>
-      <details id="fmg-script-details">
-        <summary>${text.fmgShowScript}</summary>
-        <textarea id="fmg-script" aria-labelledby="fmg-copy-script" readonly rows="5" spellcheck="false"></textarea>
+      <div id="fmg-map-import"></div>
+      <details>
+        <summary>${text.fmgSingle}</summary>
+        <ol class="hint"><li>${text.fmgRun}</li><li>${text.fmgChoose}</li></ol>
+        <div class="dialog-actions"><button id="fmg-copy-script" type="button">${text.fmgScript}</button></div>
+        <details id="fmg-script-details">
+          <summary>${text.fmgShowScript}</summary>
+          <textarea id="fmg-script" aria-labelledby="fmg-copy-script" readonly rows="5" spellcheck="false"></textarea>
+        </details>
+        <p id="fmg-copy-status" class="hint" role="status"></p>
+        <label class="label" for="fmg-input">${text.fmgInput}</label>
+        <p id="fmg-input-hint" class="hint">${text.fmgPaste}</p>
+        <textarea id="fmg-input" aria-describedby="fmg-input-hint" rows="3" spellcheck="false"></textarea>
+        <p class="warning" id="fmg-error" role="alert"></p>
+        <div class="dialog-actions"><button id="fmg-import" class="primary" type="button">${text.fmgImport}</button></div>
       </details>
-      <p id="fmg-copy-status" class="hint" role="status"></p>
-      <label class="label" for="fmg-input">${text.fmgInput}</label>
-      <p id="fmg-input-hint" class="hint">${text.fmgPaste}</p>
-      <textarea id="fmg-input" aria-describedby="fmg-input-hint" rows="3" spellcheck="false"></textarea>
-      <p class="warning" id="fmg-error" role="alert"></p>
-      <div class="dialog-actions"><button id="fmg-import" class="primary" type="button">${text.fmgImport}</button></div>
     </dialog>
     <dialog id="city-code-dialog" aria-labelledby="city-code-title">
       <div class="dialog-head"><h2 id="city-code-title">${text.open}</h2><button id="city-code-close" type="button" aria-label="${text.close}">×</button></div>
@@ -93,6 +99,7 @@ export function mountCityCodeSharing(bindings: CityCodeBindings): { restoreFromL
   const script = find<HTMLTextAreaElement>('fmg-script');
   const scriptStatus = find('fmg-copy-status');
   script.value = FMG_EXPORT_SCRIPT;
+  mountFmgMapDialog(find('fmg-map-import'), { busy: bindings.busy, load: settings => bindings.load({ settings, mods: [] }, 'Azgaar FMG') });
 
   function openCode() {
     setText(codeError, '');

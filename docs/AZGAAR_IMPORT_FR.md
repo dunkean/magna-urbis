@@ -1,10 +1,18 @@
-# Importer un bourg d’Azgaar FMG
+# Importer une région ou un bourg d’Azgaar FMG
 
-Magna Urbis peut construire une ville à partir d’un bourg du [Fantasy Map Generator d’Azgaar](https://azgaar.github.io/Fantasy-Map-Generator/) (FMG).
-Dans la page V2, ouvrez **Ouvrir un code ou un lien**, collez l’une des entrées ci-dessous et cliquez sur **Charger la recette**.
-La ville importée démarre une nouvelle recette : une seule ville, sur une carte dimensionnée selon sa population.
+Dans la barre supérieure de Magna Urbis V2, ouvrez **Azgaar FMG**.
 
-## Entrées acceptées
+## Générer une région d’une carte FMG
+
+1. Dans Azgaar, enregistrez la carte au format `.map`.
+2. Dans Magna Urbis, choisissez ce fichier. L’aperçu permet de repérer les terres, les côtes et les bourgs.
+3. Tracez un carré sur la partie à importer, puis lancez la génération. Le relief et la position des bourgs proviennent de la sélection.
+
+Vous pouvez zoomer sur le carré pour affiner le tracé. Avant de générer, vérifiez sa largeur et le nombre de bourgs retenus. Magna Urbis reprend leurs noms et populations, puis génère les cours d’eau, les routes et les bâtiments. Si le carré dépasse les limites de taille du moteur, l’aperçu indique la largeur qui sera utilisée.
+
+## Générer une seule ville
+
+Pour recréer un bourg sur une carte dimensionnée selon sa population, collez le résultat du script d’export ou une ligne du CSV des bourgs dans la fenêtre **Azgaar FMG**, puis cliquez sur **Importer et générer**. Pour un lien watabou, passez par **Ouvrir un code ou un lien**.
 
 | Entrée | Comment l’obtenir dans FMG | Ce qu’elle transmet |
 |---|---|---|

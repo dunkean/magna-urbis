@@ -1,5 +1,8 @@
 ## Alpha 0.3.11
 
+- Import a local OpenStreetMap extract, choose the area to keep and fetch its AWS elevation. The OpenStreetMap dialog also provides the query for downloading the data yourself.
+- Open an Azgaar FMG `.map` file and draw a square on its preview to generate a region from its terrain and burgs.
+
 - Copper Bastide joins the culture picker with its own building colours and a 3D covered market hall for sites that fit it.
 - Town generation reuses street-frontage measurements when placing services and trimming unused streets.
 - Azgaar previews reopen on the full town, even after zooming or panning before closing.

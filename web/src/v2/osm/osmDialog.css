@@ -77,6 +77,41 @@
   margin-top: 8px;
 }
 
+.osm-file-options {
+  margin-top: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.osm-file-options summary {
+  cursor: pointer;
+}
+
+.osm-file-options label,
+.osm-file-options .hint {
+  display: block;
+  margin: 8px 0;
+}
+
+.osm-file-options input {
+  width: 100%;
+}
+
+.osm-file-preview {
+  width: min(100%, 210px);
+}
+
+.osm-file-preview canvas {
+  cursor: crosshair;
+}
+
+.osm-file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .osm-feedback {
   margin: 12px 0;
 }

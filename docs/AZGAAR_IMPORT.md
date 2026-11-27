@@ -1,12 +1,18 @@
-# Importing an Azgaar FMG burg
+# Importing an Azgaar FMG region or burg
 
-Magna Urbis can build a town from a burg of [Azgaar's Fantasy Map Generator](https://azgaar.github.io/Fantasy-Map-Generator/) (FMG).
-In the V2 page, open **Open a code or link**, paste one of the inputs below and click **Load recipe**.
-The imported town starts a fresh recipe: one town, on a map sized for its population.
+Open **Azgaar FMG** in the Magna Urbis V2 toolbar.
 
-For automatic generation inside an iframe, see [City iframe preview](AZGAAR_EMBED.md).
+## Generate a region from an FMG map
 
-## Accepted inputs
+1. Save the map as a `.map` file in Azgaar.
+2. Choose the file in Magna Urbis. The preview shows land, coasts and burgs.
+3. Draw a square around the area to import and start generation. The selected region supplies the terrain and burg locations.
+
+Zoom into the square to refine it. Check the region width and burg count before generating. Magna Urbis uses the burg names and populations from the file and generates rivers, roads and buildings. If the selected area falls outside the engine’s size limits, the preview shows the width it will use.
+
+## Generate a single town
+
+To recreate a burg on a map sized for its population, paste an export script result or a burg CSV row into the **Azgaar FMG** dialog and click **Import & generate**. For a watabou link, use **Open a code or link**. For automatic generation inside an iframe, see [City iframe preview](AZGAAR_EMBED.md).
 
 | Input                                  | How to get it in FMG                                                                                                                                                                                                                                                           | What it carries                                                                                                                        |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |

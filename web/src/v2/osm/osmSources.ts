@@ -229,6 +229,10 @@ export async function fetchOsmImportFeatures(square: OsmSquare, options: { commu
   const { bbox } = osmProjection(square);
   const name = options.commune;
   const osm = await fetchers.overpass(overpassImportQuery(bbox, name, options.importBuildings), bbox);
+  return osmImportFeatures(osm, name);
+}
+
+export function osmImportFeatures(osm: OverpassReply, name?: string) {
   // Restore stable IDs and draw order after the server's faster quadtile output.
   const order = { node: 0, way: 1, relation: 2 };
   osm.elements.sort((a, b) => order[a.type] - order[b.type] || a.id - b.id);

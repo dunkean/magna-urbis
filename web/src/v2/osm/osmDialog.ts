@@ -4,7 +4,9 @@ import { $, options } from '../page/dom';
 import type { PageActions, PageState } from '../page/contract';
 import { runtimeWorkerOptions } from '../platform';
 import { browserOsmFetchers, findOsmPlaces, OverpassUnavailable } from './browserSources';
-import { fetchOsmDem, fetchOsmImportFeatures, osmProjection, terrariumTiles, type OsmSquare } from './osmSources';
+import { fetchOsmDem, fetchOsmImportFeatures, osmImportFeatures, osmProjection, terrariumTiles, type OsmSquare } from './osmSources';
+import { MAX_OSM_FILE_BYTES, osmFileQuery, osmQueryScript, parseOsmFile, type OsmFile } from './osmFile';
+import { fitOsmFile, intersectsOsmBounds, osmFilePreview } from './osmFilePreview';
 import type { OsmImport, OsmImportInput, OsmImportOptions } from './osmImport';
 import OsmWorker from './osm.worker?worker';
 import './osmDialog.css';
@@ -28,6 +30,7 @@ const messages = {
   'Relief preview': 'Aperçu du relief',
   'Preview relief': 'Aperçu du relief',
   'Import & generate': 'Importer et générer',
+  'Import file & generate': 'Importer le fichier et générer',
   'The imported map replaces the current project. Save your map first if you want to keep it.': 'La carte importée remplace le projet actuel. Enregistrez votre carte si vous voulez la conserver.',
   'Searching for places…': 'Recherche de lieux…',
   'Choose a place from the results.': 'Choisissez un lieu parmi les résultats.',
@@ -36,6 +39,22 @@ const messages = {
   'Choose a square within the supported bounds (85° S to 85° N, without crossing 180° longitude).': 'Choisissez un carré entre 85° S et 85° N, sans franchir le méridien de 180°.',
   'Downloading AWS elevation…': 'Téléchargement du relief AWS…',
   'Downloading elevation and OpenStreetMap data…': 'Téléchargement du relief et des données OpenStreetMap…',
+  'Use an OpenStreetMap file': 'Utiliser un fichier OpenStreetMap',
+  'OpenStreetMap file': 'Fichier OpenStreetMap',
+  'Choose an OSM XML or Overpass JSON file (up to 64 MB). Elevation downloads automatically for the selected square.': 'Choisissez un fichier OSM XML ou Overpass JSON (jusqu’à 64 Mo). Le relief du carré sélectionné est téléchargé automatiquement.',
+  'Open query in Overpass Turbo': 'Ouvrir la requête dans Overpass Turbo',
+  'Download query': 'Télécharger la requête',
+  'Download query script': 'Télécharger le script de requête',
+  'Remove file': 'Retirer le fichier',
+  'Run the query for the current square, then export the raw data and select that file here.': 'Exécutez la requête pour le carré actuel, exportez les données brutes et sélectionnez le fichier ici.',
+  'Crop to file area': 'Recadrer sur la zone du fichier',
+  'OpenStreetMap file and selected square': 'Fichier OpenStreetMap et carré sélectionné',
+  'Click the file preview to move the square. Set its size above.': 'Cliquez sur l’aperçu du fichier pour déplacer le carré. Réglez sa taille ci-dessus.',
+  'Choose a square that overlaps the OpenStreetMap file.': 'Choisissez un carré qui recouvre la zone du fichier OpenStreetMap.',
+  'Reading the OpenStreetMap file…': 'Lecture du fichier OpenStreetMap…',
+  'The OpenStreetMap file could not be read.': 'Impossible de lire le fichier OpenStreetMap.',
+  'The OpenStreetMap file is larger than 64 MB.': 'Le fichier OpenStreetMap dépasse 64 Mo.',
+  'Downloading elevation for the selected square…': 'Téléchargement du relief pour le carré sélectionné…',
   'Waiting for OpenStreetMap…': 'En attente du serveur OpenStreetMap…',
   'Receiving OpenStreetMap data…': 'Réception des données OpenStreetMap…',
   'Trying another OpenStreetMap server…': 'Nouvelle tentative sur un autre serveur OpenStreetMap…',
@@ -47,7 +66,7 @@ const messages = {
   'The relief preview could not be loaded.': 'Impossible de charger l’aperçu du relief.',
   'The map could not be imported.': 'Impossible d’importer la carte.',
   'OpenStreetMap data unavailable': 'Données OpenStreetMap indisponibles',
-  'The OpenStreetMap servers could not provide data for this area. Retry to fetch the same area again.': 'Les serveurs OpenStreetMap n’ont pas pu fournir les données de cette zone. Tu peux réessayer ici.',
+  'The OpenStreetMap servers could not provide data for this area. Retry or use a local OpenStreetMap file below.': 'Les serveurs OpenStreetMap n’ont pas pu fournir les données de cette zone. Réessayez ou utilisez un fichier OpenStreetMap ci-dessous.',
   'AWS elevation unavailable': 'Relief AWS indisponible',
   'The elevation download failed. Retry to fetch the relief for this area again.': 'Le téléchargement du relief a échoué. Tu peux réessayer pour la même zone.',
   Retry: 'Réessayer',
@@ -143,6 +162,18 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
         </div>
         <figure class="osm-relief"><div class="osm-preview-frame"><canvas id="osm-preview" width="256" height="256" aria-label="Relief preview" hidden></canvas><span aria-hidden="true">N ↑</span></div><figcaption><button id="osm-preview-go" type="button">Preview relief</button><output id="osm-elevation" class="hint" hidden></output></figcaption></figure>
       </div>
+      <details id="osm-file-options" class="osm-file-options">
+        <summary>Use an OpenStreetMap file</summary>
+        <label><span class="label">OpenStreetMap file</span><input id="osm-file" type="file" accept=".osm,.xml,.json,application/json,application/xml,text/xml" aria-describedby="osm-file-hint"></label>
+        <p id="osm-file-hint" class="hint">Choose an OSM XML or Overpass JSON file (up to 64 MB). Elevation downloads automatically for the selected square.</p>
+        <div id="osm-file-crop" hidden>
+          <div class="osm-preview-frame osm-file-preview"><canvas id="osm-file-preview" width="320" height="320" role="img" aria-label="OpenStreetMap file and selected square"></canvas><span aria-hidden="true">N ↑</span></div>
+          <p class="hint">Click the file preview to move the square. Set its size above.</p>
+          <button id="osm-file-fit" type="button">Crop to file area</button>
+        </div>
+        <div class="osm-file-actions"><button id="osm-query-open" type="button">Open query in Overpass Turbo</button><button id="osm-query-text" type="button">Download query</button><button id="osm-query-download" type="button">Download query script</button></div>
+        <p class="hint">Run the query for the current square, then export the raw data and select that file here.</p>
+      </details>
       <p class="hint">The imported map replaces the current project. Save your map first if you want to keep it.</p>
       <p class="hint osm-credits">${osmCredits} · <a href="https://github.com/komoot/photon#demo-server" target="_blank" rel="noopener noreferrer">Photon</a></p>
       <div class="osm-feedback">
@@ -154,7 +185,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
           <div class="osm-warning-actions"><button id="osm-retry" type="button" aria-describedby="osm-warning-title">Retry</button><details id="osm-warning-details"><summary>Technical details</summary><p id="osm-error" class="hint" hidden></p></details></div>
         </section>
       </div>
-      <div class="dialog-actions"><button id="osm-cancel" type="button">Cancel</button><button id="osm-generate" type="submit" class="primary">Import &amp; generate</button></div>
+      <div class="dialog-actions"><button id="osm-file-remove" type="button" hidden>Remove file</button><button id="osm-cancel" type="button">Cancel</button><button id="osm-generate" type="submit" class="primary">Import &amp; generate</button></div>
     </form>
   `,
   );
@@ -177,9 +208,15 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
   const progress = $<HTMLProgressElement>('#osm-progress');
   const elapsed = $('#osm-elapsed');
   const canvas = $<HTMLCanvasElement>('#osm-preview');
+  const fileOptions = $<HTMLDetailsElement>('#osm-file-options');
+  const fileInput = $<HTMLInputElement>('#osm-file');
+  const cropControls = $('#osm-file-crop');
+  const cropCanvas = $<HTMLCanvasElement>('#osm-file-preview');
+  const removeFile = $<HTMLButtonElement>('#osm-file-remove');
   const elevation = $('#osm-elevation');
   const closeButton = $<HTMLButtonElement>('#osm-close');
   const cancelButton = $<HTMLButtonElement>('#osm-cancel');
+  const generateButton = $<HTMLButtonElement>('#osm-generate');
   const inputs = form.elements.namedItem.bind(form.elements);
   const mapName = inputs('mapName') as HTMLInputElement;
   const latitude = inputs('latitude') as HTMLInputElement;
@@ -196,6 +233,9 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
   let progressTimer: ReturnType<typeof setInterval> | undefined;
   let retry: (() => void) | undefined;
   let preview: { key: string; data: Awaited<ReturnType<typeof fetchOsmDem>>['dem'] } | undefined;
+  let localFile: OsmFile | undefined;
+  let cropPreview: ReturnType<typeof osmFilePreview> | undefined;
+  let squareConfigured = false;
 
   function hideWarning(): void {
     warning.hidden = detail.hidden = true;
@@ -214,7 +254,8 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
     let message = '';
     if (error instanceof OverpassUnavailable) {
       title = 'OpenStreetMap data unavailable';
-      message = 'The OpenStreetMap servers could not provide data for this area. Retry to fetch the same area again.';
+      message = 'The OpenStreetMap servers could not provide data for this area. Retry or use a local OpenStreetMap file below.';
+      fileOptions.open = true;
     } else if (error instanceof ReliefUnavailable) {
       title = 'AWS elevation unavailable';
       message = 'The elevation download failed. Retry to fetch the relief for this area again.';
@@ -277,12 +318,18 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
   function clearPreview(): void {
     preview = undefined;
     elevation.hidden = canvas.hidden = true;
+    cropPreview?.draw(currentSquare());
     feedback();
+  }
+
+  function currentSquare(): OsmSquare | undefined {
+    if (![latitude, longitude, side].every(field => field.validity.valid)) return;
+    return { lat: latitude.valueAsNumber, lon: longitude.valueAsNumber, size: side.valueAsNumber * 1000 };
   }
 
   function area(): OsmSquare | undefined {
     if (![latitude, longitude, side].every(field => field.reportValidity())) return;
-    const square = { lat: latitude.valueAsNumber, lon: longitude.valueAsNumber, size: side.valueAsNumber * 1000 };
+    const square = currentSquare()!;
     const { bounds } = osmProjection(square);
     if (bounds.south < -85 || bounds.north > 85 || bounds.west <= -180 || bounds.east >= 180) {
       feedback('Choose a square within the supported bounds (85° S to 85° N, without crossing 180° longitude).');
@@ -290,6 +337,95 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
     }
     return square;
   }
+
+  function setCentre(lat: number, lon: number): void {
+    latitude.value = lat.toFixed(7);
+    longitude.value = lon.toFixed(7);
+    sizeHint.hidden = true;
+    clearPreview();
+  }
+
+  function fitFile(): void {
+    if (!localFile) return;
+    const { lat, lon, size } = fitOsmFile(localFile.bounds, MIN_KM * 1000, MAX_KM * 1000);
+    side.value = String(size / 1000);
+    setCentre(lat, lon);
+  }
+
+  fileInput.onchange = () => {
+    localFile = undefined;
+    cropPreview = undefined;
+    cropControls.hidden = true;
+    const selected = fileInput.files?.[0];
+    removeFile.hidden = !selected;
+    setText(generateButton, selected ? 'Import file & generate' : 'Import & generate');
+    if (!selected) return;
+    void run('The OpenStreetMap file could not be read.', async signal => {
+      feedback('Reading the OpenStreetMap file…');
+      if (selected.size > MAX_OSM_FILE_BYTES) throw new Error(translate('The OpenStreetMap file is larger than 64 MB.'));
+      const text = await selected.text();
+      signal.throwIfAborted();
+      const parsed = parseOsmFile(text);
+      const preview = osmFilePreview(cropCanvas, parsed);
+      localFile = parsed;
+      cropPreview = preview;
+      cropControls.hidden = false;
+      const square = currentSquare();
+      const overlaps = square && intersectsOsmBounds(parsed.bounds, osmProjection(square).bounds);
+      if (!overlaps || !squareConfigured) {
+        if (!overlaps && mapName.value === 'Carcassonne') mapName.value = cleanSettlementName(selected.name.replace(/\.[^.]+$/, '')) ?? '';
+        fitFile();
+      } else {
+        preview.draw(square);
+        feedback();
+      }
+    });
+  };
+  removeFile.onclick = () => {
+    fileInput.value = '';
+    localFile = undefined;
+    cropPreview = undefined;
+    cropControls.hidden = removeFile.hidden = true;
+    setText(generateButton, 'Import & generate');
+    feedback();
+    fileInput.focus();
+  };
+  $('#osm-file-fit').onclick = fitFile;
+  cropCanvas.onclick = event => {
+    if (!cropPreview || active || state.busy) return;
+    const rect = cropCanvas.getBoundingClientRect();
+    const { lat, lon } = cropPreview.position((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height);
+    squareConfigured = true;
+    setCentre(lat, lon);
+  };
+
+  function manualQuery(): string | undefined {
+    const square = area();
+    if (!square) return;
+    squareConfigured = true;
+    return osmFileQuery(square, commune.value.trim() || undefined, buildings.value === 'osm');
+  }
+
+  $('#osm-query-open').onclick = () => {
+    const query = manualQuery();
+    if (query) window.open(`https://overpass-turbo.eu/?${new URLSearchParams({ Q: query })}`, '_blank', 'noopener,noreferrer');
+  };
+  function downloadText(text: string, name: string): void {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    const download = document.createElement('a');
+    download.href = url;
+    download.download = name;
+    download.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  $('#osm-query-text').onclick = () => {
+    const query = manualQuery();
+    if (query) downloadText(query, 'openstreetmap.overpass');
+  };
+  $('#osm-query-download').onclick = () => {
+    const query = manualQuery();
+    if (query) downloadText(osmQueryScript(query), 'download-osm.sh');
+  };
 
   async function getRelief(square: OsmSquare, zoom: number, signal: AbortSignal, onTiles?: (done: number, total: number) => void) {
     const key = JSON.stringify(square);
@@ -343,6 +479,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
 
   resultField.onchange = () => {
     if (resultField.value === '') return;
+    squareConfigured = true;
     const {
       geometry: {
         coordinates: [lon, lat],
@@ -364,6 +501,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
   };
   for (const field of [latitude, longitude, side])
     field.oninput = () => {
+      squareConfigured = true;
       sizeHint.hidden = true;
       clearPreview();
     };
@@ -387,6 +525,15 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
     const square = area();
     const name = cleanSettlementName(mapName.value);
     if (!square) return;
+    const source = localFile;
+    if (fileInput.files?.length && !source) {
+      feedback('The OpenStreetMap file could not be read.');
+      return;
+    }
+    if (source && !intersectsOsmBounds(source.bounds, osmProjection(square).bounds)) {
+      feedback('Choose a square that overlaps the OpenStreetMap file.');
+      return;
+    }
     if (!name) {
       mapName.value = '';
       mapName.reportValidity();
@@ -395,7 +542,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
     const options: OsmImportOptions = { ...square, name, culture: culture.value, grid: GRID, zoom: reliefZoom(square), communeName: commune.value.trim() || undefined, importBuildings: buildings.value === 'osm' };
     void run('The map could not be imported.', async signal => {
       let relief = 0;
-      let osm = 0;
+      let osm = source ? 1 : 0;
       let fallback = false;
       let received = false;
       let displayedBytes = '';
@@ -403,7 +550,8 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
       const updateNetworkProgress = () => {
         if (signal.aborted) return;
         let message = 'Downloading elevation and OpenStreetMap data…';
-        if (osm) message = 'Downloading AWS elevation…';
+        if (source) message = 'Downloading elevation for the selected square…';
+        else if (osm) message = 'Downloading AWS elevation…';
         else if (received) message = 'Receiving OpenStreetMap data…';
         else if (fallback) message = 'Trying another OpenStreetMap server…';
         else if (relief === 1) message = 'Waiting for OpenStreetMap…';
@@ -419,39 +567,41 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
           updateNetworkProgress();
           return dem;
         }),
-        fetchOsmImportFeatures(
-          square,
-          { commune: options.communeName, importBuildings: options.importBuildings },
-          browserOsmFetchers(signal, {
-            onFallback() {
-              fallback = true;
-              received = false;
-              transferred.hidden = true;
+        source
+          ? Promise.resolve().then(() => osmImportFeatures(source.osm, options.communeName))
+          : fetchOsmImportFeatures(
+              square,
+              { commune: options.communeName, importBuildings: options.importBuildings },
+              browserOsmFetchers(signal, {
+                onFallback() {
+                  fallback = true;
+                  received = false;
+                  transferred.hidden = true;
+                  updateNetworkProgress();
+                },
+                onBytes(bytes) {
+                  if (signal.aborted) return;
+                  if (!received) {
+                    received = true;
+                    updateNetworkProgress();
+                  }
+                  const amount = megabytes.format(bytes / 1_000_000);
+                  if (amount !== displayedBytes || transferred.hidden) {
+                    displayedBytes = amount;
+                    transferred.textContent = `OpenStreetMap · ${amount}`;
+                    transferred.hidden = false;
+                  }
+                },
+              }),
+            ).then(features => {
+              osm = 1;
               updateNetworkProgress();
-            },
-            onBytes(bytes) {
-              if (signal.aborted) return;
-              if (!received) {
-                received = true;
-                updateNetworkProgress();
-              }
-              const amount = megabytes.format(bytes / 1_000_000);
-              if (amount !== displayedBytes || transferred.hidden) {
-                displayedBytes = amount;
-                transferred.textContent = `OpenStreetMap · ${amount}`;
-                transferred.hidden = false;
-              }
-            },
-          }),
-        ).then(features => {
-          osm = 1;
-          updateNetworkProgress();
-          return features;
-        }),
+              return features;
+            }),
       ]);
       transferred.hidden = true;
       showProgress('Building the imported map…', 2);
-      const result = await convert({ ...features, options, elevations: dem.elevations }, signal, completed => {
+      const result = await convert({ ...features, options, elevations: dem.elevations, cropToSquare: !!source }, signal, completed => {
         showProgress('Generating buildings along the imported streets…', Math.max(progress.value, 2 + completed));
       });
       signal.throwIfAborted();
