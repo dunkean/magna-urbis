@@ -1,5 +1,5 @@
 import './exportCrop.css';
-import { clampExportRect, exportPixelSize, type ExportRect } from './exportCropGeometry';
+import { clampExportRect, exportPixelSize, resizeExportRect, type ExportHandle, type ExportRect } from './exportCropGeometry';
 
 export interface CroppedExport {
   blob: Blob;
@@ -33,83 +33,127 @@ export async function chooseExportCrop(blob: Blob, longestEdge: number, localize
   return { blob: new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' }), width, height };
 }
 
-/** The same crop UI accepts raster previews without wrapping or decoding them as SVG. Bounds are map metres. */
+/** The same crop UI accepts vector and raster previews. Bounds are map metres. */
 export function chooseExportArea(blob: Blob, bounds: ExportRect, longestEdge: number, localize?: (dialog: HTMLDialogElement) => void): Promise<ExportArea | null> {
   let selection = { ...bounds };
   const dialog = document.createElement('dialog');
   dialog.className = 'export-crop';
   dialog.setAttribute('aria-labelledby', 'export-crop-title');
-  dialog.innerHTML = `<h2 id="export-crop-title">Recadrer l’export</h2>
-    <p>Tracez un rectangle sur l’aperçu, puis déplacez-le ou ajustez ses dimensions.</p>
-    <div class="export-crop-preview"><img alt="Aperçu de la carte à exporter"><svg aria-label="Zone de recadrage"><path fill="#000" fill-opacity=".55" fill-rule="evenodd" pointer-events="none"/><rect fill="transparent" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke"/></svg></div>
-    <div class="export-crop-fields">${[
-      ['x', 'X (m)'],
-      ['y', 'Y (m)'],
-      ['width', 'Largeur (m)'],
-      ['height', 'Hauteur (m)'],
-    ]
-      .map(([key, label]) => `<label>${label}<input data-field="${key}" type="number" step="any" required></label>`)
-      .join('')}</div>
-    <div class="export-crop-actions"><button type="button" data-action="reset">Carte entière</button><output aria-live="polite"></output><button type="button" data-action="cancel">Annuler</button><button type="button" data-action="export">Exporter</button></div>`;
+  dialog.setAttribute('aria-describedby', 'export-crop-help');
+  dialog.innerHTML = `<div class="dialog-head">
+      <h2 id="export-crop-title">Recadrer l’export</h2>
+      <button type="button" data-action="cancel" aria-label="Fermer">×</button>
+    </div>
+    <p id="export-crop-help" class="export-crop-help">Tracez le cadre sur la carte, puis déplacez-le ou tirez ses poignées.</p>
+    <div class="export-crop-stage">
+      <div class="export-crop-preview">
+        <img alt="Aperçu de la carte à exporter" draggable="false">
+        <div class="export-crop-overlay" aria-hidden="true">
+          <div class="export-crop-frame" hidden>
+            ${(['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const).map(handle => `<span data-handle="${handle}"></span>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="export-crop-info">
+      <dl>
+        <div><dt>Dimensions sur la carte</dt><dd><output data-size="map" aria-live="off"></output></dd></div>
+        <div><dt>Taille en pixels</dt><dd><output data-size="pixels" aria-live="off"></output></dd></div>
+      </dl>
+      <button type="button" data-action="reset">Carte entière</button>
+    </div>
+    <details class="export-crop-details">
+      <summary>Coordonnées et dimensions</summary>
+      <div class="export-crop-fields">${[
+        ['x', 'X (m)'],
+        ['y', 'Y (m)'],
+        ['width', 'Largeur (m)'],
+        ['height', 'Hauteur (m)'],
+      ]
+        .map(([key, label]) => `<label>${label}<input data-field="${key}" type="number" step="any"></label>`)
+        .join('')}</div>
+    </details>
+    <div class="dialog-actions">
+      <button type="button" data-action="cancel">Annuler</button>
+      <button type="button" class="primary" data-action="export">Exporter</button>
+    </div>`;
   const preview = dialog.querySelector<HTMLElement>('.export-crop-preview')!;
   const image = dialog.querySelector('img')!;
-  const overlay = dialog.querySelector('svg')!;
-  const frame = overlay.querySelector('rect')!;
-  const mask = overlay.querySelector('path')!;
+  const overlay = dialog.querySelector<HTMLElement>('.export-crop-overlay')!;
+  const frame = dialog.querySelector<HTMLElement>('.export-crop-frame')!;
+  const mapSize = dialog.querySelector<HTMLOutputElement>('[data-size="map"]')!;
+  const pixelSize = dialog.querySelector<HTMLOutputElement>('[data-size="pixels"]')!;
   const fields = Array.from(dialog.querySelectorAll<HTMLInputElement>('input'));
+  const distanceFormat = new Intl.NumberFormat(document.documentElement.lang || 'fr', { maximumSignificantDigits: 4 });
+  const pixelFormat = new Intl.NumberFormat(document.documentElement.lang || 'fr');
   const url = URL.createObjectURL(blob);
   image.src = url;
-  // A fixed aspect ratio avoids letterboxing: pointer coordinates match the source viewBox.
-  preview.style.width = `${Math.min(720, (430 * bounds.width) / bounds.height)}px`;
-  preview.style.aspectRatio = `${bounds.width} / ${bounds.height}`;
-  overlay.setAttribute('viewBox', `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
+  preview.style.setProperty('--crop-aspect', String(bounds.width / bounds.height));
   const refresh = (): void => {
+    const { x, y, width, height } = selection;
+    frame.hidden = width === bounds.width && height === bounds.height;
+    frame.style.left = `${((x - bounds.x) / bounds.width) * 100}%`;
+    frame.style.top = `${((y - bounds.y) / bounds.height) * 100}%`;
+    frame.style.width = `${(width / bounds.width) * 100}%`;
+    frame.style.height = `${(height / bounds.height) * 100}%`;
+    const kilometres = Math.min(width, height) >= 1000;
+    const divisor = kilometres ? 1000 : 1;
+    mapSize.value = `${distanceFormat.format(width / divisor)} × ${distanceFormat.format(height / divisor)} ${kilometres ? 'km' : 'm'}`;
+    const pixels = exportPixelSize(selection, longestEdge);
+    pixelSize.value = `${pixelFormat.format(pixels.width)} × ${pixelFormat.format(pixels.height)} px`;
     for (const input of fields) {
       const key = input.dataset.field as keyof ExportRect;
       input.value = String(Number(selection[key].toFixed(3)));
-      input.min = String(key === 'x' ? bounds.x : key === 'y' ? bounds.y : Math.min(1, bounds[key]));
-      input.max = String(key === 'x' ? bounds.x + bounds.width - selection.width : key === 'y' ? bounds.y + bounds.height - selection.height : bounds[key]);
     }
-    for (const [key, value] of Object.entries(selection)) frame.setAttribute(key, String(value));
-    const { x, y, width, height } = selection;
-    mask.setAttribute('d', `M${bounds.x} ${bounds.y}h${bounds.width}v${bounds.height}h${-bounds.width}Z M${x} ${y}h${width}v${height}h${-width}Z`);
-    const pixels = exportPixelSize(selection, longestEdge);
-    dialog.querySelector('output')!.textContent = `${pixels.width} × ${pixels.height} px`;
   };
   for (const input of fields)
     input.onchange = () => {
       const key = input.dataset.field as keyof ExportRect;
-      if (input.value.trim() && Number.isFinite(input.valueAsNumber)) selection = clampExportRect({ ...selection, [key]: input.valueAsNumber }, bounds);
+      if (Number.isFinite(input.valueAsNumber)) selection = clampExportRect({ ...selection, [key]: input.valueAsNumber }, bounds);
       refresh();
     };
-  const point = (event: PointerEvent): { x: number; y: number } => {
-    const r = overlay.getBoundingClientRect();
-    return { x: Math.max(bounds.x, Math.min(bounds.x + bounds.width, bounds.x + ((event.clientX - r.left) / r.width) * bounds.width)), y: Math.max(bounds.y, Math.min(bounds.y + bounds.height, bounds.y + ((event.clientY - r.top) / r.height) * bounds.height)) };
+
+  const point = ({ clientX, clientY }: PointerEvent) => {
+    const box = overlay.getBoundingClientRect();
+    return { x: bounds.x + Math.max(0, Math.min(1, (clientX - box.left) / box.width)) * bounds.width, y: bounds.y + Math.max(0, Math.min(1, (clientY - box.top) / box.height)) * bounds.height };
   };
-  let drag: { start: { x: number; y: number }; rect: ExportRect; move: boolean; id: number } | undefined;
+  let drag: { id: number; mode: 'draw' | 'move' | ExportHandle; start: ReturnType<typeof point>; clientX: number; clientY: number; initial: ExportRect; changed: boolean } | undefined;
+
   overlay.onpointerdown = event => {
     if (event.button !== 0 || drag) return;
-    event.preventDefault();
-    const start = point(event);
-    // The full-map rectangle initially acts as a drawing surface.
-    const move = event.target === frame && (selection.width < bounds.width || selection.height < bounds.height);
-    drag = { start, rect: { ...selection }, move, id: event.pointerId };
+    const target = event.target as HTMLElement;
+    const handle = target.dataset.handle as ExportHandle | undefined;
+    drag = { id: event.pointerId, mode: handle ?? (frame.contains(target) ? 'move' : 'draw'), start: point(event), clientX: event.clientX, clientY: event.clientY, initial: selection, changed: false };
     overlay.setPointerCapture(event.pointerId);
+    event.preventDefault();
   };
-  overlay.onpointermove = event => {
+  const updateDrag = (event: PointerEvent): void => {
     if (!drag || event.pointerId !== drag.id) return;
-    const p = point(event),
-      { start, rect, move } = drag;
-    selection = clampExportRect(move ? { ...rect, x: rect.x + p.x - start.x, y: rect.y + p.y - start.y } : { x: Math.min(start.x, p.x), y: Math.min(start.y, p.y), width: Math.abs(p.x - start.x), height: Math.abs(p.y - start.y) }, bounds);
+    if (!drag.changed && Math.hypot(event.clientX - drag.clientX, event.clientY - drag.clientY) < 3) return;
+    drag.changed = true;
+    overlay.dataset.drag = drag.mode;
+    const { x, y } = point(event);
+    const { start, initial, mode } = drag;
+    const dx = x - start.x,
+      dy = y - start.y;
+    if (mode === 'move') selection = clampExportRect({ ...initial, x: initial.x + dx, y: initial.y + dy }, bounds);
+    else if (mode === 'draw') selection = clampExportRect({ x: Math.min(x, start.x), y: Math.min(y, start.y), width: Math.abs(dx), height: Math.abs(dy) }, bounds);
+    else selection = resizeExportRect(initial, bounds, mode, dx, dy);
     refresh();
   };
   const endDrag = (event: PointerEvent): void => {
-    if (drag?.id !== event.pointerId) return;
-    if (overlay.hasPointerCapture(event.pointerId)) overlay.releasePointerCapture(event.pointerId);
+    if (!drag || drag.id !== event.pointerId) return;
+    if (event.type === 'pointerup') updateDrag(event);
+    else {
+      selection = drag.initial;
+      refresh();
+    }
     drag = undefined;
+    delete overlay.dataset.drag;
+    if (overlay.hasPointerCapture(event.pointerId)) overlay.releasePointerCapture(event.pointerId);
   };
-  overlay.onpointerup = endDrag;
-  overlay.onpointercancel = endDrag;
+  overlay.onpointermove = updateDrag;
+  overlay.onpointerup = overlay.onpointercancel = overlay.onlostpointercapture = endDrag;
   dialog.querySelector<HTMLButtonElement>('[data-action="reset"]')!.onclick = () => {
     selection = { ...bounds };
     refresh();
@@ -119,22 +163,23 @@ export function chooseExportArea(blob: Blob, bounds: ExportRect, longestEdge: nu
   localize?.(dialog);
   return new Promise((resolve, reject) => {
     let result: ExportArea | null = null;
-    dialog.onclose = () => {
+    const dispose = (): void => {
       URL.revokeObjectURL(url);
       dialog.remove();
+    };
+    dialog.onclose = () => {
+      dispose();
       resolve(result);
     };
-    dialog.querySelector<HTMLButtonElement>('[data-action="cancel"]')!.onclick = () => dialog.close();
+    dialog.querySelectorAll<HTMLButtonElement>('[data-action="cancel"]').forEach(button => (button.onclick = () => dialog.close()));
     dialog.querySelector<HTMLButtonElement>('[data-action="export"]')!.onclick = () => {
-      const pixels = exportPixelSize(selection, longestEdge);
-      result = { rect: { ...selection }, ...pixels };
+      result = { rect: { ...selection }, ...exportPixelSize(selection, longestEdge) };
       dialog.close();
     };
     try {
       dialog.showModal();
     } catch (error) {
-      URL.revokeObjectURL(url);
-      dialog.remove();
+      dispose();
       reject(error);
     }
   });

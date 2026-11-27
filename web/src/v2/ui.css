@@ -1164,20 +1164,6 @@ dialog .file-card p {
 .inspector-mode input {
   margin: 0;
 }
-.export-crop {
-  color-scheme: light;
-  color: #3d2f20;
-}
-.export-crop h2,
-.export-crop p {
-  color: #3d2f20;
-}
-.export-crop button,
-.export-crop input {
-  color: #3d2f20;
-  background: #fff8ea;
-  border-color: #d6c7a1;
-}
 @media (min-width: 1600px) {
   .workspace {
     grid-template-columns: 350px minmax(0, 1fr);

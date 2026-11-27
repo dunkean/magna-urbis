@@ -14,11 +14,12 @@ import { orthographicExportFrame, uvttDocument, uvttFrame } from '../uvtt';
 import { encodeVttMap, isVttExport, type VttExport } from '../vttFormats';
 import { encodeMapMesh, isMeshExport, type MeshExport } from '../meshFormats';
 import { viewRect } from '../../render/view';
+import { isTilted } from '../../render/world/camera';
 import type { ExportRect } from '../../ui/exportCropGeometry';
 import type { World } from '../../gen/types';
 import type { ExportLayers } from '../../render/exportLayers';
-import { chooseExportArea, chooseExportCrop } from '../../ui/exportCrop';
-import { canvasPng, cropCanvasPng } from '../../ui/canvasExport';
+import { chooseExportArea, type ExportArea } from '../../ui/exportCrop';
+import { canvasPng } from '../../ui/canvasExport';
 import { supportsSvgExport } from '../exportOptions';
 import { exportPng } from '../../ui/pngExport';
 import { heightmapPng } from '../../ui/terrainHeightmap';
@@ -26,6 +27,7 @@ import ExportWorker from '../export.worker?worker';
 import { migrateUrbanSeeds } from '../urbanSeeds';
 import { $ } from './dom';
 import { projectJob } from './projectWorkers';
+import { captureWorldPng } from './worldNavigation';
 
 export function createExportsActions(state: PageState, actions: PageActions) {
   function download(blob: Blob, name: string): void {
@@ -39,10 +41,7 @@ export function createExportsActions(state: PageState, actions: PageActions) {
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
 
-  async function svgExport(): Promise<Blob> {
-    const layers = exportLayers(),
-      width = Number($<HTMLSelectElement>('#export-resolution').value);
-    const { settings, resolved } = exportAppearance(state.world);
+  async function svgExport(world: World, width: number, { settings, resolved }: ReturnType<typeof exportAppearance>, layers: Partial<ExportLayers>, area?: ExportArea): Promise<Blob> {
     if (!supportsSvgExport(resolved)) throw new Error(translate('SVG is unavailable for the current style. Use PNG.'));
     if (!resolved.cartography.roads) {
       layers.roads = false;
@@ -52,7 +51,7 @@ export function createExportsActions(state: PageState, actions: PageActions) {
     const display = resolvedDisplayOptions(resolved);
     if (!resolved.ground.layers.relief) display.raster = false;
     const lu = resolved.composition.landuse;
-    if (state.world && layers.landuse !== false && lu.rural !== 'off') display.semanticLegend = ruralSemanticLegend(state.world.landuse, lu.classes, lu.rural); // urban entries need the city scenes (composite path only)
+    if (layers.landuse !== false && lu.rural !== 'off') display.semanticLegend = ruralSemanticLegend(world.landuse, lu.classes, lu.rural); // urban entries need the city scenes (composite path only)
     const brushes = resolved.cartography.painted ? (await import('../../render/assets/brushAssets')).BRUSH_SOURCES : undefined;
     const worker = new ExportWorker();
     try {
@@ -73,8 +72,16 @@ export function createExportsActions(state: PageState, actions: PageActions) {
         try {
           worker.postMessage({
             id: 1,
-            world: state.world ? exportWorld(mapPresentation(state.world, settings)) : state.world,
-            options: { width, style: resolved.palette.mapStyle, layers, roadLook: resolved.composition.networks.roads.look, roadEmphasis: resolved.composition.networks.roads.emphasis, roadNight: resolved.composition.ambience === 'night' },
+            world: exportWorld(mapPresentation(world, settings)),
+            options: {
+              width,
+              viewport: area && { viewBox: [area.rect.x, area.rect.y, area.rect.width, area.rect.height], width: area.width, height: area.height },
+              style: resolved.palette.mapStyle,
+              layers,
+              roadLook: resolved.composition.networks.roads.look,
+              roadEmphasis: resolved.composition.networks.roads.emphasis,
+              roadNight: resolved.composition.ambience === 'night',
+            },
             display,
             brushes,
           });
@@ -93,33 +100,38 @@ export function createExportsActions(state: PageState, actions: PageActions) {
   }
 
   async function pngMapExport(width: number, crop: boolean): Promise<Blob | null> {
-    const world = state.world;
-    const { settings, resolved } = exportAppearance(world);
+    const world = state.world!;
+    const appearance = exportAppearance(world);
+    const { settings, resolved } = appearance;
+    const layers = exportLayers();
+    const area = crop ? await mapExportArea(world, width, appearance, layers) : undefined;
+    if (area === null) return null;
+    setText($('#export-note'), 'Rendering the export…');
     if (resolved.path === 'classic') {
-      let blob = await svgExport(),
-        dimensions: number | { width: number; height: number } = width;
-      if (crop) {
-        const result = await chooseExportCrop(blob, width, bindTree);
-        if (!result) return null;
-        blob = result.blob;
-        dimensions = result;
-      }
-      return exportPng(blob, dimensions, phase => {
+      const blob = await svgExport(world, width, appearance, layers, area);
+      return exportPng(blob, area ?? width, phase => {
         setText($('#export-note'), `Export PNG : ${phase}`);
         actions.log(`Export PNG : ${phase}`);
       });
     }
-    const image = await state.client.exportBench(settings, resolved, width, exportLayers(), undefined, world);
+    const frame = area && orthographicExportFrame(area.rect, width);
+    const image = await state.client.exportBench(settings, resolved, width, layers, frame, world);
     try {
       setText($('#export-note'), 'Encoding PNG…');
-      const png = await canvasPng(image);
-      if (!crop) return png;
-      const bounds = { x: 0, y: 0, width: world!.mapSize, height: world!.mapSize };
-      const area = await chooseExportArea(png, bounds, width, bindTree);
-      return area ? await cropCanvasPng(image, bounds, area.rect, area) : null;
+      return await canvasPng(image);
     } finally {
       image.width = image.height = 0;
     }
+  }
+
+  async function svgMapExport(width: number, crop: boolean): Promise<Blob | null> {
+    const world = state.world!;
+    const appearance = exportAppearance(world);
+    const layers = exportLayers();
+    const area = crop ? await mapExportArea(world, width, appearance, layers) : undefined;
+    if (area === null) return null;
+    setText($('#export-note'), 'Rendering the export…');
+    return svgExport(world, width, appearance, layers, area);
   }
 
   function exportAppearance(world: World | undefined, detailed = false) {
@@ -144,15 +156,22 @@ export function createExportsActions(state: PageState, actions: PageActions) {
     return { settings, resolved: resolveSettingsAppearance(settings, world, 'export') };
   }
 
-  async function mapExportRect(world: World, width: number, crop: boolean, appearance: ReturnType<typeof exportAppearance>, layers: Partial<ExportLayers>): Promise<ExportRect | null> {
+  async function mapExportArea(world: World, width: number, appearance: ReturnType<typeof exportAppearance>, layers: Partial<ExportLayers>): Promise<ExportArea | null> {
+    setText($('#export-note'), 'Preparing the map preview…');
     const bounds = { x: 0, y: 0, width: world.mapSize, height: world.mapSize };
-    if (!crop) return bounds;
-    const preview = await state.client.exportBench(appearance.settings, appearance.resolved, 1200, layers, undefined, world);
+    const { settings, resolved } = appearance;
+    const preview = await state.client.exportBench(settings, resolved, 960, layers, undefined, world);
+    let png: Blob;
     try {
-      return (await chooseExportArea(await canvasPng(preview), bounds, width, bindTree))?.rect ?? null;
+      png = await canvasPng(preview);
     } finally {
       preview.width = preview.height = 0;
     }
+    return chooseExportArea(png, bounds, width, bindTree);
+  }
+
+  async function mapExportRect(world: World, width: number, crop: boolean, appearance: ReturnType<typeof exportAppearance>, layers: Partial<ExportLayers>): Promise<ExportRect | null> {
+    return crop ? ((await mapExportArea(world, width, appearance, layers))?.rect ?? null) : { x: 0, y: 0, width: world.mapSize, height: world.mapSize };
   }
 
   function areaName(name: string, area: ExportRect, crop: boolean): string {
@@ -247,7 +266,9 @@ export function createExportsActions(state: PageState, actions: PageActions) {
     svg.disabled = !available;
     setText(svg, available ? 'SVG vector map' : 'SVG vector map · unavailable for this style');
     const select = $<HTMLSelectElement>('#export-format');
-    if (!available && select.value === 'svg') select.value = 'png';
+    const capture = $<HTMLOptionElement>('#export-format option[value="capture3d"]');
+    capture.hidden = capture.disabled = !isTilted(state.client.viewer.getView());
+    if ((!available && select.value === 'svg') || (capture.disabled && select.value === 'capture3d')) select.value = 'png';
     const format = select.value;
     $('#export-map-options').hidden = !['png', 'svg'].includes(format) && !isVttExport(format) && !isMeshExport(format);
     $('#export-vtt-options').hidden = !isVttExport(format);
@@ -264,11 +285,12 @@ export function createExportsActions(state: PageState, actions: PageActions) {
       owlbear: 'Includes a PNG for the scene importer and UVTT for Smoke & Spectre!.',
       roll20: 'Import this UVTT from the Roll20 page menu using Upload Background.',
       dd2vtt: 'Exports a detailed overhead map, walls and gates. Set the cell distance in your VTT after importing.',
+      capture3d: 'Capture the current 3D camera at the displayed size.',
     };
     const visual = available ? 'Visual exports use the current map without rerunning generation.' : 'SVG is unavailable for the current style. Use PNG.';
     setText($('#export-note'), explicit[format] ?? (isMeshExport(format) ? 'Exports metric meshes and a terrain texture. Resolution controls the texture size.' : visual));
   }
-  return { download, svgExport, pngMapExport, uvttMapExport, meshMapExport, heightmapBlob, syncExportOptions };
+  return { download, svgMapExport, pngMapExport, uvttMapExport, meshMapExport, heightmapBlob, syncExportOptions };
 }
 
 export function mountExports(state: PageState, actions: PageActions): void {
@@ -311,6 +333,20 @@ export function mountExports(state: PageState, actions: PageActions): void {
     'Rendering the VTT map…': { en: 'Rendering the VTT map…', fr: 'Rendu de la carte VTT…' },
     'VTT export downloaded. Set the grid to {distance} m per cell.': { en: 'VTT export downloaded. Set the grid to {distance} m per cell.', fr: 'Export VTT téléchargé. Réglez la grille sur {distance} m par case.' },
     'Encoding PNG…': { en: 'Encoding PNG…', fr: 'Encodage du PNG…' },
+    'Overhead map · PNG': { en: 'Overhead map · PNG', fr: 'Carte vue du dessus · PNG' },
+    'Current 3D view · PNG': { en: 'Current 3D view · PNG', fr: 'Vue 3D actuelle · PNG' },
+    'Capture the current 3D camera at the displayed size.': { en: 'Capture the current 3D camera at the displayed size.', fr: 'Capture la caméra 3D actuelle aux dimensions de la vue affichée.' },
+    'Preparing the map preview…': { en: 'Preparing the map preview…', fr: 'Préparation de l’aperçu de la carte…' },
+    'Rendering the export…': { en: 'Rendering the export…', fr: 'Rendu de l’export…' },
+    'Recadrer l’export': { en: 'Crop the export', fr: 'Recadrer l’export' },
+    'Tracez le cadre sur la carte, puis déplacez-le ou tirez ses poignées.': { en: 'Drag on the map to select an area. Move the frame or drag its handles to adjust it.', fr: 'Tracez le cadre sur la carte, puis déplacez-le ou tirez ses poignées.' },
+    'Aperçu de la carte à exporter': { en: 'Map export preview', fr: 'Aperçu de la carte à exporter' },
+    'Dimensions sur la carte': { en: 'Map dimensions', fr: 'Dimensions sur la carte' },
+    'Taille en pixels': { en: 'Pixel dimensions', fr: 'Taille en pixels' },
+    'Carte entière': { en: 'Whole map', fr: 'Carte entière' },
+    'Coordonnées et dimensions': { en: 'Coordinates and dimensions', fr: 'Coordonnées et dimensions' },
+    'Largeur (m)': { en: 'Width (m)', fr: 'Largeur (m)' },
+    'Hauteur (m)': { en: 'Height (m)', fr: 'Hauteur (m)' },
     'Names · JSON': { en: 'Names · JSON', fr: 'Noms · JSON' },
     'Renamed places and edited labels, which the short code does not carry.': { en: 'Renamed places and edited labels, which the short code does not carry.', fr: 'Les lieux renommés et les étiquettes modifiées, que le code court ne contient pas.' },
   });
@@ -336,6 +372,8 @@ export function mountExports(state: PageState, actions: PageActions): void {
       if (format === 'binary') {
         const buffer = await projectJob<ArrayBuffer>({ action: 'serialize-binary', settings: state.settings, world: state.previewBase?.pristine ?? state.previewBase?.world ?? state.pristine ?? state.world, mods: state.mods });
         actions.download(new Blob([buffer], { type: 'application/octet-stream' }), `${name}.project.muproj`);
+      } else if (format === 'capture3d') {
+        actions.download(await captureWorldPng(state), `${name}.3d.png`);
       } else if (format === 'project' || format === 'recipe') {
         actions.download(
           await projectJob<Blob>({
@@ -373,10 +411,7 @@ export function mountExports(state: PageState, actions: PageActions): void {
           const result = await exporter.meshMapExport(format, name, width, crop);
           blob = result?.blob ?? null;
           extension = result?.extension ?? format;
-        } else {
-          const svg = await exporter.svgExport();
-          blob = crop ? ((await chooseExportCrop(svg, width, bindTree))?.blob ?? null) : svg;
-        }
+        } else blob = await exporter.svgMapExport(width, crop);
         if (!blob) return;
         actions.download(blob, `${name}.${extension}`);
       }

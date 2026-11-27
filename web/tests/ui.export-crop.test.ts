@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampExportRect, exportPixelSize } from '../src/ui/exportCropGeometry';
+import { clampExportRect, exportPixelSize, resizeExportRect } from '../src/ui/exportCropGeometry';
 
 describe('image export crop bounds and proportions', () => {
   const bounds = { x: 100, y: 200, width: 1600, height: 1200 };
@@ -9,6 +9,12 @@ describe('image export crop bounds and proportions', () => {
   it('limits oversized selections and keeps tiny selections nonempty', () => {
     expect(clampExportRect({ x: 0, y: 0, width: 9000, height: 9000 }, bounds)).toEqual(bounds);
     expect(clampExportRect({ x: 1700, y: 1400, width: 0, height: 0 }, bounds)).toEqual({ x: 1699, y: 1399, width: 1, height: 1 });
+  });
+  it('keeps the opposite corner fixed when a dragged handle reaches the map boundary', () => {
+    expect(resizeExportRect({ x: 200, y: 300, width: 800, height: 400 }, bounds, 'nw', -500, 100)).toEqual({ x: 100, y: 400, width: 900, height: 300 });
+  });
+  it('resizes just the grabbed edge and stops it at the opposite edge', () => {
+    expect(resizeExportRect({ x: 200, y: 300, width: 800, height: 400 }, bounds, 'e', -1000, 200)).toEqual({ x: 200, y: 300, width: 1, height: 400 });
   });
   it('exports landscape and portrait crops at their selected aspect ratio', () => {
     expect(exportPixelSize({ x: 300, y: 400, width: 800, height: 400 }, 3000)).toEqual({ width: 3000, height: 1500 });

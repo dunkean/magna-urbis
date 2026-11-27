@@ -22,17 +22,25 @@ registerMessages({
     en: 'Walk and fly: W A S D or arrows, Shift faster, drag to look; flying: Space or E up, C down. Escape: orbit, Home: map.',
     fr: 'Marche et vol : Z Q S D ou flèches, Maj pour aller plus vite, glisser pour regarder ; en vol : Espace ou E pour monter, C pour descendre. Échap : orbite, Origine : carte.',
   },
-  'Walk and fly: drag to look, slide two fingers to move (down goes forward).': {
-    en: 'Walk and fly: drag to look, slide two fingers to move (down goes forward).',
-    fr: 'Marche et vol : glisser pour regarder, glisser à deux doigts pour se déplacer (vers le bas pour avancer).',
-  },
+  'Walk and fly: drag to look, slide two fingers to move (down goes forward).': { en: 'Walk and fly: drag to look, slide two fingers to move (down goes forward).', fr: 'Marche et vol : glisser pour regarder, glisser à deux doigts pour se déplacer (vers le bas pour avancer).' },
   'Fly up': { en: 'Fly up', fr: 'Monter' },
   'Fly down': { en: 'Fly down', fr: 'Descendre' },
   'Generated map: drag to pan, pinch to zoom': { en: 'Generated map: drag to pan, pinch to zoom', fr: 'Carte générée : glisser pour déplacer, pincer pour zoomer' },
-  PNG: { en: 'PNG', fr: 'PNG' },
+  '3D PNG': { en: '3D PNG', fr: 'PNG 3D' },
   'Export the tilted view as PNG': { en: 'Export the tilted view as PNG', fr: 'Exporter la vue inclinée en PNG' },
   'The view is not ready for a capture yet.': { en: 'The view is not ready for a capture yet.', fr: 'La vue n’est pas encore prête pour une capture.' },
 });
+
+export async function captureWorldPng({ client }: PageState): Promise<Blob> {
+  await client.viewer.waitForFrame();
+  const image = client.captureView();
+  if (!image) throw new Error('The view is not ready for a capture yet.');
+  try {
+    return await canvasPng(image);
+  } finally {
+    image.width = image.height = 0;
+  }
+}
 
 export function mountWorldNavigation(state: PageState, actions: PageActions): void {
   // The gestures of ui/viewerInput.ts on a handheld, the keys elsewhere.
@@ -52,7 +60,7 @@ export function mountWorldNavigation(state: PageState, actions: PageActions): vo
     select = bar.querySelector<HTMLSelectElement>('[data-navigation]')!,
     capture = $<HTMLButtonElement>('#capture3d'),
     viewer = state.client.viewer;
-  setText(capture, 'PNG');
+  setText(capture, '3D PNG');
   capture.setAttribute('data-i18n-title', 'Export the tilted view as PNG');
   capture.title = translate('Export the tilted view as PNG');
   // A handheld has no Space or C: two buttons over the map, held down, climb and descend in a free flight.
@@ -108,14 +116,7 @@ export function mountWorldNavigation(state: PageState, actions: PageActions): vo
   };
   capture.onclick = async () => {
     try {
-      await viewer.waitForFrame();
-      const image = state.client.captureView();
-      if (!image) throw new Error('The view is not ready for a capture yet.');
-      try {
-        actions.download(await canvasPng(image), `magna-urbis-${state.settings.options.seed}.3d.png`);
-      } finally {
-        image.width = image.height = 0;
-      }
+      actions.download(await captureWorldPng(state), `magna-urbis-${state.settings.options.seed}.3d.png`);
     } catch (error) {
       actions.toast(error instanceof Error ? error.message : String(error), true);
     }

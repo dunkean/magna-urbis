@@ -88,6 +88,7 @@ try {
     await page.locator('#export-go').click();
     if (crop) {
       await page.locator('.export-crop').waitFor({ state: 'visible' });
+      await page.locator('.export-crop summary').click();
       for (const [key, value] of Object.entries({ width: 1200, height: 600, x: 100, y: 100 })) {
         await setInput(`.export-crop [data-field="${key}"]`, value);
       }

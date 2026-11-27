@@ -45,6 +45,7 @@
     "test": "vitest run",
     "test:v2": "vitest run tests/v2",
     "test:v2:browser": "node scripts/v2_browser_check.mjs",
+    "test:v2:exports": "node scripts/v2_export_check.mjs",
     "test:v2:platform": "node scripts/v2_platform_check.mjs",
     "test:v2:static": "node scripts/v2_static_check.mjs",
     "test:v2:live": "node scripts/v2_live_check.mjs",

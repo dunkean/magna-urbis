@@ -1,5 +1,8 @@
 ## Alpha 0.3.11
 
+- Draw, move and resize the export area directly on the map preview, with live distances and pixel dimensions. Cropped PNGs render at full resolution after you select the area.
+- While the map is tilted, export the current 3D view as a PNG from the toolbar or the export dialog.
+
 - Azgaar imports preserve the local river and main road approaches as part of the generated town plan.
 - The Magna Urbis link in Azgaar opens the same generated town plan and selected detail in the studio.
 - A light ochre line marks the principal regional roads in the Azgaar preview, with gentler bends on the approaches.

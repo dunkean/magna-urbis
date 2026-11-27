@@ -48,6 +48,8 @@ export interface RenderOptions {
   layers?: Partial<ExportLayers>;
   /** Actual export width in pixels; sets decorative hairline weight. Defaults to the 1600 px design size, matching the default bounded hairline scale. */
   width?: number;
+  /** Restrict the SVG viewport while keeping the map's coordinates and decoration. */
+  viewport?: { viewBox: [number, number, number, number]; width: number; height: number };
   style?: MapStyle;
   contours?: boolean;
   raster?: boolean;
@@ -110,7 +112,8 @@ export function renderSvg(world0: World, opts: RenderOptions = {}): string {
   const clearings = opts.debug ? [] : worldForestClearings(world0);
   const forestMask = clearings.length ? ' mask="url(#forest-clearance)"' : '';
   const seedAttribute = world.seed.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${S} ${S}" width="${width}" height="${width}" data-seed="${seedAttribute}" data-style="${style}">`);
+  const viewport = opts.viewport ?? { viewBox: [0, 0, S, S], width, height: width };
+  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="${viewport.viewBox.join(' ')}" width="${viewport.width}" height="${viewport.height}" data-seed="${seedAttribute}" data-style="${style}">`);
   if (clearings.length)
     parts.push(
       `<defs><mask id="forest-clearance" maskUnits="userSpaceOnUse" x="0" y="0" width="${S}" height="${S}" style="mask-type:luminance"><rect width="${S}" height="${S}" fill="white"/>${clearings.map(p => `<path d="${pathD(orientPos(p.outer), true) + p.holes.map(h => pathD(orientPos(h).slice().reverse(), true)).join('')}" fill="black" fill-rule="nonzero"/>`).join('')}</mask></defs>`,
