@@ -102,7 +102,7 @@ function tintedWall(wall: string, tint: string | undefined, palette: CityPalette
       .join('')
   );
 }
-export const SATELLITE_SHADOW_OPACITY = 0.54;
+export const SATELLITE_SHADOW_OPACITY = 0.32;
 
 /** Fill of the height shadows cast on the ground. Neutral attenuation cannot brighten any channel of the receiving
  * ground. On a natural ground the cast is a near-black cool shade, and on snow the blue of skylit shade (snow is

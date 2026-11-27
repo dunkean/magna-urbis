@@ -11,7 +11,7 @@
 - The Magna Urbis link in Azgaar opens the same generated town plan and selected detail in the studio.
 - A light ochre line marks the principal regional roads in the Azgaar preview, with gentler bends on the approaches.
 - Imported rivers have rounded bends and join the sea in a continuous blue fill on the basic map.
-- Both satellite previews show longer building shadows with enough contrast to read at town scale.
+- Both satellite previews use lighter building shadows to keep roofs distinct at town scale.
 - Azgaar previews keep the source of rivers that begin in town and include connected secondary routes.
 - Detailed houses render when a residential lot has a specific dwelling type and shares a general housing demand.
 

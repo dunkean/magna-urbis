@@ -694,13 +694,13 @@ describe('V2 and City Bench stay in sync', () => {
     expect(read('../../src/render/cartography/roads.ts')).toContain('strokeNaturalRoad(ctx');
   });
 
-  it('retains strong satellite shadows when the ground shader changes or uses the painted palette', () => {
+  it('uses the same softer shadows for both satellite ground styles', () => {
     const fast = presetComposition('satellite-light');
     fast.ground.variant = 'render3d';
     for (const composition of [fast, presetComposition('satellite-2')]) {
       const r = resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d');
       expect(usesSatelliteTown(r)).toBe(true);
-      expect(castShadowTint(r.city.palette, undefined, undefined, usesSatelliteTown(r))[3]).toBeGreaterThan(0.5);
+      expect(castShadowTint(r.city.palette, undefined, undefined, usesSatelliteTown(r))[3]).toBe(0.32);
     }
     const r = resolveAppearance({ style: 'parchment', composition: presetComposition('parchment') }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d');
     expect(usesSatelliteTown(r)).toBe(false);
