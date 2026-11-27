@@ -6,6 +6,7 @@ use super::contacts::{Front, frontage};
 use super::cut_geometry::{add, dot, length, normal, scale, sub, unit};
 use super::depth::lot_depth;
 use super::identity::parcel;
+use super::neighbour_repair::redraw_close_pair;
 use super::seams::{boxes_touch, joined, shared};
 use crate::urban::{Morph, Parcel, Point, Shape};
 use crate::urban::geometry::{area, difference};
@@ -449,72 +450,119 @@ fn balanced(cells: &[Parcel], u: &Shape, i: usize, j: usize) -> bool {
     })
 }
 
-/// Invariant (no new small lot beside a big one in a dense zone): a degenerate,
-/// polygonal or trimmed lot under a third of a neighbour of similar frontage
-/// joins that neighbour (whose witness it contains) when the union keeps the
-/// depth bound and unbalances nobody else.
-fn fold_small(
-    cells: &mut Vec<Parcel>,
+fn frontage_length(p: &Parcel) -> f64 {
+    p.access.as_ref().map_or(0.0, |a| a.front_length)
+}
+
+fn close_fronts(a: f64, b: f64) -> bool {
+    a.min(b) > 0.0 && a.max(b) <= 1.5 * a.min(b)
+}
+
+fn area_ratio(a: f64, b: f64) -> f64 {
+    a.max(b) / a.min(b).max(1e-6)
+}
+
+/// Final cuts and fusions can leave a close-front pair that was balanced
+/// during qualification. Move the common wall after those edits, preserving
+/// both parcels and their admitted buildings.
+fn balance_close_neighbours(
+    cells: &mut [Parcel],
     fronts: &[Front],
     depth_limit: Option<f64>,
     rules: &Rules,
 ) {
-    let odd = |p: &Parcel| {
-        p.provenance.iter().any(|x| {
-            matches!(
-                x.as_str(),
-                "degenerate-lot" | "polygonal-lot" | "tip-trimmed" | "residual-absorbed"
-            )
-        })
-    };
-    let mut i = 0;
-    while i < cells.len() {
-        let c = &cells[i];
-        if c.use_kind != "plot" || c.envelope.is_none() || !odd(c) {
-            i += 1;
+    use super::super::geometry::bbox;
+    let mut lots: Vec<_> = cells.iter().enumerate()
+        .filter(|(_, p)| p.use_kind == "plot" && p.envelope.is_some() && frontage_length(p) > 0.0)
+        .map(|(i, p)| (bbox(&p.shape), i, area(&p.shape), frontage_length(p)))
+        .collect();
+    lots.sort_by(|a, b| a.0.0.total_cmp(&b.0.0).then(a.1.cmp(&b.1)));
+    let mut pairs = vec![];
+    for (k, &(ab, a, aa, af)) in lots.iter().enumerate() {
+        for &(bb, b, ba, bf) in &lots[k + 1..] {
+            if bb.0 > ab.2 + 0.05 {
+                break;
+            }
+            let ratio = area_ratio(aa, ba);
+            if ratio >= 3.0 && close_fronts(af, bf) && boxes_touch(ab, bb)
+                && shared(&cells[a].shape, &cells[b].shape) >= 1.0
+            {
+                pairs.push((ratio, a.min(b), a.max(b)));
+            }
+        }
+    }
+    pairs.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+    for (_, a, b) in pairs {
+        let (a, b) = if area(&cells[a].shape) <= area(&cells[b].shape) { (a, b) } else { (b, a) };
+        let (small, large) = (&cells[a], &cells[b]);
+        let (sa, la) = (area(&small.shape), area(&large.shape));
+        if la < 3.0 * sa || !close_fronts(frontage_length(small), frontage_length(large))
+            || shared(&small.shape, &large.shape) < 1.0
+        {
             continue;
         }
-        let front = c.access.as_ref().map_or(0.0, |a| a.front_length);
-        let rb = super::super::geometry::bbox(&c.shape);
-        let mut near: Vec<(usize, f64)> = cells
-            .iter()
-            .enumerate()
-            .filter(|(j, p)| {
-                let f = p.access.as_ref().map_or(0.0, |a| a.front_length);
-                *j != i
-                    && p.use_kind == "plot"
-                    && p.envelope.is_some()
-                    && area(&p.shape) >= 3.0 * area(&cells[i].shape)
-                    && front.min(f) > 0.0
-                    && front.max(f) <= 1.5 * front.min(f)
-                    && boxes_touch(rb, super::super::geometry::bbox(&p.shape))
-            })
-            .map(|(j, p)| (j, shared(&cells[i].shape, &p.shape)))
-            .filter(|&(_, s)| s >= 1.0)
-            .collect();
-        near.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
-        let target = near.iter().find_map(|&(j, _)| {
-            let u = joined(&cells[i].shape, &cells[j].shape)?;
-            if (area(&u) - area(&cells[i].shape) - area(&cells[j].shape)).abs() > 1e-3 {
-                return None;
-            }
-            (oriented(&u).2 + 0.05 >= oriented(&cells[j].shape).2
-                && !concave_join(&u, &cells[i].shape, &cells[j].shape, rules.floor)
-                && reach(&u, &cells[j], fronts, depth_limit)
-                && balanced(cells, &u, i, j))
-            .then_some((j, u))
-        });
-        let Some((j, union)) = target else {
-            i += 1;
-            continue;
+        let floor = |p: &Parcel| rules.floor.min(solidity(&p.shape));
+        let (sf, lf) = (floor(small), floor(large));
+        let depth = |p: &Parcel| depth_limit.map(|d| (1.25 * d + 0.5).max(lot_depth(&p.shape, fronts)));
+        let (sd, ld) = (depth(small), depth(large));
+        let viable = |p: &Parcel, shape: &Shape, floor: f64, depth: Option<f64>| {
+            super::super::geometry::simple(shape)
+                && depth.is_none_or(|d| lot_depth(shape, fronts) <= d + 0.01)
+                && solidity(shape) + 1e-6 >= floor
+                && witness_kept(p, shape)
+                && (rules.admits)(p, shape)
         };
-        let id = cells[i].id.clone();
-        cells[j].shape = super::super::geometry::cleaned(&union);
-        cells[j].parent_ids.push(id);
-        cells[j].provenance.push("pair-merged".into());
-        (rules.reseat)(&mut cells[j]);
-        cells.remove(i);
-        i = i.saturating_sub(1).min(cells.len());
+        let mut repaired = None;
+        redraw_close_pair(&small.shape, &large.shape, |s, l| {
+            let (new_sa, new_la) = (area(&s), area(&l));
+            if area_ratio(new_sa, new_la) >= 3.0
+                || (new_sa + new_la - sa - la).abs() > 1e-5 * (sa + la).max(1.0)
+                || !viable(small, &s, sf, sd) || !viable(large, &l, lf, ld)
+            {
+                return false;
+            }
+            let reseat = |p: &Parcel, shape: Shape| {
+                let mut lot = p.clone();
+                lot.shape = shape;
+                (rules.reseat)(&mut lot);
+                lot
+            };
+            let (s, l) = (reseat(small, s), reseat(large, l));
+            let keeps_front = |p: &Parcel, q: &Parcel| {
+                frontage_length(q) > 0.0
+                    && q.access.as_ref().and_then(|a| a.street) == p.access.as_ref().and_then(|a| a.street)
+            };
+            let keeps_balance = |p: &Parcel, q: &Parcel, before: f64, after: f64| {
+                let bounds = bbox(&q.shape);
+                let f = frontage_length(q);
+                cells.iter().enumerate().all(|(k, other)| {
+                    if k == a || k == b || !matches!(other.use_kind.as_str(), "plot" | "court" | "compound")
+                        || !close_fronts(f, frontage_length(other)) || !boxes_touch(bounds, bbox(&other.shape))
+                    {
+                        return true;
+                    }
+                    let oa = area(&other.shape);
+                    let ratio = area_ratio(after, oa);
+                    ratio < 3.0 || shared(&q.shape, &other.shape) < 1.0
+                        || (ratio <= area_ratio(before, oa)
+                            && close_fronts(frontage_length(p), frontage_length(other))
+                            && shared(&p.shape, &other.shape) >= 1.0)
+                })
+            };
+            if !keeps_front(small, &s) || !keeps_front(large, &l)
+                || !keeps_balance(small, &s, sa, new_sa) || !keeps_balance(large, &l, la, new_la)
+            {
+                return false;
+            }
+            repaired = Some([s, l]);
+            true
+        });
+        if let Some([mut s, mut l]) = repaired {
+            for p in [&mut s, &mut l] {
+                p.provenance.push("neighbour-balance".into());
+            }
+            (cells[a], cells[b]) = (s, l);
+        }
     }
 }
 
@@ -1103,10 +1151,10 @@ pub(super) fn tidy(
     }
     trim_tips(cells, fronts, rules);
     merge_slivers(cells, fronts, depth_limit, rules);
-    if dense {
-        fold_small(cells, fronts, depth_limit, rules);
-    }
     cut_arms(cells, fronts, depth_limit, rules);
+    if dense {
+        balance_close_neighbours(cells, fronts, depth_limit, rules);
+    }
 }
 
 #[cfg(test)]
@@ -1115,6 +1163,46 @@ mod tests {
     use crate::urban::parcels::contacts::street_runs;
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn shape_review_one_deep_plot_shares_land_with_three_close_front_neighbours() {
+        use super::super::super::geometry::rectangle;
+        let axis = Point { x: 1.0, y: 0.0 };
+        let fronts = [
+            Front { a: at(0.0, 0.0), b: at(30.0, 0.0), street: 0, rank: 1, shared: false, gate: false },
+            Front { a: at(20.0, 30.0), b: at(10.0, 30.0), street: 1, rank: 2, shared: false, gate: false },
+        ];
+        let mut cells: Vec<_> = (0..3)
+            .map(|i| {
+                let x = f64::from(i) * 10.0;
+                let mut p = parcel(rectangle(x, 0.0, x + 10.0, 10.0), 0, axis, &fronts, "plot");
+                p.envelope = Some(rectangle(x + 1.0, 1.0, x + 9.0, 9.0));
+                p
+            })
+            .collect();
+        let mut deep = parcel(rectangle(0.0, 10.0, 30.0, 30.0), 0, axis, &fronts, "plot");
+        deep.envelope = Some(rectangle(11.0, 22.0, 19.0, 29.0));
+        cells.push(deep);
+        let original = cells.clone();
+        let reseat = |p: &mut Parcel| {
+            let (len, best) = frontage(&p.shape, &fronts);
+            let access = p.access.as_mut().unwrap();
+            access.front_length = len;
+            access.street = best.map(|f| f.street);
+        };
+        let rules = Rules { floor: 0.65, admits: &|_, _| true, reseat: &reseat };
+        balance_close_neighbours(&mut cells, &fronts, None, &rules);
+        assert_eq!(cells.len(), original.len());
+        assert!((cells.iter().map(|p| area(&p.shape)).sum::<f64>() - 900.0).abs() < 1e-6);
+        for (i, p) in cells.iter().enumerate() {
+            assert_eq!(p.id, original[i].id);
+            assert!(witness_kept(&original[i], &p.shape));
+            for q in &cells[..i] {
+                assert!(area_ratio(area(&p.shape), area(&q.shape)) < 3.0 || shared(&p.shape, &q.shape) < 1.0);
+                assert!(super::super::super::geometry::intersection(&p.shape, &q.shape).iter().map(area).sum::<f64>() < 1e-6);
+            }
+        }
+    }
 
     fn at(x: f64, y: f64) -> Point {
         Point { x, y }

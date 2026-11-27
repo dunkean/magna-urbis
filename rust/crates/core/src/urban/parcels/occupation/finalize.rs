@@ -22,8 +22,7 @@ pub(super) fn ruined(o: &Occupancy, pieces: Vec<Piece>, seed: &Rng) -> Vec<Piece
 }
 
 /// Clean pieces: keep valid simple rings only, orient them, drop any piece
-/// thinner than its structural minimum (bodies and wings `wing`, landmark
-/// parts 1.5 m, ruin walls 0.3 m), and keep the parcel's reserved holes
+/// thinner than its structural minimum, and keep the parcel's reserved holes
 /// unbuilt, keeping every valid component of what remains.
 pub(super) fn finish(shape: &Shape, pieces: Vec<Piece>, wing: f64) -> Vec<(Shape, &'static str)> {
     // The light parts of a home's plan (porch, bay: forms/plan.rs) are
@@ -34,27 +33,18 @@ pub(super) fn finish(shape: &Shape, pieces: Vec<Piece>, wing: f64) -> Vec<(Shape
     };
     let minimum = |label: &str| match label {
         "building" | "range" => wing - 1e-6,
+        // These roofed ranges need a usable interior width. Fixtures such as
+        // wheels and curtain walls keep their own 1.5 m minimum below.
+        "lean-rear" | "nave" => 2.5 - 1e-6,
         l if super::super::ruins::is_ruin(l) => 0.3,
         l if light(l) => super::super::super::forms::plan::min_side(l) - 1e-6,
         _ => 1.5,
     };
-    // No needle: a built piece keeps every interior angle at 20 degrees or
-    // more (walls, wheels and ruins are thin by nature).
-    let blunt = |r: &[Point], label: &str| {
-        super::super::ruins::is_ruin(label) || matches!(label, "wall" | "wheel")
-            || (0..r.len()).all(|i| {
-                let n = r.len();
-                let (a, v, b) = (r[(i + n - 1) % n], r[i], r[(i + 1) % n]);
-                let (u, w) = (sub(a, v), sub(b, v));
-                let (lu, lw) = (length(u), length(w));
-                lu < 1.0
-                    || lw < 1.0
-                    || (u.x * w.x + u.y * w.y) / (lu * lw) <= 20.0_f64.to_radians().cos()
-            })
-    };
     let valid = |s: &Shape, label: &str| {
+        let min = minimum(label);
+        let a = area(s);
         s.outer.len() >= 3
-            && area(s)
+            && a
                 >= if super::super::ruins::is_ruin(label) {
                     0.5
                 } else if light(label) {
@@ -62,10 +52,15 @@ pub(super) fn finish(shape: &Shape, pieces: Vec<Piece>, wing: f64) -> Vec<(Shape
                 } else {
                     4.0
                 }
-            && blunt(&s.outer, label)
+            && blunt(&s.outer)
             && simple(&s.outer)
             && s.holes.iter().all(|h| h.len() >= 3 && simple(h))
-            && thickness(&s.outer, s.holes.first().map(|h| h.as_slice())) >= minimum(label)
+            // Facing-edge thickness can miss a triangle with an oblique
+            // vertex normal. Its exact width is the altitude to its longest edge.
+            && (s.outer.len() != 3
+                || s.outer.iter().zip(s.outer.iter().cycle().skip(1))
+                    .all(|(&p, &q)| 2.0 * a >= min * length(sub(q, p))))
+            && thickness(&s.outer, s.holes.first().map(|h| h.as_slice())) >= min
     };
     // Reserved holes are real areas: cadastral merges leave zero-area rings
     // (collinear triples, seams) that reserve nothing, yet their difference
@@ -80,6 +75,7 @@ pub(super) fn finish(shape: &Shape, pieces: Vec<Piece>, wing: f64) -> Vec<(Shape
         })
         .collect();
     let mut out = vec![];
+    let mut unsplit = vec![];
     for (outer, hole, label) in pieces {
         let mut outer = dedup(outer);
         if outer.len() < 3 {
@@ -99,25 +95,67 @@ pub(super) fn finish(shape: &Shape, pieces: Vec<Piece>, wing: f64) -> Vec<(Shape
             outer,
             holes: hole.into_iter().collect(),
         };
-        if reserved.is_empty() {
-            if valid(&piece, label) {
-                out.push((piece, label));
+        let mut keep = |s: Shape| {
+            if valid(&s, label) {
+                out.push((s, label));
+            } else if matches!(label, "building" | "range" | "lean-rear" | "nave")
+                && s.holes.is_empty() && simple(&s.outer)
+            {
+                unsplit.push((s, label));
             }
+        };
+        if reserved.is_empty() {
+            keep(piece);
         } else {
             // Rare: reserved holes inside the parcel stay unbuilt.
             let mut rest = vec![piece];
             for h in &reserved {
                 rest = rest.iter().flat_map(|s| difference(s, h)).collect();
             }
-            out.extend(
-                rest.into_iter()
-                    .map(|s| super::super::super::geometry::normalized(s))
-                    .filter(|s| s.holes.len() <= 1 && valid(s, label))
-                    .map(|s| (s, label)),
-            );
+            for s in rest.into_iter().filter(|s| s.holes.len() <= 1) {
+                keep(super::super::super::geometry::normalized(s));
+            }
+        }
+    }
+    // A clipped piece may no longer support a separate roof. Undo the split
+    // where it meets a suitable body and the combined footprint is sound.
+    for (piece, label) in unsplit {
+        for (body, body_label) in &mut out {
+            let same_body = *body_label == label
+                || matches!((label, *body_label),
+                    ("lean-rear", "building" | "shop-body" | "smithy-forge")
+                    | ("range", "building") | ("building", "range"));
+            if !same_body || super::super::seams::shared(body, &piece) < 0.05 {
+                continue;
+            }
+            let mut parts = super::super::super::geometry::union(&[body.clone(), piece.clone()]);
+            if parts.len() == 1 && valid(&parts[0], body_label)
+                && (area(&parts[0]) - area(body) - area(&piece)).abs() < 1e-3
+            {
+                *body = parts.remove(0);
+                break;
+            }
         }
     }
     out
+}
+
+/// Short edges can still form a convex needle. For reflex notches, keep
+/// the existing metre-scale test so tiny clipping jogs do not reject a body.
+fn blunt(ring: &[Point]) -> bool {
+    let cos = 20.0_f64.to_radians().cos();
+    let n = ring.len();
+    (0..n).all(|i| {
+        let u = sub(ring[(i + n - 1) % n], ring[i]);
+        let v = sub(ring[(i + 1) % n], ring[i]);
+        let uv = dot(u, v);
+        if uv <= 0.0 {
+            return true;
+        }
+        let (uu, vv) = (dot(u, u), dot(v, v));
+        (u.x * v.y - u.y * v.x >= 0.0 && uu.min(vv) < 1.0)
+            || uv * uv <= cos * cos * uu * vv
+    })
 }
 
 pub(super) fn dedup(ring: Vec<Point>) -> Vec<Point> {

@@ -6,7 +6,7 @@ use super::cut_geometry::{add, bounds, dot, half, half_area, length, normal, sca
 use super::identity::parcel;
 use super::seams::{boxes_touch, joined, shared};
 use crate::urban::{Parcel, Point, Shape};
-use crate::urban::geometry::area;
+use crate::urban::geometry::{area, difference, intersection, signed};
 
 pub(super) enum Repair {
     Merge(Shape, Shape),
@@ -17,12 +17,12 @@ pub(super) enum Repair {
 /// their longest common side (the original cut). None when that cut does not
 /// leave exactly two connected lots.
 pub(super) fn rebalance(union: &Shape, a: &Shape, b: &Shape) -> Option<[Shape; 2]> {
-    split_share(union, normal(common_side(a, b)?), 0.5)
+    split_share(union, normal(common_side(a, b)?.0), 0.5)
 }
 
-/// Direction of the longest common side (> 0.5 m) of two neighbours.
-fn common_side(a: &Shape, b: &Shape) -> Option<Point> {
-    let mut best: Option<(f64, Point)> = None;
+/// Direction and endpoints of the longest overlap (> 0.5 m) on the first lot.
+fn common_side(a: &Shape, b: &Shape) -> Option<(Point, [Point; 2])> {
+    let mut best: Option<(f64, Point, [Point; 2])> = None;
     for i in 0..a.outer.len() {
         let p = a.outer[i];
         let q = a.outer[(i + 1) % a.outer.len()];
@@ -42,13 +42,14 @@ fn common_side(a: &Shape, b: &Shape) -> Option<Point> {
                 continue;
             }
             let (u, v) = (dot(off, dir), dot(sub(s, p), dir));
-            let overlap = u.max(v).min(edge) - u.min(v).max(0.0);
+            let (lo, hi) = (u.min(v).max(0.0), u.max(v).min(edge));
+            let overlap = hi - lo;
             if overlap > best.map_or(0.5, |b| b.0) {
-                best = Some((overlap, dir));
+                best = Some((overlap, dir, [add(p, scale(dir, lo)), add(p, scale(dir, hi))]));
             }
         }
     }
-    best.map(|b| b.1)
+    best.map(|(_, dir, side)| (dir, side))
 }
 
 /// `union` cut by one line normal to `n`, its `dot(n, p) <= at` side holding
@@ -71,6 +72,53 @@ fn split_share(union: &Shape, n: Point, share: f64) -> Option<[Shape; 2]> {
     let mut x = half(union, n, at, true);
     let mut y = half(union, n, at, false);
     (x.len() == 1 && y.len() == 1).then(|| [x.remove(0), y.remove(0)])
+}
+
+/// Redraw just enough land to bring the pair below 3:1. A long donor can
+/// face several smaller lots, so when a straight cut across the union would
+/// move too much ground, extend the smaller lot only through its shared side.
+pub(super) fn redraw_close_pair(
+    small: &Shape,
+    large: &Shape,
+    mut accept: impl FnMut(Shape, Shape) -> bool,
+) {
+    let Some((along, [a, b])) = common_side(large, small) else {
+        return;
+    };
+    let n = normal(along);
+    let (sa, la) = (area(small), area(large));
+    let total = sa + la;
+    let transfer = total / 3.8 - sa;
+    if let Some(union) = joined(small, large) {
+        let below = dot(crate::urban::geometry::centroid(small), n)
+            < dot(crate::urban::geometry::centroid(large), n);
+        let share = (sa + transfer) / total;
+        if let Some([x, y]) = split_share(&union, n, if below { share } else { 1.0 - share }) {
+            let (s, l) = if below { (x, y) } else { (y, x) };
+            if accept(s, l) {
+                return;
+            }
+        }
+    }
+    let inward = if signed(&large.outer) > 0.0 { n } else { scale(n, -1.0) };
+    let depth = transfer / length(sub(b, a));
+    // The donor may taper immediately behind the party wall.
+    for factor in [1.0, 1.5, 2.0] {
+        let step = scale(inward, factor * depth);
+        let base = scale(inward, -0.01);
+        let band = Shape { outer: vec![add(a, base), add(b, base), add(b, step), add(a, step)], holes: vec![] };
+        let mut land = intersection(large, &band);
+        if land.len() != 1 {
+            continue;
+        }
+        let Some(grown) = joined(small, &land.remove(0)) else {
+            continue;
+        };
+        let mut rest = difference(large, &band);
+        if rest.len() == 1 && accept(grown, rest.remove(0)) {
+            return;
+        }
+    }
 }
 
 /// Extent, projected on `along`, of the common boundary of `a` and `b`.
@@ -142,7 +190,7 @@ pub(super) fn share_out(
         return false;
     }
     near.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
-    let Some(along) = common_side(&r, &cells[near[0].0].shape) else {
+    let Some((along, _)) = common_side(&r, &cells[near[0].0].shape) else {
         return false;
     };
     let mut spans: Vec<(usize, f64, f64)> = near
@@ -268,7 +316,7 @@ fn redraw_pair(
     too_deep: &dyn Fn(&Shape) -> bool,
     floor: f64,
 ) -> Option<(Shape, Shape, Shape, Shape)> {
-    let n = normal(common_side(&a.shape, &b.shape)?);
+    let n = normal(common_side(&a.shape, &b.shape)?.0);
     let fa = frontage(&a.shape, fronts).0.max(1.0);
     let fb = frontage(&b.shape, fronts).0.max(1.0);
     let a_below =

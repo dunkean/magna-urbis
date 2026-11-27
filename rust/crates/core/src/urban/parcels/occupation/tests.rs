@@ -445,6 +445,29 @@ fn preview_pieces_have_no_spike_and_no_needle() {
     assert!((area(&out[0].0) - 100.0).abs() < 0.1);
 }
 
+#[test]
+fn shape_review_preview_undoes_unsound_splits_and_keeps_the_mill_wheel() {
+    let lot = rectangle(0.0, 0.0, 40.0, 40.0);
+    let short_needle = poly(&[
+        (26.0, 8.0), (35.0, 8.0), (35.0, 16.0), (30.0, 16.0),
+        (29.98, 16.4), (29.9, 16.0), (26.0, 16.0),
+    ]);
+    let out = finish(
+        &lot,
+        vec![
+            (rectangle(0.0, 0.0, 10.0, 7.0).outer, None, "shop-body"),
+            (rectangle(0.0, 7.0, 10.0, 9.0).outer, None, "lean-rear"),
+            (rectangle(12.0, 0.0, 13.5, 8.0).outer, None, "wheel"),
+            (rectangle(15.0, 0.0, 17.2, 8.0).outer, None, "nave"),
+            (short_needle.outer, None, "building"),
+        ],
+        3.0,
+    );
+    assert_eq!(out.iter().map(|(_, label)| *label).collect::<Vec<_>>(), ["shop-body", "wheel"]);
+    assert!((area(&out[0].0) - 90.0).abs() < 1e-6, "the lean-to joins the body");
+    assert!((area(&out[1].0) - 12.0).abs() < 1e-6, "the designed wheel survives");
+}
+
 /// Invariant (« mitoyenneté continue »): on a bent street with party walls
 /// leaning 25 degrees (beyond the 15-degree square band), every attached
 /// row lot still builds its street range along its whole frontage, from
