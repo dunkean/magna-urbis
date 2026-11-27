@@ -94,9 +94,12 @@ async function checkInApp(format, file, bytes) {
     const payload = Buffer.from(gunzipSync(bytes));
     assert(payload.includes(Buffer.from('map.obj')) && payload.includes(Buffer.from('map.mtl')), 'Missing Unity mesh assets.');
     let unity = process.env.MAGNA_UNITY;
-    if (existsSync(unityCli)) {
-      const { stdout } = await tool(unityCli, ['license', '--no-banner', '--format', 'json']);
-      if (!JSON.parse(stdout).data.items.length) return { status: 'skipped', reason: 'No active Unity license' };
+    // Windows app execution aliases can be launched even when stat reports a missing file.
+    const license = await tool(unityCli, ['license', '--no-banner', '--format', 'json']).catch(error => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+    if (license) {
+      if (!JSON.parse(license.stdout).data.items.length) return { status: 'skipped', reason: 'No active Unity license' };
       if (!unity) {
         const { stdout } = await tool(unityCli, ['editors', '-i', '--no-banner', '--format', 'json']);
         unity = JSON.parse(stdout).data.items.find(editor => existsSync(editor.location))?.location;
