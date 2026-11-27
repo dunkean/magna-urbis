@@ -617,13 +617,15 @@ pub(super) fn gate_spans(walk: &WallWalk<'_>, banks: &[(Point, bool)]) -> Vec<(P
         .collect()
 }
 
-/// Open water at `p` or within `reach` of it, sampled on eight sides.
+/// Open water at `p` or within `reach` of it, sampled on eight sides. At a zero reach the sixteen
+/// samples are `p` itself (up to the sign of a zero, which reads the same cell): the first test answers.
 pub(super) fn near_water(p: Point, reach: f64, surface: Surface<'_>) -> bool {
     water(surface, p)
-        || (0..8).any(|d| {
-            let angle = f64::from(d) * std::f64::consts::FRAC_PI_4;
-            [0.5, 1.0].iter().any(|&r| water(surface, add(p, (angle.cos(), angle.sin()), reach * r)))
-        })
+        || (reach != 0.0
+            && (0..8).any(|d| {
+                let angle = f64::from(d) * std::f64::consts::FRAC_PI_4;
+                [0.5, 1.0].iter().any(|&r| water(surface, add(p, (angle.cos(), angle.sin()), reach * r)))
+            }))
 }
 
 /// A ditch is never dug in natural water: each piece ends `MOAT_SHORT` m from it.
