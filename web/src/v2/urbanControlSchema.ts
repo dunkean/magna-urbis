@@ -1,6 +1,7 @@
 /** The V2 inspector describes the native contract, not a reduced V2-specific grammar.
  * Morphology fields and their shapes are read from the same catalogue as City Bench. */
-import catalogueJson from '../../../rust/crates/core/src/urban/catalogue.json';
+import { cityCultureCatalogue } from '../render/cityCultureCatalogue';
+import { contributorCultureLabels } from '../gen/contributorCultures';
 import { urbanRoleChoices } from './urbanRoleNames';
 import { defaultLayoutConfig, defaultParcelConfig, ACTIVITY_TEMPLATES, FORTIFICATION_STYLES, PROGRAMME_FUNCTIONS } from '../../../rust/bridge/urbanConfig';
 import { HOUSE_SCHEMA, type HouseConfig, type WorkshopRequest } from '../../../rust/bridge/housesContract';
@@ -9,12 +10,7 @@ import { HARBOUR_TYPES, HARBOUR_TYPE_NAMES } from '../render/harbourStyle';
 import { urbanActivityNames, urbanCultureNames, urbanExtraChoiceNames, urbanExtraFieldNames } from './urbanLabelNames';
 import { urbanHelp } from './urbanParameterHelp';
 
-export interface UrbanCatalogue {
-  fields: Record<'quarters' | 'parcels', string[]>;
-  presets: Record<string, { label: string; params: Record<string, unknown> }>;
-  cultures: Record<string, { label: string; recipes: { id: string; label: string; zone: string; preset: string }[] }>;
-}
-export const urbanCatalogue = catalogueJson as unknown as UrbanCatalogue;
+export const urbanCatalogue = cityCultureCatalogue;
 export const URBAN_ZONES = ['core', 'middle', 'edge', 'faubourg', 'village'] as const;
 export type UrbanControlSection = 'layout' | 'footprint' | 'growth' | 'streets' | 'fortifications' | 'ports' | 'programme' | 'parcels' | 'placement' | 'house' | 'workshop' | 'quarter' | 'block' | 'parcel' | 'building' | 'advanced';
 export interface UrbanParameterField extends ParameterField {
@@ -342,7 +338,7 @@ export const urbanChoiceNames: Record<string, readonly [string, string]> = {
   ...urbanActivityNames,
   ...urbanExtraChoiceNames,
 };
-const choices = (values: readonly string[]) => values.map(value => ({ value, label: urbanChoiceNames[value]?.[0] ?? pretty(value) }));
+const choices = (values: readonly string[]) => values.map(value => ({ value, label: urbanChoiceNames[value]?.[0] ?? contributorCultureLabels.get(value) ?? pretty(value) }));
 /** Cultures offered by every culture select of the urban controls (V2 and City Bench). */
 export const urbanCultureChoices = (): { value: string; label: string }[] => choices(Object.keys(urbanCatalogue.cultures));
 const enums: Record<string, readonly string[]> = {

@@ -107,13 +107,13 @@ fn catalogue() -> &'static Catalogue {
 pub fn family(culture: &str) -> &'static str {
     catalogue()
         .cultures
-        .get(culture)
+        .get(super::contributor_cultures::base(culture))
         .map_or("fantasy", String::as_str)
 }
 /// Share of a culture's buildings standing in ruins at a demographic class
 /// (`services.json` ruinShare), whatever the settlement state.
 pub fn ruin_share(culture: &str, class: &str) -> f64 {
-    catalogue().ruin_share.get(culture).and_then(|c| c[class].as_f64()).unwrap_or(0.0).clamp(0.0, 1.0)
+    catalogue().ruin_share.get(super::contributor_cultures::base(culture)).and_then(|c| c[class].as_f64()).unwrap_or(0.0).clamp(0.0, 1.0)
 }
 pub fn state(name: &str) -> Option<&'static StateRule> {
     catalogue().states.get(name)

@@ -40,7 +40,8 @@ fn one_floor() -> [u32; 2] {
     [1, 1]
 }
 pub(super) fn architecture_pack(culture:&str) -> Option<&'static str> {
-    MAPPINGS.iter().find(|m|m.0==culture).map(|m|m.2)
+    let base = super::contributor_cultures::base(culture);
+    MAPPINGS.iter().find(|m|m.0==base).map(|m|m.2)
 }
 
 mod registry;
@@ -104,11 +105,12 @@ pub fn mapping_for(culture: &str, period: &str) -> Option<CultureMapping> {
     })
 }
 fn mapping_for_uncached(culture: &str, period: &str) -> Option<CultureMapping> {
-    let &(id, family, pack, borrowed, functions, architecture_family) =
-        MAPPINGS.iter().find(|m| m.0 == culture)?;
+    let base = super::contributor_cultures::base(culture);
+    let &(_, family, pack, borrowed, functions, architecture_family) =
+        MAPPINGS.iter().find(|m| m.0 == base)?;
     let preferred = PREFERRED
         .iter()
-        .find(|p| p.0 == culture)
+        .find(|p| p.0 == base)
         .and_then(|&(_, recipe)| supported_recipe(recipe, period))
         .filter(|p| p.pack_id == pack);
     let tradition = palette_tradition(culture, pack);
@@ -116,7 +118,7 @@ fn mapping_for_uncached(culture: &str, period: &str) -> Option<CultureMapping> {
     let profile =
         preferred.or_else(|| recipe_profile_in(pack, architecture_family, period, tradition))?;
     Some(from_profile(
-        id,
+        culture,
         family,
         pack,
         borrowed,
@@ -155,7 +157,8 @@ fn contextual_uncached(
     let mut route = mapping_for(culture, period)?;
     let dense = matches!(zone, "core" | "middle");
     let small_front = matches!(plot_op, "burgage" | "compact" | "machiya" | "frontage");
-    let recipe = match (culture, dense, small_front, function) {
+    let base = super::contributor_cultures::base(culture);
+    let recipe = match (base, dense, small_front, function) {
         ("chinese", _, true, _) => Some("AS-CHI-B04"),
         ("medina" | "al-andalus", _, true, _) => Some("AF-MAG-B01"),
         ("ksar-oasis", _, true, _) => Some("AF-MAG-B05"),
@@ -194,7 +197,7 @@ fn contextual_uncached(
         let p = supported_recipe(recipe, period)?;
         route = from_profile(
             culture,
-            if culture == "bastide" {
+            if base == "bastide" {
                 "compact"
             } else {
                 "frontage"
@@ -209,7 +212,9 @@ fn contextual_uncached(
     Some(route)
 }
 pub fn mappings() -> Vec<CultureMapping> {
-    MAPPINGS.iter().filter_map(|m| mapping(m.0)).collect()
+    MAPPINGS.iter().map(|m| m.0)
+        .chain(super::contributor_cultures::styles().keys().map(String::as_str))
+        .filter_map(mapping).collect()
 }
 /// The applied contextual profile is the source used for cadastral cuts.
 pub fn admissibility_for(layout: &super::Layout, culture: &str) -> Option<UrbanAdmissibility> {

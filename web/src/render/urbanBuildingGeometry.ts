@@ -20,6 +20,8 @@ import { craftedIndianMassing } from './craftedIndianMassing';
 
 export type BuildingVector = [number, number, number];
 export interface OverviewVolume extends ArchitectureVolume {
+  /** A contributed exterior replaces the display walls and roof. Levels still describe the original solid body. */
+  authoredExterior?: { model: string; near: [number, number]; overview: [number, number]; materials: MaterialSlots };
   /** Original preview footprint when a single parcel contains several working buildings. */
   ruralPiece?: number;
   /** Source tree and platform sites for the crafted dwelling. */
@@ -53,7 +55,7 @@ function faceTriangles(mesh: RoofMesh, face: RoofMesh['faces'][number]): number[
   return triangles;
 }
 
-function emitRoofFaces(mesh: RoofMesh, materials: MaterialSlots, emit: (triangle: BuildingTriangle) => void, start = 0, end = mesh.faces.length): void {
+function emitRoofFaces(mesh: RoofMesh, materials: MaterialSlots, emit: (triangle: BuildingTriangle) => void, start = 0, end = mesh.faces.length, exterior = false): void {
   for (let f = start; f < end && f < mesh.faces.length; f++) {
     const face = mesh.faces[f],
       { hiddenEdge } = face;
@@ -61,7 +63,7 @@ function emitRoofFaces(mesh: RoofMesh, materials: MaterialSlots, emit: (triangle
     for (let i = 0; i + 2 < triangles.length; i += 3) {
       const points = triangles.slice(i, i + 3).map(index => mesh.vertices[index]);
       if (points.some(p => !p)) continue;
-      const triangle: BuildingTriangle = { points: points.map(p => [p.x, p.y, p.z]) as BuildingTriangle['points'], normal: face.normal, materials, material: face.material, surface: 'roof' };
+      const triangle: BuildingTriangle = { points: points.map(p => [p.x, p.y, p.z]) as BuildingTriangle['points'], normal: face.normal, materials, material: face.material, surface: exterior && face.kind === 'gable' ? 'wall' : 'roof' };
       if ((face as { entrance?: true }).entrance) triangle.entrance = true;
       if (hiddenEdge !== undefined) triangle.hiddenEdge = hiddenEdge;
       emit(triangle);
@@ -360,7 +362,8 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
     // Display-only height extrusion and horizontal roof-outline cap. These are
     // explicitly cartographic proxies, never fabricated native walls, volumes,
     // foundations, gables or source draws. Picking uses these same triangles.
-    const height = building.height_m, materials = building.materials ?? PROXY_MATERIALS,
+    const height = building.height_m,
+      materials = building.materials ?? PROXY_MATERIALS,
       base = Math.min(building.ground_z_m, (building as FootedProjection).base_z_m ?? Infinity);
     extrude(building.footprint, base, building.ground_z_m + height - base, materials, false);
     for (const triangle of surfaceTriangles(building.roof_footprint)) emit({ points: triangle.map(p => [p.x, p.y, building.ground_z_m + height]) as BuildingTriangle['points'], normal: [0, 0, 1], materials, material: materials.cladding, surface: 'roof' });
@@ -391,6 +394,10 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
     const foundation = volume.foundation;
     // A footing right under its walls needs no top: its edge would show as a line around the house.
     if (foundation) extrude(foundation.footprint, foundation.z_min_m, foundation.z_max_m - foundation.z_min_m, volume.materials, volume.envelope === 'open' || foundation.footprint[0] !== volume.levels[0]?.footprint[0]);
+    if (volume.authoredExterior) {
+      emitRoofFaces(volume.roof_mesh, volume.authoredExterior.materials, out, ...(overview ? volume.authoredExterior.overview : volume.authoredExterior.near), true);
+      continue;
+    }
     if (volume.envelope !== 'open') for (const level of volume.levels) extrude(level.footprint, level.z_m, level.height_m, level.materials ?? volume.materials, false);
     const mesh = volume.roof_mesh;
     if (!overview) {

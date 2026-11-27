@@ -9,6 +9,7 @@ import type { ImportedHeight } from './terrain/import';
 import { CULTURE_IDS, CULTURES as CULTURE_REGISTRY, mixToString, mixFromString, planToString, planFromString } from './urban/culture';
 import type { CultureMix, PlanOverride } from './urban/culture';
 import modernStyles from '../../../rust/crates/core/src/urban/forms/styles_modern.json';
+import { contributorCultureBase, contributorCultureLabels } from './contributorCultures';
 
 /** Map/extent preset of the legacy stages: the demographic classes, farmstead folded into hamlet and
  * megacity into metropolis. A size, never a political function (that is `programme.functions.capital`). */
@@ -140,16 +141,16 @@ const RUST_CULTURE_LABELS: Record<string, string> = {
 };
 /** Every culture the engine supports: the legacy TS registry plus the Rust-only cultures above
  *  (rust/crates/core/src/urban/catalogue.json is 2.7 MB, too heavy to bundle for its ids). */
-export const CULTURES: Culture[] = [...CULTURE_IDS, ...Object.keys(RUST_CULTURE_LABELS).filter(id => !CULTURE_IDS.includes(id))];
+export const CULTURES: Culture[] = [...CULTURE_IDS, ...Object.keys(RUST_CULTURE_LABELS).filter(id => !CULTURE_IDS.includes(id)), ...contributorCultureLabels.keys()];
 /** [id, label] pairs for selectors. */
-export const CULTURE_LABELS: [string, string][] = CULTURES.map(id => [id, CULTURE_REGISTRY[id]?.label ?? RUST_CULTURE_LABELS[id] ?? id]);
+export const CULTURE_LABELS: [string, string][] = CULTURES.map(id => [id, CULTURE_REGISTRY[id]?.label ?? RUST_CULTURE_LABELS[id] ?? contributorCultureLabels.get(id) ?? id]);
 export type { CultureMix, PlanOverride };
 /** Era of a modern style (`traits.era` of rust/crates/core/src/urban/forms/styles_modern.json); historical and fantasy cultures have none. */
 export type CultureEra = 'modern' | 'futuristic' | 'alien';
 const CULTURE_ERAS: Readonly<Record<string, CultureEra>> = Object.fromEntries(Object.entries((modernStyles as unknown as { cultures: Record<string, { traits?: { era?: CultureEra } }> }).cultures).flatMap(([id, c]) => (c.traits?.era ? [[id, c.traits.era]] : [])));
 /** Era of a culture id (undefined: a historical or fantasy culture). */
 export function cultureEra(culture: string | null | undefined): CultureEra | undefined {
-  return culture ? CULTURE_ERAS[culture] : undefined;
+  return culture ? CULTURE_ERAS[contributorCultureBase(culture)] : undefined;
 }
 
 export interface Options {
@@ -324,7 +325,7 @@ export function settlementsFromString(v: string | null): SettlementsOpt {
       const pop = Number(p);
       if (!Number.isFinite(pop) || pop <= 0) continue;
       const spec: SettlementSpec = { population: Math.max(POP_MIN, Math.min(POP_MAX, Math.round(pop))) };
-      if (cu && (CULTURE_IDS as string[]).includes(cu)) spec.culture = cu;
+      if (cu && CULTURES.includes(cu)) spec.culture = cu;
       if (st && (SITE_ARCHETYPES as string[]).includes(st)) spec.siteType = st as SiteArchetype;
       if (x !== undefined && y !== undefined && x !== '' && y !== '' && Number.isFinite(Number(x)) && Number.isFinite(Number(y))) spec.position = { x: Math.round(Number(x)), y: Math.round(Number(y)) };
       list.push(spec);
@@ -471,7 +472,7 @@ export function settlementListFromString(value: string | null): SettlementSpec[]
     const [population, culture, siteType, x, y, overrides, name, key] = row;
     if (typeof population !== 'number' || !Number.isFinite(population) || population <= 0) continue;
     const spec: SettlementSpec = { population: Math.max(POP_MIN, Math.min(POP_MAX, Math.round(population))) };
-    if (typeof culture === 'string' && CULTURE_IDS.includes(culture)) spec.culture = culture;
+    if (typeof culture === 'string' && CULTURES.includes(culture)) spec.culture = culture;
     if (typeof siteType === 'string' && SITE_ARCHETYPES.includes(siteType as SiteArchetype)) spec.siteType = siteType as SiteArchetype;
     if (typeof x === 'number' && typeof y === 'number' && Number.isFinite(x) && Number.isFinite(y)) {
       spec.position = { x: Math.max(0, Math.min(MAP_SIZE_MAX, x)), y: Math.max(0, Math.min(MAP_SIZE_MAX, y)) };

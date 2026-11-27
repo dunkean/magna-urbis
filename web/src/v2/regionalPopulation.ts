@@ -1,5 +1,6 @@
 import type { V2Settings } from './contracts';
 import { cultureEra } from '../gen/options';
+import { contributorCultureBase } from '../gen/contributorCultures';
 import { Rng } from '../gen/core/rng';
 import { stepSeed } from '../../../rust/bridge/generationSeed';
 import { cultureEnvironment } from './environmentCultures';
@@ -32,6 +33,7 @@ const MODERN: PopulationProfile = { id: 'modern', density: 1200, maximum: 500000
 const MOBILE: PopulationProfile = { id: 'mobile', density: 1.2, maximum: 400, resilience: 0.8, isolated: 0.12 };
 /** Worldbuilding defaults, not historical limits on a people. Manual populations remain possible. */
 export function populationProfile(culture: string): PopulationProfile {
+  culture = contributorCultureBase(culture);
   if (cultureEra(culture)) return { ...MODERN, ...(/highrise|megacity|arcology|cyberpunk/.test(culture) ? { density: 3000 } : {}) };
   if (culture === 'inuit-camp') return { ...MOBILE, id: 'inuit-camp', density: 0.75, maximum: 120, resilience: 0.7, isolated: 0.04 };
   if (/siberian-camp|nomad-camp|mongol-ordu|native-plains|barbarian-norse/.test(culture)) return MOBILE;

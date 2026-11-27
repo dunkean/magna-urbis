@@ -12,6 +12,7 @@ import { regionControlFields } from './regionControls';
 import { urbanControlFields, urbanField } from './urbanControlSchema';
 import { MAX_LEVELS, MAX_PARAMETERS, parameterLevels } from './cityCodeFormat';
 import { WALL_STYLES } from '../gen/options';
+import { contributorCultureLabels } from '../gen/contributorCultures';
 import { CLIMATE_ZONES } from '../../../rust/bridge/terrainClimate';
 import defaults from './cityCodeDefaults.json';
 
@@ -25,10 +26,12 @@ export interface CodeParameter {
   field: ParameterField;
 }
 const tri = ['auto', 'yes', 'no'];
+/** Contributions are appended in manifest order so the existing city-code indices stay stable. */
+export const CULTURES = [...defaults.cultures, ...contributorCultureLabels.keys()];
 const optionChoice = (path: string, values: readonly string[]): ParameterField => ({ path, label: path, type: 'select', options: values.map(value => ({ value, label: value })) });
 /** Options fields edited in the main panel and in the settlement inspector (settings.local[key]). */
 const optionFields: ParameterField[] = [
-  optionChoice('culture', defaults.cultures),
+  optionChoice('culture', CULTURES),
   optionChoice('size', ['hamlet', 'village', 'town', 'city', 'metropolis']),
   optionChoice('river', ['none', 'stream', 'river', 'major']),
   optionChoice('walls', ['auto', 'yes', 'no', 'none', 'single', 'double']),

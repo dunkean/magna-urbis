@@ -106,7 +106,10 @@ pub fn culture_site_pref(culture: &str, key: &str, default: f64) -> f64 {
 pub(super) fn catalogue() -> &'static Value {
     static CATALOGUE: OnceLock<Value> = OnceLock::new();
     CATALOGUE.get_or_init(|| {
-        serde_json::from_str(include_str!("catalogue.json")).expect("versioned urban catalogue")
+        let mut catalogue =
+            serde_json::from_str(include_str!("catalogue.json")).expect("versioned urban catalogue");
+        super::contributor_cultures::add_morphologies(&mut catalogue);
+        catalogue
     })
 }
 pub(super) fn resolve(

@@ -204,6 +204,15 @@ fn styles() -> &'static Styles {
             all.palettes.extend(more.palettes);
             all.ladders.extend(more.ladders);
         }
+        for (id, style) in super::super::contributor_cultures::styles() {
+            let base = style["base"].as_str().expect("prepared style base");
+            let kit = style["kit"].as_str().expect("prepared style kit").into();
+            let mut traits = all.cultures.get(base).map(|c| c.traits.clone()).unwrap_or_default();
+            traits.palette = format!("contributor/{id}");
+            let palette = serde_json::from_value(style["palette"].clone()).expect("prepared palette");
+            all.palettes.insert(traits.palette.clone(), palette);
+            all.cultures.insert(id.clone(), Culture { kit, traits });
+        }
         all
     })
 }

@@ -48,9 +48,20 @@ import { drawFantasyRaster, suspendFantasyRaster, KEEP_NONE, type FantasyRaster 
 import { STRUCTURE_ROLES } from '../../src/render/groundBlend';
 import { streetColors } from '../../src/render/cityGlStyle';
 import { CROSSINGS } from '../../src/render/city/look';
+import { cityCultureCatalogue } from '../../src/render/cityCultureCatalogue';
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
 const settings = (seed: string): V2Settings => ({ options: { seed }, local: {}, urban: { backend: 'rust' } }) as unknown as V2Settings;
+
+it('shares contributor cultures and their recipe presets across V2 and City Bench', () => {
+  const catalogue = cityCultureCatalogue;
+  const contributed = catalogue.cultures['copper-bastide'];
+  expect(contributed.label).toBe('Copper Bastide');
+  expect(catalogue.presets[contributed.recipes.find(r => r.id === 'core')!.preset]).toBe(catalogue.presets['bastide/core']);
+  for (const file of ['../../src/v2/urbanControlSchema.ts', '../../src/ui/terrainSettlements.ts', '../../src/ui/terrainUrban.ts', '../../src/ui/urbanBuildingsPanel.ts']) {
+    expect(read(file)).toContain('../render/cityCultureCatalogue');
+  }
+});
 
 it('shares the farm plan, enclosure gate and platform level across overhead and tilted views', () => {
   const rect = (x: number, y: number, width: number, depth: number) => [

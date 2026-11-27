@@ -8,7 +8,7 @@ import type { ParentMapSelection } from './urbanParentColdWindow';
 import type { NativeParentRead } from './urbanParentNativeRead';
 import { nativeParentHasSelection, nativeParentInspectionHtml } from './urbanParentInspector';
 import type { UrbanProgramme } from '../../../rust/bridge/urban';
-import urbanCatalogue from '../../../rust/crates/core/src/urban/catalogue.json';
+import { cityCultureCatalogue as urbanCatalogue } from '../render/cityCultureCatalogue';
 import './urbanBuildings.css';
 import { openMethodNote } from './methodNotes';
 import { defaultProgrammeContext, type ProgrammeContext } from '../../../rust/bridge/urbanConfig';

@@ -11,6 +11,7 @@ import { City3dHeight } from './types';
 import { silhouetteBuilding, silhouetteSeats } from './silhouette';
 import { compactBuilding } from './compact';
 import { CITY3D_MATERIALS } from './materials';
+import { withRoleModel } from './authoredModels';
 import { planEave, seatPlan, wholeSeat, type PieceSeat, type SeatGround } from './terrainSeat';
 
 export type City3dKind = 'silhouette' | 'compact' | 'detailed';
@@ -104,7 +105,7 @@ export function city3dScene(scene: PlacementBatch, options: City3dSceneOptions =
     // Native plans are seated on the terrain like the town volumes (seatPlan).
     const kind = drawnKind(source);
     kinds[kind]++;
-    if (kind === 'silhouette') return silhouetteBuilding(source, heightAt, waterAt, lightTrees, options.terraces ?? true, ground);
+    if (kind === 'silhouette') return withRoleModel(source, silhouetteBuilding(source, heightAt, waterAt, lightTrees, options.terraces ?? true, ground));
     const seated = seatPlan(source, heightAt, ground);
     return kind === 'compact' ? compactBuilding(seated) : seated;
   });

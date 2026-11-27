@@ -156,7 +156,7 @@ pub(in crate::urban) fn rule(label: &str, keys: &[&str]) -> Option<&'static Mass
     let t = table();
     let own = |k: &str| t.overrides.get(k).and_then(|o| o.get(label));
     keys.iter()
-        .find_map(|&k| own(k).or_else(|| super::kit::traits(k).role_groups.iter().find_map(|g| own(g.as_str()))))
+        .find_map(|&k| own(super::super::contributor_cultures::base(k)).or_else(|| super::kit::traits(k).role_groups.iter().find_map(|g| own(g.as_str()))))
         .or_else(|| t.roles.get(label))
 }
 

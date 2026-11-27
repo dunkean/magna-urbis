@@ -7,6 +7,7 @@ import { mountSectionIndex } from './sectionIndex';
 import { editorButtonIcon } from './editorIcons';
 import { mountSettlementPopulationPanel } from './settlementPopulationPanel';
 import { automaticCulture, cultureEnvironment, plausibleCultures, randomCulture } from './environmentCultures';
+import { contributorCultureBase } from '../gen/contributorCultures';
 import { bindTree, registerMessages, setText, translate, onLanguageChange } from './i18n';
 import { currentComposition, writeAppearanceControl } from './renderControls';
 import './workbenchLayout.css';
@@ -284,12 +285,12 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
     previousEnvironments.set(s, cultureEnvironmentKey);
     // A loaded code, recipe or project keeps its culture (a new settings object starts from its own environment).
     // "Follow the environment" re-picks only after an environment change (or ticking it) that rules the current culture out.
-    if (autoCulture && (cultureEnvironmentKey !== previousEnvironment || force) && !plausible.includes(s.options.culture)) {
+    if (autoCulture && (cultureEnvironmentKey !== previousEnvironment || force) && !plausible.includes(contributorCultureBase(s.options.culture))) {
       s.options.culture = automaticCulture(s);
       api.syncForms();
     }
     // A stored culture outside the environment's list stays selectable (and shown) until the environment changes.
-    const allowed = autoCulture ? allCultureOptions.map(option => option.value).filter(id => plausible.includes(id) || id === s.options.culture) : allCultureOptions.map(option => option.value);
+    const allowed = autoCulture ? allCultureOptions.map(option => option.value).filter(id => plausible.includes(contributorCultureBase(id)) || id === s.options.culture) : allCultureOptions.map(option => option.value);
     const choicesKey = allowed.join('|');
     if (choicesKey !== cultureChoices) {
       culture.replaceChildren(...allCultureOptions.filter(option => allowed.includes(option.value)));

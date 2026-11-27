@@ -45,7 +45,7 @@ import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import type { UrbanLanduseScene } from './urbanLanduseData';
 import { forestOccupation } from './forestOccupation';
 import { withLandDetail, type LandCultures } from './landDetail';
-import urbanCatalogue from '../../../rust/crates/core/src/urban/catalogue.json';
+import { cityCultureCatalogue as urbanCatalogue } from '../render/cityCultureCatalogue';
 
 const ns = 'http://www.w3.org/2000/svg';
 // Small cartographic silhouettes, centred on the settlement's actual position.

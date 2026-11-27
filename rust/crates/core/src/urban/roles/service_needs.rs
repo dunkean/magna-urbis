@@ -64,7 +64,7 @@ pub fn services_scaled(
         .chain(&cat.rural)
         .map(Cow::Borrowed)
         .collect();
-    for e in cat.culture_services.get(culture).into_iter().flatten() {
+    for e in cat.culture_services.get(super::super::contributor_cultures::base(culture)).into_iter().flatten() {
         match entries.iter_mut().find(|x| x.role == e.role) {
             Some(x) => *x = Cow::Borrowed(e),
             None => entries.push(Cow::Borrowed(e)),
@@ -174,7 +174,7 @@ pub const MAX_ROLE_COUNT: u32 = 64;
 fn catalogue_entry(culture: &str, role: &str) -> Option<&'static ServiceEntry> {
     let cat = catalogue();
     let find = |list: &'static [ServiceEntry]| list.iter().find(|e| e.role == role);
-    cat.culture_services.get(culture).and_then(|l| find(l.as_slice()))
+    cat.culture_services.get(super::super::contributor_cultures::base(culture)).and_then(|l| find(l.as_slice()))
         .or_else(|| cat.families.get(family(culture)).and_then(|l| find(l.as_slice())))
         .or_else(|| find(cat.rural.as_slice()))
         .or_else(|| find(cat.harbour.as_slice()))

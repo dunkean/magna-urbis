@@ -1,4 +1,5 @@
 import { CULTURE_LABELS, cultureEra } from '../gen/options';
+import { contributorCultureBase } from '../gen/contributorCultures';
 import { registerMessages, setText, translate } from './i18n';
 import { handheldDevice } from '../../../rust/bridge/deviceClass';
 import './cultureBrowser.css';
@@ -20,8 +21,9 @@ export function cultureGroup(id: string): (typeof CULTURE_GROUPS)[number] | unde
   if (!cultures.has(id)) return undefined;
   const era = cultureEra(id);
   if (era) return era === 'modern' ? 'Modern cultures' : 'Futuristic cultures';
-  if (fantasyCultures.has(id)) return 'Fantasy cultures';
-  if (ancientCultures.has(id)) return 'Ancient cultures';
+  const base = contributorCultureBase(id);
+  if (fantasyCultures.has(base)) return 'Fantasy cultures';
+  if (ancientCultures.has(base)) return 'Ancient cultures';
   return 'Medieval cultures';
 }
 

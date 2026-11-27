@@ -1,4 +1,5 @@
 import type { NameFamily } from './types';
+import { contributorCultureBase } from '../contributorCultures';
 
 /** Every profile declares its source policy; geographic pools never imply historical authenticity. */
 export type ToponymSourceMode = 'country' | 'constructed' | 'generator';
@@ -202,6 +203,7 @@ export const TOPONYM_PROFILES: readonly ToponymProfile[] = Object.values(EXPLICI
 const ALIASES: Record<string, string> = { west: 'european-organic', mongol: 'mongol-ordu', japan: 'japanese-jokamachi', roman: 'roman-core', swahili: 'swahili-stone-town' };
 
 export function resolveToponymProfile(culture: string, language?: string, seed: string | number = ''): ToponymProfile {
+  culture = contributorCultureBase(culture);
   culture = ALIASES[culture] ?? culture;
   const requested = language?.trim().toLowerCase();
   if (requested && requested !== 'auto') {

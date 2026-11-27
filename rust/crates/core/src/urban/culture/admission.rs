@@ -1,6 +1,7 @@
 //! Admission data and functional sources from the houses catalogue.
 
 use super::*;
+use crate::urban::contributor_cultures::base;
 
 // Tiny resolved-plan envelope table exported by the houses engine. No architectural
 // generation logic, interiors, mesh dependency or full catalogue is embedded here.
@@ -94,6 +95,7 @@ pub(in super::super) fn functional_choice_sources(
     composition: &str,
     mode: &str,
 ) -> Option<(Vec<&'static str>, [f64; 2])> {
+    let culture = base(culture);
     let rule = admission_catalogue()
         .functional_choices
         .rules
@@ -150,7 +152,7 @@ pub(in super::super) fn functional_source_gap(
     culture: &str, pack: &str, role: &str, function: &str, period: &str, mode: &str,
 ) -> Option<&'static FunctionalSourceRequirement> {
     functional_source_gap_in(functional_source_coverage(), admission_catalogue(),
-        culture, pack, role, function, period, mode)
+        base(culture), pack, role, function, period, mode)
 }
 /// The exact same decision runs on the exported production registry and on an
 /// injected test registry. The latter never registers or constructs a building.
@@ -192,6 +194,7 @@ pub(in super::super) fn functional_role_resolved(
     role: &str,
     function: &str,
 ) -> bool {
+    let culture = base(culture);
     let catalogue = admission_catalogue();
     catalogue.functional_choices.rules.iter().any(|r| {
         r.culture_id == culture
@@ -212,6 +215,7 @@ pub(in super::super) fn functional_choice_registered(
     composition: &str,
     mode: &str,
 ) -> bool {
+    let culture = base(culture);
     admission_catalogue()
         .functional_choices
         .rules
@@ -240,6 +244,7 @@ struct PaletteMapping {
 }
 /// The tradition a culture's admission is restricted to inside `pack`.
 pub(in super::super) fn palette_tradition(culture: &str, pack: &str) -> Option<&'static str> {
+    let culture = base(culture);
     admission_catalogue()
         .cultural_palettes
         .mappings
@@ -308,13 +313,14 @@ pub(in super::super) fn houses_mode(policy: &str) -> &'static str {
     }
 }
 pub(in super::super) fn functional_mapping(culture: &str, role: &str, function: &str, period: &str, mode: &str) -> Option<CultureMapping> {
-    let &(id,family,pack,borrowed,functions,architecture_family)=MAPPINGS.iter().find(|m|m.0==culture)?;
+    let base = base(culture);
+    let &(_,family,pack,borrowed,functions,architecture_family)=MAPPINGS.iter().find(|m|m.0==base)?;
     let programme=functional_programme(pack,role,function,period,mode)?;
     let (envelope,access,layout,floors)=super::super::building_sites::recipe_admission_witness(&programme.recipe_id)?;
     let profile=RecipeAdmission { id:programme.recipe_id.clone(),pack_id:pack.into(),layout,
         min_envelope_m:envelope,min_access_width_m:access,status:"supported".into(),floors,
         eras:programme.eras.clone(),tradition_id:None,inspired_only:mode!="historical_strict" };
-    Some(from_profile(id,family,pack,borrowed,functions,architecture_family,&profile))
+    Some(from_profile(culture,family,pack,borrowed,functions,architecture_family,&profile))
 }
 fn admission_catalogue() -> &'static AdmissionCatalogue {
     static PROFILES: OnceLock<AdmissionCatalogue> = OnceLock::new();

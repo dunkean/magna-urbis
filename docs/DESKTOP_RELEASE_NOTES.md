@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Copper Bastide joins the culture picker with its own building colours and a 3D covered market hall for sites that fit it.
 - Town generation reuses street-frontage measurements when placing services and trimming unused streets.
 - Azgaar previews reopen on the full town, even after zooming or panning before closing.
 - Large towns with organic lots generate their shared paths faster.

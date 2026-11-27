@@ -49,7 +49,7 @@ import { adaptedExtent, defaultSettings } from './settings';
 import { readGenerationSeed, writeGenerationSeed } from '../../../rust/bridge/generationSeed';
 import { applyExternalCity, parseExternalCity } from './externalCity';
 import { readSettingPath, writeSettingPath, type ParameterField } from './parameterForm';
-import { codeParameters, type CodeParameter } from './cityCodeParams';
+import { codeParameters, CULTURES, type CodeParameter } from './cityCodeParams';
 import { CODE_BASE, CODE_DIGITS, POPULATION_WIDTH, levelPopulation, populationLevel, digit, digitValue, intWidth, isCodeDigit, levelValue, parameterLevels, readInt, readParamId, valueLevel, valueWidth, writeInt, writeParamId } from './cityCodeFormat';
 import { CLIMATE_ZONES, type ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { BLOCK_POSITION_KEY, blockPositionKey } from '../../../rust/bridge/urbanBlockEdits';
@@ -75,7 +75,7 @@ export const RENDERERS = ['procedural', 'neural-wasm', 'procedural-phasor', 'neu
 const CLIMATES: readonly string[] = [...CLIMATE_ZONES, ...CLIMATE_ZONES.map(zone => `underdark:${zone}`)];
 const ISLAND_MODES = ['island', 'archipelago', 'peninsula', 'random'] as const;
 export const RELIEFS = defaults.reliefs;
-export const CULTURES = defaults.cultures;
+export { CULTURES } from './cityCodeParams';
 /** Region sizes in km; index 0 is the default. */
 export const SIZE_TABLE: readonly ('auto' | number)[] = [6, 'auto', 1, 2, 3, 4, 5, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 60, 64, 80, 96, 100, 120, 128, 140, 150, 160, 180, 200];
 const COAST_MASKS: Record<string, number> = { none: 0, N: 1, E: 4, S: 16, W: 64, random: 255 };

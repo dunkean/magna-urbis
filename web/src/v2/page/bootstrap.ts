@@ -30,9 +30,6 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
     document.getElementById('boot-splash')?.remove();
   }
 
-  mountPerformancePolicy();
-  const machineProbe = inspectMachine();
-
   mountV2TestHook({
     getSettings: () => state.settings,
     getWorld: () => state.world ?? undefined,
@@ -48,6 +45,17 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
     rerollTown: key => actions.rerollCityStep('composition', [key]),
     displaySettled: () => state.client.displaySettled(),
   });
+
+  const query = new URLSearchParams(location.search),
+    modelPreview = query.get('model-preview');
+  if (modelPreview !== null) {
+    // Finish evaluating the entry before the preview's lazy compositor imports it.
+    void import('./modelPreview').then(({ showModelPreview }) => showModelPreview(modelPreview, query.get('model-lod') === 'overview', state, actions)).catch(error => actions.toast(String(error), true));
+    return;
+  }
+
+  mountPerformancePolicy();
+  const machineProbe = inspectMachine();
 
   await state.cityCodeSharing.restoreFromLocation();
 
@@ -71,8 +79,7 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
       state.projectRevision++;
       actions.syncControls();
     }
-    const startAutosave = () =>
-      armAutosave(() => ({ settings: persistedSettings(state.settings), mods: state.mods, view: state.world ? state.client.viewer.getView() : restoringView, ui: { tab: state.currentTab } }));
+    const startAutosave = () => armAutosave(() => ({ settings: persistedSettings(state.settings), mods: state.mods, view: state.world ? state.client.viewer.getView() : restoringView, ui: { tab: state.currentTab } }));
     const machine = await machineProbe;
     if (saved) {
       actions.setBusy(true);

@@ -1,4 +1,5 @@
 import { CULTURES, cultureEra } from '../gen/options';
+import { contributorCultureBase } from '../gen/contributorCultures';
 import { Rng } from '../gen/core/rng';
 import { seedRoot } from '../../../rust/bridge/generationSeed';
 import { climateZoneOf, type ClimateZone } from '../../../rust/bridge/terrainClimate';
@@ -102,7 +103,7 @@ export const CULTURE_HABITATS: Readonly<Record<string, CultureHabitat>> = {
 };
 
 /** All pre-modern choices, including ancient, tribal and fantasy settings. Modern/future/alien excluded. */
-export const MEDIEVAL_CULTURES: readonly string[] = CULTURES.filter(id => !cultureEra(id));
+export const MEDIEVAL_CULTURES: readonly string[] = CULTURES.filter(id => contributorCultureBase(id) === id && !cultureEra(id));
 
 export function cultureEnvironment(settings: V2Settings): { climate: ClimateZone; relief: string; underdark: boolean; coast: boolean } {
   const t = settings.terrain;

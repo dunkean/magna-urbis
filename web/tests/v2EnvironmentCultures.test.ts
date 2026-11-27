@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CULTURES, cultureEra } from '../src/gen/options';
+import { contributorCultures } from '../src/gen/contributorCultures';
 import { CLIMATE_ZONES } from '../../rust/bridge/terrainClimate';
 import { TERRAIN_RELIEFS } from '../src/v2/terrainSettings';
 import { CULTURE_HABITATS, MEDIEVAL_CULTURES, cultureEnvironment, plausibleCultures, randomCulture } from '../src/v2/environmentCultures';
@@ -9,9 +10,10 @@ import { resolveToponymProfile } from '../src/gen/names/profiles';
 import { generateToponymRecord } from '../src/gen/names/toponyms';
 
 describe('pre-modern environmental culture selection', () => {
-  it('assigns every pre-modern culture a valid, distinctive niche', () => {
+  it('assigns every automatically selected pre-modern culture a valid, distinctive niche', () => {
     expect([...Object.keys(CULTURE_HABITATS), ...UNDERDARK_CULTURES].sort()).toEqual([...MEDIEVAL_CULTURES].sort());
-    expect(MEDIEVAL_CULTURES).toEqual(CULTURES.filter(id => !cultureEra(id)));
+    const explicitCultures = new Set(contributorCultures.map(entry => entry.id));
+    expect(MEDIEVAL_CULTURES).toEqual(CULTURES.filter(id => !cultureEra(id) && !explicitCultures.has(id)));
     for (const habitat of Object.values(CULTURE_HABITATS)) {
       expect(habitat.climates.length).toBeLessThanOrEqual(3);
       for (const climate of habitat.climates) expect(CLIMATE_ZONES).toContain(climate);

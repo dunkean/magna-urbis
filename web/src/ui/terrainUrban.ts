@@ -19,7 +19,7 @@ import { bindCityPlanCulture, withCityPlanCulture } from './cityPlanCulture';
 import UrbanWorker from './urbanWorker?worker&inline';
 import { runActivityPlacement } from './urbanActivityPlacement';
 import { publishWasmThreads, wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
-import catalogueJson from '../../../rust/crates/core/src/urban/catalogue.json';
+import { cityCultureCatalogue as catalogue } from '../render/cityCultureCatalogue';
 import { HARBOUR_TYPES, HARBOUR_TYPE_NAMES } from '../render/harbourStyle';
 import {
   defaultParcelConfig,
@@ -110,12 +110,6 @@ import { createShapeEditor, simplifyLotRing, simplifyRing, type Pt as ShapePt, t
 import type { BuildingStyleIndex } from '../../../rust/bridge/buildingStyles';
 import type { PlacementBatchRequest } from '../../../rust/bridge/urbanArchitecture';
 
-interface Catalogue {
-  fields: Record<'quarters' | 'parcels', string[]>;
-  presets: Record<string, { label: string; params: Record<string, unknown> }>;
-  cultures: Record<string, { label: string; recipes: { id: string; label: string; zone: string; preset: string }[] }>;
-}
-const catalogue = catalogueJson as Catalogue;
 const ns = 'http://www.w3.org/2000/svg';
 const clone = <T>(v: T): T => structuredClone(v);
 const esc = (s: string): string => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);

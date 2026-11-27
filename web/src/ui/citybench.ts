@@ -77,6 +77,7 @@ registerFantasyBrushes(fantasyLibraries);
 installExecutionProfile(document.querySelector('header')!);
 const ns = 'http://www.w3.org/2000/svg';
 const query = new URLSearchParams(location.search);
+let modelPreview: ReturnType<typeof import('../render/city3d/modelPreview').modelPreviewFixture> | undefined;
 const labels = true;
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const map = document.getElementById('map') as unknown as SVGSVGElement,
@@ -749,29 +750,31 @@ const city3d = mountCity3d({
   host: viewport,
   labels,
   materialGrounds: true,
-  getDecor: () => decor,
-  getScene: () => settlements.urban.buildingState.scene,
-  getProjection: () => settlements.urban.buildingProjection,
+  getDecor: () => modelPreview?.decor ?? decor,
+  getScene: () => modelPreview?.scene ?? settlements.urban.buildingState.scene,
+  getProjection: () => (modelPreview ? undefined : settlements.urban.buildingProjection),
   getLotEnclosures: () => settlements.urban.lotEnclosures,
-  getLayouts: () => settlements.urban.layouts,
+  getLayouts: () => modelPreview?.layouts ?? settlements.urban.layouts,
   getRegionalStreets: () => cityRegionalStreets(resolveBenchAppearance({}, 'view3d'), settlements.urban.regionalStreets),
   getPartitions: () => settlements.urban.partitions,
   getSelected: () => {
     const s = settlements.urban.buildingState;
     return s.parentSelected?.kind === 'member' ? s.parentSelected.member_id : s.selected;
   },
-  getTextured: () => settlements.urban.textured,
+  getTextured: () => !modelPreview && settlements.urban.textured,
   setTextured: on => settlements.urban.setTextured(on),
   details: settlements.urban.buildingDetails,
   getBuildingAppearance: () => {
+    if (modelPreview) return city3dPlanOptions(modelPreview.resolved).appearance;
     const r = resolveBenchAppearance({}, 'view3d');
     return { ...settlements.urban.buildingState.appearance, ...city3dPlanOptions(r).appearance };
   },
   getBackground: backgroundUrl,
   getPhysicalGround: material => (material ? undefined : drapedPhysicalGround()),
   getRetainedWater: retainedWater3d,
-  getLook: () => cityGroundLook(resolveBenchAppearance({}, 'view3d')),
+  getLook: () => cityGroundLook(modelPreview?.resolved ?? resolveBenchAppearance({}, 'view3d')),
   getBuildingsVisible: () => {
+    if (modelPreview) return true;
     const b = resolveBenchAppearance({}, 'view3d').composition.buildings;
     return b.visible && b.meshes !== 'none';
   },
@@ -792,6 +795,7 @@ const city3d = mountCity3d({
     return { landuse: settlements.landuse, cultures: settlements.landCultures, ...s };
   },
   getViewSettings: () => {
+    if (modelPreview) return { ground: 'map', plan: false, colors: 'materials', exaggeration: 1, refinement: 'source', trees3d: false };
     const r = resolveBenchAppearance({}, 'view3d');
     return {
       ground: r.city.ground as import('./city3d').City3dGround,
@@ -820,7 +824,7 @@ const city3d = mountCity3d({
       relief: new URLSearchParams(decor.meta.query).get('relief') ?? 'mountains',
     });
   },
-  getPlanOptions: () => city3dPlanOptions(resolveBenchAppearance({}, 'view3d'), labels),
+  getPlanOptions: () => city3dPlanOptions(modelPreview?.resolved ?? resolveBenchAppearance({}, 'view3d'), labels),
   onSelect: id => settlements.urban.selectBuilding(id),
 });
 // Every bench change already calls city3d.refresh(): the furniture follows it instead of polling.
@@ -1282,8 +1286,27 @@ async function load(id: string): Promise<Decor> {
   }
 }
 const artifact = query.get('artifact'),
-  sharedSituation = query.get('situation');
-if (sharedSituation)
+  sharedSituation = query.get('situation'),
+  previewModelId = query.get('model-preview');
+if (previewModelId !== null) {
+  status('Loading the 3D model preview…');
+  void import('../render/city3d/modelPreview')
+    .then(({ modelPreviewFixture, modelPreviewView }) => {
+      modelPreview = modelPreviewFixture(previewModelId);
+      setProjection(true);
+      const frame = modelPreviewView(modelPreview, query.get('model-lod') === 'overview', viewport.clientWidth);
+      city3d.fromMapView(frame);
+      const camera = city3d.getCamera();
+      if (!camera) throw new Error('The 3D model preview needs a graphics renderer.');
+      city3d.setCamera({ ...camera, pitch: Math.PI / 2 - (frame.pitch ?? 0), yaw: frame.yaw ?? 0 });
+      document.title = modelPreview.label;
+      status(modelPreview.label);
+    })
+    .catch(error => status(String(error)))
+    .finally(() => {
+      ready = true;
+    });
+} else if (sharedSituation)
   void openSituation(sharedSituation).catch(error => {
     status(String(error));
     ready = true;

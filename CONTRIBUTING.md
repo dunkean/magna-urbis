@@ -21,6 +21,8 @@ The [V2 launch and packaging guide](rust/desktop-v2/README.md) covers the native
 
 The [repository map](docs/REPOSITORY_LAYOUT.md) identifies the V2 product, shared code, optional modules and experiments. Start with the procedural web application above; optional neural sources, models and Python environments have their own setup and are not prerequisites for that path.
 
+Follow the [first contribution guide for cultures and 3D rendering](docs/FIRST_CONTRIBUTION.md) to try a culture, a 3D model or a renderer variation in V2.
+
 ## Changes and verification
 
 Keep changes focused and explain the behavior they affect. Include reproduction steps and relevant check results with a pull request. Use screenshots when changing visible output; distinguish measured behavior from proposed improvements.

@@ -1,0 +1,17 @@
+[
+  {
+    "id": "copper-bastide",
+    "label": "Copper Bastide",
+    "base": "bastide",
+    "recipes": {
+      "core": "bastide/core"
+    },
+    "style": {
+      "kit": "timber-gabled",
+      "palette": {
+        "homes": { "#b9694a": 5, "#d88b63": 3, "#e7ae83": 2 },
+        "special": { "#4e8176": 1 }
+      }
+    }
+  }
+]

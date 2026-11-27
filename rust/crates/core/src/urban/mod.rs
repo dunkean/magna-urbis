@@ -18,6 +18,7 @@ mod pack;
 mod pipeline;
 pub mod parcel_pack;
 mod composition;
+mod contributor_cultures;
 mod deep_blocks;
 // Structural user edits (shape, delete, reroll): urban/edits.rs.
 mod edits;
