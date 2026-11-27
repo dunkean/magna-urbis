@@ -197,7 +197,8 @@ def main():
     parser.add_argument("--pmu", action="store_true", help="Collect extra PMU samples and CPU timing stacks with xperf (elevated Windows)")
     args = parser.parse_args()
     config = json.loads(args.config.read_bytes())
-    assert [x["request"]["population"] for x in config["cases"]] == [500, 2500, 10000], "Unexpected campaign cases"
+    expected = [500, 2500] if config.get("stableCaptures") else [500, 2500, 10000]
+    assert [x["request"]["population"] for x in config["cases"]] == expected, "Unexpected campaign cases"
     index = next(item for item in config["v2Build"]["artifacts"] if item["path"] == "web/dist-v2/v2.html")
     files = [(config["engine"], config["engineArtifact"]["sha256"]), (config["pdb"], config["symbols"]["sha256"]),
              (Path(config["dist"]) / "v2.html", index["sha256"])]

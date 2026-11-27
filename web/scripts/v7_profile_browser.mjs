@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { createReadStream, createWriteStream, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, createWriteStream, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { chromium } from 'playwright';
@@ -125,6 +125,33 @@ async function waitForPaint(page) {
   }, undefined, { timeout });
 }
 
+async function captureMap(page, path, stable) {
+  const map = page.locator('.map-area');
+  if (!stable) {
+    await map.screenshot({ path, timeout });
+    return;
+  }
+  // Render readiness is scoped to a style, while a later camera tilt can
+  // still replace draped tiles and meshes. Require the actual image at rest.
+  await page.waitForTimeout(900);
+  const started = now();
+  let lastDigest;
+  let identical = 0;
+  for (let i = 0; i < 16; i++) {
+    await waitForPaint(page);
+    const png = await map.screenshot({ timeout });
+    const digest = createHash('sha256').update(png).digest('hex');
+    identical = digest === lastDigest ? identical + 1 : 1;
+    if (identical >= 3 && now() - started >= 1500) {
+      writeFileSync(path, png);
+      return { identical, samples: i + 1, sha256: digest };
+    }
+    lastDigest = digest;
+    await page.waitForTimeout(400);
+  }
+  throw Error('Capture still changing at rest: ' + basename(path));
+}
+
 async function applyStyle(page, style, season) {
   await page.evaluate(({ style, season }) => {
     const select = document.querySelector('#map-style');
@@ -178,6 +205,7 @@ async function generationProof(page, id) {
   }));
 }
 
+const requests = new Map();
 let native, browser, context, tracing = false;
 try {
   const started = now();
@@ -193,7 +221,6 @@ try {
       '--disable-gpu-shader-disk-cache'] }));
   report.startedMs = started;
   context = await browser.newContext({ viewport: { width: 1400, height: 1000 }, deviceScaleFactor: 1, locale: 'en-US', serviceWorkers: 'block' });
-  const requests = new Map();
   const pending = new Set();
   const profilePaths = /^\/(urban|raster|houses|terrain|settlements|roads|landuse|hydrology)(\/|$)/;
   context.on('request', request => {
@@ -301,7 +328,8 @@ try {
           }
         }, undefined, { timeout });
       });
-      await phase(view + '-png', () => page.locator('.map-area').screenshot({ path: join(output, caseId + '-' + view + '.png'), timeout }));
+      const evidence = await phase(view + '-png', () => captureMap(page, join(output, caseId + '-' + view + '.png'), config.stableCaptures));
+      if (evidence) (result.captureStability ??= {})[view] = evidence;
     }
     result.performance = await page.evaluate(() => {
       const entries = [...performance.getEntriesByType('navigation'), ...performance.getEntriesByType('measure'), ...performance.getEntriesByType('mark')];
@@ -335,4 +363,24 @@ try {
   server.close();
   report.finishedMs = now();
   save();
+  if (config.captureNativeRequests && report.complete && native) {
+    // Give targeted native replays the actual session inputs. Read the
+    // cached Playwright bodies after the campaign clock has stopped.
+    const origin = 'http://127.0.0.1:' + native.port;
+    const directory = join(output, 'native-http');
+    mkdirSync(directory);
+    const posts = [];
+    for (const [request, entry] of requests) {
+      const url = new URL(request.url());
+      if (url.origin !== origin || !entry.caseId || entry.method !== 'POST') continue;
+      const body = request.postDataBuffer();
+      if (!body?.length) continue;
+      const file = String(posts.length).padStart(4, '0') + '.body';
+      writeFileSync(join(directory, file), body);
+      posts.push({ caseId: entry.caseId, path: url.pathname + url.search, kind: entry.kind,
+        status: entry.status, file, sha256: createHash('sha256').update(body).digest('hex'),
+        contentType: request.headers()['content-type'] });
+    }
+    writeFileSync(join(directory, 'index.json'), JSON.stringify(posts, null, 2));
+  }
 }
