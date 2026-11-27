@@ -1,5 +1,8 @@
 ## Alpha 0.3.11
 
+- Azgaar previews reopen on the full town, even after zooming or panning before closing.
+- Large towns with organic lots generate their shared paths faster.
+
 - Universal VTT exports default to a 1.5 metre grid for correctly sized tokens. The crop preview flags areas that exceed MapTool's grid limits.
 - Unity map packages assign the terrain texture to the imported terrain material.
 - Godot exports start with a lit, angled camera that frames the terrain and buildings across the exported elevation range.

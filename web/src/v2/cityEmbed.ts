@@ -236,10 +236,8 @@ function start(): void {
   navigation = mountCityEmbedNavigation(
     host,
     () => {
-      if (root.dataset.detail === 'ready') {
-        ++saveSerial;
-        delete root.dataset.saved;
-        clearTimeout(saveTimer);
+      clearTimeout(saveTimer);
+      if (root.dataset.detail === 'ready' && root.dataset.saved !== 'yes' && navigation!.atOverview()) {
         const serial = saveSerial;
         saveTimer = setTimeout(() => {
           if (!disposed && root.dataset.detail === 'ready' && detail && !cachedFrame) {
@@ -316,12 +314,12 @@ function start(): void {
     linkToPlan(tier, style);
   };
   const saveFrame = async () => {
+    if (disposed || !previewKey || !detail || !bounds || !navigation!.atOverview()) return;
     const serial = ++saveSerial;
-    if (disposed || !previewKey || !detail || !bounds) return;
     const canvas = detail.renderer.snapshot();
     if (!canvas) return;
     const { width, height } = host.getBoundingClientRect();
-    const metadata = { tier, style, bounds, width, height, camera: navigation!.camera(), view: navigation!.view(cityEmbedView(bounds, width, height)), fromDetailed };
+    const metadata = { tier, style, bounds, width, height, view: cityEmbedView(bounds, width, height), fromDetailed };
     roadInk.paint(canvas, metadata.view, width, height);
     const image = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
     if (disposed || serial !== saveSerial) return;
@@ -463,30 +461,31 @@ function start(): void {
       if (disposed) return;
       if (saved) {
         const { savedCityRenderer } = await import('./cityEmbedSaved');
-        const next = await savedCityRenderer(saved);
+        const next = await savedCityRenderer(saved).catch(() => undefined);
         if (disposed) {
-          next.dispose();
+          next?.dispose();
           return;
         }
-        navigation!.restore(saved.camera);
-        install(next, saved.bounds);
-        cachedFrame = saved;
-        tier = requestedTier = saved.tier;
-        fromDetailed = saved.fromDetailed === true;
-        style = saved.style;
-        root.dataset.state = root.dataset.detail = 'ready';
-        root.dataset.detailStyle = saved.style;
-        root.dataset.previewCache = 'render';
-        root.dataset.saved = 'yes';
-        root.dataset.readyMs = String(Math.round(performance.now()));
-        root.dataset.runtime = local ? 'native' : 'wasm';
-        status.hidden = true;
-        detailControls();
-        document.querySelectorAll<HTMLButtonElement>('#map-navigation .navigation-icon').forEach(button => {
-          button.disabled = false;
-        });
-        scheduleDraw();
-        return;
+        if (next) {
+          install(next, saved.bounds);
+          cachedFrame = saved;
+          tier = requestedTier = saved.tier;
+          fromDetailed = saved.fromDetailed === true;
+          style = saved.style;
+          root.dataset.state = root.dataset.detail = 'ready';
+          root.dataset.detailStyle = saved.style;
+          root.dataset.previewCache = 'render';
+          root.dataset.saved = 'yes';
+          root.dataset.readyMs = String(Math.round(performance.now()));
+          root.dataset.runtime = local ? 'native' : 'wasm';
+          status.hidden = true;
+          detailControls();
+          document.querySelectorAll<HTMLButtonElement>('#map-navigation .navigation-icon').forEach(button => {
+            button.disabled = false;
+          });
+          scheduleDraw();
+          return;
+        }
       }
       const stable = !local && previewKey && (await readCompactPreview(previewKey));
       if (disposed) return;

@@ -11,7 +11,7 @@
 //! intersections with the block (and the footpaths cut from them) partition
 //! the block exactly. Deterministic per block seed; neighbour search runs on a
 //! uniform grid with the Voronoi security radius (no O(n²) pass).
-use super::super::geometry::{bbox, centroid, contains, interior_point, ribbon, union};
+use super::super::geometry::{BoxGrid, bbox, centroid, contains, interior_point, ribbon, union};
 use super::contacts::{Front, frontage};
 use super::cut_geometry::{add, distance, dot, length, normal, scale, sub, unit};
 use super::identity::parcel;
@@ -478,16 +478,19 @@ fn painted_runs(route:&[usize],pts:&[Point],nav:&BTreeSet<(usize,usize)>)->Vec<V
     }
     if line.len()>1{out.push(line);}out
 }
-fn strokes_avoid(lines:&[Vec<Point>],width:f64,forbidden:&[Shape])->bool{
-    if forbidden.is_empty(){return true;}
-    for line in lines{
-        let mut pieces=vec![];
-        for w in line.windows(2){pieces.extend(ribbon(w,&[width]));}
-        for &p in line{pieces.push(disc(p,0.5*width));}
-        for p in pieces{for f in forbidden{
-            if boxes_overlap(bbox(&p),bbox(f)) && !intersection(&p,f).is_empty(){return false;}
-        }}
-    }true
+fn strokes_avoid(lines: &[Vec<Point>], width: f64, forbidden: &[Shape], grid: &BoxGrid) -> bool {
+    if forbidden.is_empty() { return true; }
+    for line in lines {
+        let mut pieces = vec![];
+        for w in line.windows(2) { pieces.extend(ribbon(w, &[width])); }
+        for &p in line { pieces.push(disc(p, 0.5 * width)); }
+        for p in pieces {
+            if grid.query(bbox(&p), 0.0).into_iter().any(|i| !intersection(&p, &forbidden[i]).is_empty()) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// Footpaths serving the cells with no street front: shortest routes along
@@ -530,26 +533,21 @@ fn footpaths_targets(
     shape:&Shape, cells:&[Shape], fronts:&[Front], width:f64,
     connected_shared:&[usize], navigation:&[Shape], forbidden:&[Shape], targets:Option<&[bool]>,
 )->(Vec<Shape>,Vec<(Shape,(f64,f64,f64,f64))>,Vec<Front>) {
-    // Fronts near each cell only (a camp brings thousands of path fronts).
+    if fronts.is_empty() { return (vec![], vec![], vec![]); }
+    // A camp brings thousands of fronts and closed centre cells. Keep inputs
+    // in order so a frontage tie or overlapping source picks the same street.
+    let front_grid = BoxGrid::new(fronts.iter().map(|f| {
+        (f.a.x.min(f.b.x), f.a.y.min(f.b.y), f.a.x.max(f.b.x), f.a.y.max(f.b.y))
+    }).collect());
     let mut served: Vec<f64> = cells
         .iter()
         .enumerate().map(|(i,c)| {
             if targets.is_some_and(|t| !t[i]) { return f64::INFINITY; }
-            let b = bbox(c);
-            let near: Vec<Front> = fronts
-                .iter()
-                .filter(|f| {
-                    f.a.x.max(f.b.x) >= b.0 - 0.1
-                        && f.a.x.min(f.b.x) <= b.2 + 0.1
-                        && f.a.y.max(f.b.y) >= b.1 - 0.1
-                        && f.a.y.min(f.b.y) <= b.3 + 0.1
-                })
-                .copied()
-                .collect();
+            let near: Vec<Front> = front_grid.query(bbox(c), 0.1).into_iter().map(|i| fronts[i]).collect();
             frontage(c, &near).0
         })
         .collect();
-    if served.iter().all(|&f| f >= MIN_FRONT) || fronts.is_empty() {
+    if served.iter().all(|&f| f >= MIN_FRONT) {
         return (vec![], vec![], vec![]);
     }
     let mut nodes = Nodes {
@@ -577,7 +575,10 @@ fn footpaths_targets(
     let nav_edges=if navigation.is_empty() {BTreeSet::new()} else {
         navigation_edges(shape, cells, navigation, &mut nodes, &mut edges, &mut own)
     };
-    let blocked:Vec<bool>=cells.iter().map(|c|forbidden.iter().any(|f|f==c)).collect();
+    let forbidden_grid = BoxGrid::new(forbidden.iter().map(bbox).collect());
+    let blocked: Vec<bool> = cells.iter().map(|c| {
+        !forbidden.is_empty() && forbidden_grid.query(bbox(c), 0.0).into_iter().any(|i| &forbidden[i] == c)
+    }).collect();
     let mut nav_edges = nav_edges;
     if navigation.is_empty() && forbidden.is_empty() {
         for e in doors(shape, fronts, connected_shared, &mut nodes, &edges) {
@@ -603,14 +604,16 @@ fn footpaths_targets(
     let mut dist = vec![f64::INFINITY; n];
     let mut pred = vec![usize::MAX; n];
     let mut heap = BinaryHeap::new();
+    let mut open_fronts: Vec<_> = fronts.iter().map(|f| !f.shared).collect();
+    for &i in connected_shared {
+        if let Some(open) = open_fronts.get_mut(i) { *open = true; }
+    }
     for (v, p) in pts.iter().enumerate() {
         if graph[v].is_empty() {
             continue;
         }
-        if let Some(f) = fronts
-            .iter()
-            .enumerate()
-            .position(|(i, f)| (!f.shared || connected_shared.contains(&i)) && distance(*p, f.a, f.b) < 0.05)
+        if let Some(f) = front_grid.query((p.x, p.y, p.x, p.y), 0.05).into_iter()
+            .find(|&i| open_fronts[i] && distance(*p, fronts[i].a, fronts[i].b) < 0.05)
         {
             source[v] = Some(f);
             dist[v] = 0.0;
@@ -636,9 +639,6 @@ fn footpaths_targets(
         }
     };
     relax(&mut heap, &mut dist, &mut pred);
-    let mut order: Vec<usize> = (0..cells.len())
-        .filter(|&c| served[c] < MIN_FRONT && !blocked[c])
-        .collect();
     let reach = |c: usize, dist: &[f64]| {
         own[c]
             .iter()
@@ -646,10 +646,14 @@ fn footpaths_targets(
             .map(|e| dist[e.0].min(dist[e.1]))
             .fold(f64::INFINITY, f64::min)
     };
-    order.sort_by(|&a, &b| reach(a, &dist).total_cmp(&reach(b, &dist)).then(a.cmp(&b)));
+    let mut order: Vec<_> = (0..cells.len())
+        .filter(|&c| served[c] < MIN_FRONT && !blocked[c])
+        .map(|c| (reach(c, &dist), c))
+        .collect();
+    order.sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
     let mut taken: BTreeSet<(usize, usize)> = BTreeSet::new();
     let mut routes: Vec<(Vec<Point>, usize)> = Vec::new();
-    for c in order {
+    for (_, c) in order {
         if served[c] >= MIN_FRONT {
             continue;
         }
@@ -693,7 +697,7 @@ fn footpaths_targets(
             // Check the complete proposed painted strokes BEFORE changing
             // served, taken, sources or distances. No route through a closed
             // centre and no retry that changes the old admission policy.
-            if lines.is_empty() || !strokes_avoid(&lines,width,forbidden) {continue;}
+            if lines.is_empty() || !strokes_avoid(&lines, width, forbidden, &forbidden_grid) { continue; }
             Some(lines)
         };
         let mut front = nav_front;

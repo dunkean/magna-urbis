@@ -48,17 +48,16 @@ export interface SavedCityView {
   tier: DetailedCityResult['mode'];
   style: CityDetailStyle;
   bounds: Rect4;
-  camera: View;
   view: View;
   width: number;
   height: number;
   fromDetailed?: boolean;
 }
 
-export const readCityView = (key: string) => readUrbanCache<SavedCityView>(key + ':view');
+export const readCityView = (key: string) => readUrbanCache<SavedCityView>(key + ':overview');
 export const readCityWorld = (key: string, tier: DetailedCityResult['mode']) => readUrbanCache<DetailedCityResult>(key + ':' + tier);
 export const saveCityWorld = (key: string, data: DetailedCityResult) => writeUrbanCache(key + ':' + data.mode, data);
 
 export async function saveCityView(key: string, value: SavedCityView): Promise<boolean> {
-  return tryWriteUrbanCache(key + ':view', value, value.image.size + 512);
+  return tryWriteUrbanCache(key + ':overview', value, value.image.size + 512);
 }

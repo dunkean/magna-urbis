@@ -113,11 +113,7 @@ export function mountCityEmbedNavigation(host: HTMLElement, draw: () => void, en
   return {
     zoom,
     reset,
-    camera: () => ({ ...camera }),
-    restore: (saved: View) => {
-      camera = { ...saved };
-      changed();
-    },
+    atOverview: () => camera.cx === 0 && camera.cy === 0 && camera.scale === 1,
     view: (base: View): View => ({ cx: base.cx + camera.cx / base.scale, cy: base.cy + camera.cy / base.scale, scale: base.scale * camera.scale }),
     dispose: () => controller.abort(),
   };
