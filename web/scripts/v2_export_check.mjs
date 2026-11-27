@@ -1,6 +1,7 @@
 /** Exercise the export dialog in Chrome and import the resulting files with installed tools. */
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
@@ -21,6 +22,7 @@ const { values } = parseArgs({
 });
 if (values.help) {
   console.log('npm run test:v2:exports -- --project <.muproj> [--url http://127.0.0.1:5174/v2.html] [--formats png,svg,glb,obj,godot,dd2vtt,unity,capture3d] [--cdp http://127.0.0.1:9222] [--visible] [--out out]');
+  console.log('--visible opens Chrome and leaves the verified imports open in their desktop apps.');
   process.exit(0);
 }
 
@@ -45,6 +47,12 @@ const blender = process.env.MAGNA_BLENDER ?? (blenderDir && join(blenderRoot, bl
 const godot = process.env.MAGNA_GODOT ?? join(local, 'Microsoft', 'WinGet', 'Links', 'godot_console.exe');
 const inkscape = process.env.MAGNA_INKSCAPE ?? join(programFiles, 'Inkscape', 'bin', 'inkscape.com');
 const unityCli = join(local, 'Microsoft', 'WindowsApps', 'unity.exe');
+
+async function show(executable, args) {
+  const child = spawn(executable, args, { detached: true, stdio: 'ignore' });
+  await once(child, 'spawn');
+  child.unref();
+}
 
 function pngSize(bytes) {
   assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'Expected a PNG.');
@@ -73,6 +81,7 @@ async function checkInApp(format, file, bytes) {
     if (!existsSync(inkscape)) return { status: 'skipped', reason: 'Inkscape CLI unavailable' };
     const preview = join(out, 'inkscape.png');
     await tool(inkscape, [file, '--export-width=800', `--export-filename=${preview}`]);
+    if (values.visible) await show(inkscape.replace(/\.com$/i, '.exe'), [file]);
     return { app: 'Inkscape', pixels: pngSize(await readFile(preview)) };
   }
   if (format === 'dd2vtt') {
@@ -103,6 +112,7 @@ async function checkInApp(format, file, bytes) {
       folders.some(folder => existsSync(join(assetRoot, folder, 'map.obj'))),
       'Unity did not import map.obj.',
     );
+    if (values.visible) await show(unity, ['-projectPath', project]);
     return { app: 'Unity', assets: folders.length };
   }
   if (format === 'godot') {
@@ -113,6 +123,10 @@ async function checkInApp(format, file, bytes) {
     const imported = await tool(godot, ['--headless', '--path', project, '--editor', '--import']);
     const executed = await tool(godot, ['--headless', '--path', project, '--quit-after', '4']);
     assert.doesNotMatch(imported.stderr + executed.stderr, /(?:SCRIPT |Parse )?ERROR:/, 'Godot logged an import or scene error.');
+    if (values.visible) {
+      const windowed = godot.replace(/_console\.exe$/i, '.exe');
+      await show(existsSync(windowed) ? windowed : godot, ['--editor', '--path', project, 'res://map.tscn']);
+    }
     return { app: 'Godot', scene: 'map.tscn' };
   }
 
@@ -126,10 +140,28 @@ async function checkInApp(format, file, bytes) {
   }
   if (!blender || !existsSync(blender)) return { status: 'skipped', reason: 'Blender CLI unavailable' };
   const operator = format === 'glb' ? 'bpy.ops.import_scene.gltf' : 'bpy.ops.wm.obj_import';
-  const expression = `import bpy; bpy.ops.wm.read_factory_settings(use_empty=True); ${operator}(filepath=${JSON.stringify(mesh)}); meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']; assert meshes; print('MESHAUDIT', len(meshes), sum(len(o.data.polygons) for o in meshes))`;
+  const scene = join(out, `map-${format}.blend`);
+  let expression = `import bpy; bpy.ops.wm.read_factory_settings(use_empty=True); ${operator}(filepath=${JSON.stringify(mesh)}); meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']; assert meshes; print('MESHAUDIT', len(meshes), sum(len(o.data.polygons) for o in meshes))`;
+  if (values.visible)
+    expression += `
+from mathutils import Vector
+corners = [obj.matrix_world @ Vector(corner) for obj in meshes for corner in obj.bound_box]
+low = Vector(tuple(min(point[i] for point in corners) for i in range(3)))
+high = Vector(tuple(max(point[i] for point in corners) for i in range(3)))
+for screen in bpy.data.screens:
+    for area in screen.areas:
+        if area.type == 'VIEW_3D':
+            space = area.spaces.active
+            space.region_3d.view_location = (low + high) / 2
+            space.region_3d.view_distance = (high - low).length
+            space.clip_end = max(10000, (high - low).length * 5)
+            space.shading.color_type = 'TEXTURE'
+bpy.ops.wm.save_as_mainfile(filepath=${JSON.stringify(scene)})
+`;
   const { stdout } = await tool(blender, ['--background', '--python-exit-code', '1', '--python-expr', expression]);
   const counts = stdout.match(/MESHAUDIT (\d+) (\d+)/);
   assert(counts && Number(counts[2]) > 0, 'Blender imported no faces.');
+  if (values.visible) await show(blender, [scene]);
   return { app: 'Blender', objects: Number(counts[1]), faces: Number(counts[2]) };
 }
 
