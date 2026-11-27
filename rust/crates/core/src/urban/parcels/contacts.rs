@@ -393,15 +393,13 @@ pub(in crate::urban) fn block_contacts_indexed(
     layout: &Layout,
     index: &FrontageIndex,
 ) -> Vec<crate::urban::ParcelContact> {
-    network_contacts(shape, layout, index)
-        .into_iter()
-        .filter(|c| {
-            !matches!(
-                layout.streets[c.street].role.as_str(),
-                "boundary" | "bridge"
-            )
-        })
-        .collect()
+    let mut contacts = network_contacts(shape, layout, index);
+    retain_block_contacts(layout, &mut contacts);
+    contacts
+}
+
+pub(super) fn retain_block_contacts(layout: &Layout, contacts: &mut Vec<crate::urban::ParcelContact>) {
+    contacts.retain(|c| !matches!(layout.streets[c.street].role.as_str(), "boundary" | "bridge"));
 }
 
 pub(super) fn parcel_fronts(p: &Parcel) -> Vec<Front> {

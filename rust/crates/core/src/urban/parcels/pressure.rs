@@ -1,15 +1,18 @@
 //! Smooth occupation pressure on the retained pedestrian network. No street,
 //! reserve or wall is created or moved by this calculation.
 
-use super::contacts::{FrontageIndex, frontages};
+use super::contacts::{FrontageIndex, frontages, network_contacts, retain_block_contacts};
 use super::cut_geometry::{add, dot, length, scale, sub};
-use crate::urban::{Layout, Morph, Point, Shape};
+use crate::urban::{Layout, Morph, ParcelContact, Point, Shape};
 use crate::urban::geometry::area;
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-pub(super) fn for_layout(layout: &Layout) -> Vec<f64> {
+fn for_layout<I>(layout: &Layout, block_fronts: impl Fn(usize) -> I + Sync) -> Vec<f64>
+where
+    I: IntoIterator<Item = (Point, Point, usize)>,
+{
     let mut nodes = Vec::<Point>::new();
     // Node interning only (never iterated): a hash map gives the same ids.
     let mut ids = std::collections::HashMap::<(i64, i64), usize>::new();
@@ -112,14 +115,12 @@ pub(super) fn for_layout(layout: &Layout) -> Vec<f64> {
     }
     let area = layout.blocks.iter().map(|b| area(&b.shape)).sum::<f64>();
     let scale = (area / std::f64::consts::PI).sqrt().clamp(60.0, 600.0);
-    let index = FrontageIndex::new(layout);
     // Pure per block: measured in parallel, returned in block order.
-    super::super::par::map(&layout.blocks, |_, block| {
-            let fronts = frontages(&block.shape, layout, &index);
+    super::super::par::map(&layout.blocks, |i, _| {
             let mut access = f64::INFINITY;
-            for f in &fronts {
-                let midpoint = scale_point(add(f.a, f.b), 0.5);
-                for (k, segment) in layout.streets[f.street].path.windows(2).enumerate() {
+            for (a, b, street) in block_fronts(i) {
+                let midpoint = scale_point(add(a, b), 0.5);
+                for (k, segment) in layout.streets[street].path.windows(2).enumerate() {
                     let direction = sub(segment[1], segment[0]);
                     let len = length(direction);
                     if len < 1e-7 {
@@ -131,16 +132,16 @@ pub(super) fn for_layout(layout: &Layout) -> Vec<f64> {
                         midpoint,
                         add(segment[0], scale_point(direction, at / len)),
                     ));
-                    let ids = &paths[f.street];
-                    let factor = if layout.streets[f.street].rank >= 3 {
+                    let ids = &paths[street];
+                    let factor = if layout.streets[street].rank >= 3 {
                         1.15
                     } else {
                         1.0
                     };
-                    let before = stations[f.street][k];
+                    let before = stations[street][k];
                     let direct = sources
                         .iter()
-                        .filter(|&&(si, _, _)| si == f.street)
+                        .filter(|&&(si, _, _)| si == street)
                         .map(|&(_, source, cost)| cost + (before + at - source).abs() * factor)
                         .fold(f64::INFINITY, f64::min);
                     let route = (distances[ids[k]] + at * factor)
@@ -192,6 +193,17 @@ mod enclosure_tests {
         // The bridge still supplies no building frontage of its own.
         let on_deck = super::super::super::geometry::rectangle(90.,104.,130.,150.);
         assert!(super::super::block_contacts(&on_deck, &l).is_empty());
+        let mut deck_block = l.blocks[0].clone();
+        deck_block.shape = on_deck;
+        l.blocks.push(deck_block);
+        let (shared, contacts) = super::pressures_and_contacts(&l, &|_| {});
+        assert_eq!(shared, super::occupation_pressures(&l));
+        assert!(contacts[2].is_empty());
+        assert!(!contacts[0].is_empty());
+        for (block, contacts) in l.blocks.iter().zip(contacts) {
+            let independent = super::super::block_contacts(&block.shape, &l);
+            assert_eq!(serde_json::to_value(contacts).unwrap(), serde_json::to_value(independent).unwrap());
+        }
         // A wall boundary is not a crossing; disconnected land must not gain
         // fictitious access merely because it stands inside an enclosure.
         l.center.x = 10.0;
@@ -330,11 +342,38 @@ pub(super) fn adjusted(
 /// programme and the cadastre of one probe ask for the same network.
 static PRESSURES: crate::urban::probe_cache::Memo<std::sync::Arc<Vec<f64>>> = crate::urban::probe_cache::Memo::new();
 pub(in crate::urban) fn occupation_pressures(layout: &Layout) -> Vec<f64> {
+    occupation_pressures_using(layout, || {
+        let index = FrontageIndex::new(layout);
+        for_layout(layout, |i| frontages(&layout.blocks[i].shape, layout, &index)
+            .into_iter().map(|f| (f.a, f.b, f.street)))
+    })
+}
+
+/// Pressure reads every network contact. Only then discard bridges and boundaries
+/// for the programme's block frontages, keeping the original segment order.
+pub(in crate::urban) fn pressures_and_contacts(
+    layout: &Layout,
+    lap: &impl Fn(&str),
+) -> (Vec<f64>, Vec<Vec<ParcelContact>>) {
+    let index = FrontageIndex::new(layout);
+    let mut contacts = crate::urban::par::map(&layout.blocks, |_, b| network_contacts(&b.shape, layout, &index));
+    lap("contacts");
+    let pressures = occupation_pressures_using(layout, || {
+        for_layout(layout, |i| contacts[i].iter().map(|c| (c.a, c.b, c.street)))
+    });
+    for block in &mut contacts {
+        retain_block_contacts(layout, block);
+    }
+    lap("pressures");
+    (pressures, contacts)
+}
+
+fn occupation_pressures_using(layout: &Layout, compute_network: impl FnOnce() -> Vec<f64>) -> Vec<f64> {
     // Circuits indexed by ordinate (same even/odd arithmetic as `contains`):
     // a town wall has thousands of vertices and every block asks.
     let rings: Vec<_> = layout.enclosures.iter().filter(|e| e.purpose.is_empty())
         .map(|e| crate::urban::geometry::ContainmentIndex::new(&Shape { outer:e.path.clone(), holes:vec![] })).collect();
-    let network = network_pressures(layout);
+    let network = network_pressures(layout, compute_network);
     // Pure per block: in parallel, in block order.
     crate::urban::par::range(network.len().min(layout.blocks.len()), |i| {
         let (p, b) = (network[i], &layout.blocks[i]);
@@ -344,9 +383,9 @@ pub(in crate::urban) fn occupation_pressures(layout: &Layout) -> Vec<f64> {
         } else { p }
     })
 }
-fn network_pressures(layout: &Layout) -> Vec<f64> {
+fn network_pressures(layout: &Layout, compute: impl FnOnce() -> Vec<f64>) -> Vec<f64> {
     if !crate::urban::probe_cache::enabled() {
-        return for_layout(layout);
+        return compute();
     }
     // `for_layout` reads the streets (geometry, widths, rank, role), the
     // centres and the block outlines; nothing else of the layout.
@@ -377,7 +416,7 @@ fn network_pressures(layout: &Layout) -> Vec<f64> {
     if let Some(hit) = PRESSURES.get(&k) {
         return hit.as_ref().clone();
     }
-    let pressures = for_layout(layout);
+    let pressures = compute();
     PRESSURES.put(k, std::sync::Arc::new(pressures.clone()));
     pressures
 }

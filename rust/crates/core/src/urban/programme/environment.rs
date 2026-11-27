@@ -9,13 +9,7 @@ pub(super) fn measure(
     surface: Surface<'_>,
     lap: &impl Fn(&str),
 ) -> (Vec<Vec<ParcelContact>>, Vec<BlockEnvironment>) {
-    let road_pressures = crate::urban::parcels::occupation_pressures(layout);
-    lap("pressures");
-    let front_index = crate::urban::parcels::FrontageIndex::new(layout);
-    let block_contacts = crate::urban::par::map(&layout.blocks, |_, b| {
-        crate::urban::parcels::block_contacts_indexed(&b.shape, layout, &front_index)
-    });
-    lap("contacts");
+    let (road_pressures, block_contacts) = crate::urban::parcels::pressures_and_contacts(layout, lap);
     let quay_water = roles::quay_water_fronts(layout, surface);
     let environment = crate::urban::par::map(&layout.blocks, |block, b| {
         let c = centroid(&b.shape);

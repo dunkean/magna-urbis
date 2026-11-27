@@ -195,7 +195,9 @@ fn cell(p: Point) -> (i64, i64) {
     ((p.x / CELL).floor() as i64, (p.y / CELL).floor() as i64)
 }
 
-fn frontage_hash(lots: &[Shape]) -> HashMap<(i64,i64),Vec<Point>> {
+type LotFrontageIndex = HashMap<(i64, i64), Vec<Point>>;
+
+fn frontage_hash(lots: &[Shape]) -> LotFrontageIndex {
     let mut hash: HashMap<(i64, i64), Vec<Point>> = HashMap::new();
     let mut points = vec![];
     for lot in lots {
@@ -207,7 +209,7 @@ fn frontage_hash(lots: &[Shape]) -> HashMap<(i64,i64),Vec<Point>> {
     hash
 }
 
-fn touches(hash: &HashMap<(i64,i64),Vec<Point>>, a: Point, b: Point, reach: f64) -> bool {
+fn touches(hash: &LotFrontageIndex, a: Point, b: Point, reach: f64) -> bool {
     let (x0, y0) = cell(Point { x: a.x.min(b.x) - reach, y: a.y.min(b.y) - reach });
     let (x1, y1) = cell(Point { x: a.x.max(b.x) + reach, y: a.y.max(b.y) + reach });
     (x0..=x1).any(|cx| {
@@ -229,7 +231,7 @@ struct Seg {
 }
 
 /// Remove the street segments that serve nothing. `open` flags the blocks that are open land.
-fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) { prune_with(layout, open, lots, None, None) }
+fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) { prune_with(layout, open, &frontage_hash(lots), None, None) }
 
 /// `prune` again on its own result, with the same lots, until the streets stop
 /// changing: streets only, no cadastre. One prune is not its own fixed point.
@@ -241,9 +243,10 @@ fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) { prune_with(layout
 fn prune_settled(layout: &mut Layout, open: &[bool], lots: &[Shape]) {
     // Every round only removes, splits or narrows streets, so it settles in a
     // few rounds; the bound guards the loop.
+    let lot_frontages = frontage_hash(lots);
     for _ in 0..32 {
         let before = layout.streets.clone();
-        prune(layout, open, lots);
+        prune_with(layout, open, &lot_frontages, None, None);
         if same_streets(&before, &layout.streets) {
             break;
         }
@@ -269,7 +272,7 @@ fn same_streets(a: &[Street], b: &[Street]) -> bool {
 type Fronts = Vec<Vec<[Point; 2]>>;
 /// `bridgeheads` (the imported roads): after the bridge stage, bank approaches
 /// must earn their place too, except the ramps of the roads' own crossings.
-fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<(&[Vec<[Point; 2]>], &[Vec<[Point; 2]>])>, bridgeheads: Option<&[Street]>) {
+fn prune_with(layout: &mut Layout, open: &[bool], lot_frontages: &LotFrontageIndex, doors: Option<(&[Vec<[Point; 2]>], &[Vec<[Point; 2]>])>, bridgeheads: Option<&[Street]>) {
     let road_ramp = |s: &Street| bridgeheads.is_some_and(|roads| s.path.windows(2).any(|w| { let m = Point { x: (w[0].x + w[1].x) * 0.5, y: (w[0].y + w[1].y) * 0.5 };
         roads.iter().any(|r| r.path.windows(2).any(|v| g::distance(m, v[0], v[1]).0 < 1.0)) }));
     let bridgeheads = bridgeheads.is_some();
@@ -326,8 +329,6 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
         s.path = path;
         s.widths = widths;
     }
-    // Only occupied lots justify a terminal street, not a whole half-empty block.
-    let hash = frontage_hash(lots);
     // Segment graph; coincident vertices are one node.
     let mut nodes: HashMap<(i64, i64), usize> = HashMap::new();
     let mut pos: Vec<Point> = vec![];
@@ -375,7 +376,7 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
             });
             match (&fronts, &front_index) {
                 (Some((d, sd)), Some((di, sdi))) => (near(d, di), near(sd, sdi)),
-                _ => { let t = touches(&hash, p, q, reach); (t, t) }
+                _ => { let t = touches(lot_frontages, p, q, reach); (t, t) }
             }
         }).collect()
     });
@@ -851,7 +852,6 @@ fn finish_with(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: Opt
                     if door == Some(c.street) && let Some(d) = doors.get_mut(c.street) { d.push([c.a, c.b]); }
                 }
             }
-            let occupied: Vec<Shape> = vec![];
             // A street entering the water is the bridge stage's to settle: cutting
             // it into pieces multiplies the crossings that stage then re-routes.
             for (i, s) in layout.streets.iter().enumerate() {
@@ -863,7 +863,7 @@ fn finish_with(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: Opt
             if doors.iter().any(|d| !d.is_empty()) {
                 let open: Vec<_> = layout.blocks.iter().map(|b| b.kind == "reserve").collect();
                 let ways = layout.streets.clone();
-                prune_with(layout,&open,&occupied,Some((&doors,&sides)),roads);
+                prune_with(layout,&open,&LotFrontageIndex::new(),Some((&doors,&sides)),roads);
                 return_corridors(layout, &ways);
             }
             laps.lap("prune");
@@ -1508,7 +1508,7 @@ mod tests {
         // Doors only on the first street, all along it (the stub at x=50 is within reach of them).
         let mut doors = vec![vec![]; 5];
         doors[0] = vec![[Point{x:5.,y:2.},Point{x:95.,y:2.}]];
-        prune_with(&mut l, &[false], &[], Some((&doors, &doors)), None);
+        prune_with(&mut l, &[false], &LotFrontageIndex::new(), Some((&doors, &doors)), None);
         let has = |role: &str, f: &dyn Fn(&Point)->bool| l.streets.iter().any(|s| s.role == role && s.path.iter().any(|p| f(p)));
         assert!(has("street", &|p| p.x == 0.), "served street stays");
         assert!(!has("track", &|p| p.y == 30.), "in-town stray track goes: {:?}", l.streets);
@@ -1535,7 +1535,7 @@ mod tests {
             let mut p = programme.clone();
             p["population"] = json!(population);
             l.programme = Some(serde_json::from_value(p).unwrap());
-            prune_with(&mut l, &[], &[], Some((&doors, &doors)), None);
+            prune_with(&mut l, &[], &LotFrontageIndex::new(), Some((&doors, &doors)), None);
             let has = |role: &str, f: &dyn Fn(&Point)->bool| l.streets.iter().any(|s| s.role == role && s.path.iter().any(|p| f(p)));
             assert!(has("street", &|p| p.x == 0.), "served street stays");
             assert!(has("outbound", &|p| p.y == -150.), "an exit joined to the road stays: {:?}", l.streets);

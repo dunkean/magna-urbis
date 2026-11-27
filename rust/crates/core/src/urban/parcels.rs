@@ -58,7 +58,7 @@ pub(super) use lot_envelopes::{
     EnvelopeMemo, contact_envelope, envelope_fronts, envelope_memo, parcel_envelope,
     parcel_envelope_with,
 };
-pub(super) use pressure::occupation_pressures;
+pub(super) use pressure::{occupation_pressures, pressures_and_contacts};
 
 /// Monument family of an architecture pack (`landmark::family`).
 pub(super) fn monument_family(pack: &str) -> &'static str {

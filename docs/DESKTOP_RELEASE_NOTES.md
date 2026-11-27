@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Town generation reuses street-frontage measurements when placing services and trimming unused streets.
 - Azgaar previews reopen on the full town, even after zooming or panning before closing.
 - Large towns with organic lots generate their shared paths faster.
 
