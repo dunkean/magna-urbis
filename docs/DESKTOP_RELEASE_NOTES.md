@@ -1,5 +1,7 @@
 ## Alpha 0.3.11
 
+- Godot exports start with a lit, angled camera that frames the terrain and buildings across the exported elevation range.
+
 - Draw, move and resize the export area directly on the map preview, with live distances and pixel dimensions. Cropped PNGs render at full resolution after you select the area.
 - While the map is tilted, export the current 3D view as a PNG from the toolbar or the export dialog.
 

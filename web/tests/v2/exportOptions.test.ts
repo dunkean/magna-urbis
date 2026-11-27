@@ -69,6 +69,7 @@ describe('export options', () => {
     const scene: MapMesh = {
       width: 80,
       depth: 60,
+      lowestPoint: 0,
       highestPoint: 3,
       origin: { x: 0, y: 0 },
       metadata,

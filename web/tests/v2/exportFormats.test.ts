@@ -42,6 +42,8 @@ describe('3D map packages', () => {
     const godot = unzipSync((await encodeMapMesh(mesh, 'godot', 'town', png)).bytes);
     expect(strFromU8(godot['project.godot'])).toContain('run/main_scene="res://map.tscn"');
     expect(strFromU8(godot['map.tscn'])).toContain('path="res://map.glb"');
+    expect(strFromU8(godot['map.tscn'])).toContain('rotation_degrees = Vector3(-40, 0, 0)');
+    expect(strFromU8(godot['map.tscn'])).toContain('current = true');
     expect(godot['map.glb']).toEqual(mapGlb(mesh, png));
   });
 

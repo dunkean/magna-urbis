@@ -34,6 +34,7 @@ export interface MapMesh {
   origin: { x: number; y: number };
   width: number;
   depth: number;
+  lowestPoint: number;
   highestPoint: number;
   metadata?: MapMetadata;
 }
@@ -209,7 +210,13 @@ export async function mapMesh(world: World, area: ExportRect, resolution: number
   ] as const)
     parts.push(...(await finish(objectParts(models, area, name, materialColor, !!metadata))));
   if (trees) parts.push(...(await finish(exportTreeParts({ ...trees, height: (x, y) => terrain.heightAt(x, y) }, area, materialScene))));
-  let highestPoint = 0;
-  for (const part of parts) for (let i = 1; i < part.positions.length; i += 3) highestPoint = Math.max(highestPoint, part.positions[i]);
-  return { parts, origin: { x: area.x, y: area.y }, width: area.width, depth: area.height, highestPoint, metadata };
+  let lowestPoint = Infinity,
+    highestPoint = -Infinity;
+  for (const part of parts) {
+    for (let i = 1; i < part.positions.length; i += 3) {
+      lowestPoint = Math.min(lowestPoint, part.positions[i]);
+      highestPoint = Math.max(highestPoint, part.positions[i]);
+    }
+  }
+  return { parts, origin: { x: area.x, y: area.y }, width: area.width, depth: area.height, lowestPoint, highestPoint, metadata };
 }

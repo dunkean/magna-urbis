@@ -128,28 +128,48 @@ function metadataFiles(scene: MapMesh): Record<string, Uint8Array> {
 }
 
 function godotProject(scene: MapMesh, mesh: Uint8Array): Uint8Array {
-  const extent = Math.max(scene.width, scene.depth);
-  const root = `[gd_scene load_steps=2 format=3]
+  const relief = scene.highestPoint - scene.lowestPoint;
+  const centre = (scene.lowestPoint + scene.highestPoint) / 2;
+  const extent = Math.max(scene.width, scene.depth, relief);
+  const pitch = 40;
+  const radians = (pitch * Math.PI) / 180;
+  const distance = 1.8 * extent;
+  // At this angle the vertical span on screen combines the north–south extent and altitude.
+  const verticalSpan = scene.depth * Math.sin(radians) + relief * Math.cos(radians);
+  const size = 1.16 * Math.max(verticalSpan, scene.width / 1.5);
+  const root = `[gd_scene load_steps=3 format=3]
 
 [ext_resource type="PackedScene" path="res://map.glb" id="1"]
+
+[sub_resource type="Environment" id="OverviewEnvironment"]
+background_mode = 1
+background_color = Color(0.69, 0.77, 0.81, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.88, 0.92, 1, 1)
+ambient_light_energy = 0.45
 
 [node name="MagnaUrbis" type="Node3D"]
 
 [node name="Map" parent="." instance=ExtResource("1")]
+
+[node name="Environment" type="WorldEnvironment" parent="."]
+environment = SubResource("OverviewEnvironment")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 rotation_degrees = Vector3(-56, -28, 0)
 shadow_enabled = true
 
 [node name="Overview" type="Camera3D" parent="."]
-position = Vector3(${scene.width / 2}, ${scene.highestPoint + extent * 1.15}, ${scene.depth / 2})
-rotation_degrees = Vector3(-90, 0, 0)
+position = Vector3(${scene.width / 2}, ${centre + distance * Math.sin(radians)}, ${scene.depth / 2 + distance * Math.cos(radians)})
+rotation_degrees = Vector3(${-pitch}, 0, 0)
 projection = 1
-size = ${extent * 1.15}
-far = ${scene.highestPoint + extent * 8 + 1000}
+size = ${size}
+near = ${Math.max(0.01, extent / 2000)}
+far = ${distance + 2 * extent}
 current = true
 `;
-  return zipSync({ 'project.godot': strToU8('[application]\nconfig/name="Magna Urbis"\nrun/main_scene="res://map.tscn"\n\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n'), 'map.tscn': strToU8(root), 'map.glb': mesh, ...metadataFiles(scene) }, { level: 1 });
+  const config = 'config_version=5\n\n[application]\nconfig/name="Magna Urbis"\nrun/main_scene="res://map.tscn"\n\n[display]\nwindow/size/viewport_width=1280\nwindow/size/viewport_height=800\nwindow/stretch/mode="canvas_items"\n\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n';
+  return zipSync({ 'project.godot': strToU8(config), 'map.tscn': strToU8(root), 'map.glb': mesh, ...metadataFiles(scene) }, { level: 1 });
 }
 
 /** Unity's local import package is a gzip tar of per-asset payload, .meta and pathname entries. */
