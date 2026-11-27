@@ -3,11 +3,44 @@ import { buildingRayDistance, surfaceTriangles, eachBuildingTriangle } from '../
 import { buildingExterior, urbanBuildingsSvg } from '../src/render/urbanBuildings';
 import { renderHouseExteriorSvg, houseMaterialColor } from '../../rust/bridge/houseRender';
 import { buildingPaint } from '../src/render/urbanBuildingStyle';
-import type { Surface } from '../../rust/bridge/housesContract';
+import type { Point, Surface } from '../../rust/bridge/housesContract';
 import type { PlacementBatch, PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
 import type { ForestOccupation } from '../../rust/bridge/terrainForest';
 import { withBuildingOccupation } from '../src/ui/forestOccupation';
 import { UrbanBuildingGround } from '../src/ui/urbanBuildingGround';
+
+// Original full boundary traversal. Keep this independent of the sweep so
+// the ordered Float64 comparison also checks interpolation and triangle order.
+function referenceSurfaceTriangles(surface: Surface): [Point, Point, Point][] {
+  const triangles: [Point, Point, Point][] = [];
+  for (const shape of surface) {
+    const rings = [shape.outer, ...shape.holes];
+    const ys = [...new Set(rings.flatMap(r => r.map(p => p.y)))].sort((a, b) => a - b);
+    for (let j = 1; j < ys.length; j++) {
+      const low = ys[j - 1],
+        high = ys[j],
+        middle = (low + high) / 2;
+      const edges: { a: Point; b: Point; x: number }[] = [];
+      for (const ring of rings)
+        for (let i = 0; i < ring.length; i++) {
+          const a = ring[i],
+            b = ring[(i + 1) % ring.length];
+          if (middle > Math.min(a.y, b.y) && middle < Math.max(a.y, b.y)) edges.push({ a, b, x: a.x + ((middle - a.y) / (b.y - a.y)) * (b.x - a.x) });
+        }
+      edges.sort((a, b) => a.x - b.x);
+      const at = (edge: (typeof edges)[number], y: number): Point => ({ x: edge.a.x + ((y - edge.a.y) / (edge.b.y - edge.a.y)) * (edge.b.x - edge.a.x), y });
+      for (let i = 0; i + 1 < edges.length; i += 2) {
+        const a = at(edges[i], low),
+          b = at(edges[i + 1], low),
+          c = at(edges[i + 1], high),
+          d = at(edges[i], high);
+        if (b.x - a.x > 1e-9) triangles.push([a, b, c]);
+        if (c.x - d.x > 1e-9) triangles.push([a, c, d]);
+      }
+    }
+  }
+  return triangles;
+}
 
 describe('applied building display geometry', () => {
   it('shares Houses exterior facets, material patterns and ridge edges without a detailed HouseUnit', () => {
@@ -126,6 +159,47 @@ describe('applied building display geometry', () => {
       expect(hits.every(hit => hit === null)).toBe(true);
     }
   });
+
+  it('matches the original surface traversal in triangle order and every Float64 bit', () => {
+    const ring = (coordinates: [number, number][]): Point[] => coordinates.map(([x, y]) => ({ x, y }));
+    const ordinates = [-0, 0.25, 0.5, 1, 1 + Number.EPSILON, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    // The outer ring alone exceeds the sweep cutoff. Include a duplicate
+    // closing point, horizontal edges, repeated and adjacent ordinates.
+    const outer = [{ x: -0, y: -0 }, ...ordinates.flatMap(y => [{ x: 12, y }, { x: 12, y }]), { x: -0, y: 12 }, { x: -0, y: -0 }];
+    const holes = [
+      ring([[2, 3], [4, 5], [7, 5], [7, 3]]),
+      // This edge starts earlier than the first hole but ties it at x=2.5, y=3.5.
+      ring([[4, 2], [1, 5], [0.25, 5], [0.25, 2]]),
+      ring([[8, 1], [10, 1], [10, 1 + Number.EPSILON], [8, 1 + Number.EPSILON]]),
+      ring([[10, 8], [10, 9], [10, 9], [10, 8]]),
+    ];
+    const shape = { outer, holes };
+    const largest = Number.MAX_VALUE;
+    const extreme = {
+      outer,
+      holes: [...holes, ring([[-largest, 2], [largest, 5], [largest, 6], [-largest, 3]]), ring([[-largest, -largest], [largest, largest], [2, 8]])],
+    };
+    const nonfinite = { outer, holes: [...holes, ring([[1, Number.NaN], [Number.POSITIVE_INFINITY, 3], [3, 6], [1, 6]])] };
+    const thin = { outer: ring([[-0, -0], [1e-9, 0], [1.000000000000001e-9, 2], [-0, 2]]), holes: [] };
+    const float = new DataView(new ArrayBuffer(8));
+    const bits = (value: number): bigint => {
+      float.setFloat64(0, value);
+      return float.getBigUint64(0);
+    };
+    const orderedBits = (triangles: [Point, Point, Point][]) => triangles.map(triangle => triangle.map(({ x, y }) => [bits(x), bits(y)]));
+
+    for (const surface of [
+      [shape, thin],
+      [{ outer: [...outer].reverse(), holes: holes.map(hole => [...hole].reverse()) }],
+      [extreme],
+      [nonfinite],
+    ]) {
+      const reference = referenceSurfaceTriangles(surface);
+      expect(reference.length).toBeGreaterThan(0);
+      expect(orderedBits(surfaceTriangles(surface))).toEqual(orderedBits(reference));
+    }
+  });
+
   it('selects metric heights without baking display exaggeration into the scene', () => {
     const face: [[number, number, number], [number, number, number], [number, number, number]] = [
       [0, 0, 17],

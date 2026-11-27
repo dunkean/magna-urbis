@@ -13,6 +13,9 @@ Le lancement démarre un service Rust de session sur un port temporaire, un Chro
 | `engine.ndjson` | Lignes et sondes Rust `URBAN_PROFILE`, avec leur heure de réception et la ville en cours |
 | `chrome-trace.json` | Trace Chromium avec échantillons V8, tâches, marqueurs User Timing et événements du rendu |
 | `*.png` | Une vue à plat et une vue inclinée par ville |
+| `<ville>-<produit>.json` | Géométrie, cadastre, programme et bâtiments de la V2, avec les empreintes associées dans `browser.json` |
 | `cycles.etl` | Trace noyau optionnelle avec échantillons de cycles PMU et piles échantillonnées en temps CPU via `--pmu`, depuis un terminal élevé |
 
 Les fenêtres CPU et réseau peuvent se chevaucher. Les cycles de `timings.json` correspondent à la différence entre le premier et le dernier relevé dans la fenêtre, par processus. `observedPids` mesure la couverture et `maxEdgeGapMs` indique les bords exclus. Les fenêtres trop courtes se lisent via les sondes murales. Les sondes Rust cumulent parfois depuis le début d’un appel et parfois depuis la sonde précédente. Pour interpréter une série imbriquée, suivre les lignes originales dans l’ordre. Les compteurs de processus sont disponibles sans élévation. L’attribution native fine par pile s’appuie sur les symboles PDB et la trace optionnelle.
+
+`python web/scripts/v7_profile_report.py <sortie>` écrit le rapport Markdown et le CSV des temps. Avec `--reference <sortie-de-référence>`, il compare aussi les produits de génération, les pixels décodés des captures et les temps de la même série de cas.

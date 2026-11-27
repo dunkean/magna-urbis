@@ -241,35 +241,104 @@ export type SeatedVolume = PlacedBuilding['volumes'][number] & { ground_m?: numb
 export const MINOR_VOLUME_ROLE = 'minor';
 const PROXY_MATERIALS: MaterialSlots = { frame: '', infill: '', coating: '', cladding: '', base: '', roof_frame: '' };
 
+type SurfaceTriangle = [Point, Point, Point];
+type SurfaceEdge = { a: Point; b: Point; x: number };
+type SweepEdge = SurfaceEdge & { min: number; max: number; ordinal: number };
+
+function surfaceEdgeX(a: Point, b: Point, y: number): number {
+  return a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x);
+}
+
+function emitSurfaceBand(edges: SurfaceEdge[], low: number, high: number, triangles: SurfaceTriangle[]): void {
+  const at = (edge: SurfaceEdge, y: number): Point => ({ x: surfaceEdgeX(edge.a, edge.b, y), y });
+  for (let i = 0; i + 1 < edges.length; i += 2) {
+    const a = at(edges[i], low),
+      b = at(edges[i + 1], low),
+      c = at(edges[i + 1], high),
+      d = at(edges[i], high);
+    if (b.x - a.x > 1e-9) triangles.push([a, b, c]);
+    if (c.x - d.x > 1e-9) triangles.push([a, c, d]);
+  }
+}
+
+function directSurfaceBands(rings: Point[][], ys: number[], triangles: SurfaceTriangle[]): void {
+  for (let j = 1; j < ys.length; j++) {
+    const low = ys[j - 1],
+      high = ys[j],
+      middle = (low + high) / 2;
+    const edges: SurfaceEdge[] = [];
+    for (const ring of rings)
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i],
+          b = ring[(i + 1) % ring.length];
+        if (middle > Math.min(a.y, b.y) && middle < Math.max(a.y, b.y)) edges.push({ a, b, x: surfaceEdgeX(a, b, middle) });
+      }
+    edges.sort((a, b) => a.x - b.x);
+    emitSurfaceBand(edges, low, high, triangles);
+  }
+}
+
+function sweepSurfaceEdges(rings: Point[][]): SweepEdge[] | undefined {
+  const edges: SweepEdge[] = [];
+  for (const ring of rings)
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i],
+        b = ring[(i + 1) % ring.length];
+      if (!Number.isFinite(a.x) || !Number.isFinite(a.y)) return undefined;
+      if (a.y === b.y) continue;
+      edges.push({ a, b, min: Math.min(a.y, b.y), max: Math.max(a.y, b.y), x: 0, ordinal: edges.length });
+    }
+  return edges.sort((a, b) => a.min - b.min);
+}
+
+function sweepSurfaceBands(edges: SweepEdge[], ys: number[], triangles: SurfaceTriangle[]): void {
+  const active: SweepEdge[] = [];
+  const crossings: SweepEdge[] = [];
+  let next = 0;
+  for (let j = 1; j < ys.length; j++) {
+    const low = ys[j - 1],
+      high = ys[j],
+      middle = (low + high) / 2;
+    // Every endpoint is a band boundary. Each edge enters once, at min,
+    // and is discarded when the sweep reaches max.
+    while (next < edges.length && edges[next].min <= low) active.push(edges[next++]);
+    crossings.length = 0;
+    let remaining = 0;
+    let finite = true;
+    for (const edge of active) {
+      if (edge.max <= low) continue;
+      active[remaining++] = edge;
+      // The computed midpoint can round to an endpoint or overflow.
+      if (middle > edge.min && middle < edge.max) {
+        edge.x = surfaceEdgeX(edge.a, edge.b, middle);
+        if (!Number.isFinite(edge.x)) finite = false;
+        crossings.push(edge);
+      }
+    }
+    active.length = remaining;
+    if (finite) {
+      crossings.sort((a, b) => a.x - b.x || a.ordinal - b.ordinal);
+    } else {
+      // A subtraction involving a nonfinite x can return NaN. Give the
+      // historical stable sort the same input sequence in that case.
+      crossings.sort((a, b) => a.ordinal - b.ordinal);
+      crossings.sort((a, b) => a.x - b.x);
+    }
+    emitSurfaceBand(crossings, low, high, triangles);
+  }
+}
+
 /** Exact even-odd horizontal trapezoids, split only at boundary vertices. This
  * display triangulation retains holes and changes no native boundary. */
-export function surfaceTriangles(surface: Surface): [Point, Point, Point][] {
-  const triangles: [Point, Point, Point][] = [];
+export function surfaceTriangles(surface: Surface): SurfaceTriangle[] {
+  const triangles: SurfaceTriangle[] = [];
   for (const shape of surface) {
     const rings = [shape.outer, ...shape.holes];
     const ys = [...new Set(rings.flatMap(r => r.map(p => p.y)))].sort((a, b) => a - b);
-    for (let j = 1; j < ys.length; j++) {
-      const low = ys[j - 1],
-        high = ys[j],
-        middle = (low + high) / 2;
-      const edges: { a: Point; b: Point; x: number }[] = [];
-      for (const ring of rings)
-        for (let i = 0; i < ring.length; i++) {
-          const a = ring[i],
-            b = ring[(i + 1) % ring.length];
-          if (middle > Math.min(a.y, b.y) && middle < Math.max(a.y, b.y)) edges.push({ a, b, x: a.x + ((middle - a.y) / (b.y - a.y)) * (b.x - a.x) });
-        }
-      edges.sort((a, b) => a.x - b.x);
-      const at = (edge: (typeof edges)[number], y: number): Point => ({ x: edge.a.x + ((y - edge.a.y) / (edge.b.y - edge.a.y)) * (edge.b.x - edge.a.x), y });
-      for (let i = 0; i + 1 < edges.length; i += 2) {
-        const a = at(edges[i], low),
-          b = at(edges[i + 1], low),
-          c = at(edges[i + 1], high),
-          d = at(edges[i], high);
-        if (b.x - a.x > 1e-9) triangles.push([a, b, c]);
-        if (c.x - d.x > 1e-9) triangles.push([a, c, d]);
-      }
-    }
+    // Keep the direct traversal for shapes with few bands or boundary edges.
+    const edges = ys.length > 8 && rings.reduce((count, ring) => count + ring.length, 0) > 32 ? sweepSurfaceEdges(rings) : undefined;
+    if (edges) sweepSurfaceBands(edges, ys, triangles);
+    else directSurfaceBands(rings, ys, triangles);
   }
   return triangles;
 }

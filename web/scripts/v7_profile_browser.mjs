@@ -1,6 +1,7 @@
 // One V2 page and native service for the reduced V7 profiling campaign.
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -19,6 +20,15 @@ const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
   '.woff2': 'font/woff2', '.txt': 'text/plain' };
 const traceCategories = ['blink.user_timing', 'devtools.timeline', 'v8', 'disabled-by-default-v8.cpu_profiler',
   'disabled-by-default-devtools.timeline', 'gpu', 'viz'];
+// Use the same full-viewport framing as the V7 sheet, with app controls hidden.
+const sheetFrame = `
+  html, body, #app { width: 100% !important; height: 100% !important; overflow: hidden !important }
+  .app-header, .workbench-bar, #sidebar, .mobile-toggle, .map-topbar, .map-bottom, .map-compass,
+  .map-tools, .map-hint, .inspector-mode, .places-panel, .inspector, .toast, .hint, .legend-strip,
+  .progress-card, .city3d-bar, .city3d-info, .city3d-help { visibility: hidden !important; pointer-events: none !important }
+  .workspace, .map-area, .city3d { position: absolute !important; inset: 0 !important; height: 100vh !important; width: 100vw !important }
+  .workspace { display: block !important }
+`;
 const report = { schema: 1, clock: 'Unix epoch ms', phases: [], cases: [], requests: [], diagnostics: [] };
 let caseId = null;
 const engineLog = createWriteStream(join(output, 'engine.ndjson'), { flags: 'wx' });
@@ -136,6 +146,38 @@ async function applyStyle(page, style, season) {
   }, { style, season });
 }
 
+// Take the proof after the measured generation and display work. Map keys are
+// canonicalized, while geometry values and every array's order are preserved.
+async function generationProof(page, id) {
+  const serialized = await page.evaluate(() => {
+    const world = window.__v2Test.world();
+    const town = world?.settlements?.[0];
+    const snap = world?.debug?.v2RustCities?.[town?.key];
+    if (!snap || snap.backend !== 'rust-native-cpu' || !snap.layouts.length || !snap.partitions?.[0]?.parcels?.length)
+      throw Error('The rendered town has no complete native layout and cadastre');
+    const { placement, roads } = world.debug.v2RustRegion ?? {};
+    const products = {
+      placed: placement?.settlements,
+      regional: roads && { segments: roads.segments, junctions: roads.junctions, nodes: roads.nodes, approaches: roads.approaches, exits: roads.exits },
+      layouts: snap.layouts,
+      cadastre: snap.partitions,
+      programme: snap.programmePartitions,
+      sites: snap.sites,
+      requests: snap.requests,
+      buildingIds: snap.buildingIds,
+      buildings: snap.scene?.buildings,
+    };
+    const sorted = (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.keys(value).sort().map(k => [k, value[k]]))
+      : value;
+    return Object.fromEntries(Object.entries(products).map(([key, value]) => [key, JSON.stringify(value ?? null, sorted)]));
+  });
+  return Object.fromEntries(Object.entries(serialized).map(([key, data]) => {
+    writeFileSync(join(output, id + '-' + key + '.json'), data);
+    return [key, createHash('sha256').update(data).digest('hex')];
+  }));
+}
+
 let native, browser, context, tracing = false;
 try {
   const started = now();
@@ -144,10 +186,11 @@ try {
   report.enginePid = native.engine.pid;
   const web = 'http://127.0.0.1:' + server.address().port;
   const engineOrigin = 'http://127.0.0.1:' + native.port;
+  const angleArgs = config.adapterLuid ? ['--use-angle=d3d11', '--use-adapter-luid=' + config.adapterLuid, '--enable-unsafe-webgpu'] : ['--use-angle=vulkan'];
   browser = await phase('chrome-start', () => chromium.launch({ channel: 'chrome', headless: true,
     env: { ...process.env, ...gpuEnvironment },
-    args: ['--use-angle=vulkan', '--enable-gpu', '--ignore-gpu-blocklist', '--disable-background-networking',
-      '--disable-gpu-program-cache', '--disable-gpu-shader-disk-cache'] }));
+    args: [...angleArgs, '--enable-gpu', '--ignore-gpu-blocklist', '--disable-background-networking',
+      '--disable-gpu-shader-disk-cache'] }));
   report.startedMs = started;
   context = await browser.newContext({ viewport: { width: 1400, height: 1000 }, deviceScaleFactor: 1, locale: 'en-US', serviceWorkers: 'block' });
   const requests = new Map();
@@ -184,7 +227,7 @@ try {
   tracing = true;
   page.on('pageerror', error => report.diagnostics.push({ caseId, atMs: now(), kind: 'pageerror', message: String(error) }));
   page.on('console', msg => {
-    if (/context lost|swiftshader/i.test(msg.text()) || ['error', 'warning'].includes(msg.type()))
+    if (/context lost|swiftshader|^WebGPU map pipeline /i.test(msg.text()) || ['error', 'warning'].includes(msg.type()))
       report.diagnostics.push({ caseId, atMs: now(), kind: msg.type(), message: msg.text() });
   });
   await phase('adapter-check', async () => {
@@ -197,6 +240,14 @@ try {
     report.gpu = { renderer, devices: gpu.devices, attributes: gpu.auxAttributes };
     if (!gpu.devices.some(d => d.deviceId === gpuId) || !/RTX\s+4090/i.test(renderer ?? '') || /5090|swiftshader/i.test(renderer))
       throw Error('Chrome WebGL did not select the RTX 4090: ' + renderer);
+    if (config.adapterLuid) {
+      report.gpu.webgpu = await page.evaluate(async () => {
+        const adapter = await navigator.gpu?.requestAdapter();
+        return adapter && { vendor: adapter.info.vendor, architecture: adapter.info.architecture };
+      });
+      if (report.gpu.webgpu && !/lovelace/i.test(report.gpu.webgpu.architecture))
+        throw Error('Chrome WebGPU did not select the expected Lovelace adapter');
+    }
   });
   const url = web + '/v2.html?' + new URLSearchParams({ test: '1', quality: 'full', lang: 'en', profile: 'local', source: 'procedural', localServer: engineOrigin });
   // Navigate the same tab for each decor. Only the first navigation is cold.
@@ -210,17 +261,20 @@ try {
     });
     result.prepared = await phase('decor-prepare', () => page.evaluate(req => window.__v2Test.prepare(req), test.request));
     await phase('generate-and-present', () => page.evaluate(() => window.__v2Test.run()));
-    const recent = report.requests.filter(r => r.caseId === caseId);
+    await phase('background-places', () => page.evaluate(() => window.__v2Test.smallPlacesSettled?.()));
     await Promise.all([...pending]);
-    for (const kind of ['quarters', 'parcels', 'programme', 'buildingSites']) {
-      if (!recent.some(r => r.path === '/urban' && r.kind === kind && r.status === 200))
-        throw Error('Missing successful native ' + kind + ' request for ' + caseId);
+    const recent = report.requests.filter(r => r.caseId === caseId);
+    const stages = [['quarters'], ['parcels'], ['programme'], ['buildingSites', 'buildingSiteVisuals', 'buildingSitesPage']];
+    for (const kinds of stages) {
+      if (!recent.some(r => r.path === '/urban' && kinds.includes(r.kind) && r.status === 200))
+        throw Error('Missing successful native ' + kinds[0] + ' request for ' + caseId);
     }
     await phase('read-town-summary', async () => {
       result.summary = await page.evaluate(() => window.__v2Test.summary());
       if (result.summary.decor !== test.request.decor || !(result.summary.town?.buildings > 0))
         throw Error('Wrong decor or empty town');
     });
+    await phase('sheet-frame', () => page.addStyleTag({ content: sheetFrame }));
     for (const [view, style] of Object.entries(test.views)) {
       await phase(view + '-appearance', async () => {
         await applyStyle(page, style, test.season);
@@ -236,12 +290,26 @@ try {
         if (view === '3d' && !(await page.evaluate(() => window.__v2Test.camera3d().pitch > 0.3)))
           throw Error('The 3D view did not tilt');
       });
+      if (view === '2d') await phase('2d-capture-ready', async () => {
+        await page.waitForFunction(() => {
+          try {
+            window.__v2Test.prepareCapture();
+            return true;
+          } catch (error) {
+            if (!String(error?.message ?? error).startsWith('HD loading')) throw error;
+            return false;
+          }
+        }, undefined, { timeout });
+      });
       await phase(view + '-png', () => page.locator('.map-area').screenshot({ path: join(output, caseId + '-' + view + '.png'), timeout }));
     }
     result.performance = await page.evaluate(() => {
       const entries = [...performance.getEntriesByType('navigation'), ...performance.getEntriesByType('measure'), ...performance.getEntriesByType('mark')];
       return { timeOrigin: performance.timeOrigin, entries: entries.map(e => e.toJSON()), jobLog: document.querySelector('#job-log')?.textContent };
     });
+    result.products = await phase('generation-proof', () => generationProof(page, caseId));
+    const loss = report.diagnostics.find(d => d.caseId === caseId && /context lost|swiftshader/i.test(d.message));
+    if (loss) throw Error('Renderer lost during ' + caseId + ': ' + loss.message);
     result.complete = true;
     save();
   }
