@@ -22,7 +22,7 @@ import type { CityGlFrame } from '../render/cityGl';
 import { cityGlBlockReason, usesNativeHouseRenderer } from '../render/cityContract';
 import { getRenderMode, onRenderMode, reportRenderStats } from '../render/renderMode';
 import { UrbanBuildingLodRenderer, type BuildingRenderMetrics, type BuildingViewport } from '../render/urbanBuildingLod';
-import { coverLayer, layerPattern, materialImagesNow, type MaterialImages } from '../render/buildingMaterials';
+import { coverLayer, layerPattern, materialImagesNow, roofCourseDirection, type MaterialImages } from '../render/buildingMaterials';
 import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
 import { cityBuildingAppearance, cityDrawOptions, finishCityFrame } from '../render/cityDrawOptions';
 import type { HouseMaterial, Surface } from '../../../rust/bridge/housesContract';
@@ -189,12 +189,14 @@ function materialFaces(building: PlacedBuilding, materials: ReadonlyMap<string, 
       if (points.some(point => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y))) continue;
       const layer = materialLayer(face.material || volume.materials?.cladding, materials);
       if (layer < 0) continue;
-      faces.push({ path: surfacePath([{ outer: points, holes: [] }]), layer, angle: Math.atan2(face.normal[1], face.normal[0]) - Math.PI / 2, z: Math.max(...points.map(point => point.z)) });
+      const angle = roofCourseDirection(face.normal, volume.footprint[0]?.outer ?? points) - Math.PI / 2;
+      faces.push({ path: surfacePath([{ outer: points, holes: [] }]), layer, angle, z: Math.max(...points.map(point => point.z)) });
     }
   }
   if (!faces.length) {
     const layer = materialLayer(building.volumes?.[0]?.materials.cladding, materials);
-    if (layer >= 0) faces.push({ path: surfacePath(building.roof_footprint.length ? building.roof_footprint : building.footprint), layer, angle: ((building.transform?.orientation_deg ?? 0) * Math.PI) / 180, z: building.ground_z_m });
+    const surface = building.roof_footprint.length ? building.roof_footprint : building.footprint;
+    if (layer >= 0) faces.push({ path: surfacePath(surface), layer, angle: roofCourseDirection([0, 0], surface[0]?.outer ?? []) - Math.PI / 2, z: building.ground_z_m });
   }
   return faces.sort((a, b) => a.z - b.z);
 }

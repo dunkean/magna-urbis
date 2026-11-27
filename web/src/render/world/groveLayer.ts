@@ -16,7 +16,7 @@ uniform float uRise,uExaggeration;
 uniform bool uTop;
 out vec3 n,base,facadePosition,grainPosition,houseUv,roofEdge;
 out float vDistance;
-flat out float materialClass,townGain,houseLayer,planGrainFade;
+flat out float materialClass,townGain,houseLayer,planGrainFade,flatCoverDirection;
 flat out vec3 extra;
 void main(){
   vec3 p=groveLocal(aPoint)+aSeat.xyz;
@@ -26,7 +26,7 @@ void main(){
   n=groveNormal();base=groveColor();
   facadePosition=vec3(p.x,h,p.y);grainPosition=facadePosition;
   vDistance=length(world-uEye);
-  materialClass=townGain=houseLayer=planGrainFade=0.;
+  materialClass=townGain=houseLayer=planGrainFade=flatCoverDirection=0.;
   houseUv=extra=vec3(0.);roofEdge=vec3(1.);
   gl_Position=uProjection*vec4(world,1.);
   if(uTop)gl_Position.z=clamp(-height*.00001,-.95,.95);

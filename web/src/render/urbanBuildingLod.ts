@@ -11,6 +11,8 @@ import { planShade } from './cityBuildingPalette';
 import { massingFootprint, readMassing, planRoof, roofLight } from './cityMassing';
 import { caveRoof, drawNightBuildings, nightRoof, nightWindowReach } from './cityNight';
 import { drawRuinPlan, ruinFootprint } from './cityRuins';
+import { coverGrainPattern, roofCourseDirection, roofGrain, roofPatternLevel, type CoverGrain } from './buildingMaterials';
+import { PAINTED_ROOF_RELIEF } from './roofPlaneLight';
 
 export interface BuildingViewport {
   minX: number;
@@ -25,7 +27,7 @@ export interface CompactBuildingCartography {
   ridges: readonly (readonly [Point, Point])[];
   roof_system?: string;
 }
-type VisualVolume = Pick<ArchitectureVolume, 'z_m' | 'wall_height_m' | 'roof_height_m' | 'materials'> & Partial<Pick<ArchitectureVolume, 'roof_mesh' | 'roof_system'>>;
+type VisualVolume = Pick<ArchitectureVolume, 'z_m' | 'wall_height_m' | 'roof_height_m' | 'materials'> & Partial<Pick<ArchitectureVolume, 'roof_mesh' | 'roof_system' | 'footprint'>>;
 /** Both PlacedBuilding and a mesh-free resolved plan can satisfy this contract.
  * All coordinates are world metres, including roof mesh vertices and ridges. */
 export interface CompactBuildingVisual {
@@ -142,7 +144,7 @@ export interface BuildingRoofLine {
 }
 type Line = BuildingRoofLine;
 interface FacetLayer {
-  groups: { color: string; darkness: number; geometry: GeometryPath }[];
+  groups: { color: string; darkness: number; geometry: GeometryPath; grain?: CoverGrain; direction: number }[];
   z: number;
 }
 interface CachedGeometry {
@@ -151,7 +153,7 @@ interface CachedGeometry {
   footprint?: GeometryPath;
   ridges?: Line[];
   facets?: FacetLayer[];
-  relief?: { geometry: GeometryPath; light: number; snow: number }[];
+  relief?: { geometry: GeometryPath; light: number; snow: number; flat: boolean; grain?: CoverGrain; direction: number }[];
   vertices: number;
 }
 interface RasterTile {
@@ -355,6 +357,7 @@ export function buildingRoofRidges(building: CompactBuildingVisual, onMeshRead?:
 export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBuilding> {
   private readonly options: Required<BuildingLodOptions>;
   private scene!: { buildings: B[]; materials: HouseMaterial[] };
+  private materialPatterns = new Map<string, HouseMaterial['pattern']>();
   private identities = new Set<string>();
   private materialIndex = new Map<string, HouseMaterial>();
   private records: IndexedBuilding<B>[] = [];
@@ -388,6 +391,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
   replaceScene(scene: BuildingLodScene<B>): void {
     const start = performance.now();
     this.scene = { buildings: [], materials: [] };
+    this.materialPatterns.clear();
     this.records = [];
     this.sectors.clear();
     this.byId.clear();
@@ -423,6 +427,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
     for (const [id, material] of addedMaterials) {
       this.materialIndex.set(id, material);
       this.scene.materials.push(material);
+      this.materialPatterns.set(material.id, material.pattern);
     }
     const addedBounds: BuildingViewport[] = [],
       size = this.options.sectorSizeM;
@@ -659,8 +664,10 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       .filter(f => f.normal[2] >= 0.08)
       .flatMap(face => {
         const light = face.light ?? roofLight(face.normal);
-        const base = { geometry: geometryPath([{ outer: face.points, holes: face.holes ?? [] }], metrics), light, snow: 0 };
-        return [base, ...(face.snow === 0 ? [] : roofSnowPatches(face.points, face.normal).map(p => ({ geometry: geometryPath([{ outer: p.points, holes: face.holes ?? [] }], metrics), light, snow: p.weight })))];
+        const flat = face.normal[2] > 0.995,
+          direction = roofCourseDirection(face.normal, building.footprint[face.piece]?.outer ?? face.points);
+        const base = { geometry: geometryPath([{ outer: face.points, holes: face.holes ?? [] }], metrics), light, flat, snow: 0, grain: roofGrain(face.cover, flat), direction };
+        return [base, ...(face.snow === 0 ? [] : roofSnowPatches(face.points, face.normal).map(p => ({ ...base, geometry: geometryPath([{ outer: p.points, holes: face.holes ?? [] }], metrics), snow: p.weight })))];
       });
     this.growGeometry(
       building,
@@ -678,7 +685,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       const mesh = volume.roof_mesh;
       metrics.roofMeshesRead++;
       if (!mesh) continue;
-      const grouped = new Map<string, { surfaces: Map<string, Surface>; darkness: Map<string, number>; z: number }>();
+      const grouped = new Map<string, { batches: Map<string, { surface: Surface; color: string; darkness: number; grain?: CoverGrain; direction: number }>; z: number }>();
       for (const face of mesh.faces) {
         if (face.normal[2] < 0 || face.vertices.length < 3) continue;
         const points = face.vertices.map(index => mesh.vertices[index]);
@@ -686,25 +693,30 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
         const key = face.roof_group ?? '';
         let group = grouped.get(key);
         if (!group) {
-          group = { surfaces: new Map(), darkness: new Map(), z: -Infinity };
+          group = { batches: new Map(), z: -Infinity };
           grouped.set(key, group);
         }
         for (const point of points) group.z = Math.max(group.z, point.z);
         // Same world-space illumination as the existing native exterior SVG.
         const [nx, ny, nz] = face.normal;
         const darkness = Math.max(0, Math.min(0.3, 0.16 - 0.18 * (-nx * 0.48 - ny * 0.64 + nz * 0.6)));
-        const base = houseMaterialColor(catalogue, face.material || volume.materials.cladding);
+        const id = face.material || volume.materials.cladding;
+        const base = houseMaterialColor(catalogue, id);
         const color = shadeMaterial(base, darkness);
-        group.darkness.set(color, darkness);
-        const surface = group.surfaces.get(color) ?? [];
-        surface.push({ outer: points, holes: [] });
-        group.surfaces.set(color, surface);
+        const cover = id.startsWith('city3d:cover:') ? id.slice('city3d:cover:'.length).split(':')[0] : this.materialPatterns.get(id);
+        const grain = roofGrain(cover === 'wood' ? 'shingle' : cover, nz > 0.995);
+        const ring = volume.footprint?.[0]?.outer ?? building.footprint[0]?.outer ?? points;
+        const direction = grain ? roofCourseDirection(face.normal, ring) : 0;
+        const batchKey = `${color}|${grain ?? ''}|${Math.round(direction * 512)}`;
+        let batch = group.batches.get(batchKey);
+        if (!batch) group.batches.set(batchKey, batch = { surface: [], color, darkness, grain, direction });
+        batch.surface.push({ outer: points, holes: [] });
       }
       for (const group of grouped.values()) {
-        const groups = [...group.surfaces].map(([color, surface]) => {
+        const groups = [...group.batches.values()].map(({ surface, ...paint }) => {
           const geometry = geometryPath(surface, metrics);
           vertices += geometry.vertices;
-          return { color, darkness: group.darkness.get(color)!, geometry };
+          return { ...paint, geometry };
         });
         layers.push({ groups, z: group.z });
       }
@@ -869,8 +881,10 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
         if (relief.length) {
           const paint = buildingPaint(building.materials ?? building.volumes?.[0]?.materials, building.function, visualHeight(building), options.appearance, undefined, catalogue);
           for (const face of relief) {
-            ctx.fillStyle = snowHex(planShade(paint.roof, face.light), face.snow * mapGroundSnow(building.ground_z_m), face.light, night, ink);
+            const light = face.light * (painted && !face.flat ? PAINTED_ROOF_RELIEF : 1);
+            ctx.fillStyle = snowHex(planShade(paint.roof, light), face.snow * mapGroundSnow(building.ground_z_m), light, night, ink);
             paintGeometry(ctx, face.geometry, metrics);
+            if (painted && !night && !face.snow && options.appearance.roof !== 'flat') paintCoverGrain(ctx, face, mpp, metrics);
             if (!face.snow && !options.appearance.smoothRoofs) {
               ctx.strokeStyle = 'rgba(35,28,21,.55)';
               ctx.lineWidth = 0.45 * mpp;
@@ -879,9 +893,11 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
           }
           continue;
         }
-        if (lod === 'facets' && options.appearance.diagnostic !== 'uses' && options.appearance.diagnostic !== 'height') {
+        let exactPans = false;
+        if ((lod === 'facets' || (painted && lod === 'ridges')) && options.appearance.diagnostic !== 'uses' && options.appearance.diagnostic !== 'height') {
           const facets = this.facets(building, geometry, metrics);
           if (facets.length) {
+            exactPans = true;
             ctx.save();
             clipGeometry(ctx, geometry.outline);
             for (const layer of facets)
@@ -889,11 +905,12 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
                 const color = options.appearance.colors?.building ? shadeMaterial(options.appearance.colors.building, group.darkness) : night ? nightRoof(group.color, ink) : group.color;
                 ctx.fillStyle = options.appearance.diagnostic === 'none' ? snowHex(color, mapGroundSnow(building.ground_z_m) * 0.8, -group.darkness, night, ink) : color;
                 paintGeometry(ctx, group.geometry, metrics);
+                if (painted && !night && options.appearance.roof !== 'flat') paintCoverGrain(ctx, group, mpp, metrics);
               }
             ctx.restore();
           }
         }
-        if (painted && !night) paintRoofSlopes(ctx, building, geometry, this.ridges(building, geometry, metrics), mpp, metrics, options.appearance.roof !== 'flat');
+        if (!exactPans && painted && !night) paintRoofSlopes(ctx, building, geometry, this.ridges(building, geometry, metrics), mpp, metrics, options.appearance.roof !== 'flat');
         if (options.appearance.smoothRoofs) continue;
         for (const line of this.ridges(building, geometry, metrics)) {
           if (Math.hypot(line.b.x - line.a.x, line.b.y - line.a.y) / mpp < 1.5) continue;
@@ -1119,6 +1136,16 @@ const ROOF_SUN = { x: -0.6, y: -0.8 };
 const ROOF_LIT = 'rgba(255,238,205,.28)',
   ROOF_SHADE = 'rgba(28,18,10,.44)',
   ROOF_COURSES = 'rgba(24,16,10,.13)';
+function paintCoverGrain(ctx: CanvasRenderingContext2D, face: { geometry: GeometryPath; grain?: CoverGrain; direction: number }, mpp: number, metrics: BuildingRenderMetrics): void {
+  if (!face.grain || mpp >= 0.8) return;
+  const pattern = coverGrainPattern(ctx, face.grain, roofPatternLevel(mpp), face.direction);
+  if (!pattern) return;
+  ctx.save();
+  ctx.globalAlpha *= 0.65 * Math.min(1, (0.8 - mpp) / 0.35);
+  ctx.fillStyle = pattern;
+  paintGeometry(ctx, face.geometry, metrics);
+  ctx.restore();
+}
 /** Compact plans keep their ridges, not their roof mesh: each ridge splits the roof into a lit and a shaded slope, with tile courses up close. */
 function paintRoofSlopes(ctx: CanvasRenderingContext2D, building: CompactBuildingVisual, geometry: CachedGeometry, ridges: readonly Line[], mpp: number, metrics: BuildingRenderMetrics, courses: boolean): void {
   ctx.save();

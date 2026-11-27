@@ -58,8 +58,8 @@ export function planShade(color: string, k: number): string {
   return `#${((c(16) << 16) | (c(8) << 8) | c(0)).toString(16).padStart(6, '0')}`;
 }
 export const roofRelief = (palette: CityPalette, terrace = false): number => (terrace ? 1 : palette === 'ink' ? 0.85 : 1);
-export function planRoofColor(b: CityBuilding, roofs: CityRoofs, k: number, palette: CityPalette, custom?: string): string {
-  const light = roofs.light[k] * roofRelief(palette, roofs.flat?.[k] === 2);
+export function planRoofColor(b: CityBuilding, roofs: CityRoofs, k: number, palette: CityPalette, custom?: string, relief = 1): string {
+  const light = roofs.light[k] * roofRelief(palette, roofs.flat?.[k] === 2) * relief;
   const color = planShade(custom ?? planBuildingColors(b, palette, roofs.cover[k], roofs.wall?.[k], roofs.tone[k]).roof, light);
   const snow = (roofs.snow?.[k] ?? 0) * mapGroundSnow(b.snowAltitude ?? b.building.ground_z_m);
   return snow > 0 ? hex(snowRoofTint([1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16) / 255) as PaletteRgb, snow, light)) : color;

@@ -246,6 +246,7 @@ describe('town look: one description for both renderers', () => {
     const shown = { view: 'buildings' as const, footprint: false, diagnostic: 'none', buildingsVisible: true, farTown: true };
     expect(buildingsShown({ ...shown, lod: 'near', mpp: 2.4 })).toBe(false);
     expect(buildingsShown({ ...shown, lod: 'mid', mpp: 2.0 })).toBe(true);
+    expect(buildingsShown({ ...shown, lod: 'mid', mpp: 3, houseRenderer: true })).toBe(true);
     const content = { waterways: false, streetRoles: new Set<string>(), enclosures: false, canopy: false, sites: false, housePlans: false, millMarks: false, reserves: false };
     const rest: RestState = {
       palette: 'parchment',

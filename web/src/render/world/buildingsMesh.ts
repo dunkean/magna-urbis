@@ -22,7 +22,7 @@ import { roofEdgeMasks } from '../roofEdges';
 import { boundaryOf } from '../craftedBoundaries';
 import { craftedMageCity } from '../craftedMageCity';
 import { includeCraftedMassing } from '../craftedMassingBounds';
-import { roofGrain, coverLayer, wallLayer, layerExtent, MATERIALS, type CoverGrain } from '../buildingMaterials';
+import { roofCourseDirection, roofGrain, coverLayer, wallLayer, layerExtent, MATERIALS, type CoverGrain } from '../buildingMaterials';
 import { buildingTint } from '../buildingPalette';
 import { buildingHeat, nightSnow, roofSnowShare, snowRoofTint } from '../roofSnow';
 import { mapGroundSnow } from '../seasonPalette';
@@ -298,7 +298,7 @@ function craftedLayer(face: BuildingTriangle, id: string, culture: string, patte
 }
 /** Texture coordinates (in tiles) of a point of a face, in world metres: vertical faces along the face and down (image upright),
  * pitched faces u along the ridge and v down the slope (stretched by the slope), flat faces on the plan. */
-function faceUv(p: readonly number[], normal: readonly number[], layer: number): [number, number] {
+function faceUv(p: readonly number[], normal: readonly number[], layer: number, flatDirection: number): [number, number] {
   if (layer < 0) return [0, 0];
   const e = layerExtent(layer),
     nx = normal[0],
@@ -306,10 +306,9 @@ function faceUv(p: readonly number[], normal: readonly number[], layer: number):
     nz = Math.abs(normal[2]),
     h = Math.hypot(nx, ny);
   if (nz < 0.3 && h > 1e-6) return [(p[0] * -ny + p[1] * nx) / h / e, -p[2] / e];
-  if (h < 0.02) return [p[0] / e, p[1] / e];
-  const dx = nx / h,
-    dy = ny / h;
-  return [(-p[0] * dy + p[1] * dx) / e, (p[0] * dx + p[1] * dy) / Math.max(nz, 0.2) / e];
+  const dx = h < 0.02 ? Math.cos(flatDirection) : nx / h,
+    dy = h < 0.02 ? Math.sin(flatDirection) : ny / h;
+  return [(p[0] * dy - p[1] * dx) / e, (p[0] * dx + p[1] * dy) / Math.max(nz, 0.2) / e];
 }
 
 /** The paint of one building's faces, whatever writes it (buildingBatches in colour mode, slotLooks for a look table). */
@@ -554,6 +553,7 @@ export function buildingBatches(
     const programme = (building as unknown as { programme?: { role?: string; landmark?: boolean } }).programme;
     const ground = buildingGround(building);
     const house = Number.isFinite(ground) && !building.id.startsWith('city3d-');
+    const flatDirection = roofCourseDirection([0, 0], building.footprint[0]?.outer ?? []);
     const craftedHouse = house ? patterns : undefined;
     const mapper = craftedHouse ? houseSurfaceMapper(building) : undefined;
     const glow = house && !textured ? nightGlow(building.function, building3dHeight(building), ((h >>> 8) & 255) / 256, !!programme?.landmark) : 0;
@@ -596,6 +596,8 @@ export function buildingBatches(
       if (slots) {
         // The world view: the slot whose paint the look table holds; the snow share rides in it, whatever the season.
         red = slots.slot(building, face, raw, aperture, share, !!project, source);
+        // A roof has no glow position. Its third channel can carry the flat cover's direction without enlarging the mesh.
+        if (!project && face.surface === 'roof' && Math.hypot(face.normal[0], face.normal[1]) < 0.02) blue = flatDirection;
         code = Math.max(0, fixed);
         key = 'slot';
       } else {
@@ -676,7 +678,7 @@ export function buildingBatches(
         data[at++] = (lateral ? lateral[i].y : face.normal[1]) * unit;
         const on = edges & ~(1 << i);
         if (textured) {
-          const [u, v] = faceUv(p, face.normal, layer);
+          const [u, v] = faceUv(p, face.normal, layer, flatDirection);
           data[at++] = u;
           data[at++] = v;
           // The material layer is integral; carry V1's mask in its fractional part.

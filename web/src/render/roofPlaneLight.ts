@@ -4,6 +4,8 @@ const AMBIENT = 0.78,
   SUN = 0.22,
   FILL = 0.1;
 const FLAT_LIGHT = AMBIENT + SUN * 0.62 + (FILL * 0.76) / 1.0026;
+/** Extra relief for painted overhead roofs, where a house can be a few pixels across. */
+export const PAINTED_ROOF_RELIEF = 1.65;
 /** Shared building daylight, normalised to a horizontal surface. World y grows
  * southwards, z upwards. The NW sun and weak SE fill retain distinct hip pans
  * without an azimuth boost or a discontinuity at vertical/near-flat faces. */

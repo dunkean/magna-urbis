@@ -2,6 +2,7 @@ import { CLIMATE_ZONE_VALUES } from '../../rust/bridge/terrainClimate';
 import { describe, expect, it } from 'vitest';
 import { pieceRoof, roofLight, type MassingPiece } from '../src/render/cityMassing';
 import { roofPlaneLight } from '../src/render/roofPlaneLight';
+import { roofCourseDirection } from '../src/render/buildingMaterials';
 import { treeDwelling } from '../src/render/cityTrees';
 import { CITY3D_FOOTING_DEPTH_M, city3dLotEnclosures, silhouetteBuilding } from '../src/render/city3dMeshes';
 import { eachBuildingTriangle } from '../src/render/urbanBuildingGeometry';
@@ -21,6 +22,13 @@ const square = (size: number) => ({
 const flat = (height: number): MassingPiece => ({ floors: 1, eave_m: height, rise_m: 0, roof: 'flat', ridges: [], cover: 'stone', wall: 'stone', openings: 'none' });
 
 describe('building look regression', () => {
+  it('aligns roof courses with the slope or the rotated volume on a flat roof', () => {
+    const angle = 0.57;
+    const ring = square(6).outer.map(({ x, y }) => ({ x: x * Math.cos(angle) - y * 0.4 * Math.sin(angle), y: x * Math.sin(angle) + y * 0.4 * Math.cos(angle) }));
+    expect(roofCourseDirection([0, 0, 1], ring)).toBeCloseTo(angle + Math.PI / 2);
+    expect(roofCourseDirection([Math.cos(angle), Math.sin(angle), 1], ring)).toBeCloseTo(angle);
+  });
+
   it('distinguishes every hip plane, including after rotating the building', () => {
     const m: MassingPiece = { ...flat(6), roof: 'pyramid', rise_m: 6 };
     for (const angle of [0, 0.23, 0.61]) {

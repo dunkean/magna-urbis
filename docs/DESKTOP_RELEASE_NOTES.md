@@ -1,5 +1,8 @@
 ## Alpha 0.3.11
 
+- Painted satellite distinguishes roof slopes more clearly and aligns roof textures with each building.
+- In Firefox, the Azgaar preview keeps the complete map visible during zoom and pan and reuses nearby rendered areas.
+
 - The fast satellite preview uses Canvas 2D in Firefox. Firefox on Windows starts with a lighter graphics profile, and the 3D button suggests Chrome or Edge if the graphics compositor is unavailable.
 
 - Round steel grain silos have a discharge chute in detailed 3D farm views.

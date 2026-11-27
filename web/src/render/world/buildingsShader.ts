@@ -208,6 +208,7 @@ uniform vec3 uYard;
 // Eye relative to the target.
 uniform vec3 uEye;
 out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; flat out float townGain; out float vDistance;
+flat out float flatCoverDirection;
 flat out float houseLayer; flat out vec3 extra;
 out vec3 houseUv;
 out vec3 roofEdge;
@@ -220,6 +221,7 @@ void main(){
   houseUv=vec3(albedo.xy,albedo.z<0.?albedo.y:100.);
   // The face's paint in the look on screen: a crafted face holds its slot on z (negative under the eaves), any other on x.
   vec3 a=abs(albedo);
+  flatCoverDirection=a.z;
   int slot=int((houseLayer>.5?(albedo.z<0.?-albedo.z-1.:albedo.z):a.x)+.5);
   vec4 ink=texelFetch(uLook,ivec2(slot&1023,slot>>10),0);
   base=ink.rgb;
@@ -270,6 +272,7 @@ void main(){
 export const WORLD_BUILDING_FS = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; flat in float townGain; in float vDistance;
+flat in float flatCoverDirection;
 flat in float houseLayer; flat in vec3 extra;
 in vec3 houseUv;
 flat in float planGrainFade;
@@ -292,7 +295,7 @@ void main(){
   bool lit=materialClass>31.5;float cls=lit?0.:materialClass;
   vec3 rgb;
   if(houseLayer>.5)rgb=houseSurface(base,houseLayer,N,grainPosition,houseUv);
-  else if(townGain>0.&&cls>.5&&cls<18.5)rgb=coverGrainMarks(base,cls,N,grainPosition,townGain);
+  else if(townGain>0.&&cls>.5&&cls<18.5)rgb=coverGrainMarks(base,cls,N,grainPosition,townGain,flatCoverDirection);
   else rgb=materialGrain(base,cls,N,grainPosition,fp);
   rgb=mix(rgb,base,planGrainFade);
   // Snow over the cover, in the light the cover is in: a face the town look painted carries its night already.

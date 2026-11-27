@@ -178,7 +178,7 @@ export interface CityBuilding {
 }
 /** Roof pans of the massing (cityMassing.ts): one polygon per sloped face, its
  * building and its light; height shadows per building (sun from the north-west). */
-/** `dir`: downslope direction of each pan in plan (radians, atan2 of the face normal's horizontal part; 0 when flat). */
+/** `dir`: direction of each pan's texture in plan (downslope when pitched, across the volume when flat). */
 export interface CityRoofs {
   shapes: CityRoofShape[];
   owner: Uint32Array;

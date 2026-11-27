@@ -244,6 +244,21 @@ export function roofGrain(cover: string | undefined, flat: boolean, culture = ''
       return undefined;
   }
 }
+
+/** The tile's +y axis follows the slope. For a flat cover, tile rows follow the longest edge of its own volume. */
+export function roofCourseDirection([x, y]: readonly number[], ring: readonly { x: number; y: number }[]): number {
+  if (Math.hypot(x, y) >= 0.02) return Math.atan2(y, x);
+  let direction = Math.PI / 2, longest = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length], dx = b.x - a.x, dy = b.y - a.y;
+    const length = dx * dx + dy * dy;
+    if (length > longest) {
+      longest = length;
+      direction = Math.atan2(dy, dx) + Math.PI / 2;
+    }
+  }
+  return (direction + 2 * Math.PI) % (2 * Math.PI);
+}
 /** Tile side in pixels, metres per pixel of the finest level, and the number of halved levels. */
 const GRAIN_TILE = 256,
   GRAIN_PX_M = 0.05,
@@ -494,9 +509,9 @@ export const COVER_GRAIN_TILE = GRAIN_TILE,
  * screen's (mip bias); its strength fades with the metres a device pixel covers as the top view's does. */
 export const COVER_GRAIN_GLSL = `
 uniform highp sampler2DArray uCoverGrain;
-vec3 coverGrainMarks(vec3 color,float family,vec3 N,vec3 p,float gain){
+vec3 coverGrainMarks(vec3 color,float family,vec3 N,vec3 p,float gain,float flatDirection){
   float h=length(N.xz);
-  vec2 d=h>.02?N.xz/h:vec2(1.,0.);
+  vec2 d=h>.02?N.xz/h:vec2(cos(flatDirection),sin(flatDirection));
   vec2 q=vec2(dot(p.xz,vec2(d.y,-d.x)),dot(p.xz,d)/max(N.y,.2));
   float fp=max(length(dFdx(q)),length(dFdy(q)));
   float s=gain*(1.-smoothstep(${GRAIN_FADE},${GRAIN_GONE},fp));

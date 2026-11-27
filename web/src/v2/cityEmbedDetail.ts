@@ -10,8 +10,9 @@ import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import { nativeCityRecords } from './nativeProducts';
 import type { CityDetailStyle, DetailedCityResult } from './cityPreviewMap';
 import { isFirefox } from '../ui/firefox';
+import { CityEmbedFrame } from './cityEmbedFrame';
 
-export function detailedCityMap(data: DetailedCityResult, invalidate: () => void, previous?: { renderer: BenchRenderer; world: World }) {
+export function detailedCityMap(data: DetailedCityResult, invalidate: () => void, previous?: { source: BenchRenderer; renderer: BenchRenderer | CityEmbedFrame; world: World }) {
   const world = unpackWorldPartitions(unpackWorldLanduse(data.world));
   if (previous) {
     // A worker hop clones these immutable products. Preserve their render revisions on a house upgrade.
@@ -29,8 +30,9 @@ export function detailedCityMap(data: DetailedCityResult, invalidate: () => void
       city.layouts = oldCity.layouts;
     }
   }
-  const renderer = previous?.renderer ?? new BenchRenderer(invalidate);
-  if (isFirefox()) renderer.useCanvasFastSatellite();
+  const firefox = isFirefox(), source = previous?.source ?? new BenchRenderer(invalidate);
+  const renderer = previous?.renderer ?? (firefox ? new CityEmbedFrame(source, invalidate) : source);
+  if (firefox) source.useCanvasFastSatellite();
   let satelliteTown: ResolvedAppearance | undefined;
   const setStyle = async (style: CityDetailStyle) => {
     await loadRenderGeometry();
@@ -44,17 +46,18 @@ export function detailedCityMap(data: DetailedCityResult, invalidate: () => void
     composition.text.visible = false;
     const settings = { ...data.settings, appearance: { style: data.settings.options.style, ...data.settings.appearance, composition } };
     const appearance = resolveSettingsAppearance(settings, world, 'view2d');
-    if (style === 'minimal') await renderer.set(world, settings, appearance);
+    if (style === 'minimal') await source.set(world, settings, appearance);
     else {
       // Both satellite buttons switch the background behind exactly the same town ink and roofs.
       satelliteTown ??= style === 'satellite-2' ? appearance : resolveSettingsAppearance({ ...settings, appearance: { ...settings.appearance, composition: presetComposition('satellite-2') } }, world, 'view2d');
-      await renderer.set(world, settings, { ...appearance, city: satelliteTown.city, keys: { ...appearance.keys, city: satelliteTown.keys.city } });
+      await source.set(world, settings, { ...appearance, city: satelliteTown.city, keys: { ...appearance.keys, city: satelliteTown.keys.city } });
     }
+    if (renderer instanceof CityEmbedFrame) renderer.refresh();
   };
   const packForUpgrade = () => {
     const cover = packWorldLanduse(world);
     const city = packWorldPartitions(cover.world);
     return { world: city.world, transfer: [...cover.transfer, ...city.transfer] };
   };
-  return { renderer, setStyle, world, packForUpgrade };
+  return { renderer, source, setStyle, world, packForUpgrade };
 }

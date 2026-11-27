@@ -6,7 +6,7 @@
 import type { Shape } from '../../../../../rust/bridge/urban';
 import type { PlacementBatch, PlacedBuilding } from '../../../../../rust/bridge/urbanArchitecture';
 import { buildingHeat, roofSnowPatches, roofSnowRidgeMelt, roofSnowShare } from '../../roofSnow';
-import { COVER_GRAINS, roofGrain as roofGrainFamily } from '../../buildingMaterials';
+import { COVER_GRAINS, roofCourseDirection, roofGrain as roofGrainFamily } from '../../buildingMaterials';
 // enclosures hook (cityLotEnclosures.ts)
 // walls hook (cityWalls.ts)
 import { massingFootprint, massingTerraces, planRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3, type ResolvedVolume } from '../../cityMassing';
@@ -195,7 +195,7 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
       roofCover.push(face.cover);
       roofWall.push(face.wall);
       roofTone.push(face.tone);
-      roofDir.push(Math.hypot(face.normal[0], face.normal[1]) > 1e-3 ? Math.atan2(face.normal[1], face.normal[0]) : 0);
+      roofDir.push(roofCourseDirection(face.normal, byPiece?.[face.piece]?.[face.vol]?.shape.outer ?? building.footprint[face.piece]?.outer ?? face.points));
     }
     const casts = building.footprint.flatMap((shape, i) => (massing[i] ? pieceShadows(shape, massing[i]) : []));
     // Terrace receivers already have their own opaque shade. The ground pass must

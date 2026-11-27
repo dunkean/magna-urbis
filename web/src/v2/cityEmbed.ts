@@ -185,6 +185,8 @@ function start(): void {
   let saveSerial = 0;
   let style: CityDetailStyle = 'minimal';
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let restoreTimer: ReturnType<typeof setTimeout> | undefined;
+  let warming: MapRenderer | undefined;
   let liveLayout: World | undefined;
   let layoutReady: Promise<void> | undefined;
   const draw = () => {
@@ -193,8 +195,14 @@ function start(): void {
     if (width < 1 || height < 1) return;
     const view = navigation!.view(cityEmbedView(bounds, width, height));
     renderer.drawLive(view, width, height, window.devicePixelRatio || 1);
-    if (cachedFrame && root.dataset.detail === 'ready' && (width !== cachedFrame.width || height !== cachedFrame.height || Math.abs(view.scale - cachedFrame.view.scale) > 1e-7 || Math.hypot(view.cx - cachedFrame.view.cx, view.cy - cachedFrame.view.cy) > 1e-5)) {
-      void requestTier(tier).catch(fail);
+    warming?.drawLive(view, width, height, window.devicePixelRatio || 1);
+    if (cachedFrame && root.dataset.detail === 'ready') {
+      clearTimeout(restoreTimer);
+      if (width !== cachedFrame.width || height !== cachedFrame.height || Math.abs(view.scale - cachedFrame.view.scale) > 1e-7 || Math.hypot(view.cx - cachedFrame.view.cx, view.cy - cachedFrame.view.cy) > 1e-5) {
+        restoreTimer = setTimeout(() => {
+          if (!disposed && cachedFrame && root.dataset.detail === 'ready') void requestTier(tier, true).catch(fail);
+        }, 200);
+      }
     }
   };
   const scheduleDraw = () => {
@@ -212,12 +220,13 @@ function start(): void {
         ++saveSerial;
         delete root.dataset.saved;
         clearTimeout(saveTimer);
+        const serial = saveSerial;
         saveTimer = setTimeout(() => {
           if (!disposed && root.dataset.detail === 'ready' && detail && !cachedFrame) {
             draw();
             void detail.renderer.settled().then(() => {
-              if (!disposed && root.dataset.detail === 'ready') void saveFrame().catch(() => {});
-            });
+              if (!disposed && serial === saveSerial && root.dataset.detail === 'ready') void saveFrame().catch(() => {});
+            }).catch(() => {});
           }
         }, 350);
       }
@@ -291,15 +300,23 @@ function start(): void {
     if (disposed || serial !== saveSerial) return;
     root.dataset.saved = stored ? 'yes' : 'no';
   };
-  const paintStyle = async (area: Rect4) => {
+  const paintStyle = async (area: Rect4, restoring = false) => {
     if (!detail || disposed) return;
     root.dataset.detail = 'loading';
-    showProgress(style === 'minimal' ? 'Drawing the map…' : style === 'satellite-light' ? 'Rendering fast satellite…' : 'Rendering painted satellite…');
+    if (!restoring) showProgress(style === 'minimal' ? 'Drawing the map…' : style === 'satellite-light' ? 'Rendering fast satellite…' : 'Rendering painted satellite…');
     await detail.setStyle(style);
     if (disposed) return;
-    if (renderer !== detail.renderer) install(detail.renderer, area);
-    else draw();
+    if (restoring) {
+      warming = detail.renderer;
+      host.prepend(warming.element);
+    } else if (renderer !== detail.renderer) install(detail.renderer, area);
+    draw();
     await detail.renderer.settled();
+    if (disposed) return;
+    if (warming) {
+      install(warming, area);
+      warming = undefined;
+    }
     await afterPaint();
     if (disposed) return;
     status.hidden = true;
@@ -311,8 +328,8 @@ function start(): void {
     detailControls();
     void saveFrame().catch(() => {});
   };
-  const showDetailed = async (data: DetailedCityResult, fresh: boolean) => {
-    showProgress('Drawing the map…', 6);
+  const showDetailed = async (data: DetailedCityResult, fresh: boolean, restoring = false) => {
+    if (!restoring) showProgress('Drawing the map…', 6);
     // Unpacking mutates the transport objects. Commit the packed world before handing it to the renderer.
     if (fresh && previewKey) await saveCityWorld(previewKey, data);
     const { detailedCityMap } = await detailModule!;
@@ -320,10 +337,15 @@ function start(): void {
     detail = detailedCityMap(data, scheduleDraw, detail);
     liveLayout = undefined;
     if (renderer !== detail.renderer) pendingRenderer = detail.renderer;
-    await paintStyle(bounds ?? data.bounds);
+    try {
+      await paintStyle(bounds ?? data.bounds, restoring);
+    } finally {
+      warming = undefined;
+    }
   };
-  const requestTier = async (mode: DetailedCityResult['mode']) => {
+  const requestTier = async (mode: DetailedCityResult['mode'], restoring = false) => {
     if (disposed) return;
+    clearTimeout(restoreTimer);
     ++saveSerial;
     requestedTier = mode;
     root.dataset.detail = 'loading';
@@ -333,13 +355,14 @@ function start(): void {
       await paintStyle(bounds);
       return;
     }
-    showProgress(mode === 'houses' ? 'Generating architectural houses…' : 'Generating the detailed map');
+    if (!restoring) showProgress(mode === 'houses' ? 'Generating architectural houses…' : 'Generating the detailed map');
     detailModule = import('./cityEmbedDetail');
     void detailModule.catch(fail);
     const cached = previewKey && (await readCityWorld(previewKey, mode));
     if (disposed) return;
-    if (cached) await showDetailed(cached, false);
+    if (cached) await showDetailed(cached, false, restoring);
     else {
+      if (restoring) showProgress('Generating the detailed map');
       const packed = detail?.packForUpgrade();
       const savedBase = !packed && cachedFrame && previewKey ? await readCityWorld(previewKey, cachedFrame.tier) : undefined;
       await layoutReady;

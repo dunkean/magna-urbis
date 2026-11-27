@@ -14,7 +14,7 @@ import { tintedWallColor } from '../buildingPalette';
 import { planBuildingColors, planRoofColor, planShade } from '../cityBuildingPalette';
 import { caveRoof, nightRoof } from '../cityNight';
 import { toneStamp } from '../groundTone';
-import { planPanLight } from '../roofPlaneLight';
+import { PAINTED_ROOF_RELIEF, planPanLight } from '../roofPlaneLight';
 import { mapGroundSnow, roofSeasonKey } from '../seasonPalette';
 import { urbanFunctionColor } from '../urbanBuildingStyle';
 import { CITY_LOD_OFF, atLeast } from './levels';
@@ -38,7 +38,10 @@ export interface BuildingsShownInput {
 /** The far raster of a satellite town is drawn (cross-faded with the buildings, whatever the level's hysteresis). */
 export const farTownShown = (o: BuildingsShownInput): boolean => !!o.farTown && o.buildingsVisible && o.view === 'buildings' && !o.footprint && o.diagnostic === 'none' && !o.houseRenderer && !CITY_LOD_OFF;
 /** The building bodies are drawn. */
-export const buildingsShown = (o: BuildingsShownInput): boolean => o.buildingsVisible && (o.footprint || (farTownShown(o) ? farTownBuildingsShown(o.mpp) : atLeast(o.lod, 'near'))) && (o.footprint || o.view === 'buildings' || o.view === 'roles');
+export const buildingsShown = (o: BuildingsShownInput): boolean =>
+  o.buildingsVisible &&
+  (o.footprint || (o.farTown && o.houseRenderer && o.view === 'buildings') || (farTownShown(o) ? farTownBuildingsShown(o.mpp) : atLeast(o.lod, 'near'))) &&
+  (o.footprint || o.view === 'buildings' || o.view === 'roles');
 /** Roof pans and cast shadows are drawn over the bodies. */
 export const roofPansShown = (o: Pick<BuildingsShownInput, 'view' | 'footprint' | 'diagnostic'> & { planPath?: PlanPath }): boolean => !o.footprint && (!!o.planPath || (o.view === 'buildings' && o.diagnostic !== 'uses'));
 
@@ -204,7 +207,7 @@ export function roofPanPaint(f: RoofFrame, item: CityBuilding, roofs: CityRoofs,
     ? planShade(tintedWall(planBuildingColors(item, f.palette, roofs.cover[k], roofs.wall?.[k], roofs.tone[k]).wall, roofs.tint?.[k], f.palette, roofs.wall?.[k]), Math.max(-0.12, Math.min(0.1, roofs.light[k] * 0.3)))
     : f.natural && !roofs.flat?.[k] && !snowed
       ? planShade(planBuildingColors(item, f.palette, roofs.cover[k], roofs.wall?.[k], roofs.tone[k]).roof, planPanLight(roofs.light[k], roofs.cover[k]))
-      : planRoofColor(item, roofs, k, f.palette, f.custom);
+      : planRoofColor(item, roofs, k, f.palette, f.custom, f.painted && !roofs.flat?.[k] ? PAINTED_ROOF_RELIEF : 1);
   const aged = f.natural && !roofs.snow?.[k] && !wallRim ? weatheredRoof(base, roofs.light[k], item.age ?? 0.5, roofs.cover[k]) : base;
   // Grade after snow/material colour: a custom night ink must not leave daylight snow above it.
   return { color: f.cave ? caveRoof(aged) : f.night ? nightRoof(aged, f.palette === 'parchment') : aged, gain: (f.natural || f.painted) && !wallRim ? grainGain(aged) : 0, wallRim };
