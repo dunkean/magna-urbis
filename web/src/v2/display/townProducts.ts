@@ -38,13 +38,14 @@ export class TownProducts implements Town {
   }
   /** The city plan on WebGL2 is uploaded before a synchronous paint. */
   async prepare(): Promise<void> {
+    if (this.map.canvasSatellite) return;
     await this.city?.prepare(this.map.resolved!, this.shownLayers());
   }
   private paintUrban(ctx: CanvasRenderingContext2D, scene: CityScene, frame: { viewport: { minX: number; minY: number; maxX: number; maxY: number }; mpp: number }): void {
     const s = this.semantic();
     if (s && s.urban !== 'off') drawUrbanSemantic(ctx, [scene], { look: s.urban, opacity: s.opacity, mpp: frame.mpp, viewport: frame.viewport });
   }
-  private readonly hooks: NativeCityHooks = { beforeBuildings: (ctx, scene, frame) => this.paintUrban(ctx, scene, frame), water: () => this.parts.water.cityWater, waterAbove: (ctx, box, over) => this.waterAbove(ctx, box, over) };
+  private readonly hooks: NativeCityHooks = { renderOnCanvas: () => this.map.canvasSatellite, beforeBuildings: (ctx, scene, frame) => this.paintUrban(ctx, scene, frame), water: () => this.parts.water.cityWater, waterAbove: (ctx, box, over) => this.waterAbove(ctx, box, over) };
   private cityWaterPath?: { source: Float32Array; paths: Map<string, Path2D> };
   private crossingHolesOf?: { world: World; scenes: readonly CityScene[]; path: Path2D };
   /** The whole map with a hole per bridge, ford or causeway deck (regional bridges and the towns' crossings), for an

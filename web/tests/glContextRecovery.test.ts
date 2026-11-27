@@ -1,7 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GlContextRecovery, LIGHT_TEXTURE_CAP, MapContextLostError, capRgbaRaster, enterMapGpuLight, isMapContextLost, lowEndGpu, mapGpuLight, mapTextureCap, noteMapRenderer, resetMapGpuProfile, textureCap } from '../src/ui/glContextRecovery';
 
-afterEach(() => resetMapGpuProfile());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  resetMapGpuProfile();
+});
 
 describe('map WebGL context recovery', () => {
   it('retries once, then goes light, then fails', () => {
@@ -44,6 +47,11 @@ describe('map WebGL context recovery', () => {
 });
 
 describe('map GPU budget', () => {
+  it('starts with the light shader and texture budget in Firefox on Windows', () => {
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:159.0) Gecko/20100101 Firefox/159.0' });
+    expect(mapGpuLight()).toBe(true);
+    expect(mapTextureCap(16384)).toBe(LIGHT_TEXTURE_CAP);
+  });
   it('flags integrated and software renderers', () => {
     expect(lowEndGpu('ANGLE (Intel, Mesa Intel(R) Iris(R) Xe Graphics (RPL-P), OpenGL 4.6 (Core Profile) Mesa 25.2.8)')).toBe(true);
     expect(lowEndGpu('ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)')).toBe(true);

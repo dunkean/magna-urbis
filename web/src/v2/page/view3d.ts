@@ -16,7 +16,8 @@ import { mountWorldTreeControls } from './worldTrees';
 import { mountWorldNavigation } from './worldNavigation';
 import { mountWorldDepthControl } from './worldDepth';
 import { mountWorldReliefControl } from './worldRelief';
-import { mountViewLock } from './viewLock';
+import { FIREFOX_3D_UNAVAILABLE, mountViewLock } from './viewLock';
+import { isFirefox } from '../../ui/firefox';
 
 /** Only the composed view tilts; its fallback draws the top view alone (after a lost graphics context, for example). */
 const NOT_COMPOSED = '3D is unavailable for now: the map is drawn without the graphics compositor ({reason}).';
@@ -50,7 +51,7 @@ function mountTiltButton(state: PageState, actions: PageActions): void {
     }
     // A press that cannot tilt says why: the viewer tilts only the frame source marked so (mapView.ts, canTilt).
     if (!tilted && !document.querySelector('[data-camera="tilt"]')) {
-      actions.toast(translate(NOT_COMPOSED).replace('{reason}', liveStats().reason ?? ''), true);
+      actions.toast(isFirefox() ? FIREFOX_3D_UNAVAILABLE : translate(NOT_COMPOSED).replace('{reason}', liveStats().reason ?? ''), true);
       return;
     }
     // The yaw is kept on the way up and reset on the way back: "2D" is the map, north up.

@@ -9,6 +9,8 @@
  *   MapContextLostError and the page leaves the GPU ground for a CPU-drawn cartographic map.
  * Pure state: no WebGL here, so the policy is unit tested (tests/glContextRecovery.test.ts).
  */
+import { firefoxOnWindows } from './firefox';
+
 export type GlRecoveryStage = 'full' | 'retry' | 'light' | 'failed';
 
 /** How long a lost context may wait for `webglcontextrestored` before the renderer gives up. */
@@ -106,7 +108,7 @@ export function mapGpuLowEnd(): boolean {
   return lowEndGpu(profile.renderer, memory);
 }
 export function mapGpuLight(): boolean {
-  return profile.light;
+  return profile.light || firefoxOnWindows();
 }
 /** Switches the page's map renderers to the light profile; tells the page once (MAP_GPU_LIGHTER_EVENT). */
 export function enterMapGpuLight(): void {
@@ -121,7 +123,7 @@ export function resetMapGpuProfile(): void {
 }
 /** Raster texture cap of the map renderers: light profile or low-end GPU → LIGHT_TEXTURE_CAP. */
 export function mapTextureCap(maxTextureSize: number): number {
-  return textureCap(maxTextureSize, profile.light || mapGpuLowEnd());
+  return textureCap(maxTextureSize, mapGpuLight() || mapGpuLowEnd());
 }
 
 /** A square RGBA8 raster (and same-grid companions) box-halved until its side fits `cap`. Rasters that already

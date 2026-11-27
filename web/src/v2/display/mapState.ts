@@ -61,6 +61,12 @@ export class MapState {
   redrawOnly = false;
   /** Bumped whenever the picture at rest is due again; a view compares it with the revision it painted. */
   paintRevision = 0;
+  /** The embed can select the Canvas path for its fast satellite button. */
+  canvasFastSatellite = false;
+
+  get canvasSatellite(): boolean {
+    return this.canvasFastSatellite && this.resolved?.composition.recipe.preset === 'satellite-light';
+  }
 
   constructor(
     private readonly notify: () => void,

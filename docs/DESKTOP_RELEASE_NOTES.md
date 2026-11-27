@@ -1,5 +1,7 @@
 ## Alpha 0.3.11
 
+- The fast satellite preview uses Canvas 2D in Firefox. Firefox on Windows starts with a lighter graphics profile, and the 3D button suggests Chrome or Edge if the graphics compositor is unavailable.
+
 - Round steel grain silos have a discharge chute in detailed 3D farm views.
 - The surface viewer uses the web map’s colours for Atlas shorelines and Minimal water.
 - Choose a map style for visual exports and include optional 3D trees in mesh exports.

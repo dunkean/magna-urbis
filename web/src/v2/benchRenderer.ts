@@ -102,6 +102,9 @@ export class BenchRenderer {
   rasterContext(): MaterialRasterContext | undefined {
     return this.products.ground.rasterContext();
   }
+  useCanvasFastSatellite(): void {
+    this.map.canvasFastSatellite = true;
+  }
   /** Bytes held by the dormant cartography renderers of other looks. */
   /** The relief of the map on screen: the viewer zooms towards the terrain point under the cursor when tilted. */
   relief(): WorldRelief | undefined {

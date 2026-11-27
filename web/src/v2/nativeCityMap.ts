@@ -65,6 +65,7 @@ export interface NativeCityMapStats {
 }
 /** Painted by each city plan between its streets and its buildings; `mpp` is world units per screen pixel. */
 export interface NativeCityHooks {
+  renderOnCanvas?(): boolean;
   beforeBuildings?(ctx: CanvasRenderingContext2D, scene: CityScene, frame: { viewport: Box; mpp: number }): void;
   /** The rivers the map draws under the towns (`riverSegments` layout): town ground and streets stay off them. */
   water?(): Float32Array | undefined;
@@ -442,7 +443,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       textured = city.textured;
     const images = textured && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(invalidate) : undefined;
     const buildingsVisible = visibility.city !== false && city.visible;
-    let reason = f.planOnly ? 'volume-ground-plan' : f.rasterTown !== undefined ? 'retained-cadastre' : glBlockReason(appearance, visibility);
+    let reason = f.planOnly ? 'volume-ground-plan' : f.rasterTown !== undefined ? 'retained-cadastre' : hooks?.renderOnCanvas?.() ? 'canvas-preview' : glBlockReason(appearance, visibility);
     let glFrame: CityGlFrame | undefined;
     ctx.save();
     try {

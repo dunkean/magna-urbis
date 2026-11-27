@@ -86,6 +86,7 @@ export class GroundProducts implements Ground {
   /** The terrain draws on the GPU when it can; the CPU raster otherwise. Evaluated lazily: the terrainData pass may demote it. */
   mode(): 'gpu' | 'cpu' {
     const r = this.map.resolved!;
+    if (this.map.canvasSatellite) return 'cpu';
     if (r.target === 'view2d' && r.ground.traits.satelliteVariant > 0 && !requestedTerrainBackend() && prefersCpuSatelliteGround()) return 'cpu';
     return this.map.exportLayers.terrain !== false && r.ground.layers.relief && !isFantasyStyle(r.ground.style) && !this.gpuUnavailable ? 'gpu' : 'cpu';
   }
@@ -252,8 +253,8 @@ export class GroundProducts implements Ground {
       });
       return;
     }
-    if (handheldDevice() && r.target === 'view2d' && layers.relief && r.ground.traits.satelliteVariant > 0) {
-      // A lost GPU must not trigger a full satellite raster and shader rebuild on the UI thread.
+    if (r.target === 'view2d' && layers.relief && r.ground.traits.family === 'material') {
+      // Both Render3D and Render v2 otherwise need WebGL to produce their material rasters.
       const basePalette = terrainStyle(style, colors).palette;
       const palette = biomePalette(
         r.ground.traits.paperMap || isUnderdarkBiome(world.options.biome)
@@ -492,6 +493,7 @@ export class GroundProducts implements Ground {
    * minimal: paper, sea and crowns), so that such a map is composed, and tilts, like the others; undefined while
    * neither can draw the map (passes running, an illustrated ground). */
   groundTiles(): GroundTileRenderer | undefined {
+    if (this.map.canvasSatellite) return undefined;
     const ground = this.gpu as Partial<GroundTileRenderer> | undefined;
     if (this.gpuActive) return ground?.renderWorldTile && ground.contentRevision ? (ground as GroundTileRenderer) : undefined;
     const r = this.map.resolved;

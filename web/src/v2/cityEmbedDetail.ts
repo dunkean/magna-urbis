@@ -9,6 +9,7 @@ import type { World } from '../gen/types';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import { nativeCityRecords } from './nativeProducts';
 import type { CityDetailStyle, DetailedCityResult } from './cityPreviewMap';
+import { isFirefox } from '../ui/firefox';
 
 export function detailedCityMap(data: DetailedCityResult, invalidate: () => void, previous?: { renderer: BenchRenderer; world: World }) {
   const world = unpackWorldPartitions(unpackWorldLanduse(data.world));
@@ -29,6 +30,7 @@ export function detailedCityMap(data: DetailedCityResult, invalidate: () => void
     }
   }
   const renderer = previous?.renderer ?? new BenchRenderer(invalidate);
+  if (isFirefox()) renderer.useCanvasFastSatellite();
   let satelliteTown: ResolvedAppearance | undefined;
   const setStyle = async (style: CityDetailStyle) => {
     await loadRenderGeometry();
