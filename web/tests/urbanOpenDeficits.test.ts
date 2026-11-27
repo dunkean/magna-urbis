@@ -36,6 +36,20 @@ it('joins the two real roman04 declarations while preserving geometry, demands, 
   expect(carryUrbanOpenDeficits(partitions, carried, requests)).toBe(carried);
   expect(carried.open_spaces.map(value => value.deficit!.original_function).sort()).toEqual(['collective', 'warehouse']);
 });
+it('carries a residential subtype allocated against the common dwelling demand', () => {
+  const { partitions, requests, scene } = fixture();
+  const request = requests.find(value => value.programme?.deficit?.cause === 'pente')!;
+  const programme = partitions[0].programme!;
+  const allocation = programme.allocations.find(value => value.parcelId === request.parcel_id)!;
+  const demand = programme.demands.find(value => value.id === allocation.demandId)!;
+  allocation.function = demand.function = 'domestic';
+  allocation.role = request.programme!.role = 'dwelling.house';
+  demand.role = 'dwelling';
+  const carried = carryUrbanOpenDeficits(partitions, scene, requests);
+  expect(carried.open_spaces.find(value => value.parcel_id === request.parcel_id)?.deficit).toMatchObject({ role: 'dwelling.house', original_function: 'domestic', demand_id: demand.id });
+  demand.role = 'dwelling.other';
+  expect(() => carryUrbanOpenDeficits(partitions, scene, requests)).toThrow();
+});
 it('does not reconstruct a declaration from allocations, a preview, missing metadata or a mismatched identity', () => {
   const { partitions, requests, scene } = fixture();
   expect(() => carryUrbanOpenDeficits(partitions, scene, [])).toThrow();

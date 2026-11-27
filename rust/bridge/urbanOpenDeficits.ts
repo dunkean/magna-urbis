@@ -47,7 +47,7 @@ export function prepareUrbanOpenDeficits(partitions: readonly Partition[]): (sce
         !buildingFunctions.has(allocation.function) ||
         !allocation.role ||
         !demand ||
-        demand.role !== allocation.role ||
+        !(demand.role === allocation.role || (demand.role === 'dwelling' && allocation.function === 'domestic' && allocation.role.startsWith('dwelling.'))) ||
         demand.function !== allocation.function ||
         demand.unit !== allocation.unit ||
         !['pente', 'forme', 'source_absente'].includes(d.cause) ||
