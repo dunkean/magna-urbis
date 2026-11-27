@@ -7,21 +7,35 @@ import { retryNativeStage } from './runtimeChoices';
 import { townPlanOf } from '../render/composition';
 import { minimalFeatures } from './minimalFeatures';
 import { cityEmbedShowsStreet } from './cityEmbedStreets';
-import { packMinimalFeatures, type CityPreviewRequest, type CityPreviewResponse } from './cityPreviewMap';
+import { cityEmbedRegionalRoads, cityEmbedStartsWithBlocks, packMinimalFeatures, type CityPreviewRequest, type CityPreviewResponse } from './cityPreviewMap';
 import { packWorldPartitions, unpackWorldPartitions } from './urbanPack';
 import { packWorldLanduse, unpackWorldLanduse } from './landusePack';
 import { wasmThreadsInfo } from '../../../rust/bridge/wasmThreads';
-import { readCityLayout, saveCityLayout } from './cityEmbedCache';
+import { readCityLayout, readCityWorld, saveCityLayout } from './cityEmbedCache';
 import type { V2Settings, ProgressCallback } from './contracts';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 // The iframe has no map labels. Skip the name pass that the studio applies after its generation.
 namesRenamedAfterActions();
-scope.onmessage = async ({ data: { hints, local, mode, base, layoutKey } }: MessageEvent<CityPreviewRequest>) => {
+scope.onmessage = async ({ data: { hints, local, mode, base, layoutKey, studio } }: MessageEvent<CityPreviewRequest>) => {
   const send = (message: CityPreviewResponse, transfer: Transferable[] = []) => scope.postMessage(message, transfer);
   try {
     let settings = cityEmbedSettings(hints, local, mode);
     const detailed = mode !== 'compact';
+    const sendWorld = (world: NonNullable<CityPreviewRequest['base']>['world'], recipe: V2Settings = settings) => {
+      const cover = packWorldLanduse(world);
+      const packed = packWorldPartitions(cover.world);
+      send({ type: 'studio-city', world: packed.world, settings: recipe }, [...cover.transfer, ...packed.transfer]);
+    };
+    if (studio && layoutKey) {
+      if (detailed) {
+        const cached = await readCityWorld(layoutKey, mode);
+        if (cached) return sendWorld(unpackWorldPartitions(unpackWorldLanduse(cached.world)), cached.settings);
+      } else {
+        const cached = await readCityLayout(layoutKey);
+        if (cached) return sendWorld(unpackWorldPartitions(unpackWorldLanduse(cached)));
+      }
+    }
     if (detailed && !base && layoutKey) {
       const world = await readCityLayout(layoutKey);
       if (world) base = { world, compact: true };
@@ -40,13 +54,22 @@ scope.onmessage = async ({ data: { hints, local, mode, base, layoutKey } }: Mess
         'all',
       );
     const retained = base && unpackWorldPartitions(unpackWorldLanduse(base.world));
-    const region = retained ?? await stage(async effective => {
+    let region = retained ?? await stage(async effective => {
       const terrain = await generateTerrain(effective, progress, undefined, undefined, undefined, { prepareDisplay: false, includeLandCover: false });
       return planRegion(terrain, effective, progress, true);
     });
-    const world = retained && base?.compact === false
-      ? await stage(effective => updateLocalTown(retained, effective, 'main', progress))
+    if (studio && detailed && !retained) {
+      const through = cityEmbedStartsWithBlocks(hints.population) ? 'layout' : 'buildings';
+      region = await stage(effective => generateTowns(region, { ...effective, urban: { ...effective.urban, through, architecture: 'silhouette' } }, progress, undefined, through, false, false));
+    }
+    const fromDetailed = mode === 'houses' && (base?.compact === false || studio?.fromDetailed === true);
+    if (studio && fromDetailed && base?.compact !== false) {
+      region = await stage(effective => generateTowns(region, { ...effective, urban: { ...effective.urban, architecture: 'silhouette', through: 'buildings' } }, progress, undefined, 'buildings', false, true));
+    }
+    const world = fromDetailed
+      ? await stage(effective => updateLocalTown(region, effective, 'main', progress))
       : await stage(effective => generateTowns(region, effective, progress, undefined, effective.urban?.through, false, detailed));
+    if (studio) return sendWorld(world);
     const cities = nativeCitiesOf(world),
       cityByKey = nativeCityRecords(world) ?? {};
     if (retained) world.stats['fmg.keptLayout'] = Number(!!cityByKey.main && cityByKey.main.layouts === nativeCityRecords(retained)?.main?.layouts);
@@ -59,13 +82,13 @@ scope.onmessage = async ({ data: { hints, local, mode, base, layoutKey } }: Mess
     if (detailed) {
       const cover = packWorldLanduse(world);
       const packed = packWorldPartitions(cover.world);
-      send({ ...common, mode, world: packed.world, bounds, settings }, [...cover.transfer, ...packed.transfer]);
+      send({ ...common, mode, world: packed.world, bounds, settings, fromDetailed }, [...cover.transfer, ...packed.transfer]);
       return;
     }
     const recipe = settings.appearance!.composition!;
     const plan = townPlanOf(recipe);
     const geometry = packMinimalFeatures([...minimalFeatures({ ...world, landuse: undefined }, { cities, cityByKey }, plan.parcels, cityEmbedShowsStreet)]);
-    send({ ...common, mode: 'compact', map: { bounds, size: world.mapSize, recipe, plan, geometry } }, [geometry.rings.buffer, geometry.coords.buffer]);
+    send({ ...common, mode: 'compact', map: { bounds, size: world.mapSize, recipe, plan, geometry, regionalRoads: cityEmbedRegionalRoads(world) } }, [geometry.rings.buffer, geometry.coords.buffer]);
     // The first paint only waits for drawing vectors. Persist the resumable layout from this worker.
     const packed = packWorldPartitions(world);
     if (layoutKey && await saveCityLayout(layoutKey, packed.world)) send({ type: 'layout-ready' });

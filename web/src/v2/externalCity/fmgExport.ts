@@ -1,4 +1,5 @@
 import { fmgOceanShore } from './fmgShore';
+import { fmgCityNetwork } from './fmgNetwork';
 
 /**
  * Snippet pasted into the Azgaar Fantasy Map Generator browser console (F12). It reads one burg from the
@@ -68,6 +69,7 @@ export const FMG_EXPORT_SCRIPT = String.raw`(() => {
     precipitation: G.cells.prec[g] * 100,
     biome: { id: biomeId, name: biomeName },
     river: !!c.r[cell], confluence: !!(c.conf && c.conf[cell]), coast,
+    network: (${fmgCityNetwork.toString()})(P, cell, b.x, b.y),
     culture: { name: culture.name || null, base: bases && bases[culture.base] ? bases[culture.base].name : culture.base, type: culture.type || null },
     state: state && state.i ? state.name : null,
     mfcg, mfcgSeed: String(b.MFCG || mapSeed + String(b.i).padStart(4, '0')),

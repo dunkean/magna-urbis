@@ -7,6 +7,7 @@ import type { V2Settings } from './contracts';
 import type { Vec2, World } from '../gen/types';
 import { cityEmbedStartsWithBlocks, type CityPreviewMode } from './cityPreviewMap';
 import { polygonArea } from '../gen/core/geom';
+import { applyFmgNetwork } from './externalCity/fmgNetworkRecipe';
 
 export function cityEmbedSettings(hints: ExternalCityHints, local: boolean, mode: CityPreviewMode = 'compact'): V2Settings {
   const settings = applyExternalCity(hints, defaultSettings());
@@ -19,13 +20,14 @@ export function cityEmbedSettings(hints: ExternalCityHints, local: boolean, mode
       site.position = { x: site.position.x * scale, y: site.position.y * scale };
     }
     settings.extent = extent;
+    if (hints.network) applyFmgNetwork(settings, hints.network, extent);
   }
   const backend = local ? 'native' : 'rust';
   settings.generation = 'procedural';
   delete settings.decor;
   settings.local = {};
   settings.terrain = { ...settings.terrain, resolution: 96, relief: 'flat', erosion: 0, generationCompute: local ? undefined : 'cpu', forest: { ...settings.terrain?.forest, enabled: false } };
-  if (hints.river === 'none') settings.terrain.hydrology = { ...settings.terrain.hydrology, enabled: false };
+  if (hints.river === 'none' && !settings.terrain.importedRiver) settings.terrain.hydrology = { ...settings.terrain.hydrology, enabled: false };
   settings.region = { ...settings.region, resolution: 96, autoBuildPopulation: 0 };
   const site = settings.region.placement?.list?.[0];
   if (site && hints.port && hints.coast && hints.coast !== 'none') site.siteType = 'harbor';

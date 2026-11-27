@@ -11,6 +11,7 @@ interface CityCodeBindings {
   /** Names a saved block edit by its position in the plan on screen. */
   blockAddress: BlockAddress;
   load(recipe: DecodedCityCode, source?: 'Azgaar FMG'): Promise<void>;
+  loadPreview(source: string, link: URLSearchParams): Promise<void>;
   busy(): boolean;
   toast?(message: string): void;
 }
@@ -180,10 +181,12 @@ export function mountCityCodeSharing(bindings: CityCodeBindings): { restoreFromL
   find('city-code-chip-debug').onclick = () => void copyChip(cityDebugText(bindings.getSettings(), BUILD, bindings.blockAddress));
   return {
     async restoreFromLocation() {
-      const shared = new URLSearchParams(location.hash.slice(1)).get('city');
+      const link = new URLSearchParams(location.hash.slice(1));
+      const shared = link.get('city');
       if (!shared) return;
       try {
-        await bindings.load(decodeCityCode(shared));
+        if (link.has('previewMode')) await bindings.loadPreview(shared, link);
+        else await bindings.load(decodeCityCode(shared));
       } catch (e) {
         openCode();
         codeInput.value = shared;

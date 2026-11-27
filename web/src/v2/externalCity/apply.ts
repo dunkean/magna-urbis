@@ -8,6 +8,7 @@ import { CLIMATE_ZONES, CLIMATE_ZONE_VALUES, type ClimateValues } from '../../..
 import { climateZoneBiome, isUnderdarkBiome, type BiomeName } from '../../gen/biomes';
 import type { ExternalCityHints } from './types';
 import { fmgCoastTrace } from './fmgCoast';
+import { applyFmgNetwork } from './fmgNetworkRecipe';
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 /** Map width for one imported town, kept tight around it: 3 km at 2,500 inhabitants, about 4 km at
@@ -79,6 +80,7 @@ export function applyExternalCity(hints: ExternalCityHints, base: V2Settings): V
     // An imported culture is the source's choice: the environment must not re-pick it.
     demography: { ...settings.region?.demography, isolatedCount: 0, ...(hints.culture && o.culture === hints.culture ? { followCulture: false } : {}) },
   };
+  if (hints.network) applyFmgNetwork(settings, hints.network, extent);
   // The receiver's engine choice is not part of the source: start on Automatic.
   if (settings.runtime) settings.runtime.autoBackend = true;
   validateSettings(settings);

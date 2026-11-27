@@ -4,6 +4,7 @@ import type { ClimateZone } from '../../../../rust/bridge/terrainClimate';
 import type { ExternalCityHints } from './types';
 import { coastSide, parseWatabouUrl } from './watabou';
 import { parseFmgShore, type FmgShore } from './fmgCoast';
+import { parseFmgNetwork, type FmgNetwork } from './fmgNetworkRecipe';
 import { FMG_BASE_TO_MU, FMG_POPULATION_SCALE, FMG_URBANIZATION_RATE, fmgBaseOf, fmgBiome, fmgNameBase, pickMuCulture } from './azgaarTables';
 
 /**
@@ -38,6 +39,7 @@ interface BurgFields {
   river?: RiverOpt;
   coast?: CoastOpt;
   shore?: FmgShore;
+  network?: FmgNetwork;
   elevationM?: number;
   temperatureC?: number;
   capital?: boolean;
@@ -353,6 +355,7 @@ function parseFmgExport(d: Json): ExternalCityHints {
     // A lake shore is not a sea coast.
     coast: coast === null ? 'none' : coast.water === 'ocean' ? (sea !== undefined ? coastSide(sea) : 'random') : coast.water === 'lake' ? 'none' : undefined,
     shore: coast?.water === 'ocean' ? parseFmgShore(sea, coast.shore) : undefined,
+    network: parseFmgNetwork(d.network),
     capital: bool(d.capital),
     port: bool(d.port),
     citadel: bool(d.citadel),
@@ -489,6 +492,7 @@ function toHints(b: BurgFields): ExternalCityHints {
   if (b.river) hints.river = b.river;
   if (b.coast) hints.coast = b.coast;
   if (b.shore) hints.shore = b.shore;
+  if (b.network) hints.network = b.network;
   // Culture type (Naval, River, Nomadic, Hunting, Highland) where the geography leaves a choice.
   if (keywords.has('naval')) {
     if (hints.coast === undefined) hints.coast = 'random';

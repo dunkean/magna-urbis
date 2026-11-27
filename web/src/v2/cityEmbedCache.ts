@@ -52,6 +52,7 @@ export interface SavedCityView {
   view: View;
   width: number;
   height: number;
+  fromDetailed?: boolean;
 }
 
 export const readCityView = (key: string) => readUrbanCache<SavedCityView>(key + ':view');

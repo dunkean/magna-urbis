@@ -4,10 +4,12 @@ import type { Rect4 } from '../render/view';
 import type { CompositionRecipe, TownPlan } from '../render/composition';
 import type { ExternalCityHints } from './externalCity/types';
 import type { WasmThreadsInfo } from '../../../rust/bridge/wasmThreads';
-import type { World } from '../gen/types';
+import type { Polyline, World } from '../gen/types';
 import type { V2Settings, V2Progress } from './contracts';
 
 export const cityEmbedStartsWithBlocks = (population = 2500): boolean => population >= 20_000;
+export const cityEmbedRegionalRoads = (world: World): Polyline[] =>
+  (world.roads ?? []).filter(road => !road.urban && road.kind === 'major' && road.path.length > 1).map(road => road.path);
 
 export type CityPreviewMode = 'compact' | 'detailed' | 'houses';
 export interface CityPreviewRequest {
@@ -16,6 +18,8 @@ export interface CityPreviewRequest {
   mode: CityPreviewMode;
   base?: { world: World; compact: boolean };
   layoutKey?: string;
+  /** Open the editable world in a top-level tab. Replay the iframe's stages if its storage is partitioned. */
+  studio?: { fromDetailed: boolean };
 }
 export interface CityPreviewMap {
   size: number;
@@ -23,6 +27,7 @@ export interface CityPreviewMap {
   geometry: PackedFeatures;
   recipe: CompositionRecipe;
   plan: TownPlan;
+  regionalRoads: Polyline[];
 }
 export interface CityPreviewResult {
   type: 'city-preview';
@@ -32,9 +37,9 @@ export interface CityPreviewResult {
   town: { buildings: number; layouts: number; streets: number };
   map: CityPreviewMap;
 }
-export type DetailedCityResult = Omit<CityPreviewResult, 'mode' | 'map'> & { mode: 'detailed' | 'houses'; world: World; settings: V2Settings; bounds: Rect4 };
+export type DetailedCityResult = Omit<CityPreviewResult, 'mode' | 'map'> & { mode: 'detailed' | 'houses'; world: World; settings: V2Settings; bounds: Rect4; fromDetailed?: boolean };
 export type CityDetailStyle = 'minimal' | 'satellite-light' | 'satellite-2';
-export type CityPreviewResponse = { type: 'progress'; progress: V2Progress } | CityPreviewResult | DetailedCityResult | { type: 'layout-ready'; world?: World } | { type: 'error'; error: string };
+export type CityPreviewResponse = { type: 'progress'; progress: V2Progress } | CityPreviewResult | DetailedCityResult | { type: 'layout-ready'; world?: World } | { type: 'studio-city'; world: World; settings: V2Settings } | { type: 'error'; error: string };
 
 interface PackedFeatures {
   layers: string[];

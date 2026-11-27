@@ -7,7 +7,8 @@ import { mountCityEmbedNavigation } from './cityEmbedNavigation';
 import { mountCityEmbedOverlay } from './cityEmbedOverlay';
 import { MinimalCanvasRenderer } from './minimalCanvas';
 import { cityEmbedText, localizeCityEmbed, cityEmbedSummary, embedLocale, loadEmbedLocale } from './cityEmbedMessages';
-import { cityEmbedStartsWithBlocks, unpackMinimalFeatures, type CityDetailStyle, type CityPreviewResult, type DetailedCityResult, type CityPreviewMode, type CityPreviewResponse, type CityPreviewRequest } from './cityPreviewMap';
+import { cityEmbedRegionalRoads, cityEmbedStartsWithBlocks, unpackMinimalFeatures, type CityDetailStyle, type CityPreviewResult, type DetailedCityResult, type CityPreviewMode, type CityPreviewResponse, type CityPreviewRequest } from './cityPreviewMap';
+import { CityEmbedRoadInk } from './cityEmbedRegionalRoads';
 import type { Rect4 } from '../render/view';
 import type { World } from '../gen/types';
 
@@ -114,11 +115,14 @@ function start(): void {
   const editor = new URL(cityEmbedEditorUrl(current, source));
   editor.searchParams.set('lang', language);
   if (current.searchParams.get('preview') !== '1') {
+    const hash = new URLSearchParams(editor.hash.slice(1));
+    hash.set('previewMode', 'compact');
+    editor.hash = hash.toString();
     location.replace(editor);
     return;
   }
 
-  (document.getElementById('open') as HTMLAnchorElement).href = editor.href;
+  const editorLink = document.getElementById('open') as HTMLAnchorElement;
   const name = document.getElementById('burg-name')!;
   name.textContent = hints.name?.slice(0, 200) ?? '';
   name.hidden = !name.textContent;
@@ -177,6 +181,19 @@ function start(): void {
   // Local profiling uses the same V2 native engine as the studio and the benches.
   const local = current.searchParams.get('profile') === 'local' && ['127.0.0.1', 'localhost', '[::1]'].includes(current.hostname);
   const threaded = !local && crossOriginIsolated && typeof SharedArrayBuffer === 'function' && current.searchParams.get('threads') !== 'off';
+  let fromDetailed = false;
+  const linkToPlan = (mode: CityPreviewMode, look: CityDetailStyle) => {
+    const hash = new URLSearchParams(editor.hash.slice(1));
+    hash.set('previewMode', mode);
+    hash.set('previewStyle', look);
+    if (local) hash.set('previewLocal', '1');
+    if (threaded) hash.set('previewThreads', '1');
+    if (fromDetailed) hash.set('previewFromDetailed', '1');
+    else hash.delete('previewFromDetailed');
+    editor.hash = hash.toString();
+    editorLink.href = editor.href;
+  };
+  linkToPlan('compact', 'minimal');
   let previewKey: string | undefined;
   let bounds: Rect4 | undefined;
   let tier: DetailedCityResult['mode'] = 'detailed';
@@ -188,6 +205,8 @@ function start(): void {
   let restoreTimer: ReturnType<typeof setTimeout> | undefined;
   let warming: MapRenderer | undefined;
   let liveLayout: World | undefined;
+  const roadInk = new CityEmbedRoadInk();
+  roadInk.set([]);
   let layoutReady: Promise<void> | undefined;
   const draw = () => {
     if (!renderer || !bounds || disposed) return;
@@ -195,6 +214,7 @@ function start(): void {
     if (width < 1 || height < 1) return;
     const view = navigation!.view(cityEmbedView(bounds, width, height));
     renderer.drawLive(view, width, height, window.devicePixelRatio || 1);
+    if (!cachedFrame) roadInk.draw(view, width, height, window.devicePixelRatio || 1);
     warming?.drawLive(view, width, height, window.devicePixelRatio || 1);
     if (cachedFrame && root.dataset.detail === 'ready') {
       clearTimeout(restoreTimer);
@@ -241,8 +261,13 @@ function start(): void {
   resize.observe(host);
   const install = (next: MapRenderer, area: Rect4) => {
     const { width, height } = host.getBoundingClientRect();
-    if (width && height) next.drawLive(navigation!.view(cityEmbedView(area, width, height)), width, height, window.devicePixelRatio || 1);
+    if (width && height) {
+      const view = navigation!.view(cityEmbedView(area, width, height)), dpr = window.devicePixelRatio || 1;
+      next.drawLive(view, width, height, dpr);
+      if (!cachedFrame) roadInk.draw(view, width, height, dpr);
+    }
     host.append(next.element);
+    host.append(roadInk.canvas);
     renderer?.element.remove();
     renderer?.dispose();
     renderer = next;
@@ -256,6 +281,7 @@ function start(): void {
     pendingRenderer = next;
     await next.setContent({ key: 'compact', terrainKey: 1, size: map.size, features: unpackMinimalFeatures(map.geometry), places: [] }, map.recipe, map.plan, { terrain: false, landuse: false, labels: false });
     if (disposed) return;
+    roadInk.set(map.regionalRoads);
     install(next, map.bounds);
     cachedFrame = undefined;
     detail = undefined;
@@ -271,6 +297,7 @@ function start(): void {
     root.dataset.detail = blocksOnly ? 'blocks' : 'idle';
     status.hidden = true;
     root.dataset.tier = 'compact';
+    linkToPlan('compact', 'minimal');
     delete root.dataset.detailStyle;
     viewControls(planButton);
     housesButton.hidden = false;
@@ -286,6 +313,7 @@ function start(): void {
     housesButton.hidden = tier === 'houses';
     housesButton.classList.remove('blocks-only');
     root.dataset.tier = tier;
+    linkToPlan(tier, style);
   };
   const saveFrame = async () => {
     const serial = ++saveSerial;
@@ -293,7 +321,8 @@ function start(): void {
     const canvas = detail.renderer.snapshot();
     if (!canvas) return;
     const { width, height } = host.getBoundingClientRect();
-    const metadata = { tier, style, bounds, width, height, camera: navigation!.camera(), view: navigation!.view(cityEmbedView(bounds, width, height)) };
+    const metadata = { tier, style, bounds, width, height, camera: navigation!.camera(), view: navigation!.view(cityEmbedView(bounds, width, height)), fromDetailed };
+    roadInk.paint(canvas, metadata.view, width, height);
     const image = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
     if (disposed || serial !== saveSerial) return;
     const stored = !!image && (await saveCityView(previewKey, { ...metadata, image }));
@@ -326,6 +355,7 @@ function start(): void {
     tier = requestedTier;
     cachedFrame = undefined;
     detailControls();
+    draw();
     void saveFrame().catch(() => {});
   };
   const showDetailed = async (data: DetailedCityResult, fresh: boolean, restoring = false) => {
@@ -335,6 +365,8 @@ function start(): void {
     const { detailedCityMap } = await detailModule!;
     if (disposed) return;
     detail = detailedCityMap(data, scheduleDraw, detail);
+    roadInk.set(cityEmbedRegionalRoads(detail.world));
+    fromDetailed = data.fromDetailed === true;
     liveLayout = undefined;
     if (renderer !== detail.renderer) pendingRenderer = detail.renderer;
     try {
@@ -440,6 +472,7 @@ function start(): void {
         install(next, saved.bounds);
         cachedFrame = saved;
         tier = requestedTier = saved.tier;
+        fromDetailed = saved.fromDetailed === true;
         style = saved.style;
         root.dataset.state = root.dataset.detail = 'ready';
         root.dataset.detailStyle = saved.style;

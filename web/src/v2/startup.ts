@@ -89,7 +89,7 @@ export function randomInitialSettings(previous: V2Settings, random: () => number
   delete settings.options.heightScale;
   delete settings.options.importSea;
   delete settings.decor;
-  for (const key of ['sketch', 'heightmap', 'zones', 'modification', 'coastTrace', 'climateValues', 'reliefClimate'] as const) delete terrain[key];
+  for (const key of ['sketch', 'heightmap', 'zones', 'modification', 'coastTrace', 'importedRiver', 'climateValues', 'reliefClimate'] as const) delete terrain[key];
   if (terrain.procedural?.enabled) Object.assign(terrain.procedural.enabled, { coasts: true, coastCut: true });
   if (terrain.neuralTuning) {
     delete terrain.neuralTuning.reliefMode;

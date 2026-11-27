@@ -1,5 +1,9 @@
 ## Alpha 0.3.11
 
+- Azgaar imports preserve the local river and main road approaches as part of the generated town plan.
+- The Magna Urbis link in Azgaar opens the same generated town plan and selected detail in the studio.
+- A distinct ochre line marks the principal regional roads in every Azgaar preview style.
+
 - Azgaar imports trace the local ocean shoreline and use it to place coastal towns.
 - The Azgaar preview shows the public street network with fewer service paths.
 

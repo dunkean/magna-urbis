@@ -16,6 +16,7 @@ import { DEFAULT_COAST_PROFILE, coastProfile } from '../../../rust/bridge/terrai
 import type { V2Settings } from './contracts';
 import { defaultSourceSpacing } from '../../../rust/bridge/terrainDefinition';
 import { seaCoastInputs, parseCoastTrace, type CoastTrace } from './coastTrace';
+import { validateImportedRiver, type ImportedRiver } from './externalCity/fmgNetworkRecipe';
 import { filledSymbolicZones } from './symbolicMap';
 
 export type V2TerrainSettings = Partial<Omit<TerrainSettings, 'drawing' | 'seed' | 'width' | 'source' | 'climate' | 'neuralAssets' | 'neuralServer' | 'hydrology' | 'neuralTuning' | 'climateValues' | 'detailNoise' | 'sourceNativeResolution'>> & {
@@ -30,6 +31,7 @@ export type V2TerrainSettings = Partial<Omit<TerrainSettings, 'drawing' | 'seed'
   climateValues?: Partial<ClimateValues>;
   detailNoise?: Partial<FractalDetail>;
   coastTrace?: CoastTrace;
+  importedRiver?: ImportedRiver;
   /** Import provenance; elevations themselves remain in the existing sketch raster. */
   heightmap?: { name: string; width?: number; elevationRange?: [number, number] };
 };
@@ -138,7 +140,7 @@ export function canUseTracedCoast(settings: V2Settings): boolean {
 /** Defaults merge nested knobs. Runtime selection owns source, endpoints and auto compute. */
 export function effectiveTerrainSettings(settings: V2Settings, width: number): EffectiveTerrainSettings {
   // Trace geometry belongs to V2 recipes; only its encoded coast mode enters the bridge.
-  const { coastTrace, heightmap: _heightmap, ...t } = settings.terrain ?? {},
+  const { coastTrace, importedRiver: _importedRiver, heightmap: _heightmap, ...t } = settings.terrain ?? {},
     runtime = settings.runtime;
   const source = runtime?.source ?? (settings.generation === 'neural' ? 'neural-wasm' : 'procedural');
   // Hills is the zoned engine's carrier family, shared with zones_probe. The full
@@ -218,10 +220,12 @@ function enumeration(value: unknown, values: readonly unknown[], name: string): 
 export function validateTerrainSettings(value: unknown, allowTracedCoast = false): asserts value is V2TerrainSettings {
   if (!record(value)) throw new Error('Invalid terrain settings.');
   if (value.coastTrace !== undefined) parseCoastTrace(value.coastTrace);
+  if (value.importedRiver !== undefined) validateImportedRiver(value.importedRiver);
   const allowed = [
     'heightmap',
     'coastProfile',
     'coastTrace',
+    'importedRiver',
     'modification',
     'zones',
     'motifSize',

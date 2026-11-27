@@ -413,7 +413,7 @@ function headerSettings(seed: string, header: readonly number[]): V2Settings {
   return settings;
 }
 /** An imported or hand-drawn relief or coast: the code says it misses ("*"), the heightmap or project export goes with it. */
-const reliefNotInCode = (settings: V2Settings): boolean => !!(settings.options.importedHeight || settings.decor || settings.terrain?.sketch || settings.terrain?.zones || settings.terrain?.modification || settings.terrain?.coastTrace);
+const reliefNotInCode = (settings: V2Settings): boolean => !!(settings.options.importedHeight || settings.decor || settings.terrain?.sketch || settings.terrain?.zones || settings.terrain?.modification || settings.terrain?.coastTrace || settings.terrain?.importedRiver);
 const structural = (edit: QuarterOverride | BlockOverride): boolean => !!(edit.shape || edit.parts || edit.deletedParts?.length);
 const SPLIT_KEY = /^(.*)\/(\d+)$/;
 const QUARTER_KEY = /^\d+(?:\/\d+)?$/;

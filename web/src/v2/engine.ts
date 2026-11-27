@@ -109,6 +109,7 @@ export function terrainCacheKey(settings: V2Settings): string {
   const compactTerrain = native
     ? {
         ...terrain,
+        ...(settings.terrain?.importedRiver ? { importedRiver: settings.terrain.importedRiver } : {}),
         ...(terrain.sketch ? { sketch: { ...terrain.sketch, heights: { fingerprint128: fingerprintNumbers(terrain.sketch.heights) } } } : {}),
         ...(terrain.modification ? { modification: { ...terrain.modification, delta: { fingerprint128: fingerprintNumbers(terrain.modification.delta) } } } : {}),
         ...(terrain.zones ? { zones: { ...terrain.zones, weights: { fingerprint128: fingerprintNumbers(terrain.zones.weights) } } } : {}),
@@ -317,7 +318,9 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       engineStats = generated.stats;
       if (!generated.terrain) throw new Error('The Rust adapter did not return the retained terrain and water network.');
       report(onProgress, 'terrain-projection', 'Preparing the map, coastlines and water network…', 0, 0);
-      nativeTerrain = projectEngineTerrain(generated.terrain);
+      const imported = includeCover && settings.terrain?.importedRiver;
+      const physical = imported ? (await import('./externalCity/importedRiver')).withImportedRiver(generated.terrain, imported) : generated.terrain;
+      nativeTerrain = projectEngineTerrain(physical);
       // Overlap style-independent display fields with cover, regional and urban generation.
       if (includeCover && prepareDisplay) startTerrainDisplayPreparation(nativeTerrain, options.mapSize!);
     } else if (!options.importedHeight && settings.runtime?.compute === 'gpu') {

@@ -155,6 +155,18 @@ export function mountProjectFiles(state: PageState, actions: PageActions): void 
     },
     busy: () => state.busy,
     toast: message => actions.toast(message),
+    loadPreview: async (source, link) => {
+      actions.setBusy(true);
+      $<HTMLButtonElement>('#cancel-job').disabled = true;
+      try {
+        const { openCityPreview } = await import('../openCityPreview');
+        const project = await openCityPreview(source, link, actions.updateProgress);
+        await actions.loadProject(project);
+        actions.log('Import: Azgaar FMG');
+      } finally {
+        actions.setBusy(false);
+      }
+    },
     load: async (recipe, source) => {
       if (state.busy) return;
       actions.setBusy(true);

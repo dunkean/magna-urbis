@@ -8,6 +8,7 @@ const oneOf = (pool: readonly string[]) => expect.stringMatching(new RegExp(`^($
 import { FMG_EXPORT_SCRIPT } from '../../src/v2/externalCity/fmgExport';
 import { decodeCityCode, UNRECOGNISED_INPUT } from '../../src/v2/cityCode';
 import { fmgOceanShore } from '../../src/v2/externalCity/fmgShore';
+import { fmgCityNetwork } from '../../src/v2/externalCity/fmgNetwork';
 import { rasterizeCoastTrace } from '../../src/v2/coastTrace';
 import { cityEmbedSettings } from '../../src/v2/cityEmbedGeneration';
 import { effectiveTerrainSettings } from '../../src/v2/terrainSettings';
@@ -18,6 +19,26 @@ const LINK = 'https://watabou.github.io/city-generator/?name=Ulmdorf&population=
 const ROW = `7,Ulmdorf,Ulmia,"Margraviate of Ulmia, North",Shwazenland,Kingdom of Shwazenland,Shwazen,Old Faith,city,River,12345,,0,0,,0,,512.3,300.1,48.2,10.1,1968,70°F,Germany,capital,,citadel,walls,plaza,temple,,"{t1:gules;ordinary:[]}",${LINK},"trade, old"`;
 
 describe('parseAzgaarBurg', () => {
+  it('imports the town-bank river and main land roads in the same local frame', () => {
+    const cells = { r: [1], area: [16], p: [[0, 0]] as [number, number][], routes: { 0: { 1: 2, 2: 3 } } };
+    const river = { i: 1, width: 0.04, cells: [0], points: [[-8, 0.2], [0, 0.15], [8, 0.3]] as [number, number][] };
+    const network = fmgCityNetwork({ cells, rivers: [river], routes: [
+      { i: 2, group: 'roads', points: [[0, -8, 1], [0, 0, 0], [0, 8, 4]] },
+      { i: 3, group: 'trails', points: [[-8, -8, 2], [0, 0, 0]] },
+    ] }, 0, 0, 0);
+    expect(network.roads).toHaveLength(1);
+    const hints = parseAzgaarBurg(JSON.stringify({ format: 'fmg-burg-v1', i: 1, name: 'Crossing', population: 2500, river: true, network }))!;
+    const preview = cityEmbedSettings(hints, false);
+    expect(preview.terrain?.importedRiver?.width).toBeGreaterThan(15);
+    const riverPath = preview.terrain!.importedRiver!.points;
+    expect(riverPath[0][0]).toBe(0);
+    expect(riverPath.at(-1)![0]).toBe(1);
+    expect(riverPath.find(([x]) => Math.abs(x - 0.5) < 0.02)![1]).toBeGreaterThan(0.54);
+    const road = preview.roadOverrides!.routes!['draw:fmg-0'][0];
+    expect(road.path).toContainEqual({ x: 900, y: 900 });
+    expect(road.path.at(-1)).toMatchObject({ x: 900, y: 1800 });
+    expect(preview.region?.roads?.exits).toEqual({ highway: 0, main: 0, local: 0, track: 0 });
+  });
   it('traces a multi-edge ocean shore with a dry burg and preserves its scale in the iframe', () => {
     const p: [number, number][] = [[-5, -2], [-3, -1], [0, 0], [3, 1.3], [5, 2], [5, 6], [-5, 6]];
     const graph = {
