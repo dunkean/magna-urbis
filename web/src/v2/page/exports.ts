@@ -10,7 +10,7 @@ import { resolveSettingsAppearance, resolvedDisplayOptions } from '../appearance
 import { lookOfVariant, presetComposition } from '../../render/composition';
 import { isTerrainStyle } from '../../render/terrainStyle';
 import { mapMetadata } from '../exportMetadata';
-import { orthographicExportFrame, uvttDocument, uvttFrame } from '../uvtt';
+import { orthographicExportFrame, UVTT_MAX_GRID_PIXELS, UVTT_MIN_GRID_PIXELS, UVTT_TOKEN_CELL_METRES, uvttDocument, uvttFrame, type UvttFrame } from '../uvtt';
 import { encodeVttMap, isVttExport, type VttExport } from '../vttFormats';
 import { encodeMapMesh, isMeshExport, type MeshExport } from '../meshFormats';
 import { viewRect } from '../../render/view';
@@ -156,7 +156,7 @@ export function createExportsActions(state: PageState, actions: PageActions) {
     return { settings, resolved: resolveSettingsAppearance(settings, world, 'export') };
   }
 
-  async function mapExportArea(world: World, width: number, appearance: ReturnType<typeof exportAppearance>, layers: Partial<ExportLayers>): Promise<ExportArea | null> {
+  async function mapExportArea(world: World, width: number, appearance: ReturnType<typeof exportAppearance>, layers: Partial<ExportLayers>, validate?: (rect: ExportRect) => string | undefined): Promise<ExportArea | null> {
     setText($('#export-note'), 'Preparing the map preview…');
     const bounds = { x: 0, y: 0, width: world.mapSize, height: world.mapSize };
     const { settings, resolved } = appearance;
@@ -167,7 +167,7 @@ export function createExportsActions(state: PageState, actions: PageActions) {
     } finally {
       preview.width = preview.height = 0;
     }
-    return chooseExportArea(png, bounds, width, bindTree);
+    return chooseExportArea(png, bounds, width, bindTree, validate);
   }
 
   async function mapExportRect(world: World, width: number, crop: boolean, appearance: ReturnType<typeof exportAppearance>, layers: Partial<ExportLayers>): Promise<ExportRect | null> {
@@ -186,13 +186,27 @@ export function createExportsActions(state: PageState, actions: PageActions) {
     const world = state.world!;
     const appearance = exportAppearance(world, true);
     const layers = exportLayers();
-    const rect = await mapExportRect(world, width, crop, appearance, layers);
-    if (!rect) return null;
     const grid = $<HTMLInputElement>('#export-vtt-grid');
     if (!grid.checkValidity()) throw new Error(translate('Enter a positive distance per VTT grid cell.'));
-    const frame = uvttFrame(rect, width, grid.value === '' ? undefined : grid.valueAsNumber);
-    if (frame.pixelsPerGrid < 50) throw new Error(translate('Use a larger distance per cell, a higher resolution, or a smaller export area. The VTT grid needs at least 50 pixels per cell.'));
-    if (!Number.isFinite(frame.pixelsPerGrid) || frame.pixelsPerGrid > Math.max(frame.width, frame.height)) throw new Error(translate('The VTT grid cell is larger than the export area.'));
+    const universal = format === 'dd2vtt';
+    const requestedMetres = grid.value === '' ? undefined : grid.valueAsNumber;
+    const tokenCellMetres = requestedMetres ?? UVTT_TOKEN_CELL_METRES;
+    const metres = universal ? tokenCellMetres : requestedMetres;
+    const gridProblem = (frame: UvttFrame): string | undefined => {
+      const { pixelsPerGrid } = frame;
+      if (!Number.isFinite(pixelsPerGrid) || pixelsPerGrid > width) return translate('The VTT grid cell is larger than the export area.');
+      if (!universal && pixelsPerGrid < 50) return translate('Use a larger distance per cell, a higher resolution, or a smaller export area. The VTT grid needs at least 50 pixels per cell.');
+      if (universal && pixelsPerGrid < UVTT_MIN_GRID_PIXELS) {
+        const maxSide = Math.floor((width * tokenCellMetres) / UVTT_MIN_GRID_PIXELS);
+        return translate('With this resolution and grid scale, select an area up to {length} m on its longest side.').replace('{length}', maxSide.toLocaleString(numberLocale()));
+      }
+      if (universal && pixelsPerGrid > UVTT_MAX_GRID_PIXELS) return translate('Select a larger area, use a lower resolution, or reduce the distance per cell. MapTool supports up to 350 pixels per cell.');
+    };
+    const rect = crop ? (await mapExportArea(world, width, appearance, layers, area => gridProblem(uvttFrame(area, width, metres))))?.rect : { x: 0, y: 0, width: world.mapSize, height: world.mapSize };
+    if (!rect) return null;
+    const frame = uvttFrame(rect, width, metres);
+    const problem = gridProblem(frame);
+    if (problem) throw new Error(problem);
     setText($('#export-note'), 'Rendering the VTT map…');
     const canvas = await state.client.exportBench(appearance.settings, appearance.resolved, width, layers, frame, world);
     try {
@@ -272,6 +286,7 @@ export function createExportsActions(state: PageState, actions: PageActions) {
     const format = select.value;
     $('#export-map-options').hidden = !['png', 'svg'].includes(format) && !isVttExport(format) && !isMeshExport(format);
     $('#export-vtt-options').hidden = !isVttExport(format);
+    $<HTMLInputElement>('#export-vtt-grid').placeholder = format === 'dd2vtt' ? UVTT_TOKEN_CELL_METRES.toLocaleString(numberLocale()) : translate('Automatic');
     $('#export-mesh-options').hidden = !isMeshExport(format);
     $('#export-metadata-options').hidden = !isMeshExport(format) && !isVttExport(format);
     const explicit: Record<string, string> = {
@@ -284,7 +299,7 @@ export function createExportsActions(state: PageState, actions: PageActions) {
       foundry: 'Includes a Foundry 14 scene JSON and its background image.',
       owlbear: 'Includes a PNG for the scene importer and UVTT for Smoke & Spectre!.',
       roll20: 'Import this UVTT from the Roll20 page menu using Upload Background.',
-      dd2vtt: 'Exports a detailed overhead map, walls and gates. Set the cell distance in your VTT after importing.',
+      dd2vtt: 'The default grid is 1.5 m per cell. Crop to a town or a district for correctly sized tokens in MapTool.',
       capture3d: 'Capture the current 3D camera at the displayed size.',
     };
     const visual = available ? 'Visual exports use the current map without rerunning generation.' : 'SVG is unavailable for the current style. Use PNG.';
@@ -320,9 +335,17 @@ export function mountExports(state: PageState, actions: PageActions): void {
     'The selected area and layers contain no 3D meshes.': { en: 'The selected area and layers contain no 3D meshes.', fr: 'La zone et les calques sélectionnés ne contiennent aucun maillage 3D.' },
     'Metres per VTT grid cell': { en: 'Metres per VTT grid cell', fr: 'Mètres par case VTT' },
     'Buildings block vision': { en: 'Buildings block vision', fr: 'Les bâtiments bloquent la vision' },
-    'Exports a detailed overhead map, walls and gates. Set the cell distance in your VTT after importing.': {
-      en: 'Exports a detailed overhead map, walls and gates. Set the cell distance in your VTT after importing.',
-      fr: 'Exporte une carte détaillée vue du dessus, les murs et les portes. Réglez la distance par case dans le VTT après l’import.',
+    'The default grid is 1.5 m per cell. Crop to a town or a district for correctly sized tokens in MapTool.': {
+      en: 'The default grid is 1.5 m per cell. Crop to a town or a district for correctly sized tokens in MapTool.',
+      fr: 'La grille utilise 1,5 m par case par défaut. Recadrez sur une ville ou un quartier pour obtenir des pions à la bonne taille dans MapTool.',
+    },
+    'With this resolution and grid scale, select an area up to {length} m on its longest side.': {
+      en: 'With this resolution and grid scale, select an area up to {length} m on its longest side.',
+      fr: 'Avec cette résolution et cette échelle de grille, sélectionnez une zone de {length} m maximum sur son côté le plus long.',
+    },
+    'Select a larger area, use a lower resolution, or reduce the distance per cell. MapTool supports up to 350 pixels per cell.': {
+      en: 'Select a larger area, use a lower resolution, or reduce the distance per cell. MapTool supports up to 350 pixels per cell.',
+      fr: 'Agrandissez la zone, baissez la résolution ou réduisez la distance par case. MapTool accepte jusqu’à 350 pixels par case.',
     },
     'Enter a positive distance per VTT grid cell.': { en: 'Enter a positive distance per VTT grid cell.', fr: 'Saisissez une distance positive par case VTT.' },
     'Use a larger distance per cell, a higher resolution, or a smaller export area. The VTT grid needs at least 50 pixels per cell.': {

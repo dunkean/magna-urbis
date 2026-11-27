@@ -20,6 +20,11 @@ export interface UvttFrame extends ExportFrame {
   metresPerGrid: number;
 }
 
+export const UVTT_TOKEN_CELL_METRES = 1.5;
+// MapTool clamps imported square grids outside this range.
+export const UVTT_MIN_GRID_PIXELS = 9;
+export const UVTT_MAX_GRID_PIXELS = 350;
+
 export function orthographicExportFrame(rect: ExportRect, longestEdge: number): ExportFrame {
   const { width, height } = exportPixelSize(rect, longestEdge);
   const scale = longestEdge / Math.max(rect.width, rect.height);

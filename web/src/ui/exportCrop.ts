@@ -34,7 +34,7 @@ export async function chooseExportCrop(blob: Blob, longestEdge: number, localize
 }
 
 /** The same crop UI accepts vector and raster previews. Bounds are map metres. */
-export function chooseExportArea(blob: Blob, bounds: ExportRect, longestEdge: number, localize?: (dialog: HTMLDialogElement) => void): Promise<ExportArea | null> {
+export function chooseExportArea(blob: Blob, bounds: ExportRect, longestEdge: number, localize?: (dialog: HTMLDialogElement) => void, validate?: (rect: ExportRect) => string | undefined): Promise<ExportArea | null> {
   let selection = { ...bounds };
   const dialog = document.createElement('dialog');
   dialog.className = 'export-crop';
@@ -73,6 +73,7 @@ export function chooseExportArea(blob: Blob, bounds: ExportRect, longestEdge: nu
         .map(([key, label]) => `<label>${label}<input data-field="${key}" type="number" step="any"></label>`)
         .join('')}</div>
     </details>
+    <p class="export-crop-help" role="status" data-crop-validation hidden></p>
     <div class="dialog-actions">
       <button type="button" data-action="cancel">Annuler</button>
       <button type="button" class="primary" data-action="export">Exporter</button>
@@ -84,6 +85,8 @@ export function chooseExportArea(blob: Blob, bounds: ExportRect, longestEdge: nu
   const mapSize = dialog.querySelector<HTMLOutputElement>('[data-size="map"]')!;
   const pixelSize = dialog.querySelector<HTMLOutputElement>('[data-size="pixels"]')!;
   const fields = Array.from(dialog.querySelectorAll<HTMLInputElement>('input'));
+  const validation = dialog.querySelector<HTMLElement>('[data-crop-validation]')!;
+  const submit = dialog.querySelector<HTMLButtonElement>('[data-action="export"]')!;
   const distanceFormat = new Intl.NumberFormat(document.documentElement.lang || 'fr', { maximumSignificantDigits: 4 });
   const pixelFormat = new Intl.NumberFormat(document.documentElement.lang || 'fr');
   const url = URL.createObjectURL(blob);
@@ -101,6 +104,10 @@ export function chooseExportArea(blob: Blob, bounds: ExportRect, longestEdge: nu
     mapSize.value = `${distanceFormat.format(width / divisor)} × ${distanceFormat.format(height / divisor)} ${kilometres ? 'km' : 'm'}`;
     const pixels = exportPixelSize(selection, longestEdge);
     pixelSize.value = `${pixelFormat.format(pixels.width)} × ${pixelFormat.format(pixels.height)} px`;
+    const problem = validate?.(selection);
+    validation.textContent = problem ?? '';
+    validation.hidden = !problem;
+    submit.disabled = !!problem;
     for (const input of fields) {
       const key = input.dataset.field as keyof ExportRect;
       input.value = String(Number(selection[key].toFixed(3)));
@@ -172,7 +179,7 @@ export function chooseExportArea(blob: Blob, bounds: ExportRect, longestEdge: nu
       resolve(result);
     };
     dialog.querySelectorAll<HTMLButtonElement>('[data-action="cancel"]').forEach(button => (button.onclick = () => dialog.close()));
-    dialog.querySelector<HTMLButtonElement>('[data-action="export"]')!.onclick = () => {
+    submit.onclick = () => {
       result = { rect: { ...selection }, ...exportPixelSize(selection, longestEdge) };
       dialog.close();
     };

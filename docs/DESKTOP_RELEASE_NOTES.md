@@ -1,5 +1,7 @@
 ## Alpha 0.3.11
 
+- Universal VTT exports default to a 1.5 metre grid for correctly sized tokens. The crop preview flags areas that exceed MapTool's grid limits.
+- Unity map packages assign the terrain texture to the imported terrain material.
 - Godot exports start with a lit, angled camera that frames the terrain and buildings across the exported elevation range.
 
 - Draw, move and resize the export area directly on the map preview, with live distances and pixel dimensions. Cropped PNGs render at full resolution after you select the area.

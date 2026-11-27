@@ -52,14 +52,22 @@ describe('3D map packages', () => {
     const first = gunzipSync((await encodeMapMesh(mesh, 'unity', 'town', png)).bytes);
     const second = gunzipSync((await encodeMapMesh(mesh, 'unity', 'town', png)).bytes);
     expect(first).toEqual(second);
-    const paths: string[] = [];
+    const files: Record<string, string> = {};
     for (let at = 0; first[at];) {
       const name = strFromU8(first.slice(at, at + 100)).split('\0')[0];
       const size = Number.parseInt(strFromU8(first.slice(at + 124, at + 135)), 8);
-      if (name.endsWith('/pathname')) paths.push(strFromU8(first.slice(at + 512, at + 512 + size)));
+      files[name] = strFromU8(first.slice(at + 512, at + 512 + size));
       at += 512 + Math.ceil(size / 512) * 512;
     }
-    expect(paths).toEqual(['map.obj', 'map.mtl', 'terrain.png'].map(name => 'Assets/Magna Urbis/town/' + name));
+    const ids = Object.fromEntries(
+      Object.entries(files)
+        .filter(([name]) => name.endsWith('/pathname'))
+        .map(([name, path]) => [path.split('/').at(-1), name.split('/')[0]]),
+    );
+    expect(Object.keys(ids)).toEqual(['map.obj', 'map.mtl', 'terrain.png', 'Map.shader', 'Terrain.mat']);
+    expect(files[`${ids['map.obj']}/asset.meta`]).toContain(`guid: ${ids['Terrain.mat']}, type: 2`);
+    expect(files[`${ids['Terrain.mat']}/asset`]).toContain(`fileID: 2800000, guid: ${ids['terrain.png']}, type: 3`);
+    expect(files[`${ids['terrain.png']}/asset.meta`]).toContain('textureShape: 1');
   });
 });
 

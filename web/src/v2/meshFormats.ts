@@ -1,5 +1,6 @@
 import { gzipSync, strToU8, zipSync } from 'fflate';
 import type { MapMesh } from './mapMesh';
+import unityTerrainShader from './unityTerrain.shader?raw';
 
 export type MeshExport = 'obj' | 'glb' | 'godot' | 'unity';
 export const isMeshExport = (format: string): format is MeshExport => format === 'obj' || format === 'glb' || format === 'godot' || format === 'unity';
@@ -86,6 +87,7 @@ export function mapGlb(scene: MapMesh, texture?: Uint8Array): Uint8Array<ArrayBu
 }
 
 const number = (value: number): string => String(Math.round(value * 100000) / 100000);
+const objMaterialName = (color: string, textured: boolean): string => (textured ? 'Terrain' : `Color_${color.slice(1)}`);
 
 export function mapObj(scene: MapMesh, texture?: Uint8Array): Record<string, Uint8Array> {
   const materials = new Map<string, string>();
@@ -102,7 +104,7 @@ export function mapObj(scene: MapMesh, texture?: Uint8Array): Record<string, Uin
     const key = textured ? 'Terrain' : part.color;
     let material = materials.get(key);
     if (!material) {
-      material = textured ? 'Terrain' : `Color_${part.color.slice(1)}`;
+      material = objMaterialName(part.color, textured);
       materials.set(key, material);
     }
     const lines: string[] = [];
@@ -168,18 +170,84 @@ near = ${Math.max(0.01, extent / 2000)}
 far = ${distance + 2 * extent}
 current = true
 `;
-  const config = 'config_version=5\n\n[application]\nconfig/name="Magna Urbis"\nrun/main_scene="res://map.tscn"\n\n[display]\nwindow/size/viewport_width=1280\nwindow/size/viewport_height=800\nwindow/stretch/mode="canvas_items"\n\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n';
+  const config =
+    'config_version=5\n\n[application]\nconfig/name="Magna Urbis"\nrun/main_scene="res://map.tscn"\n\n[display]\nwindow/size/viewport_width=1280\nwindow/size/viewport_height=800\nwindow/stretch/mode="canvas_items"\n\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n';
   return zipSync({ 'project.godot': strToU8(config), 'map.tscn': strToU8(root), 'map.glb': mesh, ...metadataFiles(scene) }, { level: 1 });
 }
 
 /** Unity's local import package is a gzip tar of per-asset payload, .meta and pathname entries. */
-async function unityPackage(obj: Record<string, Uint8Array>, name: string): Promise<Uint8Array> {
+async function unityPackage(scene: MapMesh, name: string, texture?: Uint8Array): Promise<Uint8Array> {
+  const assets = { ...mapObj(scene, texture), ...metadataFiles(scene) };
+  const path = (file: string): string => `Assets/Magna Urbis/${name}/${file}`;
+  const guidFor = async (file: string): Promise<string> => {
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', strToU8(path(file))));
+    return Array.from(hash.subarray(0, 16), value => value.toString(16).padStart(2, '0')).join('');
+  };
+  const importSettings: Record<string, string> = {};
+  const [textureId, shaderId] = await Promise.all([guidFor('terrain.png'), guidFor('Map.shader')]);
+  assets['Map.shader'] = strToU8(unityTerrainShader);
+  const materials = new Map(scene.parts.map(part => [objMaterialName(part.color, !!texture && !!part.uvs), part.color]));
+  const remaps: string[] = [];
+  for (const [material, color] of materials) {
+    const file = `${material}.mat`;
+    const [r, g, b] = rgb(color).map(number);
+    const textureReference = material === 'Terrain' ? `{fileID: 2800000, guid: ${textureId}, type: 3}` : '{fileID: 0}';
+    assets[file] = strToU8(`%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_Name: ${material}
+  m_Shader: {fileID: 4800000, guid: ${shaderId}, type: 3}
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _MainTex:
+        m_Texture: ${textureReference}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Colors:
+    - _Color: {r: ${r}, g: ${g}, b: ${b}, a: 1}
+`);
+    importSettings[file] = 'NativeFormatImporter:\n  externalObjects: {}\n  mainObjectFileID: 2100000\n';
+    remaps.push(`  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: ${material}
+    second: {fileID: 2100000, guid: ${await guidFor(file)}, type: 2}`);
+  }
+  if (texture) {
+    importSettings['terrain.png'] = `TextureImporter:
+  serializedVersion: 13
+  textureType: 0
+  textureShape: 1
+  maxTextureSize: 4096
+  nPOTScale: 0
+  mipmaps:
+    enableMipMap: 1
+    sRGBTexture: 1
+  textureSettings:
+    serializedVersion: 2
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 4096
+`;
+  }
+  importSettings['map.obj'] = `ModelImporter:
+  serializedVersion: 22200
+  externalObjects:${remaps.length ? '\n' + remaps.join('\n') : ' {}'}
+  materials:
+    materialImportMode: 2
+    materialLocation: 1
+`;
   const files: Array<{ filename: string; bytes: Uint8Array }> = [];
-  for (const [file, bytes] of Object.entries(obj)) {
-    const path = `Assets/Magna Urbis/${name}/${file}`;
-    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(path)));
-    const guid = Array.from(hash.subarray(0, 16), value => value.toString(16).padStart(2, '0')).join('');
-    files.push({ filename: `${guid}/asset`, bytes }, { filename: `${guid}/asset.meta`, bytes: strToU8(`fileFormatVersion: 2\nguid: ${guid}\n`) }, { filename: `${guid}/pathname`, bytes: strToU8(path) });
+  for (const [file, bytes] of Object.entries(assets)) {
+    const guid = await guidFor(file);
+    files.push({ filename: `${guid}/asset`, bytes }, { filename: `${guid}/asset.meta`, bytes: strToU8(`fileFormatVersion: 2\nguid: ${guid}\n${importSettings[file] ?? ''}`) }, { filename: `${guid}/pathname`, bytes: strToU8(path(file)) });
   }
   const block = (length: number): number => Math.ceil(length / 512) * 512;
   const tar = new Uint8Array(files.reduce((size, { bytes }) => size + 512 + block(bytes.length), 1024));
@@ -211,7 +279,7 @@ async function unityPackage(obj: Record<string, Uint8Array>, name: string): Prom
 
 export async function encodeMapMesh(scene: MapMesh, format: MeshExport, name: string, texture?: Uint8Array): Promise<{ extension: string; bytes: Uint8Array; type: string }> {
   if (format === 'obj') return { extension: 'obj.zip', bytes: zipSync({ ...mapObj(scene, texture), ...metadataFiles(scene) }, { level: 1 }), type: 'application/zip' };
-  if (format === 'unity') return { extension: 'unitypackage', bytes: await unityPackage({ ...mapObj(scene, texture), ...metadataFiles(scene) }, name), type: 'application/gzip' };
+  if (format === 'unity') return { extension: 'unitypackage', bytes: await unityPackage(scene, name, texture), type: 'application/gzip' };
   const glb = mapGlb(scene, texture);
   if (format === 'godot') return { extension: 'godot.zip', bytes: godotProject(scene, glb), type: 'application/zip' };
   return { extension: 'glb', bytes: glb, type: 'model/gltf-binary' };

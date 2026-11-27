@@ -254,9 +254,11 @@ try {
       await crop.waitFor({ state: 'visible', timeout: 90000 });
       const box = await crop.locator('.export-crop-overlay').boundingBox();
       assert(box);
-      await page.mouse.move(box.x + box.width * 0.18, box.y + box.height * 0.26);
+      const half = format === 'dd2vtt' ? Math.min(0.32, 100 / Number(await crop.locator('[data-field="width"]').inputValue())) : 0.32;
+      const y = format === 'dd2vtt' ? 0.5 : 0.6;
+      await page.mouse.move(box.x + box.width * (0.5 - half), box.y + box.height * (y - half));
       await page.mouse.down();
-      await page.mouse.move(box.x + box.width * 0.82, box.y + box.height * 0.94, { steps: 8 });
+      await page.mouse.move(box.x + box.width * (0.5 + half), box.y + box.height * (y + half), { steps: 8 });
       await page.mouse.up();
       const measurement = await crop.locator('[data-size="pixels"]').textContent();
       assert(measurement?.includes('×'));
