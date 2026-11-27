@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import threading
 import time
 
 kernel = c.WinDLL("kernel32", use_last_error=True)
@@ -87,7 +88,7 @@ def process_table():
         close(handle)
 
 
-def sample(root, mask, stream):
+def process_tree(root):
     table = process_table()
     children = {root}
     while True:
@@ -95,7 +96,11 @@ def sample(root, mask, stream):
         if expanded == children:
             break
         children = expanded
-    for pid in sorted(children & table.keys()):
+    return {pid: table[pid] for pid in sorted(children & table.keys())}
+
+
+def sample(table, mask, stream):
+    for pid, (parent, image) in table.items():
         handle = open_process(0x1000, False, pid)
         if not handle:
             continue
@@ -107,7 +112,6 @@ def sample(root, mask, stream):
                 continue
             if not get_affinity(handle, c.byref(affinity), c.byref(system)):
                 continue
-            parent, image = table[pid]
             stream.write(json.dumps(dict(atMs=read_at, pid=pid, parent=parent, image=image,
                                          createdFileTime=born.value, cycles=count.value,
                                          cpuMs=(ktime.value + utime.value) / 10_000,
@@ -116,6 +120,38 @@ def sample(root, mask, stream):
                 raise RuntimeError(f"Process {pid} ({image}) escaped the requested affinity: {hex(affinity.value)}")
         finally:
             close(handle)
+
+
+def sample_until_exit(process, mask, stream):
+    # Toolhelp scans the whole machine. Refresh the tree independently so a
+    # slow scan does not widen all the cycle sampling intervals.
+    table = {}
+    stop = threading.Event()
+    discovery_errors = []
+
+    def discover():
+        nonlocal table
+        try:
+            while not stop.is_set():
+                table = process_tree(process.pid)
+                stop.wait(0.25)
+        except OSError as error:
+            discovery_errors.append(error)
+
+    observer = threading.Thread(target=discover, daemon=True)
+    observer.start()
+    try:
+        deadline = time.monotonic() + 30 * 60
+        while process.poll() is None:
+            if discovery_errors:
+                raise discovery_errors[0]
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Profiling campaign exceeded 30 minutes")
+            sample(table, mask, stream)
+            time.sleep(0.01)
+    finally:
+        stop.set()
+        observer.join()
 
 
 def summarize(output):
@@ -182,7 +218,8 @@ def main():
         raise RuntimeError("A Rust build is active. Wait for its shared window to close before starting")
     output = args.run.resolve()
     output.mkdir(parents=True)
-    dump(output / "run.json", config | dict(affinity=hex(mask), cpus=cpus, pmu=args.pmu, samplerIntervalMs=10))
+    dump(output / "run.json", config | dict(affinity=hex(mask), cpus=cpus, pmu=args.pmu,
+                                            samplerIntervalTargetMs=10, processDiscoveryPauseMs=250))
     kernel_trace = output / "cycles.etl"
     tracing = False
     process = None
@@ -203,14 +240,12 @@ def main():
                 process = subprocess.Popen(["node", str(SCRIPTS / "v7_profile_browser.mjs"), str(args.config.resolve()), str(output)],
                                            env=env, stdout=log, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NO_WINDOW)
         finally:
-            set_affinity(current(), affinity)
+            # Keep the collector off the measured CPUs. The Node child and
+            # its native engine and Chrome retain the affinity inherited above.
+            if not set_affinity(current(), affinity.value & ~mask or affinity.value):
+                raise c.WinError(c.get_last_error())
         with (output / "cpu.ndjson").open("w", encoding="utf-8", buffering=65536) as stream:
-            deadline = time.monotonic() + 30 * 60
-            while process.poll() is None:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("Profiling campaign exceeded 30 minutes")
-                sample(process.pid, mask, stream)
-                time.sleep(0.01)
+            sample_until_exit(process, mask, stream)
         if process.returncode:
             raise SystemExit(process.returncode)
     finally:
