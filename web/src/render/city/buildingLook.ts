@@ -102,17 +102,18 @@ function tintedWall(wall: string, tint: string | undefined, palette: CityPalette
       .join('')
   );
 }
-export const SATELLITE_SHADOW_OPACITY = 0.4;
+export const SATELLITE_SHADOW_OPACITY = 0.54;
 
 /** Fill of the height shadows cast on the ground. Neutral attenuation cannot brighten any channel of the receiving
  * ground. On a natural ground the cast is a near-black cool shade, and on snow the blue of skylit shade (snow is
  * lighter than that tint in every channel). */
-export function castShadowFill(palette: CityPalette, night: boolean, snowAltitude?: number): string {
+export function castShadowFill(palette: CityPalette, night: boolean, snowAltitude?: number, satellite = false): string {
+  if (satellite && !night) return `rgba(20,27,34,${SATELLITE_SHADOW_OPACITY})`;
   if (palette === 'parchment') return 'rgba(0,0,0,0.2)';
   const snow = palette === 'terrain' && !night ? mapGroundSnow(snowAltitude) : -1;
   if (palette !== 'terrain') return 'rgba(0,0,0,0.3)';
   if (snow > 0.3) return 'rgba(22,38,70,0.36)';
-  return snow >= 0 ? 'rgba(10,14,24,0.4)' : `rgba(0,0,0,${SATELLITE_SHADOW_OPACITY})`;
+  return snow >= 0 ? 'rgba(10,14,24,0.4)' : 'rgba(0,0,0,0.4)';
 }
 
 // ---------------------------------------------------------------- roof pans
@@ -278,8 +279,8 @@ export const volumeWallColor = (f: RoofFrame, item: CityBuilding, pan: Omit<Volu
 const shadowTints = new Map<string, [number, number, number, number]>();
 /** The cast shadow fill by day as a straight RGBA tint (the snow of the first building's ground, as the Canvas town's
  * shadow pass reads it). The plan path keeps black at 0.3 on every ground but parchment (planPath.ts). */
-export function castShadowTint(palette: CityPalette, planPath: PlanPath | undefined, snowAltitude?: number): [number, number, number, number] {
-  const css = planPath && palette !== 'parchment' ? 'rgba(0,0,0,0.3)' : castShadowFill(palette, false, snowAltitude);
+export function castShadowTint(palette: CityPalette, planPath: PlanPath | undefined, snowAltitude?: number, satellite = false): [number, number, number, number] {
+  const css = planPath && palette !== 'parchment' ? 'rgba(0,0,0,0.3)' : castShadowFill(palette, false, snowAltitude, satellite);
   let tint = shadowTints.get(css);
   if (!tint) {
     const m = /rgba?\((\d+)\D+(\d+)\D+(\d+)(?:\D+([\d.]+))?/.exec(css);

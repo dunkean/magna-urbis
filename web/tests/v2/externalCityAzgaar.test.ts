@@ -21,9 +21,9 @@ const ROW = `7,Ulmdorf,Ulmia,"Margraviate of Ulmia, North",Shwazenland,Kingdom o
 describe('parseAzgaarBurg', () => {
   it('imports the town-bank river and main land roads in the same local frame', () => {
     const cells = { r: [1], area: [16], p: [[0, 0]] as [number, number][], routes: { 0: { 1: 2, 2: 3 } } };
-    const river = { i: 1, width: 0.04, cells: [0], points: [[-8, 0.2], [0, 0.15], [8, 0.3]] as [number, number][] };
+    const river = { i: 1, source: 4, width: 0.04, cells: [4, 0, 5], points: [[-8, 0.2], [0, 0.15], [8, 0.3]] as [number, number][] };
     const network = fmgCityNetwork({ cells, rivers: [river], routes: [
-      { i: 2, group: 'roads', points: [[0, -8, 1], [0, 0, 0], [0, 8, 4]] },
+      { i: 2, group: 'roads', points: [[0, -4, 1], [0, 0, 0], [0, 4, 4]] },
       { i: 3, group: 'trails', points: [[-8, -8, 2], [0, 0, 0]] },
     ] }, 0, 0, 0);
     expect(network.roads).toHaveLength(1);
@@ -40,6 +40,28 @@ describe('parseAzgaarBurg', () => {
     expect(road.path.some(p => p.y > 1640 && p.y < 1790 && Math.abs(p.x - 900) > 3)).toBe(true);
     expect(road.path.at(-1)).toMatchObject({ x: 900, y: 1800 });
     expect(preview.region?.roads?.exits).toEqual({ highway: 0, main: 0, local: 0, track: 0 });
+  });
+  it('keeps a source near the town centre and a connected eastern trail', () => {
+    const cells = { r: [63], area: [103], p: [[0, 0]] as [number, number][], routes: { 0: { 1: 9, 2: 99 } } };
+    const network = fmgCityNetwork({
+      cells,
+      rivers: [{ i: 63, source: 0, width: 0.11, cells: [0, 3], points: [[0, 0], [2, 8], [6, 20]] }],
+      routes: [
+        { i: 9, group: 'roads', points: [[0, 0, 0], [-8, 4, 1], [-30, 10, 4]] },
+        { i: 99, group: 'trails', points: [[0, 0, 0], [14.56, 4.98, 2], [15.52, -0.81, 5], [22.83, -7.75, 6]] },
+        { i: 100, group: 'trails', points: [[10, -8, 7], [7, -1, 8]] },
+      ],
+    }, 0, 0, 0);
+    expect(network.river?.headwater).toBe(true);
+    expect(network.trails).toHaveLength(1);
+    const hints = parseAzgaarBurg(JSON.stringify({ format: 'fmg-burg-v1', i: 18, name: 'Salyreragyrt', population: 7240, river: true, network }))!;
+    const settings = cityEmbedSettings(hints, false);
+    const channel = settings.terrain!.importedRiver!;
+    expect(channel.headwater).toBe(true);
+    expect(Math.hypot(channel.points[0][0] - 0.5, channel.points[0][1] - 0.5)).toBeLessThan(0.07);
+    const roads = Object.values(settings.roadOverrides!.routes!).flat();
+    expect(roads.map(r => r.cls)).toEqual(['main', 'local']);
+    expect(roads[1].path.at(-1)!.x).toBeGreaterThan(roads[1].path[0].x);
   });
   it('traces a multi-edge ocean shore with a dry burg and preserves its scale in the iframe', () => {
     const p: [number, number][] = [[-5, -2], [-3, -1], [0, 0], [3, 1.3], [5, 2], [5, 6], [-5, 6]];

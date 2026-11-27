@@ -4,6 +4,13 @@
  * Part of the town's look (city/look.ts); read by the Canvas town (drawCitySteps), the GPU town (live/cityLayer.ts)
  * and the raster itself.
  */
+import type { ResolvedAppearance } from '../appearanceRecipe';
+
+/** The town look follows the satellite recipe even when the host uses a cheaper ground shader. */
+export function usesSatelliteTown(appearance: ResolvedAppearance): boolean {
+  const look = appearance.composition.recipe.ground.look;
+  return look === 'satellite' || look === 'satellite-2' || !!appearance.traits?.satelliteVariant;
+}
 
 /** Metres per CSS pixel where the raster starts to fade in over the detailed buildings, and where it replaces them. */
 export const FAR_TOWN_FADE: readonly [number, number] = [1.6, 2.2];

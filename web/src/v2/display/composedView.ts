@@ -362,7 +362,7 @@ export class ComposedView {
       live.setLayer('text', createLiveTextLayer(gl, { placement: () => cartography.renderer?.liveText(), terrain: () => this.relief(), invalidate: map.compose }));
     }
     // One pair of volume layers for the page: they read the town and the trees of whichever map is on display.
-    if (!owners.volumes) {
+    if (!map.planarTown && !owners.volumes) {
       owners.volumes = true;
       live.setLayer('buildings', (this.buildings = createWorldBuildingsLayer(gl, this.volumes.buildings)));
       this.buildings.highlight(this.highlighted);
@@ -375,7 +375,7 @@ export class ComposedView {
       live.setLayer('overlay', cartography.renderer?.createLiveLayer(gl));
       live.invalidateLayer('text');
     }
-    const volumeBuildings = !!map.native && machineDecision().tier === 'capable' && volumeTownBuildings(map.resolved);
+    const volumeBuildings = !map.planarTown && !!map.native && machineDecision().tier === 'capable' && volumeTownBuildings(map.resolved);
     map.volumeBuildings = volumeBuildings;
     // Another building tier (city volumes or flat buildings) is a look of the same town: the town layer keeps its meshes
     // and draws the other tier (townLayer.ts planOnly); only other towns make a new layer.

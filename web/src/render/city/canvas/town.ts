@@ -391,7 +391,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
       if (roofs && pans) {
         let paths = roofShadowPaths.get(roofs);
         if (!paths) roofShadowPaths.set(roofs, (paths = []));
-        ctx.fillStyle = castShadowFill(palette, night, o.buildings.items[0]?.snowAltitude);
+        ctx.fillStyle = castShadowFill(palette, night, o.buildings.items[0]?.snowAltitude, o.farTown);
         let cast = 0;
         for (const i of o.buildings.bins.query(viewport)) {
           let path = paths[i];

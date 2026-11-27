@@ -105,6 +105,9 @@ export class BenchRenderer {
   useCanvasFastSatellite(): void {
     this.map.canvasFastSatellite = true;
   }
+  usePlanarTown(): void {
+    this.map.planarTown = true;
+  }
   set townStreetFilter(filter: TownProducts['streetFilter']) {
     this.products.town.streetFilter = filter;
   }

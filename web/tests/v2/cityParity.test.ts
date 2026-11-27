@@ -26,6 +26,8 @@ import { applySettlementStyle } from '../../src/ui/urbanSettlementStyles';
 import { CITY_DISPLAY_DEFAULTS, DEFAULT_CITY_ARCHITECTURE, cityRegionalStreets } from '../../src/render/cityContract';
 import { CITY_DEFAULT_PARCEL_FIT, CITY_RASTER_RESOLUTION, cityRasterSide, parcelFitOf, defaultCityLayoutConfig, CITY_LAYOUT_DEFAULTS } from '../../src/render/cityGeneration';
 import { cityBuildingAppearance, cityDrawOptions, city3dPlanOptions, volumeTownBuildings } from '../../src/render/cityDrawOptions';
+import { usesSatelliteTown } from '../../src/render/city/farTown';
+import { castShadowTint } from '../../src/render/city/buildingLook';
 import { ROOF_MODES } from '../../src/render/roofMode';
 import { URBAN_PHYSICAL_LAYERS, URBAN_PLAN_LAYERS, resolveAppearance, type AppearanceInput } from '../../src/render/appearanceRecipe';
 import type { V2Settings } from '../../src/v2/contracts';
@@ -690,6 +692,19 @@ describe('V2 and City Bench stay in sync', () => {
     }
     expect(read('../../src/ui/terrainRoads.ts')).toContain('strokeNaturalRoad(ctx');
     expect(read('../../src/render/cartography/roads.ts')).toContain('strokeNaturalRoad(ctx');
+  });
+
+  it('retains strong satellite shadows when the ground shader changes or uses the painted palette', () => {
+    const fast = presetComposition('satellite-light');
+    fast.ground.variant = 'render3d';
+    for (const composition of [fast, presetComposition('satellite-2')]) {
+      const r = resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d');
+      expect(usesSatelliteTown(r)).toBe(true);
+      expect(castShadowTint(r.city.palette, undefined, undefined, usesSatelliteTown(r))[3]).toBeGreaterThan(0.5);
+    }
+    const r = resolveAppearance({ style: 'parchment', composition: presetComposition('parchment') }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d');
+    expect(usesSatelliteTown(r)).toBe(false);
+    expect(castShadowTint(r.city.palette, undefined)[3]).toBe(0.2);
   });
 
   it('gives the same drawCity options to both pages for one resolved appearance', () => {

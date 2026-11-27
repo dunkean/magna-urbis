@@ -447,7 +447,7 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
     }
     if (pans) {
       // Massing shadows: each piece's outline swept by its own height (cityMassing.ts).
-      gl.uniform4fv(fillP.u.uTint, castShadowTint(palette, planPath, snowAltitude));
+      gl.uniform4fv(fillP.u.uTint, castShadowTint(palette, planPath, snowAltitude, o.live?.farTown));
       // Live look: each sample shaded once, as the Canvas fills one path per building (its pieces' shadows overlap).
       if (o.live) {
         gl.enable(gl.STENCIL_TEST);

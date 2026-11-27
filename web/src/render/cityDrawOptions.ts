@@ -19,6 +19,7 @@ import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { CityScene } from './cityCanvas';
 import { roadInkOf } from './roadStyle';
 import { townWaterColour } from './townWater';
+import { usesSatelliteTown } from './city/farTown';
 
 const finite = (value: number | undefined, fallback: number, min: number, max: number): number => (typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback);
 
@@ -97,7 +98,7 @@ export function cityDrawOptions(i: CityDrawInput): CityDrawOptions {
     roadLook: c.networks.roads.look,
     groundBlend: i.city.groundBlend === 'blended',
     deferNightTown: true,
-    farTown: !!a.traits?.satelliteVariant,
+    farTown: usesSatelliteTown(a),
     ...i.page,
     beforeBuildings: ctx => {
       if (c.vegetation.procedural) clearCityGroundUnderCanopy(ctx, i.frame.viewport, i.frame.mpp);

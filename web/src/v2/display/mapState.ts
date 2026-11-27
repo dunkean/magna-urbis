@@ -63,6 +63,8 @@ export class MapState {
   paintRevision = 0;
   /** The embed can select the Canvas path for its fast satellite button. */
   canvasFastSatellite = false;
+  /** A top-down-only host draws the town with the shared 2D roof and cast-shadow passes. */
+  planarTown = false;
 
   get canvasSatellite(): boolean {
     return this.canvasFastSatellite && this.resolved?.composition.recipe.preset === 'satellite-light';

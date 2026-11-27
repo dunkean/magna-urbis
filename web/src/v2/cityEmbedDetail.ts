@@ -32,6 +32,7 @@ export function detailedCityMap(data: DetailedCityResult, invalidate: () => void
     }
   }
   const firefox = isFirefox(), source = previous?.source ?? new BenchRenderer(invalidate);
+  source.usePlanarTown();
   source.townStreetFilter = cityEmbedShowsStreet;
   const renderer = previous?.renderer ?? (firefox ? new CityEmbedFrame(source, invalidate) : source);
   if (firefox) source.useCanvasFastSatellite();

@@ -23,8 +23,8 @@ const MAX_CELLS = 2048,
   MIN_CELL = 2;
 /** The mean of a detailed roof is darker than its base colour: shaded pans, pan joints, eave lines. */
 const ROOF_MEAN = 0.82;
-/** Ground offset of the cast shadow of a typical 8 m house, in the direction of the detailed pass. */
-const SHADOW_EAST = 8 * GROUND_SHADOW_EAST_PER_METRE,
+/** Give the cast shadow room to read after the overview texture is downsampled to a few pixels per house. */
+const SHADOW_EAST = 12 * GROUND_SHADOW_EAST_PER_METRE,
   SHADOW_SOUTH = SHADOW_EAST * 0.8;
 /** Mottle of the roofscape: tone of a whole block (±) and of a low-frequency noise (±), in relative luminance. */
 const BLOCK_MOTTLE = 0.02,
@@ -163,7 +163,7 @@ function buildRaster(scene: CityScene, b: CityBuildings, palette: CityPalette, n
     ctx0.stroke(g.path);
   }
   ctx0.setTransform(1, 0, 0, 1, 0, 0);
-  const shadeAlpha = palette === 'terrain' ? SATELLITE_SHADOW_OPACITY : palette === 'parchment' ? 0.2 : 0.3,
+  const shadeAlpha = night ? 0.3 : SATELLITE_SHADOW_OPACITY,
     image = ctx0.getImageData(0, 0, w, h),
     data = image.data,
     seed = Math.floor(hash(Math.round(x0), Math.round(y0)) * 4096);

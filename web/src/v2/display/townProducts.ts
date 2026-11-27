@@ -150,7 +150,7 @@ export class TownProducts implements Town {
         if (kind === 'content') this.map.invalidate();
         else this.map.repaint();
       },
-      volumeTownBuildings(this.map.resolved) && this.map.resolved?.target === 'view2d',
+      !this.map.planarTown && volumeTownBuildings(this.map.resolved) && this.map.resolved?.target === 'view2d',
       this.streetFilter,
     );
     // Another pass prepared the same cities while the volumes were built: keep one map.

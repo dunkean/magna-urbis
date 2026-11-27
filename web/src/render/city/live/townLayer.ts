@@ -38,7 +38,7 @@ import type { Box, CityLayers, CityLod, CityPalette, CityScene } from '../model/
 import { selectCityLod } from '../levels';
 import { planFrame, planLineWidthPx } from '../planLook';
 import { buildingsShown, roofPansShown, roofsGrained } from '../buildingLook';
-import { FAR_TOWN_FADE, farTownAlpha } from '../farTown';
+import { FAR_TOWN_FADE, farTownAlpha, usesSatelliteTown } from '../farTown';
 import { townRestGaps, type RestState, type TownContent } from '../restCoverage';
 import { townOpacity } from '../look';
 import { groundRoadLook } from '../../composition';
@@ -244,7 +244,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       buildingsVisible = vis.city !== false && city.visible,
       planOnlyLook = planOnly();
     // As drawCitySteps decides it (the look's farTownShown), for the towns of city volumes.
-    const farTown = !planOnlyLook && !!appearance.traits?.satelliteVariant && buildingsVisible && city.view === 'buildings' && buildingAppearance.style !== 'silhouette' && buildingAppearance.diagnostic === 'none';
+    const farTown = !planOnlyLook && usesSatelliteTown(appearance) && buildingsVisible && city.view === 'buildings' && buildingAppearance.style !== 'silhouette' && buildingAppearance.diagnostic === 'none';
     const next: Look = {
       appearance,
       visibility,
