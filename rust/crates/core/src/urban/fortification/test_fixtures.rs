@@ -123,6 +123,7 @@ pub(super) fn built_with(
     (e, streets)
 }
 
+/// The built works of `e`: not the ditch, which the streets cross.
 pub(super) fn structures(e: &Enclosure) -> Vec<Shape> {
     e.towers_detail
         .iter()
@@ -130,7 +131,6 @@ pub(super) fn structures(e: &Enclosure) -> Vec<Shape> {
         .chain(e.gatehouses.iter().flat_map(|g| g.masses.clone()))
         .chain(e.bastions.iter().map(|b| b.shape.clone()))
         .chain(e.outworks.iter().map(|w| w.shape.clone()))
-        .chain(e.ditch.iter().map(|w| w.shape.clone()))
         .chain(e.attached.iter().map(|a| a.shape.clone()))
         .collect()
 }
@@ -144,6 +144,11 @@ pub(super) fn town_on(style: &str, water: Vec<u8>) -> Vec<Layout> {
 }
 
 pub(super) fn town_with(style: &str, water: Vec<u8>, moat: &str) -> Vec<Layout> {
+    town_seeded("walls", style, water, moat)
+}
+
+/// `town_with` on another seed: the draws of a circuit (faubourg fronts, towers) differ.
+pub(super) fn town_seeded(seed: &str, style: &str, water: Vec<u8>, moat: &str) -> Vec<Layout> {
     let height = vec![10.0f32; N * N];
     let roads: Vec<Street> = [
         [(100.0, 1030.0), (1950.0, 1010.0)],
@@ -175,5 +180,5 @@ pub(super) fn town_with(style: &str, water: Vec<u8>, moat: &str) -> Vec<Layout> 
         radius: 420.0,
         neighbours: Vec::new(),
     };
-    generate_quarters("walls", &[site], &cfg, surface(&height, &water), &roads).unwrap()
+    generate_quarters(seed, &[site], &cfg, surface(&height, &water), &roads).unwrap()
 }

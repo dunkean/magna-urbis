@@ -32,7 +32,7 @@ impl<'a> WallWalk<'a> {
 
     pub(super) fn arc(&self, p: Point) -> f64 {
         let k = self.segment_of(p);
-        self.cum[k] + dist(self.path[k], p).min(dist(self.path[k], self.path[k + 1]))
+        self.cum[k] + g::distance(p, self.path[k], self.path[k + 1]).1 * dist(self.path[k], self.path[k + 1])
     }
 
     pub(super) fn along(&self, s: f64) -> (Point, usize) {

@@ -1361,7 +1361,7 @@ mod tests {
             let bare: Vec<_> = rows.iter().filter(|p| !used.contains(p.id.as_str())).collect();
             if bare.len() as f64 > rows.len() as f64 * 0.05 { failures.push(format!("{culture} river={river}: bare fringe {}/{} {:?}",bare.len(),rows.len(),bare.iter().map(|p|(&p.use_kind,&p.reason)).collect::<Vec<_>>())); }
             let indoor: Vec<_> = part.parcels.iter().filter(|p| enclosed(p) && matches!(p.use_kind.as_str(),"plot"|"compound"|"residual") && !used.contains(p.id.as_str()) && !explicit_open(p)).collect();
-            if !indoor.is_empty() { failures.push(format!("{culture} river={river}: {} vacant intra-muros lots",indoor.len())); }
+            if !indoor.is_empty() { failures.push(format!("{culture} river={river}: {} vacant intra-muros lots {:?}",indoor.len(),indoor.iter().map(|p|(&p.use_kind,&p.family,&p.reason,g::area(&p.shape).round(),g::interior_point(&p.shape),p.access.as_ref().map(|a|&a.kind))).collect::<Vec<_>>())); }
             let mut points = vec![];
             for p in part.parcels.iter().filter(|p| used.contains(p.id.as_str()) || explicit_open(p)
                 || (enclosed(p) || matches!(l.blocks[p.block].zone.as_str(),"core"|"middle"))

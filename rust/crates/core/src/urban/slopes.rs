@@ -231,7 +231,7 @@ fn open_reserves(layout: &Layout) -> Vec<bool> {
     layout.blocks.iter().enumerate().map(|(i, b)| b.kind == "reserve" && !held.contains(&i)).collect()
 }
 
-fn obstacles(layout: &Layout, roads: &[Street], reach: (f64, f64, f64, f64)) -> (Bounded, Bounded) {
+fn obstacles(layout: &Layout, roads: &[Street], reach: (f64, f64, f64, f64)) -> (Bounded, Bounded, Bounded) {
     let open = open_reserves(layout);
     let mut land: Bounded = layout.blocks.iter().zip(&open).filter(|(_, o)| !**o)
         .map(|(b, _)| (g::bbox(&b.shape), b.shape.clone())).collect();
@@ -242,9 +242,10 @@ fn obstacles(layout: &Layout, roads: &[Street], reach: (f64, f64, f64, f64)) -> 
     let near = |s: &&Street| s.path.iter().any(|&p| inside_bounds(reach, p));
     let corridors = layout.streets.iter().chain(roads.iter().filter(near))
         .flat_map(|s| g::ribbon(&s.path, &s.widths))
-        .chain(layout.enclosures.iter().flat_map(|e| g::ribbon(&e.path, &[e.curtain_width_m.max(4.0) + 2.0])))
         .map(|s| (g::bbox(&s), s)).collect();
-    (land, corridors)
+    let works = layout.enclosures.iter().flat_map(super::fortification::circuit_ground)
+        .map(|s| (g::bbox(&s), s)).collect();
+    (land, corridors, works)
 }
 
 fn cut(shape: Shape, against: &[&Bounded]) -> Vec<Shape> {
@@ -275,7 +276,7 @@ fn resample(path: &[Point], widths: &[f64], step: f64) -> Vec<(Point, f64, bool)
 }
 
 /// The runs of a street where `keep` holds, on the source line itself.
-fn clip(street: &Street, keep: impl Fn(Point) -> bool) -> Vec<Street> {
+fn clip(street: &Street, works: &Bounded, keep: impl Fn(Point) -> bool) -> Vec<Street> {
     let mut out = vec![];
     let mut run: Vec<(Point, f64)> = vec![];
     let mut flush = |run: &mut Vec<(Point, f64)>| {
@@ -286,7 +287,21 @@ fn clip(street: &Street, keep: impl Fn(Point) -> bool) -> Vec<Street> {
         run.clear();
     };
     for (p, w, _) in resample(&street.path, &street.widths, CLIP_STEP) {
-        if keep(p) { run.push((p, w)); } else { flush(&mut run); }
+        if !keep(p) {
+            flush(&mut run);
+            continue;
+        }
+        if let Some(&(q, width)) = run.last() {
+            let bounds = expand((p.x.min(q.x), p.y.min(q.y), p.x.max(q.x), p.y.max(q.y)), w.max(width) * 0.5);
+            let mut near = works.iter().filter(|(b, _)| overlaps(bounds, *b)).peekable();
+            if near.peek().is_some() {
+                let road = g::ribbon(&[q, p], &[width, w]);
+                if near.any(|(_, s)| road.iter().any(|r| !g::intersection(r, s).is_empty())) {
+                    flush(&mut run);
+                }
+            }
+        }
+        run.push((p, w));
     }
     flush(&mut run);
     out
@@ -339,10 +354,10 @@ fn reach_bounds(site: &Site) -> (f64, f64, f64, f64) {
 /// town left aside only: the existing town, its core and its streets stay.
 fn graft(layout: &mut Layout, terraces: &Layout, site: &Site, surface: Surface<'_>, roads: &[Street], others: &[Point]) -> bool {
     let d = (surface.width / surface.height_resolution() as f64).max(2.0);
-    let (land, corridors) = obstacles(layout, roads, reach_bounds(site));
+    let (land, corridors, works) = obstacles(layout, roads, reach_bounds(site));
     let mut blocks = vec![];
     for block in terraces.blocks.iter().filter(|b| b.kind == "block") {
-        for piece in cut(block.shape.clone(), &[&land, &corridors]) {
+        for piece in cut(block.shape.clone(), &[&land, &corridors, &works]) {
             if g::area(&piece) < MIN_PIECE || grade(g::interior_point(&piece), d, surface) > CLIFF_GRADE
                 || !piece.outer.iter().all(|&p| own_side(site, others, p)) { continue; }
             blocks.push((piece, block.axis));
@@ -357,7 +372,7 @@ fn graft(layout: &mut Layout, terraces: &Layout, site: &Site, surface: Surface<'
     let streets = terraces.streets.iter()
         .filter(|s| !matches!(s.role.as_str(), "regional" | "bridge" | "causeway" | "approach" | "quay"))
         .filter(|s| s.path.iter().any(|&p| near.iter().any(|&b| inside_bounds(b, p))))
-        .flat_map(|s| clip(s, &keep)).collect();
+        .flat_map(|s| clip(s, &works, &keep)).collect();
     add_ward(layout, blocks, streets, "terraces");
     true
 }
@@ -367,7 +382,7 @@ fn graft(layout: &mut Layout, terraces: &Layout, site: &Site, surface: Surface<'
 /// road pieces that serve the new plots join the town's streets.
 fn extend_frontage(layout: &mut Layout, site: &Site, surface: Surface<'_>, roads: &[Street], others: &[Point]) -> bool {
     let reach = reach_bounds(site);
-    let (land, corridors) = obstacles(layout, roads, reach);
+    let (land, corridors, works) = obstacles(layout, roads, reach);
     let d = (surface.width / surface.height_resolution() as f64).max(2.0);
     let regional: Vec<&Street> = roads.iter().filter(|r| r.role == "regional")
         .filter(|r| r.path.iter().any(|&p| inside_bounds(reach, p))).collect();
@@ -409,7 +424,7 @@ fn extend_frontage(layout: &mut Layout, site: &Site, surface: Surface<'_>, roads
     let mut blocks = vec![];
     for (_, shape, axis) in candidates.into_iter().take(MAX_STRIPS) {
         let dry = g::dry_clip(&surface, &shape);
-        let pieces: Vec<_> = dry.into_iter().flat_map(|s| cut(s, &[&land, &corridors, &added])).collect();
+        let pieces: Vec<_> = dry.into_iter().flat_map(|s| cut(s, &[&land, &corridors, &works, &added])).collect();
         for piece in pieces {
             // Reject cliff remnants; the house admission then checks the real
             // foundation at every supported pose on this retained platform.
@@ -425,7 +440,7 @@ fn extend_frontage(layout: &mut Layout, site: &Site, surface: Surface<'_>, roads
     let own: Vec<_> = layout.streets.iter().flat_map(|s| g::ribbon(&s.path, &s.widths)).map(|s| (g::bbox(&s), s)).collect();
     let keep = |p: Point| near.iter().any(|&b| inside_bounds(b, p))
         && !own.iter().any(|(b, s)| inside_bounds(*b, p) && g::contains(s, p));
-    let streets = regional.iter().flat_map(|r| clip(r, &keep)).collect();
+    let streets = regional.iter().flat_map(|r| clip(r, &works, &keep)).collect();
     add_ward(layout, blocks, streets, "frontage");
     true
 }
@@ -443,6 +458,16 @@ mod tests {
         serde_json::from_value(serde_json::json!({
             "key": site.key, "culture": "byzantine-greek", "center": site.center,
             "quarters": [], "streets": [], "blocks": [], "warnings": []})).unwrap()
+    }
+
+    #[test]
+    fn a_ward_road_keeps_its_full_width_outside_the_moat_reserve() {
+        let bank = g::rectangle(14.0, 1.0, 15.0, 4.0);
+        let road = Street { path: vec![Point { x: 0.0, y: 0.0 }, Point { x: 30.0, y: 0.0 }],
+            widths: vec![4.0; 2], rank: 2, role: "street".into() };
+        let pieces = clip(&road, &vec![(g::bbox(&bank), bank.clone())], |_| true);
+        assert_eq!(pieces.len(), 2);
+        assert!(pieces.iter().flat_map(|s| g::ribbon(&s.path, &s.widths)).all(|s| g::intersection(&s, &bank).is_empty()));
     }
 
     #[test]

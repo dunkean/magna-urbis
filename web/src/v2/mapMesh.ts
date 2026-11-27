@@ -184,7 +184,7 @@ export async function mapMesh(world: World, area: ExportRect, resolution: number
       true,
     );
     const streets = layers.streets === false ? [] : layouts.flatMap(layout => layout.streets);
-    terrain.shape = await finish(groundShapeSteps(world.mapSize, [{ lots, streets }], new UrbanGroundCuts(layouts.flatMap(layout => layout.enclosures ?? [])), natural));
+    terrain.shape = await finish(groundShapeSteps(world.mapSize, [{ lots, streets }], new UrbanGroundCuts(layouts.flatMap(layout => layout.enclosures ?? []), p => natural(p.x, p.y)), natural));
   }
   const heightAt = city3dWorldHeight(terrain);
   const display = await finish(city3dBuildingsSteps(local, { heightAt, ground, terraces }));

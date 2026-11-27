@@ -121,7 +121,7 @@ pub(in super::super) fn shared_length(a: &Shape, b: &Shape) -> f64 {
 }
 
 /// Ditch, outworks and lean-tos of an enclosure never run into the land of
-/// the enclosure it shares a stretch with.
+/// the enclosure it shares a stretch with: the moat runs stop at it.
 pub(in super::super) fn trim_shared(e: &mut Enclosure, other: &Shape) {
     let cut = |w: &mut Vec<Work>| {
         *w = std::mem::take(w).into_iter().flat_map(|k| {
@@ -129,7 +129,7 @@ pub(in super::super) fn trim_shared(e: &mut Enclosure, other: &Shape) {
                 .map(move |shape| Work { shape, ..k.clone() })
         }).collect();
     };
-    cut(&mut e.ditch);
+    super::moat::keep_off(e, other);
     cut(&mut e.outworks);
     cut(&mut e.bastions);
     e.attached.retain(|a| !g::contains(other, g::centroid(&a.shape)));

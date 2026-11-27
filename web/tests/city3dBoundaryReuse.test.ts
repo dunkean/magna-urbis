@@ -118,7 +118,21 @@ describe('retained 3D town boundaries', () => {
       kind: 'wall',
       height_m: 4,
       curtain_width_m: 2,
-      ditch: [{ kind: 'wet', height_m: 2, shape: { outer: [point(x, -14), point(x + 60, -14), point(x + 60, -5), point(x, -5)], holes: [] } }],
+      // A fed reach 20 m long, its outer lip the lower one; the engine heights follow the ground.
+      moat: {
+        form: 'earth',
+        depth_m: 3,
+        runs: [
+          {
+            inner: [point(x, -5), point(x + 10, -5), point(x + 20, -5)],
+            outer: [point(x, -14), point(x + 10, -14), point(x + 20, -14)],
+            rim: [0, 10, 20].map(d => yardAt(x + d, -14)),
+            bed: [0, 10, 20].map(d => yardAt(x + d, -14) - 3),
+            ends: ['work', 'work'],
+            reaches: [{ from: 0, to: 2, supply: 'fed', level: yardAt(x, -14) - 1 }],
+          },
+        ],
+      },
     });
     const layout = (e: Enclosure, culture: string) => ({ culture, enclosures: [e], streets: [], blocks: [], quarters: [] }) as unknown as Layout;
     const west = layout(circuit(100), 'roman-core'),
@@ -145,7 +159,7 @@ describe('retained 3D town boundaries', () => {
     expect(raised.walls[far]).not.toBe(initial.walls[far]);
     const styled = make([east, { ...west, culture: 'italian' }], [], true, '#242d30');
     expect(styled.walls[0].culture.culture).toBe(east.culture);
-    // The western ditch changes from full to stagnant across summer's threshold, within one rounded season key.
+    // The western ditch changes from full to low across summer's threshold, within one rounded season key.
     const previousSeason = mapSeasonState();
     try {
       setMapSeason(0.369, 'mediterranean');

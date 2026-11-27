@@ -376,6 +376,57 @@ fn inner_street_ends_at_the_wall_are_joined_by_the_wall_lane() {
     );
 }
 
+/// Invariant (inner ring roads, gates): the wall-lane sections beside a gate
+/// end on its gate street behind the gatehouse (a vertex they share), never in
+/// the passage, and the gate street keeps its whole path.
+#[test]
+fn wall_lane_sections_end_on_the_gate_street() {
+    use crate::urban::{Enclosure, Gatehouse, LayoutConfig, Quarter, Surface, geometry as g};
+    let height = vec![20.0; 64 * 64];
+    let water = vec![0; height.len()];
+    let surface = Surface { geometry: None, width: 1000.0, n: 64, height: &height, water: &water, interpolation: Default::default() };
+    let wall: Vec<Point> = [(195.0, 195.0), (400.0, 195.0), (400.0, 605.0), (195.0, 605.0), (195.0, 195.0)].iter().map(|&(x, y)| Point { x, y }).collect();
+    // A gatehouse reaching 3 m inside the east curtain, over the lane line.
+    let gatehouse = Gatehouse {
+        gate: 0,
+        kind: "tower".into(),
+        shape: g::rectangle(397.0, 394.0, 410.0, 406.0),
+        masses: vec![],
+        passage: [Point { x: 397.0, y: 400.0 }, Point { x: 410.0, y: 400.0 }],
+        passage_width_m: 6.0,
+        height_m: 8.0,
+    };
+    let enclosure = Enclosure {
+        path: wall,
+        kind: "palisade".into(),
+        gates: vec![Point { x: 400.0, y: 400.0 }],
+        reserve: vec![g::rectangle(400.0, 195.0, 401.5, 605.0)],
+        gatehouses: vec![gatehouse.clone()],
+        ..Default::default()
+    };
+    let quarters = [Quarter { shape: g::rectangle(195.0, 195.0, 400.0, 605.0), phase: 1, zone: "core".into() }];
+    // A street ending on the curtain north of the gate, and the gate street.
+    let mut streets = vec![street(&[(300.0, 300.0), (399.9, 300.0)], "street"), street(&[(300.0, 400.0), (420.0, 400.0)], "street")];
+    let gate_street = streets[1].clone();
+    let cfg = LayoutConfig { peripheral_road: "full".into(), ..Default::default() };
+    resolve_exits(&mut streets, &quarters, &[], std::slice::from_ref(&enclosure), surface, &cfg, &mut crate::rng::Rng::new("gate-lanes"));
+    let through = &streets[1];
+    assert_eq!((through.path[0], *through.path.last().unwrap()), (gate_street.path[0], gate_street.path[1]), "the gate street is not cut");
+    let lanes: Vec<&Street> = streets.iter().filter(|s| s.role == "wall-lane").collect();
+    let ends_on_gate = |l: &&Street| [l.path[0], *l.path.last().unwrap()].iter().any(|p| p.x < 400.0 && (p.y - 400.0).abs() < 1e-9 && through.path.contains(p));
+    assert!(lanes.iter().any(ends_on_gate), "a section ends on a vertex of the gate street: {:?}", lanes.iter().map(|l| &l.path).collect::<Vec<_>>());
+    for l in &lanes {
+        for w in l.path.windows(2) {
+            let steps = (distance(w[0], w[1]) / 0.5).ceil().max(1.0) as usize;
+            for k in 0..=steps {
+                assert!(!g::contains(&gatehouse.shape, lerp(w[0], w[1], k as f64 / steps as f64)), "a lane in the gate passage");
+            }
+        }
+    }
+    let end = *streets[0].path.last().unwrap();
+    assert!(lanes.iter().any(|l| l.path.windows(2).any(|w| g::distance(end, w[0], w[1]).0 < 0.05)), "{end:?} stops on the lane");
+}
+
 /// Every wall-lane section is laid, also with the "auto" peripheral
 /// setting: ten street ends along a curtain face leave no stretch of wall
 /// foot between them without the lane.

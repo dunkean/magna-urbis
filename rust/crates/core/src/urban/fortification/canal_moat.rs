@@ -81,7 +81,7 @@ impl<'a> Circuit<'a> {
             let half = water.width_m * 0.5;
             let wall_arc = self.walk.arc(at);
             let gate = self.gate(wall_arc, half / across + 0.25, at, run, joins);
-            let Some((gate, previous)) = gate else {
+            let Some(gate) = gate else {
                 continue;
             };
             let face = self.enclosure.curtain_width_m - inner;
@@ -119,7 +119,6 @@ impl<'a> Circuit<'a> {
                 joins.push(Join {
                     circuit: self.index,
                     gate,
-                    previous,
                     channel: None,
                 });
                 continue;
@@ -194,7 +193,6 @@ impl<'a> Circuit<'a> {
                 joins.push(Join {
                     circuit: self.index,
                     gate,
-                    previous,
                     channel: Some(channel),
                 });
                 break;
@@ -209,16 +207,12 @@ impl<'a> Circuit<'a> {
         at: Point,
         run: (f64, f64),
         joins: &[Join],
-    ) -> Option<(Gatehouse, Option<usize>)> {
+    ) -> Option<Gatehouse> {
         let e = self.enclosure;
         let walk = &self.walk;
-        let mut span = (arc - half, arc + half);
-        let mut previous = None;
-        // Reuse a land gate at the crossing and keep both its opening width and its masonry.
+        let span = (arc - half, arc + half);
+        // A canal needs its own span clear of every existing gate throat.
         for (i, &point) in e.gates.iter().enumerate() {
-            if dist(point, at) >= JOIN_REACH {
-                continue;
-            }
             let land = e
                 .gatehouses
                 .iter()
@@ -233,15 +227,7 @@ impl<'a> Circuit<'a> {
                         .max(0.5)
             }) + 0.3;
             if s + width > span.0 && s - width < span.1 {
-                if previous.is_some()
-                    || e.gatehouses
-                        .iter()
-                        .any(|g| g.gate == i && matches!(g.kind.as_str(), "water" | "shore"))
-                {
-                    return None;
-                }
-                span = (span.0.min(s - width), span.1.max(s + width));
-                previous = Some(i);
+                return None;
             }
         }
         let covered = |g: &Gatehouse| {
@@ -277,23 +263,15 @@ impl<'a> Circuit<'a> {
             [0.0, dist(passage[0], passage[1])],
             [-inner, e.curtain_width_m - inner],
         );
-        let land = previous.and_then(|i| {
-            e.gatehouses
-                .iter()
-                .find(|g| g.gate == i && g.kind != "ravelin")
-        });
-        Some((
-            Gatehouse {
-                gate: previous.unwrap_or(e.gates.len()),
-                kind: "water".into(),
-                shape,
-                masses: land.map_or_else(Vec::new, |g| g.masses.clone()),
-                passage,
-                passage_width_m: span.1 - span.0,
-                height_m: e.height_m,
-            },
-            previous,
-        ))
+        Some(Gatehouse {
+            gate: e.gates.len(),
+            kind: "water".into(),
+            shape,
+            masses: vec![],
+            passage,
+            passage_width_m: span.1 - span.0,
+            height_m: e.height_m,
+        })
     }
 
     fn obstructed(&self, channel: &Shape) -> bool {
@@ -320,7 +298,6 @@ pub(in crate::urban) fn overlaps(a: &Shape, b: &Shape) -> bool {
 pub(in crate::urban) struct Join {
     circuit: usize,
     gate: Gatehouse,
-    previous: Option<usize>,
     pub(in crate::urban) channel: Option<Waterway>,
 }
 
@@ -329,16 +306,36 @@ impl Join {
         let e = &mut enclosures[self.circuit];
         let mut gate = self.gate;
         // The water-gate renderer recognizes a real gate point at the bank and cuts only its span.
-        if let Some(i) = self.previous {
-            e.gates[i] = gate.passage[0];
-            e.gatehouses.retain(|g| g.gate != i || g.kind == "ravelin");
-        } else {
-            gate.gate = e.gates.len();
-            e.gates.push(gate.passage[0]);
-        }
+        gate.gate = e.gates.len();
+        e.gates.push(gate.passage[0]);
         e.gatehouses.push(gate);
         if let Some(channel) = self.channel {
             e.reserve.push(channel.shape);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_canal_needs_its_own_span_beside_a_land_gate() {
+        let pt = |x, y| Point { x, y };
+        let gate = pt(100.0, 0.0);
+        let e = Enclosure {
+            path: vec![pt(0.0, 0.0), pt(200.0, 0.0), pt(200.0, 200.0), pt(0.0, 200.0), pt(0.0, 0.0)],
+            kind: "wall".into(), curtain_width_m: 3.0, gates: vec![gate],
+            gatehouses: vec![Gatehouse { gate: 0, kind: "tower".into(), shape: g::rectangle(94.0, -3.0, 106.0, 3.0),
+                masses: vec![], passage: [pt(100.0, -5.0), pt(100.0, 5.0)], passage_width_m: 8.0, height_m: 6.0 }],
+            ..Default::default()
+        };
+        let front = Circuit::new(0, &e);
+        let outlet = |x| {
+            let at = pt(x, 0.0);
+            front.gate(front.walk.arc(at), 3.0, at, (0.0, -1.0), &[])
+        };
+        assert!(outlet(105.0).is_none());
+        assert_eq!(outlet(120.0).unwrap().kind, "water");
     }
 }

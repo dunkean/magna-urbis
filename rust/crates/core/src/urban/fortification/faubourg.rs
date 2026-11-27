@@ -19,7 +19,6 @@ const LEAN_MAX_FRONT: f64 = 12.0;
 pub(super) struct GateFronts {
     pub(super) attached: Vec<Attached>,
     pub(super) lanes: Vec<Street>,
-    pub(super) fronts: Vec<Shape>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -33,9 +32,9 @@ pub(super) fn lean_tos(
     moat: Moat,
     rng: &Rng,
 ) -> GateFronts {
-    let &BuildContext { style, path, surface, predicted, h, face, steep, wet, .. } = ctx;
+    let &BuildContext { style, path, surface, predicted, face, steep, wet, .. } = ctx;
     let Works { towers, gatehouses, bastions, outworks, .. } = works;
-    let Moat { dw, ditch_kind, .. } = moat;
+    let Moat { ditch_kind, .. } = moat;
     // --- faubourg gate fronts: lean-tos against the outer face beside the
     // major gates, each row with the lane that serves it (a dead end off the
     // gate street, round the gate structures), only on a circuit without a
@@ -44,7 +43,6 @@ pub(super) fn lean_tos(
     // approaches (no-build zone).
     let mut attached: Vec<Attached> = vec![];
     let mut lanes: Vec<Street> = vec![];
-    let mut fronts: Vec<Shape> = vec![];
     if style.attached > 0.0 && ditch_kind.is_none() && !ctx.has("glacis") && !ctx.has("ravelin") {
         let held: Vec<Shape> = towers
             .iter()
@@ -199,14 +197,6 @@ pub(super) fn lean_tos(
                     attached.truncate(first);
                     continue;
                 }
-                let far = o2 + lw * 0.5 + style.berm + dw + 2.0;
-                fronts.push(quad(
-                    base,
-                    along,
-                    info.n,
-                    [-half_road - lw, a + 2.0],
-                    [-face - h - 0.5, far],
-                ));
                 lanes.push(Street {
                     widths: vec![lw; lane.len()],
                     path: lane,
@@ -216,5 +206,5 @@ pub(super) fn lean_tos(
             }
         }
     }
-    GateFronts { attached, lanes, fronts }
+    GateFronts { attached, lanes }
 }

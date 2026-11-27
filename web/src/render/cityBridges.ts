@@ -1,6 +1,7 @@
 import type { Layout, Point, Street } from '../../../rust/bridge/urban';
 import type { RoadOutput } from '../../../rust/bridge/settlements';
 import { outsideUrbanStreets, urbanRoadOwnership } from '../../../rust/bridge/urbanNetwork';
+import { moatEnvelopes } from './moatEnvelope';
 
 /** Dry waterLevel cells contain terrain height. Never interpolate those
  * hillside samples into the water surface beside a bridge abutment. */
@@ -115,9 +116,12 @@ function unmetDecks(streets: Street[]): Street[] {
  * A regional deck that would cross or cover one of the town is retired: the town has joined its road to its own deck.
  * A regional deck is also retired when its road was rejected: one of its banks
  * lies where the town draws the roads and no town street meets it there. A deck
- * whose road is still drawn on both banks always stays. */
+ * whose road is still drawn on both banks always stays, except in the band of a moat: a regional deck whose middle lies
+ * between a curtain and its counterscarp (plus 6 m, moatEnvelope.ts) is retired, the town's crossing over the ditch is the
+ * bridge there. */
 export function urbanReplacesCrossing(street: Street, layouts: readonly Layout[]): boolean {
   if (!crossing(street)) return false;
+  if (moatEnvelopes(layouts).holdsDeck(street.path)) return true;
   const a = street.path[0],
     b = street.path[street.path.length - 1],
     mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };

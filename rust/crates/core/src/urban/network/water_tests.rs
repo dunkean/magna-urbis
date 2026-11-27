@@ -153,7 +153,7 @@ fn final_streets_stop_at_the_bank_or_cross_on_a_deck() {
         street(&[(280.0, 150.0), (320.0, 150.0)], "quay"),
     ];
     let quay = streets[2].path.clone();
-    let first = dry_streets(&mut streets, "european-organic", 2500, surface, None, 0.12).expect("wet streets are settled");
+    let first = dry_streets(&mut streets, "european-organic", 2500, surface, None, 0.12, &|_| false).expect("wet streets are settled");
     assert_eq!(first, vec![Some(0), Some(1), Some(4)]);
     assert_eq!(streets.len(), 5);
     // The street running into the sea stops short of the bank; its junction end is exact.
@@ -174,7 +174,7 @@ fn final_streets_stop_at_the_bank_or_cross_on_a_deck() {
     }
     assert_eq!((streets[4].role.as_str(), &streets[4].path), ("quay", &quay));
     // A second pass has nothing left to settle.
-    assert!(dry_streets(&mut streets, "european-organic", 2500, surface, None, 0.12).is_none());
+    assert!(dry_streets(&mut streets, "european-organic", 2500, surface, None, 0.12, &|_| false).is_none());
 }
 
 /// Invariant (a town deck spans running water only): two streets crossing

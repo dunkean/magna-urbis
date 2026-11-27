@@ -93,6 +93,8 @@ pub use overrides::{
     QuarterEdits, QuarterOverride, QuarterPart, UrbanOverrides,
 };
 pub use surface::{HeightInterpolation, Surface};
+/// What the moat rules measure on a circuit (`examples/moat_probe.rs`).
+pub use fortification::{MoatAudit, Uncovered, moat_audit, roads_without_gate};
 #[cfg(feature = "street-topology")]
 pub use street_graph::{street_topology, StreetTopology};
 pub use types::{

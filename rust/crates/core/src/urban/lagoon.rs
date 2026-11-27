@@ -123,6 +123,9 @@ pub(super) fn apply(layout:&mut Layout,cfg:&LayoutConfig,surface:Surface<'_>) {
     let mut stats=Stats::default();
     let mut joins = vec![];
     let water=match params(&layout.culture,cfg) {Some(p)=>plan(layout,p,surface,&mut stats,&mut joins),None=>vec![]};
+    if std::env::var("URBAN_PROFILE").is_ok() && !joins.is_empty() {
+        eprintln!("  canal moat: {} canal mouth(s) joined to wet reaches through water gates", joins.len());
+    }
     for join in joins {
         join.open(&mut layout.enclosures);
     }

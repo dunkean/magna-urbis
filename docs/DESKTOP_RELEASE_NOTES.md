@@ -11,6 +11,30 @@
 
 - Universal VTT exports default to a 1.5 metre grid for correctly sized tokens. The crop preview flags areas that exceed MapTool's grid limits.
 - Unity map packages assign the terrain texture to the imported terrain material.
+
+- Town moats run unbroken round their walls: streets, quarters and gates no longer cut them. A moat stops at harbour works, a neighbouring curtain, a lake, a wide river, the sea or a cliff; it runs on along a slope and takes in a stream that reaches it. Each gate street crosses it on a bridge or a causeway.
+- A wall gets a gate wherever a main road of the town or a regional road reaches it, within the gate budget: a road ending on the wall line is carried through it and over the moat. A regional road bridge standing in a moat gives way to the gate's own bridge.
+- A gate bridge can follow an oblique road or a road split into a ramp and a deck. Canal outlets leave land gatehouses in place.
+- Rebuilt walls keep entrances on surviving fronts. Small walled villages retain their main circuit, and wall edits can use nearby streets for additional posterns.
+- Hillside wards and reshaped blocks leave room for the berm, banks and gate crossings. Detached ravelin and citadel ditches are carved into the tilted terrain.
+- Attached walls interrupt the water supply at their shared front. A culture that keeps wet moats holds rain water all round its wall where no river feeds it; only a moat the town has grown round dries, whole, while a river-fed reach keeps its water.
+- Ravelins stand as islands in an unbroken ditch, which passes between them and the curtain. Paths and wall lanes laid late no longer cross a curtain away from a gate.
+- A tiny courtyard lot admitted inside the walls is always built (a shed, an annex) instead of staying vacant. The ground between a wall and a road led round it stays clear.
+- A gate street crosses the moat straight along the axis of its gate, however obliquely its road arrives, and passes through the gatehouse passage rather than its towers. A street that ends at a gate is carried over the ditch to the road outside.
+- When a wall is retraced round the built town, the streets follow it: a kept gate moves onto the road it serves, streets laid for the earlier trace leave the new ditch, and a road led round the wall to a gate keeps beyond the outer bank.
+- Two gates of one wall never stand a few metres apart, on coastal and harbour walls too.
+- No ditch is dug on a beach or a river bank in front of open water: the sea, a lake or a wide river guards that front, and the ditch beside it dies out on the strip. A moat fed by the sea stands at sea level.
+- The city composition stage shows the fortification style selector in its advanced controls.
+- A moat fed by a river, a lake or the sea stands at the level of that water. A stream that flows through a walled town is taken in by the moat like any stream, which runs on unbroken instead of stopping at a short pond between two dams.
+- Canal moats hold water all round, in long reaches between locks, and street canals join them through water gates.
+- A gate bridge over a wide moat runs square to its gate and lands on the far bank beside the houses that stand there. A gate whose road cannot cross the moat, or ends just beyond it, closes.
+
+- The outer bank of a moat follows a smooth, slightly uneven line instead of copying every tower. Formal moats (Chinese, Khmer, Japanese, bastioned) keep their regular outline.
+- Moat water is coherent: a reach holds water only where a river, the sea or a canal feeds it and the ground allows, at one level per reach. A dam holds each wet reach: between two wet reaches, and where the water would run out into a dry one.
+- Moats read more simply on standard map views and show from far away as a plain band; reeds, lilies and lighter hachures appear on close views only. On the tilted map a ditch is dug with a level bottom and flat water, without the plan’s hachures.
+- Town gates stand at least 50 m apart: two roads arriving side by side share one gate. A road shut at the wall stops short of the moat and joins the road of the nearest gate.
+- No more dead ends beside gates: the lane inside the wall meets the gate street, a street shut at the wall joins it behind the gatehouse, and stubs and stray street pieces near a wall are removed. A gate closed late leaves a whole curtain.
+
 - Godot exports start with a lit, angled camera that frames the terrain and buildings across the exported elevation range.
 
 - Draw, move and resize the export area directly on the map preview, with live distances and pixel dimensions. Cropped PNGs render at full resolution after you select the area.

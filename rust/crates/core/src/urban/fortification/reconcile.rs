@@ -1,6 +1,7 @@
 //! Match gates to street crossings and guard new main gates.
 
 use crate::urban::{Enclosure, Gatehouse, Point, Shape, Street, Surface, composition, geometry as g};
+use super::gate_budget::GATE_GAP;
 use super::gate_works::gate_params;
 use super::geometry::{Cut, V, add, cross, dir, dist, dot, normals, quad, ribbon_half};
 use super::style::styled;
@@ -78,17 +79,20 @@ pub(super) fn guard_main_gates(e: &mut Enclosure, streets: &[&Street], clear: &C
         let across = (-s.1, s.0);
         let back = h / dot(s, n).max(0.3) + 0.5;
         let half = pw * 0.5 + mass;
-        // On a bank (a bridge approach) the block keeps to the dry land: a shallower one, else none.
-        let Some(depth) = [depth, depth * 0.5, c - h + 1.0]
-            .into_iter()
-            .find(|&d| !quad(q, s, across, [-back, d], [-half, half]).outer.iter().any(|&p| surface.wet(p)))
-        else {
+        // The block keeps off the street ribbons, to the dry land (on a bank, a bridge approach) and out
+        // of the ditch, which runs on in front of it (the gate street crosses it: `resolve_moats`
+        // records that crossing): the deepest block that keeps masses there, else none.
+        let Some((depth, block, masses)) = [depth, depth * 0.5, c - h + 1.0].into_iter().find_map(|d| {
+            let block = quad(q, s, across, [-back, d], [-half, half]);
+            if block.outer.iter().any(|&p| surface.wet(p)) {
+                return None;
+            }
+            let masses: Vec<Shape> = moat.from(clear.from(vec![block.clone()])).into_iter().filter(|m| g::area(m) >= 4.0).collect();
+            (!masses.is_empty()).then_some((d, block, masses))
+        }) else {
             continue;
         };
-        let block = quad(q, s, across, [-back, depth], [-half, half]);
-        // Off the street ribbons and out of the moat (its causeway stays open).
-        let masses: Vec<Shape> = moat.from(clear.from(vec![block.clone()])).into_iter().filter(|m| g::area(m) >= 4.0).collect();
-        if masses.is_empty() || masses.iter().any(|m| held.hits(m) > 0.5) {
+        if masses.iter().any(|m| held.hits(m) > 0.5) {
             continue;
         }
         let block_cut = Cut::new(masses.clone());
@@ -116,7 +120,7 @@ pub(super) fn guard_main_gates(e: &mut Enclosure, streets: &[&Street], clear: &C
 /// the curtain only touches a bank is no gate (it would cut the river wall). A gate no street crosses any more closes, a
 /// crossing without a gate opens a plain one. Returns the old gate index ->
 /// new index map (for the gatehouses).
-pub(super) fn reconcile_gates(e: &mut Enclosure, streets: &[Street], _surface: Surface<'_>) -> Vec<Option<usize>> {
+pub(super) fn reconcile_gates(e: &mut Enclosure, streets: &[Street], fixed: bool) -> Vec<Option<usize>> {
     let crossings = composition::gates(&e.path, streets);
     let water_ends: Vec<Point> = e
         .gatehouses
@@ -140,10 +144,19 @@ pub(super) fn reconcile_gates(e: &mut Enclosure, streets: &[Street], _surface: S
         if crossings.iter().any(|&c| dist(c, q) < 2.0) || referenced.contains(&i) || bank(q) || access {
             remap[i] = Some(gates.len());
             gates.push(q);
+        } else if std::env::var("URBAN_PROFILE").is_ok() {
+            let crossing = crossings.iter().map(|&c| dist(c, q)).fold(f64::INFINITY, f64::min);
+            let near: Vec<String> = streets.iter().filter_map(|s| {
+                let d = s.path.windows(2).map(|w| crate::urban::geometry::distance(q, w[0], w[1]).0).fold(f64::INFINITY, f64::min);
+                (d < 30.0 && s.path.len() >= 2).then(|| format!("{} {:.0} m, ends ({:.0},{:.0}) ({:.0},{:.0})", s.role, d, s.path[0].x, s.path[0].y, s.path[s.path.len() - 1].x, s.path[s.path.len() - 1].y))
+            }).collect();
+            eprintln!("  gates: ({:.0},{:.0}) of {} closes, nearest crossing {crossing:.0} m; streets: {}", q.x, q.y, e.edit_key, near.join("; "));
         }
     }
-    for c in crossings {
-        if !gates.iter().any(|&q| dist(c, q) < 8.0) {
+    // A crossing opens a plain gate only `GATE_GAP` m from every other gate: a street crossing nearer
+    // than that is cut at the wall (`close_crossings`) and led to the gate beside it.
+    for c in crossings.into_iter().filter(|_| !fixed) {
+        if !gates.iter().any(|&q| dist(c, q) < GATE_GAP) {
             gates.push(c);
         }
     }

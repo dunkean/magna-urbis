@@ -11,7 +11,7 @@
 //! `gate_spans` lets `build` open water gates on those crossings only, and `audit` measures what is
 //! left of the rule on a finished circuit.
 
-use crate::urban::{Enclosure, Layout, Point, Shape, Street, Surface, Work, composition, geometry as g};
+use crate::urban::{Enclosure, Layout, Point, Shape, Street, Surface, composition, geometry as g};
 use magna_urbis_geom::difference_many;
 use super::geometry::{Cut, V, add, area, buffer, buffer_all, closed, cross, dir, dist, dot, overlaps, pt, quad};
 use super::gate_budget::{CORNER_TURN, STRAIGHT};
@@ -626,32 +626,6 @@ pub(super) fn near_water(p: Point, reach: f64, surface: Surface<'_>) -> bool {
                 let angle = f64::from(d) * std::f64::consts::FRAC_PI_4;
                 [0.5, 1.0].iter().any(|&r| water(surface, add(p, (angle.cos(), angle.sin()), reach * r)))
             }))
-}
-
-/// A ditch is never dug in natural water: each piece ends `MOAT_SHORT` m from it.
-pub(super) fn short_of_water(ditch: Vec<Work>, surface: Surface<'_>) -> Vec<Work> {
-    ditch
-        .into_iter()
-        .flat_map(|d| {
-            let n = d.shape.outer.len();
-            let reaches = (0..n).any(|i| {
-                let (a, b) = (d.shape.outer[i], d.shape.outer[(i + 1) % n]);
-                let steps = (dist(a, b) / 4.0).ceil().max(1.0) as usize;
-                (0..steps).any(|k| {
-                    let t = k as f64 / steps as f64;
-                    let p = pt(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
-                    near_water(p, MOAT_SHORT, surface)
-                })
-            });
-            if !reaches {
-                return vec![d];
-            }
-            let (x0, y0, x1, y1) = g::bbox(&d.shape);
-            let zone = g::rectangle(x0 - MOAT_SHORT, y0 - MOAT_SHORT, x1 + MOAT_SHORT, y1 + MOAT_SHORT);
-            let wet = opened(&wet_in(surface, &zone), MOAT_SHORT);
-            Cut::new(wet).from(vec![d.shape.clone()]).into_iter().filter(|s| g::area(s) >= 20.0).map(|shape| Work { shape, ..d.clone() }).collect()
-        })
-        .collect()
 }
 
 /// What the rule "only a gate interrupts the curtain, and no curtain stands in water" measures on

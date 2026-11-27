@@ -140,6 +140,8 @@ export class WorldVolumes {
   private treesOn = false;
   private night = false;
   private yardMeshes = false;
+  /** The ground shaped for the town digs its moats (composeTown: a town shown in volume, out of the Underdark, on a relief that is not flattened). */
+  private moatCuts = false;
   private readonly yardReuse = new SeatedMeshes();
   private readonly wallReuse = new SeatedMeshes();
   /** The trees' colours in the look on screen, as its painted crowns take theirs. */
@@ -250,6 +252,11 @@ export class WorldVolumes {
     this.refresh();
     return this.yardMeshes;
   }
+  /** The relief of the tilted view has the moats dug. */
+  moatsDug(): boolean {
+    this.refresh();
+    return this.moatCuts;
+  }
 
   /** The town and the trees of the map on display are made again, in the background, when the map, the appearance or
    * the relief changed. Cheap when nothing did: called by the layers in every work slice. */
@@ -278,7 +285,7 @@ export class WorldVolumes {
       this.townMeshes = undefined;
       this.wallReuse.clear();
       this.yardReuse.clear();
-      this.yardMeshes = false;
+      this.yardMeshes = this.moatCuts = false;
       return;
     }
     // The appearance of the volumes is the 3D resolution of the settings; the ground they stand on is the look on screen.
@@ -287,6 +294,7 @@ export class WorldVolumes {
       buildingsOnly = ['atlas', 'cadastre', 'topographic', 'white'].includes(r.composition.recipe.ground.look),
       shown = r.city.buildingStyle !== 'silhouette' && r.composition.buildings.visible && r.composition.buildings.meshes !== 'none';
     this.yardMeshes = !!city && shown && !buildingsOnly && r.city.layers.lotEnclosures !== false;
+    this.moatCuts = shown && !r.underdark && heights.exaggeration > 0;
     this.treesOn = r.city.trees3d;
     this.night = r.composition.ambience === 'night';
     this.palette = ground?.paperMap ? PAINTED_TREES : SATELLITE_TREES;
@@ -469,7 +477,7 @@ export class WorldVolumes {
           lots = groundShapeLots(source && !native ? [] : cities.flatMap(city => city.partitions ?? []), pads, levelled),
           // The streets are levelled across their width with the lots.
           streets = levelled && !(source && !native) ? layouts.flatMap(l => l.streets) : [],
-          cuts = new UrbanGroundCuts(layouts.flatMap(l => l.enclosures ?? []));
+          cuts = new UrbanGroundCuts(layouts.flatMap(l => l.enclosures ?? []), p => naturalAt(p.x, p.y));
         yield;
         // The regional roads keep their width where they cross steep slopes: the terrain draws the map squeezed there.
         shape =

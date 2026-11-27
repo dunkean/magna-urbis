@@ -27,6 +27,8 @@ import { effectiveTerrainSettings } from '../terrainSettings';
 import { terrainRendererBackend } from '../../ui/terrainRenderer';
 import { renderScene } from '../renderScene';
 import { passKeys } from '../passes/pass';
+import { moatEnvelopeKey } from '../../render/moatEnvelope';
+import { nativeCitiesOf } from '../nativeProducts';
 import { setDisplayAppearanceQuality } from '../../render/displayQuality';
 import type { CartographyProducts } from './cartographyProducts';
 import type { AppearanceListener } from './contract';
@@ -81,7 +83,9 @@ export class AppearancePasses {
       // The forest field grows from the generation climate (displayForest.ts): a display biome only repaints it.
       const forestKey = JSON.stringify([effective.forest, effectiveTerrainSettings(settings, world.mapSize).climateValues]);
       const worldSig = JSON.stringify([world.mapSize, world.seed, world.options.biome, getLanguage(), getDistanceUnit(), settings.naming?.mode, settings.naming?.mapLanguage, settings.naming?.script]);
-      map.input = () => ({ r, revisions: scene.revisions, layers, mode: ground.mode(), effective: effectiveKey, climateZone: effective.climateZone, forestEffective: forestKey, worldSig });
+      // The moats of the towns cut the streams they take in (waterProducts.ts): the water pass follows their runs only.
+      const moats = nativeCitiesOf(world).map(city => moatEnvelopeKey(city.layouts)).join('|');
+      map.input = () => ({ r, revisions: scene.revisions, layers, mode: ground.mode(), effective: effectiveKey, climateZone: effective.climateZone, forestEffective: forestKey, worldSig, moats });
       map.paper = terrainStyle(r.styleId, r.palette.colors).palette.paper;
       // What the ground shader itself lays under and around the map (setLook `background`): the live ground tiles' paper.
       map.groundPaper = terrainStyle(r.ground.style, r.palette.colors).palette.paper;

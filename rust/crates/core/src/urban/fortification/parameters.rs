@@ -249,22 +249,6 @@ fn safe_trace_within(shape:&Shape,surface:Surface<'_>,limit:f64,knoll:bool)->Opt
     None
 }
 
-pub(super) fn ditch_kind(shape:&Shape,surface:Surface<'_>,rng:&Rng,wetness:f64)->&'static str {
-    if wetness<=0.0 {return "dry";}
-    let p=g::interior_point(shape);let h=surface.height_at(p);
-    let mut supply=false;let mut relief=0.0_f64;
-    for k in 0..16 {
-        let a=k as f64*std::f64::consts::TAU/16.0;let n=(a.cos(),a.sin());
-        relief=relief.max((surface.height_at(add(p,n,20.0))-h).abs());
-        for d in [12.0,24.0,48.0,72.0] {
-            let q=add(p,n,d);
-            if surface.wet(q) {supply|=h<=surface.height_at(q)+2.0;break;}
-        }
-    }
-    let key=format!("ditch-wetness:{:.0}:{:.0}",(p.x/24.0).floor(),(p.y/24.0).floor());
-    if supply && relief<1.5 && rng.fork(&key).chance(wetness) {"wet"} else {"dry"}
-}
-
 fn wall_shape(e:&Enclosure)->Shape {
     let mut outer=e.path.clone();if outer.first()==outer.last() {outer.pop();}
     g::normalized(Shape {outer,holes:vec![]})
@@ -415,6 +399,8 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
     // The circuits keep the ditch form the town drew.
     if let Some(m)=&template.moat {style.set_form(&m.form);}
     let predicted=Predicted {widths:[12.0,9.0,6.0,4.0,3.0],arterial:1,dwelling:[5.0,5.0]};
+    let previous: Vec<_> = old.iter().chain(layout.enclosures.iter().filter(|e| e.purpose == "port"))
+        .map(|e| (e.purpose.clone(), super::old_gates(e, &e.path))).collect();
     layout.enclosures.retain(|e|!e.purpose.is_empty() && e.purpose!="port");
     for (i,(shape,purpose)) in traced.into_iter().enumerate() {
         let mut path=shape.outer;path.push(path[0]);
@@ -423,12 +409,21 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
         if edit.is_some_and(|v| v.present == Some(false)) { continue; }
         let own = style.for_wall(edit, cfg, &layout.culture, pop);
         let kind = edit.and_then(|v| v.style.as_deref()).map(super::family).unwrap_or(&template.kind);
-        if let Some(count) = edit.and_then(|v| v.gates) {
+        let previous: Vec<Point> = previous.iter().filter(|(p, _)| p == purpose).flat_map(|(_, gates)| gates.iter().copied())
+            .filter(|&q| path.windows(2).any(|w| g::distance(q, w[0], w[1]).0 < 1.0)).collect();
+        let gates = if let Some(count) = edit.and_then(|v| v.gates) {
             let circuit = super::Circuit { gates: Some(count), pop, purpose, kind, curtain_width: own.curtain_width, moat: own.ditch_width[1],
                 grade: cfg.max_street_grade, squared: false, streets_turn: false, key: &layout.key, improvisation: cfg.street_improvisation };
-            super::decide_gates(&Shape { outer: path[..path.len()-1].to_vec(), holes: vec![] }, &mut layout.streets, &circuit, surface);
-        }
-        let gates=composition::gates(&path,&layout.streets);let land=gates.len();
+            let (_, kept, _) = super::decide_with_gates(&Shape { outer: path[..path.len()-1].to_vec(), holes: vec![] }, &mut layout.streets, &circuit, &previous, &[], surface);
+            kept.iter().map(|p| p.at).collect()
+        } else {
+            let mut gates = composition::gates(&path, &layout.streets);
+            for q in previous {
+                if gates.iter().all(|&p| dist(p, q) >= 8.0) { gates.push(q); }
+            }
+            gates
+        };
+        let land = gates.len();
         let banks=composition::water_gates(&path,surface);
         let mut e=Enclosure {edit_key,path,kind:kind.into(),purpose:purpose.into(),gates,..Default::default()};
         build(&mut e,land,&banks,&layout.streets,surface,&own,pop,&predicted,&Rng::new(&format!("{}:port-wall:{i}",layout.key)));

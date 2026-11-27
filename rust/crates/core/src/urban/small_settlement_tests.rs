@@ -325,7 +325,15 @@ fn serviced_quarters_fill_from_the_core_with_a_bounded_population() {
             if !built.contains(&bi) { empty += area; }
             if b.zone == "core" { core += area; if !built.contains(&bi) { core_empty += area; } }
         }
-        assert!(empty <= total*0.01, "{culture} {population}: empty {empty:.0}/{total:.0} m²");
+        let mut bare: Vec<_> = layout.blocks.iter().enumerate().filter(|(bi,b)|relevant(b) && !built.contains(bi)).map(|(_,b)|(g::area(&b.shape).round(),b.kind.clone(),b.zone.clone(),g::interior_point(&b.shape))).collect();
+        bare.sort_by(|a,b|b.0.total_cmp(&a.0)); bare.truncate(8);
+        let lots: Vec<_> = layout.blocks.iter().enumerate().filter(|(bi,b)|relevant(b) && !built.contains(bi)).max_by(|a,b|g::area(&a.1.shape).total_cmp(&g::area(&b.1.shape))).map(|(bi,_)|parts[0].parcels.iter().filter(|p|p.block == bi).map(|p|(p.use_kind.clone(),p.family.clone(),p.reason.clone(),g::area(&p.shape).round(),p.access.as_ref().map(|a|a.kind.clone()))).take(12).collect::<Vec<_>>()).unwrap_or_default();
+        let near: Vec<_> = layout.blocks.iter().enumerate().filter(|(bi,b)|relevant(b) && !built.contains(bi)).max_by(|a,b|g::area(&a.1.shape).total_cmp(&g::area(&b.1.shape))).map(|(_,blk)|{
+            let ring = &blk.shape.outer;
+            let to_block = |s: &Street| s.path.windows(2).flat_map(|w|(0..=8).map(move |k|Point{x:w[0].x+(w[1].x-w[0].x)*k as f64/8.,y:w[0].y+(w[1].y-w[0].y)*k as f64/8.})).map(|q|(0..ring.len()).map(|i|g::distance(q,ring[i],ring[(i+1)%ring.len()]).0).fold(f64::MAX,f64::min)).fold(f64::MAX,f64::min);
+            let mut v: Vec<_> = layout.streets.iter().map(|s|(s.role.clone(),s.widths.first().copied().unwrap_or(0.),(to_block(s)*10.).round()/10.)).filter(|x|x.2 < 25.).collect();
+            v.sort_by(|a,b|a.2.total_cmp(&b.2)); v.truncate(8); v }).unwrap_or_default();
+        assert!(empty <= total*0.01, "{culture} {population}: empty {empty:.0}/{total:.0} m² {bare:?} lots {lots:?} streets {near:?} gates {:?}", layout.enclosures.iter().map(|e|(e.edit_key.clone(),e.gates.len())).collect::<Vec<_>>());
         assert!(core_empty <= core*0.01, "{culture} {population}: empty core {core_empty:.0}/{core:.0} m²");
         let pr = parts[0].programme.as_ref().unwrap();
         let wanted:f64 = pr.demands.iter().filter(|d|d.unit=="domesticUnits").map(|d|d.requested).sum();

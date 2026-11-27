@@ -5,6 +5,22 @@ use crate::urban::{Block, Enclosure, Layout, Point, Quarter, Shape, geometry as 
 use super::geometry::{Box2, Cut, area, curtain_body, dist, overlaps, pt, ribbon_half};
 use super::street_clearance::Near;
 
+/// Ground unavailable to a new ward or an edited block, including the streets through the reserve.
+pub(in super::super) fn circuit_ground(e: &Enclosure) -> Vec<Shape> {
+    let half = ribbon_half(&e.kind);
+    let width = if e.curtain_width_m > 0.0 { e.curtain_width_m } else { 2.0 * half };
+    let mut ground = curtain_body(&e.path, width, half);
+    ground.extend(e.reserve.iter().cloned());
+    ground.extend(e.ditch.iter().map(|d| d.shape.clone()));
+    for c in e.moat.iter().flat_map(|m| &m.crossings) {
+        ground.extend(g::ribbon(&c.path, &[2.0 * c.half_width_m]));
+    }
+    for gate in &e.gatehouses {
+        ground.extend(g::ribbon(&gate.passage, &[gate.passage_width_m]));
+    }
+    ground
+}
+
 /// Quarters give up the fortification reserve. A quarter the reserve cuts
 /// keeps its pieces of at least `MIN_PIECE` m²: smaller fragments (pockets
 /// between a gatehouse, the curtain and the ditch) are returned to open land.

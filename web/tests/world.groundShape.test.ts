@@ -6,6 +6,7 @@ import { UrbanGroundCuts } from '../src/ui/urbanGroundCuts';
 import { ROAD_SQUEEZE, RoadSqueeze, squeezePush } from '../src/render/steepRoads';
 import { UrbanGroundShape, type GroundShapeLot } from '../src/ui/urbanGroundShape';
 import { STREET_LEVEL } from '../src/ui/urbanStreetLevel';
+import type { MoatSpec } from '../../rust/bridge/urban';
 
 const rect = (x: number, y: number, w: number, d: number) => [
   { x, y },
@@ -21,6 +22,9 @@ const shapeOf = (lots: GroundShapeLot[], cuts = new UrbanGroundCuts()): GroundSh
   while (!step.done) step = steps.next();
   return step.value;
 };
+// A dry ditch 20 m wide and 3 m deep (y 300..320, x 300..500), stations every 20 m.
+const xs = Array.from({ length: 11 }, (_, i) => 300 + 20 * i);
+const moat: { moat: MoatSpec } = { moat: { form: 'earth', depth_m: 3, runs: [{ inner: xs.map(x => ({ x, y: 300 })), outer: xs.map(x => ({ x, y: 320 })), rim: xs.map(() => 0), bed: xs.map(() => -3), ends: ['work', 'work'], reaches: [{ from: 0, to: 10, supply: 'dry' }] }] } };
 const lot = (x: number, y: number): GroundShapeLot => ({ ring: rect(x, y, 24, 24), pads: [{ ring: rect(x + 6, y + 6, 12, 10), seat: slope(x + 6) + 0.6, low: slope(x + 6), high: slope(x + 18), shaped: true }] });
 
 describe('shaped ground of the tilted map', () => {
@@ -64,7 +68,7 @@ describe('shaped ground of the tilted map', () => {
   });
 
   it('digs a moat in the drawn ground only', () => {
-    const shape = shapeOf([], new UrbanGroundCuts([{ ditch: [{ kind: 'dry', height_m: 3, shape: { outer: rect(300, 300, 200, 20), holes: [] } }] }]))!;
+    const shape = shapeOf([], new UrbanGroundCuts([moat]))!;
     expect(shape.drawnAt(400, 310)).toBeLessThan(-2.5);
     expect(shape.groundAt(400, 310)).toBe(0);
     expect(shape.drawnAt(400, 340)).toBe(0);
@@ -120,7 +124,7 @@ describe('shaped ground of the tilted map', () => {
   it('is read by the relief, exaggerated with it', () => {
     const heights = new TerrainHeights(new Float32Array(16).fill(20), 4, 1024, 0, 2),
       natural = heights.heightAt(400, 310);
-    heights.shape = shapeOf([], new UrbanGroundCuts([{ ditch: [{ kind: 'dry', height_m: 3, shape: { outer: rect(300, 300, 200, 20), holes: [] } }] }]));
+    heights.shape = shapeOf([], new UrbanGroundCuts([moat]));
     expect(heights.heightAt(400, 310)).toBeCloseTo(natural + 2 * heights.shape!.drawnAt(400, 310), 6);
     expect(heights.groundAt(400, 310)).toBe(natural);
     expect(heights.naturalAt(400, 310)).toBe(natural);

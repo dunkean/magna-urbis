@@ -61,7 +61,7 @@ pub struct Enclosure {
     /// `outer-wall|barbican|antemural|wengcheng|ravelin|citadel|glacis`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outworks: Vec<Work>,
-    /// Ditch pieces, kind `dry|wet`, cut by causeways at the gates.
+    /// Ditch pieces, kind `dry|wet|pool`: one per reach of `moat.runs`, plus the detached ditches of outworks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ditch: Vec<Work>,
     /// Form and water joins of the ditch (`fortification::moat`); absent without a ditch.
@@ -119,15 +119,70 @@ pub struct Gatehouse {
 pub struct MoatSpec {
     /// Form id of `fortifications.json` `moats` (profile, revetment, scarp).
     pub form: String,
-    /// Sluices of a wet ditch: from the head of the ditch to the natural water it stops short of.
+    /// Sluices of a wet ditch: from the middle of a `water` run end whose reach is fed to the natural water it stops short of.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sluices: Vec<[Point; 2]>,
-    /// Dams between two reaches of a ditch on sloping ground, across it: inner end, outer end.
+    /// Dams between two fed reaches of a run, across it at their shared station: inner lip, outer lip.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dams: Vec<[Point; 2]>,
     /// State of the town (`thriving|declining|abandoned|ruined`, empty: unknown): an unkept ditch silts and grows over.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub state: String,
+    /// Nominal breadth and depth of the ditch (m).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub width_m: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub depth_m: f64,
+    /// The ditch itself (`fortification::moat_line`): every stretch between two natural stops, as stations.
+    /// `Enclosure::ditch` is derived from them (one polygon per reach).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runs: Vec<MoatRun>,
+    /// Where a street crosses a run. A crossing never interrupts the ditch.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub crossings: Vec<MoatCrossing>,
+}
+/// One continuous stretch of ditch. Station `k` is the cross-section from `inner[k]` (scarp lip, curtain side)
+/// to `outer[k]` (counterscarp lip); the four arrays have one entry per station, in walking order.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct MoatRun {
+    /// A ring: the last station joins the first.
+    #[serde(default)]
+    pub closed: bool,
+    pub inner: Vec<Point>,
+    pub outer: Vec<Point>,
+    /// Ground height (m) of the lower of the two lips, in the height frame of the urban request.
+    pub rim: Vec<f32>,
+    /// Height (m) of the bottom, same frame: smooth along the run, level across it.
+    pub bed: Vec<f32>,
+    /// What stops the run before its first and after its last station: `closed|water|slope|work`.
+    pub ends: [String; 2],
+    /// Reaches in walking order, covering every station; two neighbours share their boundary station, and the
+    /// last reach of a closed run ends on station 0 (`to <= from`; a closed run of one reach is `0..=0`, the ring).
+    pub reaches: Vec<MoatReach>,
+}
+/// Stations `from..=to` of a run: one supply, one water level.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct MoatReach {
+    pub from: usize,
+    pub to: usize,
+    /// `fed` (joined to a river, the sea or a canal, and not above it), `pool` (a wet moat without a source), `dry`.
+    pub supply: String,
+    /// Water surface (m, frame of `MoatRun::rim`) of a `fed` reach; the fill of a `pool` follows climate and season.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<f32>,
+}
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct MoatCrossing {
+    /// Index in `MoatSpec::runs`.
+    pub run: usize,
+    /// Centre line of the crossing, from 1 m inside the inner lip to 3 m beyond the outer lip (two points or more).
+    pub path: Vec<Point>,
+    pub half_width_m: f64,
+    /// `bridge` (the ditch runs on under a deck) or `causeway` (the ditch is filled across, with a culvert).
+    pub kind: String,
+    /// Index in `Enclosure::gates` of a gate crossing; absent for another street.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate: Option<usize>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Work {

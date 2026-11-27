@@ -191,7 +191,15 @@ export class ComposedView {
     private readonly readiness: DisplayReadiness,
   ) {
     const { water, town } = parts;
-    this.cityEnv = { appearance: () => map.resolved!, visibility: () => town.shownLayers(), water: () => water.cityWater, volumeBuildings: () => this.volumeBuildings, volumeYards: () => this.volumes.yardsShown(), invalidate: map.compose };
+    this.cityEnv = {
+      appearance: () => map.resolved!,
+      visibility: () => town.shownLayers(),
+      water: () => water.cityWater,
+      volumeBuildings: () => this.volumeBuildings,
+      volumeYards: () => this.volumes.yardsShown(),
+      dugMoats: () => this.volumes.moatsDug(),
+      invalidate: map.compose,
+    };
     this.volumes = new WorldVolumes(
       map,
       parts,

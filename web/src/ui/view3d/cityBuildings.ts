@@ -102,7 +102,7 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
   if (cutsOf !== cityContext.groundCutsOf || t !== cityContext.groundCutsOn) {
     cityContext.groundCutsOf = cutsOf;
     cityContext.groundCutsOn = t;
-    t.setGroundCuts(new UrbanGroundCuts((cutsOf ?? []).flatMap(l => l.enclosures ?? [])));
+    t.setGroundCuts(new UrbanGroundCuts((cutsOf ?? []).flatMap(l => l.enclosures ?? []), p => t.groundAt(p.x, p.y) ?? NaN));
   }
   if (scene !== cityContext.sceneOf) {
     cityContext.byId = new Map(scene?.buildings.map(b => [b.id, b]));

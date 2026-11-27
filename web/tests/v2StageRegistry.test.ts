@@ -33,6 +33,7 @@ describe('V2 generation stage registry', () => {
     expect(stagesForControl('terrain.climate')).toEqual(['relief-climate']);
     expect(stagesForControl('terrain.hydrology.minRiverLength')).toEqual(['water-hydrology']);
     expect(stagesForControl('widget:coasts')).toEqual(['relief-source']);
+    expect(stagesForControl('main:wallStyle')).toEqual(['city-composition']);
     expect(stagesForControl('options.biome')).toEqual(['relief-source']);
     expect(stagesForControl('options.layer')).toEqual([]);
     expect(STAGES.some(stage => stage.quick.includes('options.layer'))).toBe(false);

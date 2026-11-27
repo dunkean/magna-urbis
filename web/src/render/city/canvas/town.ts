@@ -191,7 +191,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
     }
   };
 
-  if (layers.enclosures) drawCityWallGround(ctx, scene, { viewport, mpp, lod, palette, night, water: o.waterColor }); // walls hook: ditches and glacis under the streets
+  if (layers.enclosures) drawCityWallGround(ctx, scene, { viewport, mpp, lod, palette, night, water: o.waterColor, dug: o.dugMoats }); // walls hook: ditches and glacis under the streets
   // Streets: centrelines stroked by rank, casing first, majors and crossings on top. What each street is painted with
   // is the look's (city/streetLook.ts); here its strokes are batched by draw layer and its surface rings are built.
   if (layers.streets) {

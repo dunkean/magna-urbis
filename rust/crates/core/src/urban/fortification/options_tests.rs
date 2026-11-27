@@ -8,7 +8,7 @@ use crate::urban::{
 };
 use super::super::build::build;
 use super::super::geometry::{Cut, add, area, dir, dist, normals, pt};
-use super::{ditch_kind, finish_options, keeps_citadel, prepare_options};
+use super::{finish_options, keeps_citadel, prepare_options};
 use super::super::street_clearance::Predicted;
 use super::super::style::styled;
 use super::super::trace::wet_length;
@@ -76,21 +76,6 @@ fn angular_trace_uses_escarpment_and_bank_without_crossing_water() {
     assert!(bank.outer.len()<12,"sharp long fronts on a straight bank");
     let thick=option_trace(shape,s,&LayoutConfig {river_control:true,..Default::default()},12.0);
     assert!(g::bbox(&thick).2<=1012.0,"the whole curtain body must stay on the bank");
-}
-
-#[test]
-fn automatic_ditches_need_local_low_supply_and_remain_probabilistic() {
-    let water=water();let height=vec![10.0;N*N];let s=surface(&height,&water);
-    let mut wet=0;
-    for i in 0..80 {
-        let ditch=g::rectangle(980.0,100.0+i as f64*20.0,995.0,115.0+i as f64*20.0);
-        wet+=usize::from(ditch_kind(&ditch,s,&Rng::new(&format!("ditch-{i}")))=="wet");
-        let inland=g::rectangle(500.0,100.0+i as f64*20.0,520.0,115.0+i as f64*20.0);
-        assert_eq!(ditch_kind(&inland,s,&Rng::new("dry")),"dry");
-    }
-    assert!(wet>4 && wet<50,"{wet} wet out of 80 low river pieces");
-    let mut high=height.clone();for i in 0..high.len() {if i%N<64 {high[i]=30.0;}}
-    assert_eq!(ditch_kind(&g::rectangle(980.0,500.0,995.0,520.0),surface(&high,&water),&Rng::new("terrace")),"dry");
 }
 
 #[test]

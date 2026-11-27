@@ -237,6 +237,9 @@ export interface LiveCityEnv {
   volumeBuildings?(): boolean;
   /** In the tilted view, the volume layer draws the lot boundaries instead of the terrain drape. */
   volumeYards?(): boolean;
+  /** The relief of the tilted view digs the moats (ui/urbanGroundCuts.ts): the map drape paints their bed and banks without
+   * hachures or near-view detail. */
+  dugMoats?(): boolean;
   /** The appearance an exact frame would be drawn with now. */
   appearance(): import('../appearanceRecipe').ResolvedAppearance;
   /** Layers switched off by the page (same object the exact town renderer receives). */

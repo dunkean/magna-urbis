@@ -1,13 +1,12 @@
 //! Configured curtain styles, extensions and port walls.
 
-use crate::rng::Rng;
 use crate::urban::{
     Enclosure, Geography, Layout, LayoutConfig, Point, Shape, Site,
     Street, Surface, VectorGeography, generate_quarters, geometry as g, routing,
 };
 use super::super::geometry::{disc, pt};
 use super::{
-    adherence, cuts, ditch_kind, grade, inside, parameter_trace, port_quarters,
+    adherence, cuts, grade, inside, parameter_trace, port_quarters,
     port_walls, river_mode, safe_trace, share, stiffness, valid_parameters, wall_shape,
 };
 use super::super::style::styled;
@@ -51,16 +50,6 @@ fn stiffness_changes_fronts_without_coupling_tower_spacing_or_terrain() {
     assert!(counts[0]>counts[1] && counts[1]>counts[2],"{counts:?}");
     for spacing in [20.0,60.0,120.0] {let mut style=styled("curtain","hanseatic",10000);
         style.options(&LayoutConfig {wall_tower_spacing:Some(spacing),..Default::default()});assert_eq!(style.tower_spacing,Some([spacing;2]));}
-}
-
-#[test]
-fn ditch_wetness_is_monotone_and_requires_a_local_supply() {
-    let h=vec![10.0;N*N];let w:Vec<_>=(0..N*N).map(|i|u8::from(i%N>=64)).collect();let s=surface(&h,&w);
-    for k in 0..50 {let near=g::rectangle(980.0,200.0+k as f64*24.0,995.0,215.0+k as f64*24.0);let rng=Rng::new("wetness");
-        assert_eq!(ditch_kind(&near,s,&rng,0.0),"dry");assert_eq!(ditch_kind(&near,s,&rng,1.0),"wet");
-        if ditch_kind(&near,s,&rng,0.25)=="wet" {assert_eq!(ditch_kind(&near,s,&rng,0.5),"wet");}
-        assert_eq!(ditch_kind(&g::rectangle(500.0,500.0,520.0,520.0),s,&rng,1.0),"dry");
-    }
 }
 
 #[test]

@@ -175,6 +175,15 @@ export class GroundShape {
   }
 }
 
+/** Depth of the moat cut at node (i, j) under the natural ground (m; negative: the outer bank rises). The cuts read absolute
+ * heights: their bed is the engine's, carried onto the natural ground. */
+const moatDepthAt = (cuts: UrbanGroundCuts, natural: (x: number, y: number) => number, i: number, j: number): number => {
+  const x = i * SHAPE_STEP,
+    y = j * SHAPE_STEP,
+    height = natural(x, y);
+  return height - cuts.lower(x, y, height);
+};
+
 /** What a town shapes: its lots to level and its streets to level across their width (ui/urbanStreetLevel.ts). */
 export interface GroundShapeTown {
   lots: readonly GroundShapeLot[];
@@ -222,7 +231,7 @@ export function* groundShapeSteps(width: number, towns: Iterable<GroundShapeTown
   for (const nodes of cuts.nodes(SHAPE_STEP)) {
     for (let k = 0; k < nodes.length; k++) {
       const [i, j] = nodes[k];
-      if (i >= 0 && j >= 0 && i <= last && j <= last) shape.dig(i, j, -cuts.lower(i * SHAPE_STEP, j * SHAPE_STEP, 0));
+      if (i >= 0 && j >= 0 && i <= last && j <= last) shape.dig(i, j, moatDepthAt(cuts, natural, i, j));
       if (k % NODES_PER_STEP === NODES_PER_STEP - 1) yield;
     }
     yield;
@@ -302,7 +311,7 @@ export function* groundShapeRegionSteps(previous: GroundShape, rects: readonly S
   for (const nodes of cuts.nodes(SHAPE_STEP)) {
     for (let k = 0; k < nodes.length; k++) {
       const [i, j] = nodes[k];
-      if (i >= 0 && j >= 0 && i <= last && j <= last && inside(i, j)) shape.dig(i, j, -cuts.lower(i * SHAPE_STEP, j * SHAPE_STEP, 0));
+      if (i >= 0 && j >= 0 && i <= last && j <= last && inside(i, j)) shape.dig(i, j, moatDepthAt(cuts, natural, i, j));
     }
     yield;
   }

@@ -138,7 +138,7 @@ pub(in crate::urban) fn fit_enclosures(layout: &mut super::super::Layout, popula
             let mut path = trace.outer;
             path.push(path[0]);
             if result.iter().any(|e:&Enclosure| e.path==path) {continue;}
-            result.push(Enclosure {edit_key: if single { e.edit_key.clone() } else { String::new() },gates:gates(&path,&layout.streets),path,kind:e.kind.clone(),..Default::default()});
+            result.push(Enclosure {edit_key: if single { e.edit_key.clone() } else { String::new() },gates:fortification::old_gates(e, &path),path,kind:e.kind.clone(),..Default::default()});
         }
     }
     layout.enclosures = result;
@@ -508,7 +508,7 @@ fn fit_to_built(layout: &mut super::super::Layout, population: u32, surface: Sur
         let single = rings.len() == 1;
         for ring in rings {
             let path = closed(&ring.outer);
-            result.push(Enclosure { edit_key: if single { e.edit_key.clone() } else { String::new() }, gates: gates(&path, &layout.streets), path, kind: e.kind.clone(), ..Default::default() });
+            result.push(Enclosure { edit_key: if single { e.edit_key.clone() } else { String::new() }, gates: fortification::old_gates(&e, &path), path, kind: e.kind.clone(), ..Default::default() });
         }
     }
     layout.enclosures = result;

@@ -148,7 +148,10 @@ pub(in crate::urban) fn clear_water(layout: &mut Layout, population: u32, physic
     if physical.geometry.is_none() && !physical.water.iter().any(|&w| w != 0) { return false; }
     let reserved = reserved_streets(layout);
     let culture = layout.culture.clone();
-    let Some(first) = dry_streets(&mut layout.streets, &culture, population, physical, reclaimed, max_grade) else { return false; };
+    // Water in a moat band is the moat's: a street crossing it there is a moat crossing.
+    let bands = crate::urban::fortification::moat_bands(&layout.enclosures);
+    let in_moat = |p: Point| bands.iter().any(|(band, town)| crate::urban::geometry::contains(band, p) && !town.as_ref().is_some_and(|t| crate::urban::geometry::contains(t, p)));
+    let Some(first) = dry_streets(&mut layout.streets, &culture, population, physical, reclaimed, max_grade, &in_moat) else { return false; };
     // Pieces replace their street in place: indices shift, the witnesses follow.
     if let Some(p) = &mut layout.programme {
         for r in &mut p.reservations { r.street = first.get(r.street).copied().flatten().unwrap_or(0); }
@@ -182,7 +185,7 @@ pub(in crate::urban) fn clear_water(layout: &mut Layout, population: u32, physic
 ///
 /// Returns, per input street, the index of its first piece (`None`: dropped),
 /// or `None` when nothing changed.
-pub(super) fn dry_streets(streets: &mut Vec<Street>, culture: &str, population: u32, surface: Surface<'_>, reclaimed: Option<Surface<'_>>, max_grade: f64) -> Option<Vec<Option<usize>>> {
+pub(super) fn dry_streets(streets: &mut Vec<Street>, culture: &str, population: u32, surface: Surface<'_>, reclaimed: Option<Surface<'_>>, max_grade: f64, in_moat: &(dyn Fn(Point) -> bool + Sync)) -> Option<Vec<Option<usize>>> {
     use crate::urban::{footprint::crossings, geometry as g, routing};
     const STUB: f64 = 4.0;
     // Dry abutment of a deck on each bank (`Crossing::streets`).
@@ -199,6 +202,8 @@ pub(super) fn dry_streets(streets: &mut Vec<Street>, culture: &str, population: 
         for w in s.path.windows(2) {
             let len = distance(w[0], w[1]);
             for (a, b) in routing::water_intervals(surface, w[0], w[1]) {
+                // A wet run whose middle lies in a moat band is left to the moat.
+                if in_moat(lerp(w[0], w[1], 0.5 * (a + b))) { continue; }
                 let (a, b) = (start + a * len, start + b * len);
                 if let Some(last) = wet.last_mut().filter(|last| a - last.1 < 0.01) { last.1 = b; } else { wet.push((a, b)); }
             }

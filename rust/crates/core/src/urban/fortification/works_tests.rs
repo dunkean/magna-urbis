@@ -1,13 +1,12 @@
 //! Towers, gatehouses, bastions and shore passages on one circuit.
 
 use crate::rng::Rng;
-use crate::urban::{Enclosure, LayoutConfig, Point, Shape, Street, Work, composition, geometry as g};
+use crate::urban::{Enclosure, LayoutConfig, Point, Shape, Street, composition, geometry as g};
 use super::build::build;
 use super::geometry::{
     add, area, buffer, cross, dir, dist, dot,
     normals, overlaps, pt, ribbon_half, turn_at, unit,
 };
-use super::moat::{dam_stations, rounded_ends, spec};
 use super::style::styled;
 use super::towers::flank_stations;
 use super::water::near_water;
@@ -209,42 +208,6 @@ fn nothing_stands_in_the_water_and_water_gates_pair_banks() {
         }));
         assert!(e.ditch.iter().all(|d| d.shape.outer.iter().all(|&p| !near_water(p, 7.0, s))), "{style}: the moat stops short of the river");
     }
-}
-
-#[test]
-fn a_moat_ends_round_at_a_natural_stop_and_square_elsewhere() {
-    let (height, water) = (vec![10.0f32; N * N], vec![0u8; N * N]);
-    let ditch = vec![Work { kind: "wet".into(), shape: g::rectangle(1000.0, 1000.0, 1100.0, 1012.0), height_m: 3.0, passage: None }];
-    let ends = rounded_ends(ditch, vec![g::rectangle(1099.0, 980.0, 1140.0, 1030.0)], 12.0, surface(&height, &water));
-    assert_eq!(ends.len(), 1);
-    let holds = |x: f64, y: f64| g::contains(&ends[0].shape, pt(x, y));
-    assert!(!holds(1099.5, 1000.5) && !holds(1099.5, 1011.5) && holds(1099.5, 1006.0));
-    assert!(holds(1000.5, 1000.5) && holds(1000.5, 1011.5));
-}
-
-#[test]
-fn a_wet_ditch_joins_the_water_it_stops_short_of_by_one_sluice() {
-    let (height, water) = (vec![10.0f32; N * N], river(1112.0, 1160.0));
-    let s = surface(&height, &water);
-    let ditch = |kind: &str| vec![Work { kind: kind.into(), shape: g::rectangle(1000.0, 1000.0, 1104.0, 1012.0), height_m: 3.0, passage: None }];
-    let moat = spec("revetted", &ditch("wet"), vec![[pt(1001.0, 1000.0), pt(1001.0, 1012.0)], [pt(400.0, 400.0), pt(400.0, 412.0)]], "abandoned", s).expect("a ditch has a form");
-    // A dam stays while a reach of the ditch still ends on it.
-    assert_eq!((moat.dams.len(), moat.state.as_str()), (1, "abandoned"));
-    assert_eq!((moat.form.as_str(), moat.sluices.len()), ("revetted", 1));
-    let [head, shore] = moat.sluices[0];
-    assert!(head.x > 1103.0 && shore.x > head.x && dist(head, shore) <= 14.0 && near_water(shore, 0.0, s));
-    // A dry ditch keeps its round head; no ditch, no moat.
-    assert!(spec("fossa", &ditch("dry"), vec![], "", s).expect("a ditch has a form").sluices.is_empty());
-    assert!(spec("fossa", &[], vec![], "", s).is_none());
-}
-
-#[test]
-fn a_wet_ditch_on_a_slope_is_dammed_into_level_reaches() {
-    let level: Vec<(f64, Option<usize>)> = (0..10).map(|_| (10.0, Some(0))).collect();
-    assert!(dam_stations(&level).is_empty());
-    // 0.3 m of rim per station: a dam every third station; the next piece starts its own reach without one.
-    let slope: Vec<(f64, Option<usize>)> = (0..10).map(|k| (10.0 + 0.3 * k as f64, Some(k / 7))).collect();
-    assert_eq!(dam_stations(&slope), vec![3, 6]);
 }
 
 /// Palisades are timber: no stone towers, timber gates, a thin curtain;

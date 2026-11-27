@@ -5,11 +5,12 @@ use crate::urban::{Enclosure, LayoutConfig, Point, Shape, Street, Surface};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Curtains the open-edge network keeps to: no peripheral section, feeder or
-/// rural path crosses one, and no peripheral section runs within `clearance`
-/// of one (its ribbon would ride the curtain body and weave through it) nor
-/// in the fortification reserve (ditch, berm, glacis, works): a section that
-/// would is moved off them (`keep_off`), along the glacis or ditch edge, or
-/// along the outer face where no ditch runs.
+/// rural path crosses one, nor the outer lip of a moat run (the ditch is
+/// continuous: only gate streets cross it), and no peripheral section runs
+/// within `clearance` of a curtain (its ribbon would ride the curtain body and
+/// weave through it) nor in the fortification reserve (ditch, berm, glacis,
+/// works): a section that would is moved off them (`keep_off`), outside the
+/// reserve, or along the outer face where no ditch runs.
 /// The town inside an enclosure keeps its own wall/gate semantics.
 pub(super) struct Curtains {
     walls: Vec<(
@@ -17,6 +18,8 @@ pub(super) struct Curtains {
         crate::urban::geometry::ContainmentIndex,
         f64,
     )>,
+    /// Outer lips of the moat runs.
+    lips: Vec<crate::urban::fortification::Near>,
     /// Reserve tiles: box and containment.
     reserve: Vec<((f64, f64, f64, f64), crate::urban::geometry::ContainmentIndex)>,
     /// Obstacle edges on a `KEEP_CELL` grid: (a, b, curtain clearance), the
@@ -60,6 +63,19 @@ impl Curtains {
         let mut lean = vec![];
         let mut lanes = vec![];
         let mut passages = vec![];
+        let lips: Vec<fortification::Near> = enclosures
+            .iter()
+            .filter_map(|e| e.moat.as_ref())
+            .flat_map(|m| m.runs.iter())
+            .filter(|r| r.outer.len() >= 2)
+            .map(|r| {
+                let mut lip = r.outer.clone();
+                if r.closed {
+                    lip.push(lip[0]);
+                }
+                fortification::Near::new(&lip, 12.0)
+            })
+            .collect();
         let walls = enclosures
             .iter()
             .filter(|e| e.path.len() >= 4)
@@ -149,6 +165,7 @@ impl Curtains {
         }
         Curtains {
             walls,
+            lips,
             reserve,
             edges,
             grid,
@@ -161,10 +178,12 @@ impl Curtains {
     pub(super) fn inside(&self, p: Point) -> bool {
         self.walls.iter().any(|(_, poly, _)| poly.contains(p))
     }
+    /// A segment through a curtain or over the outer lip of a moat run.
     pub(super) fn crosses(&self, a: Point, b: Point) -> bool {
         self.walls
             .iter()
             .any(|(near, _, _)| near.distance(a, b) == 0.0)
+            || self.lips.iter().any(|near| near.distance(a, b) == 0.0)
     }
     pub(super) fn hugs(&self, a: Point, b: Point) -> bool {
         self.walls
@@ -222,8 +241,8 @@ impl Curtains {
             && (0..=steps).all(|k| self.lane_clear_at(lerp(a, b, k as f64 / steps as f64), hw))
     }
     /// The wall-lane section along `path` (a stretch of the lane line): moved
-    /// inward past what blocks it (a tower, a ditch end), or `None` when it
-    /// cannot keep clear of the reserve and the gates.
+    /// inward past what blocks it (a tower, a gatehouse, a work reaching
+    /// inside), or `None` when it cannot keep clear of the reserve and the gates.
     fn lane_route(&self, path: &[Point], hw: f64) -> Option<Vec<Point>> {
         // Dense enough to see a reserve tile the straight edge would clip.
         let mut dense = vec![path[0]];
@@ -313,10 +332,13 @@ impl Curtains {
         }
         None
     }
+    /// Clear of the reserve and the curtains, and over no moat lip (a street
+    /// slot left in the reserve tiles does not let a section through the ditch).
     pub(super) fn segment_clear(&self, a: Point, b: Point, hw: f64) -> bool {
         let steps = (distance(a, b) / 2.0).ceil().max(1.0) as usize;
         (0..=steps).all(|k| self.clear_at(lerp(a, b, k as f64 / steps as f64), hw))
             && !self.hugs(a, b)
+            && !self.crosses(a, b)
     }
     /// `p` moved straight away from the nearest curtain until its ribbon is
     /// clear (from inside a circuit, out along the curtain normal, when
@@ -467,12 +489,23 @@ impl Curtains {
 
 /// How far from the lane line a street end still belongs to it (m).
 const LANE_REACH: f64 = 14.0;
+/// Farthest (m, along a gate street) its crossing of the lane line lies from
+/// its crossing of the curtain.
+const GATE_LANE_REACH: f64 = 30.0;
+/// Farthest (m) past the lane line a section end slides along a gate street
+/// to keep clear of the gatehouse, in 2 m steps.
+const GATE_LANE_SLIDE: f64 = 14.0;
 /// Invariant (inner ring roads): a street end inside a circuit that stops at
 /// the curtain (a dead end on the wall) is carried to the wall-lane line, and
 /// every consecutive pair of such ends along a circuit is joined by a
 /// `wall-lane` section following that line: the ring road inside the wall.
+/// A street through the curtain (a gate street) is an anchor too: the
+/// sections on both sides of its gate end on it, on its centre line where it
+/// meets the lane line (or a little further in, clear of the gatehouse and its
+/// passage), at a vertex shared with it; the gate street is not cut. A circuit
+/// with no dead end on its wall lays no section.
 /// A section is the lane line itself (what `enclosure_lanes` lays; stretches
-/// it already covers are left alone), moved inward past a tower or ditch end,
+/// it already covers are left alone), moved inward past a tower or a gatehouse,
 /// always inside the circuit, off every reserve tile and gate passage; a
 /// section no clear route serves keeps its dead ends. Every section is laid,
 /// whatever the peripheral setting: a stretch of wall foot left to the lots
@@ -495,6 +528,10 @@ pub(super) fn inner_ring(
         at: Point,
         station: f64,
         edge: usize,
+        /// A gate street: the section ends on it at one of `alts` (from the
+        /// lane line inward) and the street keeps its whole path.
+        through: bool,
+        alts: Vec<Point>,
     }
     // (circuit, ring) -> street ends on that lane ring.
     let mut groups: BTreeMap<(usize, usize), Vec<Anchor>> = BTreeMap::new();
@@ -568,10 +605,114 @@ pub(super) fn inner_ring(
             at: x,
             station: lane.stations[r][k] + distance(ring[k], x),
             edge: k,
+            through: false,
+            alts: vec![],
         });
+    }
+    // Gate streets: where each crosses the lane line behind its curtain crossing.
+    for (i, s) in streets.iter().enumerate() {
+        let n = s.path.len();
+        if n < 2
+            || super::street::private(s)
+            || matches!(s.role.as_str(), "wall-lane" | "bridge" | "ford" | "causeway" | "quay" | "pier" | "boardwalk" | "landing" | "mole")
+        {
+            continue;
+        }
+        let cum: Vec<f64> = std::iter::once(0.0)
+            .chain(s.path.windows(2).scan(0.0, |t, w| {
+                *t += distance(w[0], w[1]);
+                Some(*t)
+            }))
+            .collect();
+        let at_arc = |d: f64| -> Point {
+            let m = (0..n - 1).find(|&m| cum[m + 1] >= d).unwrap_or(n - 2);
+            let l = (cum[m + 1] - cum[m]).max(EPS);
+            lerp(s.path[m], s.path[m + 1], ((d - cum[m]) / l).clamp(0.0, 1.0))
+        };
+        for (w, (near, poly, _)) in curtains.walls.iter().enumerate() {
+            // Arcs where the street passes the curtain (bisected on the circuit outline).
+            let passes: Vec<f64> = (0..n - 1)
+                .filter_map(|m| {
+                    let (a, b) = (s.path[m], s.path[m + 1]);
+                    let from = poly.contains(a);
+                    if near.distance(a, b) > 0.0 || from == poly.contains(b) {
+                        return None;
+                    }
+                    let (mut lo, mut hi) = (0.0, 1.0);
+                    for _ in 0..24 {
+                        let t = 0.5 * (lo + hi);
+                        if poly.contains(lerp(a, b, t)) == from {
+                            lo = t;
+                        } else {
+                            hi = t;
+                        }
+                    }
+                    Some(cum[m] + 0.5 * (lo + hi) * distance(a, b))
+                })
+                .collect();
+            if passes.is_empty() {
+                continue;
+            }
+            let lane = &curtains.lanes[w];
+            let hw = lane.width * 0.5;
+            let mut hits: Vec<(f64, usize, usize, Point)> = vec![];
+            for m in 0..n - 1 {
+                let (a, b) = (s.path[m], s.path[m + 1]);
+                for (r, near) in lane.near.iter().enumerate() {
+                    let ring = &lane.rings[r];
+                    for k in near.crossed(a, b) {
+                        if let Some((t, x)) = g::segment_hit(a, b, ring[k], ring[(k + 1) % ring.len()]) {
+                            hits.push((cum[m] + t * distance(a, b), r, k, x));
+                        }
+                    }
+                }
+            }
+            for &c in &passes {
+                let Some(&(arc, r, k, x)) = hits
+                    .iter()
+                    .filter(|h| (h.0 - c).abs() <= GATE_LANE_REACH)
+                    .min_by(|p, q| (p.0 - c).abs().total_cmp(&(q.0 - c).abs()))
+                else {
+                    continue;
+                };
+                // From the lane line inward (away from the curtain); a point
+                // within 0.5 m of a street vertex is that vertex.
+                let away = if arc >= c { 1.0 } else { -1.0 };
+                let alts: Vec<Point> = (0..=(GATE_LANE_SLIDE / 2.0) as usize)
+                    .map(|j| arc + away * 2.0 * j as f64)
+                    .filter(|d| (0.0..=cum[n - 1]).contains(d))
+                    .map(|d| {
+                        let p = at_arc(d);
+                        s.path.iter().copied().find(|&v| distance(v, p) < 0.5).unwrap_or(p)
+                    })
+                    .filter(|&p| curtains.lane_clear_at(p, hw))
+                    .collect();
+                let Some(&at) = alts.first() else { continue };
+                let ring = &lane.rings[r];
+                groups.entry((w, r)).or_default().push(Anchor {
+                    street: i,
+                    end: false,
+                    cut: 0,
+                    at,
+                    station: lane.stations[r][k] + distance(ring[k], x),
+                    edge: k,
+                    through: true,
+                    alts,
+                });
+            }
+        }
     }
     let (mut kept, mut dropped) = (0.0, 0.0);
     let mut used: BTreeSet<(usize, bool)> = BTreeSet::new();
+    // Section ends on gate streets: (street, point), a vertex to share.
+    let mut junctions: Vec<(usize, Point)> = vec![];
+    fn serve(x: &Anchor, p: Point, used: &mut BTreeSet<(usize, bool)>, junctions: &mut Vec<(usize, Point)>) {
+        if x.through {
+            junctions.push((x.street, p));
+        } else {
+            used.insert((x.street, x.end));
+        }
+    }
     let mut anchored: Vec<Anchor> = vec![];
     let wall_lanes: Vec<_> = streets
         .iter()
@@ -582,12 +723,14 @@ pub(super) fn inner_ring(
     for ((w, r), mut group) in groups {
         group.sort_by(|a, b| a.station.total_cmp(&b.station));
         let n = group.len();
-        if n < 2 {
+        if n < 2 || group.iter().all(|a| a.through) {
             continue;
         }
         let lane = &curtains.lanes[w];
         let (ring, total) = (&lane.rings[r], *lane.stations[r].last().unwrap());
         let hw = lane.width * 0.5;
+        // The end of a section at an anchor, at the `j`-th try.
+        let pick = |x: &Anchor, j: usize| if x.through { x.alts[j.min(x.alts.len() - 1)] } else { x.at };
         for k in 0..n {
             let (a, b) = (&group[k], &group[(k + 1) % n]);
             // Two ends make two arcs of the same ring; one is enough when
@@ -599,10 +742,14 @@ pub(super) fn inner_ring(
             let wrap = b.station <= a.station;
             let m = ring.len();
             let last = if wrap { b.edge + m } else { b.edge };
-            let mut path = vec![a.at];
-            path.extend((a.edge + 1..=last).map(|j| ring[j % m]));
-            path.push(b.at);
-            path.dedup_by(|p, q| distance(*p, *q) < 0.05);
+            let section = |pa: Point, pb: Point| {
+                let mut path = vec![pa];
+                path.extend((a.edge + 1..=last).map(|j| ring[j % m]));
+                path.push(pb);
+                path.dedup_by(|p, q| distance(*p, *q) < 0.05);
+                path
+            };
+            let path = section(a.at, b.at);
             let length = if wrap {
                 total - a.station + b.station
             } else {
@@ -619,14 +766,26 @@ pub(super) fn inner_ring(
                     wall_lanes.iter().any(|n| n.distance(p, p) < 1.0)
                 })
             });
-            let routed = (!covered).then(|| curtains.lane_route(&path, hw)).flatten();
-            let route = routed
-                .clone()
-                .filter(|p| routing::path_clear(surface, p, cfg.max_street_grade));
+            // A gate street end slides inward until the section clears the gatehouse.
+            let tries = if covered { 0 } else { a.alts.len().max(b.alts.len()).max(1) };
+            let mut routed: Option<(Vec<Point>, Point, Point)> = None;
+            let mut route = None;
+            for j in 0..tries {
+                let (pa, pb) = (pick(a, j), pick(b, j));
+                let Some(p) = curtains.lane_route(&section(pa, pb), hw) else { continue };
+                if routing::path_clear(surface, &p, cfg.max_street_grade) {
+                    route = Some((p, pa, pb));
+                    break;
+                }
+                if routed.is_none() {
+                    routed = Some((p, pa, pb));
+                }
+            }
             match route {
-                Some(p) => {
+                Some((p, pa, pb)) => {
                     kept += length;
-                    used.extend([(a.street, a.end), (b.street, b.end)]);
+                    serve(a, pa, &mut used, &mut junctions);
+                    serve(b, pb, &mut used, &mut junctions);
                     sections.push(Street {
                         widths: vec![lane.width; p.len()],
                         path: p,
@@ -634,18 +793,22 @@ pub(super) fn inner_ring(
                         role: "wall-lane".into(),
                     });
                 }
-                None if covered => used.extend([(a.street, a.end), (b.street, b.end)]),
+                None if covered => {
+                    for x in [a, b].into_iter().filter(|x| !x.through) {
+                        used.insert((x.street, x.end));
+                    }
+                }
                 None => {
                     dropped += length;
                     // Water or a slope on the way: the lane still runs from
                     // each end up to it (a dead end along the wall foot), so
                     // the wall is not left with a strip of lot along it.
-                    let Some(p) = routed else { continue };
+                    let Some((p, pa, pb)) = routed else { continue };
                     let [head, tail] = clear_spurs(&p, surface, cfg.max_street_grade);
-                    for (spur, end) in [(head, (a.street, a.end)), (tail, (b.street, b.end))] {
+                    for (spur, x, at) in [(head, a, pa), (tail, b, pb)] {
                         if let Some(spur) = spur {
                             kept += spur.windows(2).map(|w| distance(w[0], w[1])).sum::<f64>();
-                            used.insert(end);
+                            serve(x, at, &mut used, &mut junctions);
                             sections.push(Street {
                                 widths: vec![lane.width; spur.len()],
                                 path: spur,
@@ -663,7 +826,7 @@ pub(super) fn inner_ring(
     // curtain ribbon, goes).
     for a in anchored
         .iter()
-        .filter(|a| used.contains(&(a.street, a.end)))
+        .filter(|a| !a.through && used.contains(&(a.street, a.end)))
     {
         let s = &mut streets[a.street];
         if s.widths.len() != s.path.len() {
@@ -685,6 +848,28 @@ pub(super) fn inner_ring(
             s.widths.drain(..a.cut);
             s.path.insert(0, a.at);
             s.widths.insert(0, w);
+        }
+    }
+    // A section ending on a gate street ends on one of its vertices.
+    for (i, p) in junctions {
+        let s = &mut streets[i];
+        if s.path.iter().any(|&v| distance(v, p) < EPS) {
+            continue;
+        }
+        if s.widths.len() != s.path.len() {
+            let last = s.widths.last().copied().unwrap_or(4.0);
+            s.widths.resize(s.path.len(), last);
+        }
+        let Some((m, (d, t, _))) = (0..s.path.len().saturating_sub(1))
+            .map(|m| (m, g::distance(p, s.path[m], s.path[m + 1])))
+            .min_by(|x, y| x.1.0.total_cmp(&y.1.0))
+        else {
+            continue;
+        };
+        if d < 1e-3 {
+            let w = s.widths[m] + (s.widths[m + 1] - s.widths[m]) * t;
+            s.path.insert(m + 1, p);
+            s.widths.insert(m + 1, w);
         }
     }
     streets.extend(sections);

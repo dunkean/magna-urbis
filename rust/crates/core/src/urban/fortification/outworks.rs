@@ -12,7 +12,11 @@ use super::geometry::{
 use super::moat::Moat;
 use super::street_clearance::{Near, final_width};
 use super::towers::bastion;
+use super::water::{MOAT_SHORT, near_water};
 
+/// The outer walls, barbicans and wengcheng courts of a circuit. Returns the hull its ditch is dug
+/// round (`moat_line`): the curtain out to its outer face, the bastions and these large works. Towers
+/// and gatehouses stand on the scarp and are not in it.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn outer_works(
     ctx: &BuildContext<'_>,
@@ -23,11 +27,9 @@ pub(super) fn outer_works(
     rng: &Rng,
 ) -> Vec<Shape> {
     let &BuildContext { style, poly, face, clear, inner_core, streets, predicted, height, tower_height, c, surface, .. } = ctx;
-    let Works { towers, gatehouses, bastion_union, outworks, extra_reserve, occupied, .. } = works;
-    let mut moat_core: Vec<Shape> = buffer(poly, face.max(0.1));
-    moat_core.extend(bastion_union.iter().cloned());
-    moat_core.extend(towers.iter().map(|t| t.footprint.clone()));
-    moat_core.extend(gatehouses.iter().flat_map(|gh| gh.masses.clone()));
+    let Works { gatehouses, bastion_union, outworks, extra_reserve, occupied, .. } = works;
+    let mut hull: Vec<Shape> = buffer(poly, face.max(0.1));
+    hull.extend(bastion_union.iter().cloned());
     if ctx.has("outer-wall") || ctx.has("antemural") {
         let kind = if ctx.has("outer-wall") {
             "outer-wall"
@@ -98,7 +100,7 @@ pub(super) fn outer_works(
                 }
             }
             extra_reserve.extend(lists);
-            moat_core.extend(band.iter().cloned());
+            hull.extend(band.iter().cloned());
             if ctx.has("barbican") {
                 let mut oring = o.outer.clone();
                 oring.push(oring[0]);
@@ -139,7 +141,7 @@ pub(super) fn outer_works(
                                 continue;
                             }
                             for p in &pieces {
-                                moat_core.push(p.clone());
+                                hull.push(p.clone());
                                 occupied.add(p.clone());
                             }
                             for p in pieces {
@@ -270,7 +272,7 @@ pub(super) fn outer_works(
             let Some((_, x, mut sx, wx)) = exit else {
                 continue;
             };
-            moat_core.push(outer.clone());
+            hull.push(outer.clone());
             extra_reserve.extend(clear.from(inner_core.from(vec![inner])));
             for p in walls.into_iter().filter(|p| g::area(p) >= 10.0) {
                 outworks.push(Work {
@@ -315,7 +317,7 @@ pub(super) fn outer_works(
             }
         }
     }
-    moat_core
+    hull
 }
 
 /// Place a bastioned pentagon outside the highest available salient.
@@ -385,16 +387,17 @@ pub(super) fn citadel(
                 continue;
             }
             let citadel = citadel.into_iter().next().unwrap();
-            if let Some(kind) = ditch_kind {
+            // Its own ditch, detached from the moat line: dry, short of natural water.
+            if ditch_kind.is_some() {
                 let ring_d: Vec<Shape> = buffer(&citadel, berm + dw)
                     .iter()
                     .flat_map(|o| g::difference(o, &citadel))
                     .collect();
                 for p in clear.from(ring_d) {
                     for d in g::dry_clip(&surface, &p) {
-                        if g::area(&d) > 20.0 {
+                        if g::area(&d) > 20.0 && !d.outer.iter().any(|&q| near_water(q, MOAT_SHORT, surface)) {
                             ditch.push(Work {
-                                kind: kind.into(),
+                                kind: "dry".into(),
                                 shape: d,
                                 height_m: depth,
                                 passage: None,

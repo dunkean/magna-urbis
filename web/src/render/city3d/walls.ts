@@ -3,8 +3,9 @@
  * Reads/writes: Reads enclosures and terrain/water inputs; owns a per-call sampled-height cache and local display meshes.
  */
 import type { BoundaryLine } from '../craftedBoundaries';
-import { moatBridges, moatFaces, moatRevetment, moatWorks } from '../city3dMoat';
-import { moatDepth, moatForm, moatParts, moatSpec, moatState, type MoatSpec } from '../moatModel';
+import { moatDecks, moatRevetment, moatWater, moatWorks } from '../city3dMoat';
+import { runFrame, runStrip } from '../moatLine';
+import { moatForm, moatSpec, moatState, type MoatSpec } from '../moatModel';
 import type { PlacedBuilding } from '../../../../rust/bridge/urbanArchitecture';
 import type { MaterialPattern, MaterialSlots, Point } from '../../../../rust/bridge/housesContract';
 import type { Enclosure } from '../../../../rust/bridge/urban';
@@ -337,47 +338,40 @@ export function city3dWalls(enclosures: readonly Enclosure[], heightAt?: City3dH
       );
       push(wallPiece(`${id}:${w.kind}:${wi}`, `${style}:${w.kind}`, mesh, pattern), crest([w.shape], height, g));
     });
-    // Moat: the terrain digs the ground (ui/urbanGroundCuts.ts); a wet moat's water lies in it, see city3dMoat.ts.
-    const form = moatForm(e),
-      moat = moatSpec(e as Enclosure & { moat?: MoatSpec }),
-      // The plan parts of the ditch (channel, pools, duckweed, lilies...), by piece: the water of each lies as its 2D plan shows it.
-      parts = moatParts(e.ditch ?? [], form, e.path);
-    (e.ditch ?? []).forEach((d, di) => {
-      if (!d.shape?.outer || d.shape.outer.length < 3) return;
-      const mesh = new WallMesh();
-      moatFaces(
-        d,
-        form,
-        g,
-        (pts, material) => mesh.add(pts, material),
-        waterColor,
-        moatState({ moat }),
-        parts.filter(p => p.piece === di),
-        engraved,
-      );
-      if (mesh.empty) return;
-      mesh.footprint.push({ outer: d.shape.outer, holes: [] });
-      push(wallPiece(`${id}:ditch:${di}`, `${style}:ditch:${d.kind}`, mesh, 'earth'));
-    });
-    // The facing of a revetted ditch (stone or timber), its dams and sluices.
-    (e.ditch ?? []).forEach((d, di) => {
-      if (!d.shape?.outer || d.shape.outer.length < 3 || form.revetment === 'earth') return;
-      const mesh = new WallMesh(),
+    // Moat: the terrain digs the ground from the stations of its runs (ui/urbanGroundCuts.ts); the water of each reach, the
+    // facing of a revetted ditch, its dams, sluices and bridges are here (city3dMoat.ts). A circuit without runs has no moat.
+    const moatRuns = e.moat?.runs ?? [];
+    if (moatRuns.length) {
+      const form = moatForm(e),
+        moat = moatSpec(e as Enclosure & { moat?: MoatSpec }),
+        town = moatState({ moat }),
+        depth = e.moat?.depth_m || form.depthM,
         timber = form.revetment === 'timber';
-      moatRevetment(e.ditch ?? [], form, g, (pts, material) => mesh.add(pts, material), timber ? wood : mat('stone'), timber ? wood : mat('stone'), d);
-      if (mesh.empty) return;
-      mesh.footprint.push({ outer: d.shape.outer, holes: [] });
-      push(wallPiece(`${id}:revetment:${di}`, `${style}:revetment:${form.revetment}`, mesh, timber ? 'wood' : 'stone'));
-    });
-    {
-      const mesh = new WallMesh(),
-        depth = Math.max(0, ...(e.ditch ?? []).map(d => moatDepth(d, form)));
-      if (moatWorks(moat, depth, g, (shape, zb, zt, s, cap, under) => mesh.prism(shape, zb, zt, s, cap, under), mat('stone'), mat('stone'))) push(wallPiece(`${id}:moat-works`, `${style}:moat-works`, mesh, 'stone'));
-    }
-    // Bridges over the dug moat at the land gates, standing on the undug ground.
-    {
-      const mesh = new WallMesh();
-      if (moatBridges(gatehouses, e.ditch ?? [], form, g, (shape, zb, zt, s, cap, under) => mesh.prism(shape, zb, zt, s, cap, under), wall ? side : wood, wall ? top : wood)) push(wallPiece(`${id}:moat-bridge`, `${style}:moat-bridge`, mesh, wall ? pattern : 'wood'));
+      moatRuns.forEach((run, ri) => {
+        const frame = runFrame(run, g, depth);
+        if (!frame) return;
+        const water = new WallMesh();
+        for (const strip of moatWater(run, frame, form, depth, (pts, material) => water.add(pts, material), waterColor, town, engraved)) water.footprint.push(strip);
+        push(wallPiece(`${id}:ditch:${ri}`, `${style}:ditch:water`, water, 'earth'));
+        if (form.revetment === 'earth') return;
+        const facing = new WallMesh();
+        moatRevetment(
+          run,
+          frame,
+          form,
+          (e.moat?.crossings ?? []).filter(c => c.run === ri),
+          (pts, material) => facing.add(pts, material),
+          timber ? wood : mat('stone'),
+          timber ? wood : mat('stone'),
+        );
+        facing.footprint.push(runStrip(run));
+        push(wallPiece(`${id}:revetment:${ri}`, `${style}:revetment:${form.revetment}`, facing, timber ? 'wood' : 'stone'));
+      });
+      const hydraulics = new WallMesh();
+      if (moatWorks(moat, depth, g, (shape, zb, zt, s, cap, under) => hydraulics.prism(shape, zb, zt, s, cap, under), mat('stone'), mat('stone'))) push(wallPiece(`${id}:moat-works`, `${style}:moat-works`, hydraulics, 'stone'));
+      // Bridges over the dug moat at its bridge crossings, standing on the undug ground.
+      const decks = new WallMesh();
+      if (moatDecks(e.moat, g, (shape, zb, zt, s, cap, under) => decks.prism(shape, zb, zt, s, cap, under), wall ? side : wood, wall ? top : wood)) push(wallPiece(`${id}:moat-bridge`, `${style}:moat-bridge`, decks, wall ? pattern : 'wood'));
     }
     // Lean-tos against the outer face: low walls under a pitched roof.
     (e.attached ?? []).forEach((a, ai) => {

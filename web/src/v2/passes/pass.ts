@@ -27,7 +27,7 @@ export const PASSES: Readonly<Record<PassName, PassSpec>> = {
   },
   forest: { inputs: ['keys.forest', 'revisions.terrain|roads|landuse|cities|settlements', 'effective forest settings'], owns: ['GPU forest field'], invalidation: 'forest settings, terrain, circulation and occupation' },
   water: {
-    inputs: ['keys.water', 'revisions.terrain', 'layers.water', 'mode', 'drawn water regime (climateZone, season, calendar)'],
+    inputs: ['keys.water', 'revisions.terrain', 'layers.water', 'mode', 'drawn water regime (climateZone, season, calendar)', 'moat runs of the native towns'],
     owns: ['GPU water/overlay textures', 'water vector SVG'],
     invalidation: 'water colours, lakes, oxbows, diagnostic overlay, the drawn regime of the date (a freeze, a step of rain in a dry zone; resource diagnostics also read revisions.settlements and the lazily fetched payload)',
   },
@@ -54,6 +54,8 @@ export interface PassInput {
   forestEffective: string;
   /** mapSize, seed, biome: read by the overlay renderer outside the products. */
   worldSig: string;
+  /** The moat runs of the native towns (render/moatEnvelope.ts `moatEnvelopeKey`): a stream a moat takes in ends at its lip. */
+  moats?: string;
 }
 const j = (...parts: unknown[]): string => JSON.stringify(parts);
 const rel = (i: PassInput): boolean => i.layers.terrain !== false && i.r.ground.layers.relief;
@@ -67,7 +69,7 @@ export function passKeys(i: PassInput): Record<PassName, string> {
     terrainLook: j(k.terrainLook, i.effective, mode, rel(i), l.decor, l.background, v.terrain, ...(mode === 'cpu' ? [k.terrainBase, k.forest, k.water, l.water, l.terrain, i.forestEffective, v.roads, v.landuse, v.cities, v.settlements] : [])),
     forest: mode === 'cpu' ? 'in-terrain' : j(k.forest, v.terrain, v.roads, v.landuse, v.cities, v.settlements, i.forestEffective, rel(i)),
     // The date moves the water only through its drawn regime (dry beds, ice): a date that keeps it redraws no water.
-    water: j(k.water, v.terrain, l.water, mode, rel(i), isResourceDiagnostic(r.diagnostic) ? v.settlements : null, drawnWaterKey({ zone: i.climateZone, season: r.ground.season, calendar: r.ground.calendar }), i.effective),
+    water: j(k.water, v.terrain, l.water, mode, rel(i), isResourceDiagnostic(r.diagnostic) ? v.settlements : null, drawnWaterKey({ zone: i.climateZone, season: r.ground.season, calendar: r.ground.calendar }), i.effective, i.moats ?? ''),
     frame: j(r.ground.style, r.palette.colors, rel(i), r.ground.layers.frame, l.decor),
     cartography: j(k.cartography, v.roads, v.landuse, v.settlements, v.names, v.terrain, i.worldSig, cartLayers),
     overlays: j(k.overlays, k.roads, l.labels, l.decor),

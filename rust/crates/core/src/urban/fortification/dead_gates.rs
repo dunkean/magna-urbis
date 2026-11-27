@@ -2,18 +2,24 @@
 
 use crate::urban::{Layout, Point, Shape, Street, composition, geometry as g};
 use super::gate_budget::DEAD_END;
-use super::geometry::{Box2, add, dir, dist, pt, ribbon_half};
+use super::geometry::{Box2, add, curtain_body, dir, dist, pt, ribbon_half};
+use super::reserve::{gate_masses, release_gate_reserve};
 
 /// Last of the pipeline. A gate must lead somewhere:
 /// - a gate point no street crosses or reaches any more (the street was pruned, moved off the water,
 ///   trimmed) closes with its gatehouse;
-/// - a gate whose street ends shortly outside (under `DEAD_END` m of street beyond the wall, reaching no
+/// - a gate whose street ends shortly outside (under `DEAD_END` m of street beyond the wall and its ditch, reaching no
 ///   regional road, bridge, other gate or block it serves) closes too: its outer stub goes and the inner
 ///   street ends at the wall. A stub serving a block is a suburb street: its gate stays, so no block loses
 ///   its access this late.
 ///
 /// Water gates, water fronts and regional roads entering from the network stay.
+///
+/// A closed gate leaves no trace (a curtain is cut only by gates): its gatehouse masses leave the
+/// reserve (`release_gate_reserve`) and the slot its street cut through the curtain body is the
+/// curtain's again.
 pub(in super::super) fn drop_dead_gates(layout: &mut Layout) {
+    let old_masses = gate_masses(layout);
     // Street segments on a grid, for the walks outside the gates.
     const CELL: f64 = 16.0;
     let mut grid: std::collections::HashMap<(i64, i64), Vec<(usize, usize)>> = Default::default();
@@ -51,11 +57,24 @@ pub(in super::super) fn drop_dead_gates(layout: &mut Layout) {
     // Segments to drop, and crossing segments to stop at the wall (street, segment, new end).
     let mut dropped: std::collections::HashSet<(usize, usize)> = Default::default();
     let mut stops: Vec<(usize, usize, Point, bool)> = vec![];
-    for e in layout.enclosures.iter_mut().filter(|e| !e.style.is_empty() && e.path.len() >= 4) {
+    // The stretch of each stopped crossing past its new end (enclosure, from, to, width): its ribbon
+    // on the curtain body returns to the reserve.
+    let mut slots: Vec<(usize, Point, Point, f64)> = vec![];
+    let mut closed = false;
+    // The circuits: a road that reaches a gate from inside another one (the inner gate of an attached
+    // pair) does not enter from the network.
+    let rings: Vec<Option<Shape>> = layout
+        .enclosures
+        .iter()
+        .map(|e| (e.path.len() >= 4).then(|| g::normalized(Shape { outer: e.path[..e.path.len() - 1].to_vec(), holes: vec![] })))
+        .collect();
+    for (ei, e) in layout.enclosures.iter_mut().enumerate().filter(|(_, e)| !e.style.is_empty() && e.path.len() >= 4) {
         let streets = &layout.streets;
         let ring = g::normalized(Shape { outer: e.path[..e.path.len() - 1].to_vec(), holes: vec![] });
         let inside = |p: Point| g::contains(&ring, p);
         let half = ribbon_half(&e.kind).max(e.curtain_width_m * 0.5);
+        // The length of street a ditch takes before the road is outside the works.
+        let band = e.moat.as_ref().filter(|m| !m.runs.is_empty()).map_or(0.0, |m| 2.0 * m.width_m);
         // Blocks outside this circuit (the town's own blocks inside do not make a gate lead anywhere).
         let outside: Vec<&(Box2, &Shape)> = built.iter().filter(|(_, s)| !inside(g::interior_point(s))).collect();
         let serves = |a: Point, b: Point| {
@@ -73,11 +92,12 @@ pub(in super::super) fn drop_dead_gates(layout: &mut Layout) {
         let entering = |q: Point| {
             // A regional road ending on the curtain enters there (its outer part is the regional network);
             // any other street ending at the wall is a stub and opens nothing.
+            let neighbour = |p: Point| rings.iter().enumerate().any(|(j, r)| j != ei && r.as_ref().is_some_and(|r| g::contains(r, p)));
             streets.iter().filter(|s| matches!(s.role.as_str(), "regional" | "approach") && s.path.len() >= 2).any(|s| {
                 let n = s.path.len();
-                [(s.path[0], s.widths.first()), (s.path[n - 1], s.widths.last())]
+                [(s.path[0], s.path[1], s.widths.first()), (s.path[n - 1], s.path[n - 2], s.widths.last())]
                     .iter()
-                    .any(|&(p, w)| dist(p, q) < w.copied().unwrap_or(4.0) * 0.5 + 2.0)
+                    .any(|&(p, body, w)| dist(p, q) < w.copied().unwrap_or(4.0) * 0.5 + 2.0 && !neighbour(body))
             })
         };
         let mut remap = vec![None; e.gates.len()];
@@ -118,7 +138,7 @@ pub(in super::super) fn drop_dead_gates(layout: &mut Layout) {
                         total += dist(a, b);
                         stack.extend([a, b].into_iter().filter(|&o| dist(o, p) > 0.5));
                     }
-                    alive |= total > DEAD_END;
+                    alive |= total > DEAD_END + band;
                 }
                 if !alive {
                     for &(si, k) in &seen {
@@ -136,7 +156,9 @@ pub(in super::super) fn drop_dead_gates(layout: &mut Layout) {
                         };
                         let w = s.widths.get(k).copied().unwrap_or(4.0);
                         let back = (half + w * 0.5 + 0.5).min(dist(inner, x));
-                        stops.push((si, k, add(x, dir(x, inner), back), inside(a)));
+                        let end = add(x, dir(x, inner), back);
+                        stops.push((si, k, end, inside(a)));
+                        slots.push((ei, end, outer, w));
                     }
                 }
                 alive
@@ -149,6 +171,7 @@ pub(in super::super) fn drop_dead_gates(layout: &mut Layout) {
         if gates.len() == e.gates.len() {
             continue;
         }
+        closed = true;
         e.gatehouses = std::mem::take(&mut e.gatehouses)
             .into_iter()
             .filter_map(|mut gh| {
@@ -158,6 +181,19 @@ pub(in super::super) fn drop_dead_gates(layout: &mut Layout) {
             .collect();
         e.inner_gates = e.inner_gates.iter().filter_map(|&i| remap.get(i).copied().flatten()).collect();
         e.gates = gates;
+    }
+    if closed {
+        release_gate_reserve(layout, old_masses);
+    }
+    for (ei, a, b, w) in slots {
+        let e = &mut layout.enclosures[ei];
+        let body = curtain_body(&e.path, e.curtain_width_m, ribbon_half(&e.kind));
+        let back: Vec<Shape> = g::ribbon(&[a, b], &[w + 1.0, w + 1.0])
+            .iter()
+            .flat_map(|r| body.iter().flat_map(|c| g::intersection(r, c)))
+            .filter(|s| g::area(s) > 0.5)
+            .collect();
+        e.reserve.extend(back);
     }
     if dropped.is_empty() && stops.is_empty() {
         return;

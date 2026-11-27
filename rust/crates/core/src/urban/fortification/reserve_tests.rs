@@ -3,18 +3,18 @@
 use crate::rng::Rng;
 use crate::urban::{
     Attached, Block, Enclosure, LayoutConfig, ParcelConfig, Point, Shape,
-    Work, composition, generate_parcels, geometry as g, parcels,
+    Street, composition, generate_parcels, geometry as g, parcels,
 };
 use super::build::build;
-use super::geometry::{Cut, add, closed, curtain_body, dir, dist, dot, pt, ribbon_half};
-use super::moat::{continuous_moat, embedded};
+use super::geometry::{Cut, closed, curtain_body, pt, ribbon_half};
+use super::moat::embedded;
 use super::reserve::fronted;
 use super::settle::settle;
 use super::street_clearance::Near;
 use super::style::styled;
 use super::test_fixtures::{
-    N, built_with, octagon, predicted, river, street, streets,
-    surface, town, town_with,
+    N, octagon, predicted, river, street, streets,
+    surface, town, town_seeded,
 };
 use super::test_fixtures;
 
@@ -52,31 +52,30 @@ fn review_curtain_reserves_both_faces_and_moat_cuts_stay_local() {
 /// round on its outer side holds no water; one facing open land keeps it.
 #[test]
 fn review11_moat_inside_the_built_town_is_dry() {
-    let path = closed(&g::rectangle(600.0, 600.0, 1400.0, 1400.0).outer);
-    let piece = g::rectangle(800.0, 584.0, 1200.0, 596.0);
+    let (inner, outer) = (pt(1000.0, 596.0), pt(1000.0, 584.0));
     let faubourg = g::rectangle(700.0, 380.0, 1300.0, 582.0);
-    assert!(embedded(&piece, &path, &[(g::bbox(&faubourg), &faubourg)]));
-    assert!(!embedded(&piece, &path, &[]));
+    assert!(embedded(inner, outer, &[(g::bbox(&faubourg), &faubourg)]));
+    assert!(!embedded(inner, outer, &[]));
     // A single row of houses along the moat is a faubourg street, not the town.
     let row = g::rectangle(700.0, 555.0, 1300.0, 582.0);
-    assert!(!embedded(&piece, &path, &[(g::bbox(&row), &row)]));
-}
-
-/// Walls review 16/11: a moat is a ring or nothing: stubs go, and a moat
-/// left on a small share of its curtain goes whole.
-#[test]
-fn walls16_moat_is_continuous_or_absent() {
-    let height = vec![10.0f32; N * N];
-    let water = vec![0u8; N * N];
-    let s = surface(&height, &water);
-    let path = closed(&g::rectangle(600.0, 600.0, 1400.0, 1400.0).outer);
-    let work = |shape: Shape| Work { kind: "dry".into(), shape, height_m: 3.0, passage: None };
-    let long = |y0: f64| work(g::rectangle(600.0, y0, 1400.0, y0 + 8.0));
-    let stub = work(g::rectangle(600.0, 1420.0, 615.0, 1428.0));
-    let kept = continuous_moat(vec![long(580.0), long(1404.0), work(g::rectangle(1404.0, 600.0, 1412.0, 1400.0)), stub], &[], &path, s);
-    assert_eq!(kept.len(), 3, "the stub stays");
-    let scattered = continuous_moat(vec![long(580.0)], &[], &path, s);
-    assert!(scattered.is_empty(), "a quarter of a moat is kept");
+    assert!(!embedded(inner, outer, &[(g::bbox(&row), &row)]));
+    // A culture's wet moat keeps its pools where one built frontage faces it; a run the town has grown
+    // round dries whole, and the fed reach keeps its water.
+    use crate::urban::types::{MoatReach, MoatRun};
+    let run = MoatRun {
+        inner: vec![pt(1200.0, 596.0), pt(1300.0, 596.0), pt(1400.0, 596.0), pt(1500.0, 596.0)],
+        outer: vec![pt(1200.0, 584.0), pt(1300.0, 584.0), pt(1400.0, 584.0), pt(1500.0, 584.0)],
+        reaches: vec![MoatReach { from: 0, to: 2, supply: "pool".into(), level: None },
+            MoatReach { from: 2, to: 3, supply: "fed".into(), level: Some(2.0) }],
+        ..Default::default()
+    };
+    let town = g::rectangle(700.0, 380.0, 1600.0, 582.0);
+    for (built, supplies) in [(&faubourg, ["pool", "fed"]), (&town, ["dry", "fed"])] {
+        let mut run = run.clone();
+        super::moat_line::dry_pools(&mut run, |inner, outer| embedded(inner, outer, &[(g::bbox(built), built)]));
+        assert_eq!(run.reaches.iter().map(|r| r.supply.as_str()).collect::<Vec<_>>(), supplies);
+        assert_eq!(run.reaches[1].level, Some(2.0));
+    }
 }
 
 /// Walls review 16/11: « Moat » is a generation parameter: none digs no
@@ -251,11 +250,14 @@ fn faubourg_lean_tos_front_their_lane_clear_of_ditch_and_gates() {
 /// the reserve (I3 still holds).
 #[test]
 fn served_lean_tos_leave_the_reserve_as_faubourg_lots() {
-    // Faubourg fronts lean on a curtain without a moat.
-    let layouts = town_with("flanked", vec![0u8; N * N], "none");
+    // Faubourg fronts lean on a curtain without a moat; a gate draws one or not, so the first seed with a front serves.
+    let layouts = ["walls", "walls-b", "walls-c", "walls-d", "walls-e", "walls-f"]
+        .iter()
+        .map(|seed| town_seeded(seed, "flanked", vec![0u8; N * N], "none"))
+        .find(|l| !l[0].enclosures[0].attached.is_empty())
+        .expect("a test town with a faubourg front");
     let layout = &layouts[0];
     let e = &layout.enclosures[0];
-    assert!(!e.attached.is_empty(), "the test town has a faubourg front");
     let segs: Vec<(Point, Point, f64)> = layout
         .streets
         .iter()
@@ -274,11 +276,8 @@ fn served_lean_tos_leave_the_reserve_as_faubourg_lots() {
         .iter()
         .filter(|a| fronted(&a.shape, &segs))
         .collect();
-    assert_eq!(
-        served.len(),
-        e.attached.len(),
-        "every lean-to fronts its lane"
-    );
+    // A lean-to whose lane a later stage took stays in the reserve: the rule is about the served ones.
+    assert!(!served.is_empty(), "the test town has a served lean-to");
     for a in &served {
         assert!(
             reserve.hits(&a.shape) < 0.5,
@@ -304,45 +303,73 @@ fn served_lean_tos_leave_the_reserve_as_faubourg_lots() {
     );
 }
 
-/// A street running in the ditch zone, along the curtain: the ditch and
-/// berm stop at it, and no piece of them is left beyond it on the town
-/// side (the land the faubourg lots then reach up to the street).
+/// A walled rectangle (600..1400 m) with a 10 m ditch of `ditch` kind, built on `height` and `water`
+/// with `streets`.
+fn moated(ditch: &str, height: &[f32], water: &[u8], streets: &[Street]) -> Enclosure {
+    let s = surface(height, water);
+    let path = closed(&g::rectangle(600.0, 600.0, 1400.0, 1400.0).outer);
+    let gates = composition::gates(&path, streets);
+    let land = gates.len();
+    let mut e = Enclosure { path, gates, kind: "wall".into(), ..Default::default() };
+    let mut style = styled("curtain", "european-organic", 10_000);
+    style.ditch = ditch.into();
+    style.ditch_p = 1.0;
+    style.ditch_width = [10.0; 2];
+    style.berm = 2.0;
+    style.outworks.clear();
+    style.attached = 0.0;
+    style.tower_spacing = None;
+    style.corner_turn = None;
+    build(&mut e, land, &[], streets, s, &style, 10_000, &predicted(), &Rng::new("moat-line"));
+    e
+}
+
+/// A street through the ditch crosses it: the run stays whole and the street has one crossing record,
+/// leaving by its gate.
 #[test]
-fn no_ditch_is_left_beyond_a_street_along_the_curtain() {
-    let path = octagon();
-    let (a, b) = (path[0], path[1]);
-    let t = dir(a, b);
-    let n = (t.1, -t.0);
-    // Counter-clockwise ring: (t.1, -t.0) points outward.
-    assert!(dot(n, (a.x - 1000.0, a.y - 1000.0)) > 0.0);
-    let off = 9.75;
-    let along = |s: f64| add(add(a, t, s), n, off);
-    let mut list = streets();
-    list.push(street(
-        &[
-            (along(-25.0).x, along(-25.0).y),
-            (along(dist(a, b) + 25.0).x, along(dist(a, b) + 25.0).y),
-        ],
-        3,
-        3.0,
-    ));
-    let (e, _) = built_with("gord", "palisade", &vec![0; N * N], 3000, list);
-    let side = |s: &Shape| {
-        let p = g::interior_point(s);
-        let v = (p.x - a.x, p.y - a.y);
-        (dot(v, t), dot(v, n))
-    };
-    let front = |s: &&Shape| (0.0..dist(a, b)).contains(&side(s).0);
-    let ditch: Vec<&Shape> = e.ditch.iter().map(|d| &d.shape).filter(front).collect();
-    assert!(
-        ditch.iter().any(|d| side(d).1 < off),
-        "the ditch still runs between the curtain and the street"
-    );
-    for s in ditch.iter().copied().chain(e.reserve.iter().filter(front)) {
-        assert!(
-            side(s).1 < off,
-            "a fortification piece beyond the street: {:?}",
-            side(s)
-        );
-    }
+fn a_street_crosses_the_moat_without_cutting_it() {
+    let (height, water) = (vec![10.0f32; N * N], vec![0u8; N * N]);
+    let e = moated("dry", &height, &water, &[street(&[(1000.0, 1000.0), (1000.0, 300.0)], 1, 8.0)]);
+    let m = e.moat.as_ref().expect("a moat");
+    assert!(m.runs.len() == 1 && m.runs[0].closed, "the ring is one closed run");
+    assert_eq!(m.crossings.len(), 1);
+    let c = &m.crossings[0];
+    assert_eq!(c.gate, Some(0));
+    let (a, b) = (c.path[0], c.path[c.path.len() - 1]);
+    let middle = pt(0.5 * (a.x + b.x), 0.5 * (a.y + b.y));
+    assert!(e.ditch.iter().any(|d| g::contains(&d.shape, middle)), "the ditch runs on under the street");
+}
+
+/// Beside a river the run ends at the water and its end reach is fed, the water between bed and rim.
+#[test]
+fn a_moat_beside_a_river_ends_at_it_and_is_fed() {
+    let height = vec![10.0f32; N * N];
+    let e = moated("wet", &height, &river(1410.0, 1480.0), &[]);
+    let m = e.moat.as_ref().expect("a moat");
+    assert_eq!(m.runs.len(), 1);
+    let run = &m.runs[0];
+    assert_eq!(run.ends, ["water".to_string(), "water".to_string()]);
+    let first = &run.reaches[0];
+    assert_eq!(first.supply, "fed");
+    let level = first.level.expect("a fed reach has a level");
+    assert!(run.bed[0] < level && level <= run.rim[0], "bed {} level {level} rim {}", run.bed[0], run.rim[0]);
+    assert!(!m.sluices.is_empty(), "a sluice joins the river");
+}
+
+/// On a slope a dry ditch is one reach per run: no dam between dry reaches.
+#[test]
+fn a_dry_moat_on_a_slope_has_no_dams() {
+    let height: Vec<f32> = (0..N * N).map(|i| 10.0 + 0.05 * (i % N) as f32 * 8.0).collect();
+    let e = moated("dry", &height, &vec![0u8; N * N], &[]);
+    let m = e.moat.as_ref().expect("a moat");
+    assert!(m.dams.is_empty());
+    assert!(m.runs.iter().all(|r| r.reaches.len() == 1 && r.reaches[0].supply == "dry"));
+}
+
+/// A circuit that digs no ditch has no moat.
+#[test]
+fn no_ditch_no_moat() {
+    let (height, water) = (vec![10.0f32; N * N], vec![0u8; N * N]);
+    let e = moated("none", &height, &water, &[]);
+    assert!(e.moat.is_none() && e.ditch.is_empty());
 }

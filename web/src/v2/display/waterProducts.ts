@@ -27,6 +27,8 @@ import { resourceOverlayBody } from '../resourceLayer';
 import type { DisplayParts, VectorRaster, Water, WorldBox } from './contract';
 import type { MapState } from './mapState';
 import { svgOf, svgPartsOf, wholeMap } from './mapSvg';
+import { MoatEnvelopes } from '../../render/moatEnvelope';
+import { nativeCitiesOf } from '../nativeProducts';
 
 export class WaterProducts implements Water {
   /** Vector water, hydrology (waterSvg) and frame (frameSvg): world-coordinate SVG bodies, rasterized per view (render/viewRaster). */
@@ -89,7 +91,10 @@ export class WaterProducts implements Water {
         // The painted compositor (natural water) reads the seasonal regime from the segment colour.
         const material = !ink && water.overlay === 'none',
           mouthMix: number[] | undefined = material && r.ground.traits.satelliteVariant === 1 && !r.ground.traits.paperMap ? [] : undefined,
-          rivers = visible ? riverSegments(t.water, { ...water, material, thread: true }, mouthMix) : undefined;
+          // A stream a town's moat takes in ends at its outer lip (the pass key follows the moats, pass.ts `moats`).
+          moats = new MoatEnvelopes(nativeCitiesOf(this.map.world).flatMap(city => city.layouts)),
+          cut = moats.empty ? undefined : (points: readonly number[]) => moats.courseCut(points),
+          rivers = visible ? riverSegments(t.water, { ...water, material, thread: true, cut }, mouthMix) : undefined;
           // The colour pass also carries sediment plumes and openings in exposed lake shores. Towns keep the physical banks.
         let painted = rivers;
         if (rivers && mouthMix?.length) {

@@ -62,8 +62,10 @@ fn quarter_pass(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Res
     laps.lap("trim.prepare");
     access::refine(&mut layout, config, &at.morph, town.surface);
     laps.lap("access.refine");
+    fortification::trace_gates("access.refine", &layout);
     stop_streets_at_walls(&mut layout, config, town);
     laps.lap("fortification.enforce");
+    fortification::trace_gates("fortification.enforce", &layout);
     // Blocks nobody builds on go back to the fields, with their streets.
     let trimmed = layout.structure.as_ref().is_some_and(|s| s.mechanism != "legacy");
     // The lots the trim's allocation built: town circuits are fitted to them.
@@ -71,10 +73,12 @@ fn quarter_pass(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Res
     if trimmed {
         built_lots = Some(trim::run(town.seed, &mut layout, config, town.original, site.population, town.surface).1);
         laps.lap("trim.run.1");
+        fortification::trace_gates("trim.run.1", &layout);
     }
     // Fortifications follow the final streets and blocks.
     composition::fit_enclosures(&mut layout, site.population, town.surface, built_lots.as_deref());
     laps.lap("fit_enclosures.1");
+    fortification::trace_gates("fit_enclosures.1", &layout);
     // A join that would stand on a neighbour's land is not made: the circuits stay as they were.
     let apart = town.neighbour_land.as_ref().map(|mask| (mask, layout.enclosures.clone()));
     composition::join_side_by_side(&mut layout, town.surface);
@@ -85,11 +89,13 @@ fn quarter_pass(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Res
         layout.enclosures = apart;
     }
     laps.lap("join_side_by_side");
+    fortification::trace_gates("join_side_by_side", &layout);
     // A circuit without works is a curtain the fit drew back or joined (or a forced
     // footprint): `settle` decides its gates and closes the streets it now crosses.
     let rebuilt = layout.enclosures.iter().any(|e| e.style.is_empty() && e.path.len() >= 4);
     fortification::settle(&mut layout, town.surface);
     laps.lap("fortification.settle.1");
+    fortification::trace_gates("fortification.settle.1", &layout);
     // The first trim read the plan with its gates decided: it runs again only when a
     // circuit was rebuilt after it, which cuts streets and can leave lots without access.
     if rebuilt && trimmed {
@@ -135,14 +141,17 @@ fn stop_streets_at_walls(layout: &mut Layout, config: &LayoutConfig, town: &Town
 fn retrim(layout: &mut Layout, config: &LayoutConfig, site: &Site, town: &Town<'_>, laps: &mut Lap) {
     let (released, built_lots) = trim::run(town.seed, layout, config, town.original, site.population, town.surface);
     laps.lap("trim.run.2");
+    fortification::trace_gates("trim.run.2", &layout);
     if released == 0 {
         return;
     }
     let before: Vec<_> = layout.enclosures.iter().map(|e| e.path.clone()).collect();
     composition::fit_enclosures(layout, site.population, town.surface, Some(&built_lots));
     laps.lap("fit_enclosures.2");
+    fortification::trace_gates("fit_enclosures.2", &layout);
     if layout.enclosures.iter().map(|e| &e.path).ne(before.iter()) {
         fortification::settle(layout, town.surface);
         laps.lap("fortification.settle.2");
+        fortification::trace_gates("fortification.settle.2", &layout);
     }
 }

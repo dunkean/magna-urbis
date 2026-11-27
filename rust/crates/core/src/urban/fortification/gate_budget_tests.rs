@@ -2,7 +2,7 @@
 
 use crate::urban::{Enclosure, Layout, Point, Shape, Street, Surface, composition, geometry as g};
 use super::super::dead_gates::drop_dead_gates;
-use super::{Circuit, STRAIGHT, cumulated, decide, divert, gate_budget, round_outside, segment_of, throat};
+use super::{Circuit, STRAIGHT, cumulated, decide, decide_reached, divert, gate_budget, reach_through, round_outside, segment_of, throat};
 use super::super::geometry::{closed, cross, dir, dist, dot, normals, pt};
 
 /// Walls review 17/11: the gate budget follows the population (2-4 under 5 000, 5 at 10 000,
@@ -32,6 +32,28 @@ fn walls17_a_gate_leading_nowhere_closes() {
     let north = layout.streets.iter().flat_map(|s| s.path.iter()).map(|p| p.y).fold(f64::INFINITY, f64::min);
     assert!(north > 600.0, "the street still runs past the wall ({north:.0})");
     assert!(layout.streets.iter().any(|s| s.path.iter().any(|p| p.y > 1800.0)), "the road into the country was cut");
+}
+
+/// A closed gate leaves no trace: its gatehouse masses leave the reserve and the slot its street cut
+/// through the curtain body is the curtain's again.
+#[test]
+fn a_closed_gate_leaves_a_whole_curtain() {
+    use crate::urban::Gatehouse;
+    let path = closed(&g::rectangle(600.0, 600.0, 1400.0, 1400.0).outer);
+    let masses = vec![g::rectangle(990.0, 594.0, 996.5, 612.0), g::rectangle(1003.5, 594.0, 1010.0, 612.0)];
+    let gatehouse = Gatehouse { gate: 0, kind: "tower".into(), shape: g::rectangle(990.0, 594.0, 1010.0, 612.0), masses: masses.clone(), passage: [pt(1000.0, 612.0), pt(1000.0, 594.0)], passage_width_m: 7.0, height_m: 10.0 };
+    let e = Enclosure { path, kind: "wall".into(), style: "curtain".into(), curtain_width_m: 3.0, gates: vec![pt(1000.0, 600.0)], gatehouses: vec![gatehouse], reserve: masses, ..Default::default() };
+    let street = Street { path: vec![pt(1000.0, 1000.0), pt(1000.0, 580.0)], widths: vec![6.0; 2], rank: 1, role: "street".into() };
+    let mut layout = Layout {
+        config: None, programme: None, key: "gates".into(), culture: "european-organic".into(), center: pt(1000.0, 1000.0),
+        quarters: vec![], streets: vec![street], blocks: vec![], warnings: vec![], enclosures: vec![e], phases: vec![], archetype: String::new(), structure: None, claim: Default::default(),
+    };
+    drop_dead_gates(&mut layout);
+    let e = &layout.enclosures[0];
+    assert!(e.gates.is_empty() && e.gatehouses.is_empty());
+    let held = |p: Point| e.reserve.iter().any(|s| g::contains(s, p));
+    assert!(held(pt(1000.0, 600.0)), "the street slot in the curtain is filled");
+    assert!(!held(pt(993.0, 608.0)), "the gatehouse mass is released");
 }
 
 /// Walls review 17/11: an extra-mural road runs outside the curtain, the short way round.
@@ -99,6 +121,23 @@ fn gates_are_kept_by_the_budget_and_the_other_crossings_close() {
     }
 }
 
+/// Two main roads through one stretch of wall keep one gate: the road shut out within `GATE_GAP` of
+/// the kept gate keeps no gate of its own, even with no way round (here it runs into a street inside
+/// the reach of the moat). Medina 10k: two gates 22 m apart.
+#[test]
+fn a_main_road_with_no_way_round_keeps_no_gate_beside_another() {
+    let mut streets = vec![
+        road(&[(1000.0, 1000.0), (1000.0, 200.0)], 1, "regional"),
+        road(&[(1000.0, 1000.0), (1024.0, 590.0)], 2, "regional"),
+        road(&[(1024.0, 590.0), (1300.0, 590.0)], 2, "street"),
+    ];
+    streets[0].widths = vec![8.0; 2];
+    let (wall, kept, shut) = decide(&town(), &mut streets, &circuit(false, 0.0), flat());
+    assert_eq!((kept.len(), shut.len()), (1, 1), "{kept:?}");
+    assert!(dist(kept[0].at, pt(1000.0, 600.0)) < 1.0, "{kept:?}");
+    assert_eq!(crossing_points(&wall, &streets).len(), 1, "the shut road still crosses the wall");
+}
+
 #[test]
 fn a_shore_opening_keeps_its_access_and_a_cut_ramp_keeps_its_deck_end() {
     let water: Vec<u8> = (0..256).map(|i| u8::from(i % 16 == 8)).collect();
@@ -118,6 +157,61 @@ fn a_shore_opening_keeps_its_access_and_a_cut_ramp_keeps_its_deck_end() {
     assert_eq!(ramps.next().unwrap().path[0], pt(bank.0, bank.1));
     assert!(ramps.next().is_none());
     assert!(streets.iter().any(|s| s.role == "lane" && s.path.last() == Some(&pt(930.0, 750.0))));
+}
+
+/// Walls and moats first (Chinese 10k, review 27/11): a main road that stops 20 m short of the curtain
+/// runs on through it before the gates are decided, out beyond the moat, and gets its gate; a lane
+/// stopping short keeps its end.
+#[test]
+fn a_main_road_short_of_the_wall_reaches_through_and_gets_its_gate() {
+    let mut streets = vec![road(&[(1000.0, 1000.0), (1000.0, 620.0)], 1, "regional"), road(&[(1000.0, 1000.0), (1380.0, 1000.0)], 3, "lane")];
+    let reached = reach_through(&town(), &mut streets, 60.0, &[], &[], None, flat());
+    let (wall, kept, shut) = decide_reached(&town(), &mut streets, &circuit(false, 0.0), &reached, flat());
+    assert!(kept.len() == 1 && shut.is_empty() && dist(kept[0].at, pt(1000.0, 600.0)) < 1.0, "{kept:?}");
+    let end = *streets[0].path.last().unwrap();
+    assert!(dist(end, pt(1000.0, 540.0)) < 1e-6, "the road ends at {end:?}, not 60 m beyond the wall");
+    assert_eq!(streets[0].widths.len(), streets[0].path.len());
+    assert_eq!(crossing_points(&wall, &streets).len(), 1);
+    assert!(streets[1].path.last() == Some(&pt(1380.0, 1000.0)), "a lane reached through");
+}
+
+#[test]
+fn a_regional_road_clipped_on_the_wall_goes_round_to_the_existing_gate() {
+    let mut streets = vec![road(&[(1000.0, 1000.0), (1000.0, 200.0)], 1, "regional"),
+        road(&[(940.0, 1000.0), (940.0, 600.000001)], 1, "regional")];
+    let outside = road(&[(940.0, 1000.0), (940.0, 600.0), (940.0, 200.0)], 1, "regional");
+    let reached = reach_through(&town(), &mut streets, 70.0, &[], &[outside], None, flat());
+    let (wall, kept, shut) = decide_reached(&town(), &mut streets, &circuit(false, 0.0), &reached, flat());
+    assert_eq!((kept.len(), shut.len()), (1, 1));
+    assert!(dist(kept[0].at, pt(1000.0, 600.0)) < 1.0);
+    let e = Enclosure { path: closed(&wall.outer), curtain_width_m: 3.0, gates: vec![kept[0].at], ..Default::default() };
+    divert(&e, &kept, &shut, &mut streets, flat(), 0.12, &[]);
+    let join = streets.iter().find(|s| s.role == "approach").unwrap();
+    assert!(join.path.iter().all(|p| p.y < 600.0));
+    assert!(streets[0].path.contains(join.path.last().unwrap()));
+}
+
+#[test]
+fn a_requested_postern_can_use_a_lesser_street_short_of_the_wall() {
+    let mut streets = vec![road(&[(1000.0, 1000.0), (1000.0, 300.0)], 1, "regional"),
+        road(&[(1200.0, 1000.0), (1200.0, 620.0)], 2, "street")];
+    let c = Circuit { gates: Some(2), ..circuit(false, 0.0) };
+    let reached = reach_through(&town(), &mut streets, 75.0, &[], &[], c.gates, flat());
+    let (_, kept, _) = decide_reached(&town(), &mut streets, &c, &reached, flat());
+    assert_eq!(kept.len(), 2);
+    assert!(kept.iter().any(|p| dist(p.at, pt(1200.0, 600.0)) < 1.0));
+}
+
+#[test]
+fn a_rebuilt_front_keeps_its_one_sided_regional_gate() {
+    let gate = pt(900.0, 600.0);
+    let mut streets = vec![road(&[(900.0, 300.0), (900.0, 600.0)], 1, "regional")];
+    let before = streets[0].path.clone();
+    let c = Circuit { streets_turn: false, ..circuit(false, 0.0) };
+    let (_, kept, _) = super::decide_with_gates(&town(), &mut streets, &c, &[gate], &[], flat());
+    assert_eq!(kept.len(), 1);
+    assert!(dist(kept[0].at, gate) < 0.01);
+    assert_eq!(streets[0].path, before);
 }
 
 /// Sharpest turn (degrees) of the closed `path` within `STRAIGHT` m of `gate`, along it.
@@ -208,12 +302,12 @@ fn a_gate_by_the_corner_of_a_planned_rectangle_moves_along_it() {
 /// gate gets none.
 #[test]
 fn a_main_road_shut_out_is_diverted_to_a_kept_gate() {
-    let streets = || vec![road(&[(1000.0, 1000.0), (1000.0, 200.0)], 2, "regional"), road(&[(900.0, 1000.0), (900.0, 200.0)], 1, "street")];
+    let streets = || vec![road(&[(1000.0, 1000.0), (1000.0, 200.0)], 2, "regional"), road(&[(940.0, 1000.0), (940.0, 200.0)], 1, "street")];
     let mut laid = streets();
     let (wall, kept, shut) = decide(&town(), &mut laid, &circuit(false, 0.0), flat());
     assert_eq!((kept.len(), shut.len()), (1, 1));
     let e = Enclosure { path: closed(&wall.outer), kind: "wall".into(), style: "curtain".into(), curtain_width_m: 3.0, gates: vec![kept[0].at], ..Default::default() };
-    divert(&e, &kept, &shut, &mut laid, flat(), 0.12);
+    divert(&e, &kept, &shut, &mut laid, flat(), 0.12, &[]);
     let diversion = laid.iter().find(|s| s.role == "approach").expect("no diversion");
     let (a, b) = (diversion.path[0], diversion.path[diversion.path.len() - 1]);
     let vertex = |p: Point| laid.iter().filter(|s| !std::ptr::eq(*s, diversion)).any(|s| s.path.iter().any(|&q| dist(p, q) < 1e-6));
@@ -225,8 +319,8 @@ fn a_main_road_shut_out_is_diverted_to_a_kept_gate() {
     assert!(outer.path.iter().any(|&q| dist(q, a) < 1e-6) && outer.path.iter().all(|p| p.y <= a.y + 1e-6), "the shut-out road still runs on to the wall");
     // Joined outside already (a street between the two roads, 40 m out): no diversion.
     let mut laid = streets();
-    laid.push(road(&[(900.0, 560.0), (1000.0, 560.0)], 2, "street"));
+    laid.push(road(&[(940.0, 560.0), (1000.0, 560.0)], 2, "street"));
     let (_, kept, shut) = decide(&town(), &mut laid, &circuit(false, 0.0), flat());
-    divert(&e, &kept, &shut, &mut laid, flat(), 0.12);
+    divert(&e, &kept, &shut, &mut laid, flat(), 0.12, &[]);
     assert!(laid.iter().all(|s| s.role != "approach"), "a redundant diversion");
 }

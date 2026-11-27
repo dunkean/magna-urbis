@@ -16,6 +16,7 @@
 //! remainder to the neighbour sharing the longest edge; a deleted lot merges
 //! into its best neighbour or stays as a garden. Ids never re-hash.
 use crate::urban::warnings;
+use super::fortification::circuit_ground;
 use super::geometry as g;
 use super::parcels::{FrontageIndex, network_contacts};
 use super::programme::Demand;
@@ -339,9 +340,6 @@ fn duplicate(s: &Street, kept: &[Street]) -> bool {
         .map(|p| p.1)
         .sum();
     total > 0.0 && close >= 0.8 * total
-}
-fn enclosure_ribbon(e: &Enclosure) -> Vec<Shape> {
-    g::ribbon(&e.path, &[if e.kind == "wall" { 3.0 } else { 1.5 }])
 }
 /// Subtract every shape of `cutters` (bbox-filtered) from `pieces`.
 fn subtract(mut pieces: Vec<Shape>, cutters: &[(Shape, (f64, f64, f64, f64))]) -> Vec<Shape> {

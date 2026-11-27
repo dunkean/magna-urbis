@@ -13,6 +13,9 @@ pub(super) const POLYGONAL_REACH: f64 = 3.0;
 /// kept built with the largest scaled-down body it holds (shed, annex, narrow
 /// house of odd ground).
 pub(super) const DEGENERATE: &str = "degenerate-lot";
+/// Smallest side (m) of the body the occupation keeps on a degenerate lot. It lies under the smallest
+/// scaled admission rectangle, so a lot that is admitted is a lot that is built (a shed, an annex).
+pub(super) const MIN_BODY_SIDE: f64 = 2.0;
 /// Scales of the admission rectangle tried for a degenerate lot.
 pub(super) const DEGENERATE_SCALES: [f64; 4] = [1.0, 0.85, 0.7, 0.55];
 
@@ -55,7 +58,7 @@ pub(in crate::urban) fn parcel_envelope_with(
         }
         // A degenerate lot keeps the largest body of the admission shape it holds.
         let scales: &[f64] = if degenerate { &DEGENERATE_SCALES } else { &[1.0] };
-        scales.iter().find_map(|k| {
+        scales.iter().copied().find_map(|k| {
             free_envelope(
                 &p.shape,
                 fronts,

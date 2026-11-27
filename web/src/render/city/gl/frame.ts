@@ -281,7 +281,7 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
     fills(plan, 'quays', false);
     fills(plan, 'quays', true);
   }
-  const wallDraw = { view, mpp, lod, palette, painted: renderBackground && palette !== 'parchment' && palette !== 'ink', enabled: layers.enclosures, water: o.live?.waterColor }; // walls hook
+  const wallDraw = { view, mpp, lod, palette, painted: renderBackground && palette !== 'parchment' && palette !== 'ink', enabled: layers.enclosures, water: o.live?.waterColor, dug: o.dugMoats }; // walls hook
   frame.drawCalls += wallGl.draw('ground', wallDraw); // walls hook: ditches and glacis under the streets
   // Strokes: streets (casing then fill), walls (outer then inner line).
   let u = strokeP.u;

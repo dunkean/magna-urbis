@@ -16,6 +16,7 @@ import { waterBedInk } from '../render/waterPalette';
 import { headwaterGeometry, isHeadwater, type HeadwaterGeometry } from '../render/riverHeadwaters';
 import { BANKFULL_RUNOFF, dischargeSize, drawnWaterClimate, meanDischarge, regimeRgb, riverState, riverSymbol, threadShare, type RiverState, type RiverSymbol, type WaterClimate, type WaterSeason } from '../render/waterRegime';
 import { styleTraits } from '../render/terrainStyle';
+import type { CourseCut } from '../render/moatEnvelope';
 
 export { VECTOR_OVERLAYS, VECTOR_LEGENDS } from '../render/displayDiagnostics';
 import type { VectorOverlay } from '../render/displayDiagnostics';
@@ -132,6 +133,27 @@ export interface WaterDisplay {
    * at the bed width carrying the regime (the contract the forest gallery reads, displayForest.ts). The SVG and 3D
    * regime paths (`regimeGroups`) always draw the thread. */
   thread?: boolean;
+  /** GPU segments (`riverSegments`): where a town's moat takes a course in, it ends at the outer lip (render/moatEnvelope.ts
+   * `courseCut`, given the drawn vertices). */
+  cut?: (points: readonly number[]) => CourseCut | undefined;
+}
+
+/** The course up to `at`: its vertices to the start of the cut segment, then the point of the cut. */
+function cutCourse(geo: DrawnCourse, at: CourseCut | undefined): DrawnCourse {
+  if (!at) return geo;
+  const { segment: j, t } = at,
+    keep = j + 1,
+    mix = (a: readonly number[], k: number, stride = 1): number => a[stride * j + k] + (a[stride * (j + 1) + k] - a[stride * j + k]) * t,
+    cut = (a: readonly number[]): number[] => [...a.slice(0, keep), mix(a, 0)];
+  return {
+    ...geo,
+    points: [...geo.points.slice(0, 2 * keep), mix(geo.points, 0, 2), mix(geo.points, 1, 2)],
+    widths: cut(geo.widths),
+    level: cut(geo.level),
+    kind: [...geo.kind.slice(0, keep), geo.kind[j]],
+    sea: Math.min(geo.sea, keep + 1),
+    ...(geo.bankfullWidths ? { bankfullWidths: cut(geo.bankfullWidths) } : {}),
+  };
 }
 
 /** Drawn climate of the display (`drawnWaterClimate`) when it changes anything; undefined keeps every course perennial
@@ -509,7 +531,8 @@ export function riverSegments(water: VectorWater, display: WaterDisplay, mouthMi
     ink = climate && !display.material ? regimeInk(display.style, edge) : undefined;
   if (mouthMix && display.showLakes && climate) for (const value of lakeInlets(water, climate)) mouthMix.push(value);
   const line = (l: RiverLine, thinner: number): void => {
-    const geo = riverGeometry(water, l, thinner, display.riverArea),
+    const drawn = riverGeometry(water, l, thinner, display.riverArea),
+      geo = display.cut ? cutCourse(drawn, display.cut(drawn.points)) : drawn,
       { points, kind, widths } = geo;
     const states = climate || display.material ? riverStates(water, geo, climate ?? { aridity: 0, lowWater: 0, rain: 1, ice: 0, sediment: 0, drop: 0 }, display.showLakes, l) : undefined;
     const thread = display.thread && climate ? threadWidths(water, widths, climate, states) : undefined;

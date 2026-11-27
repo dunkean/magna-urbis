@@ -357,6 +357,7 @@ fn splice(
     }
     let dropped = removed.len();
     let base_count = streets.len();
+    let works = with_boxes(s.enclosures.iter().flat_map(circuit_ground).collect());
     if let Some(l1) = l1 {
         for (&i, _) in &redrawn {
             let q1 = &l1.quarters[i].shape;
@@ -364,6 +365,7 @@ fn splice(
                 .iter()
                 .copied()
                 .filter(|b| bbox_hit(g::bbox(b), g::bbox(q1), 20.0))
+                .chain(works.iter().filter(|(_, b)| bbox_hit(*b, g::bbox(q1), 20.0)).map(|(shape, _)| shape))
                 .collect();
             let fresh: Vec<&Street> = l1
                 .streets
@@ -409,12 +411,7 @@ fn splice(
                     .iter()
                     .filter(|st| bbox_hit(path_bbox(&st.path), qb, max_width(st)))
                     .flat_map(|st| g::ribbon(&st.path, &st.widths))
-                    .chain(
-                        s.enclosures
-                            .iter()
-                            .filter(|e| bbox_hit(path_bbox(&e.path), qb, 3.0))
-                            .flat_map(enclosure_ribbon),
-                    )
+                    .chain(works.iter().filter(|(_, b)| bbox_hit(*b, qb, 0.0)).map(|(shape, _)| shape.clone()))
                     .collect(),
             );
             cutters.extend(

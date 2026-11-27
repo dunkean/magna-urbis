@@ -175,13 +175,13 @@ pub(in crate::urban) fn join_side_by_side(layout: &mut super::super::Layout, sur
         }
         let Some((i, j, trace, kind)) = joined else { break; };
         let path = closed(&trace.outer);
+        let gates = [i, j].into_iter().flat_map(|k| fortification::old_gates(&layout.enclosures[k], &path)).collect();
         layout.enclosures.remove(j);
         layout.enclosures.remove(i);
         ids.remove(j);
         ids.remove(i);
         ids.insert(i, fresh);
         fresh += 1;
-        let gates = gates(&path, &layout.streets);
         layout.enclosures.insert(i, Enclosure { gates, path, kind, ..Default::default() });
     }
 }
@@ -265,6 +265,21 @@ pub(in crate::urban) fn gates(path: &[Point], streets: &[Street]) -> Vec<Point> 
                 }
             }
         }
+        // A vertex of the street on the curtain itself, its neighbours on either side: a through crossing
+        // the segment test misses (one segment stops a hair short of the curtain, the next starts on it).
+        for i in 1..n - 1 {
+            let q = st.path[i];
+            for k in near.crossed(q, q) {
+                let (a, b) = (path[k], path[k + 1]);
+                if g::distance(q, a, b).0 < 1e-4 {
+                    let side = |p: Point| (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+                    if side(st.path[i - 1]) * side(st.path[i + 1]) < -1e-12 {
+                        hits.push((q, THROUGH));
+                    }
+                    break;
+                }
+            }
+        }
         // Street ends on the curtain, with the side their body lies on.
         for (q, body) in [(st.path[0], st.path[1]), (st.path[n - 1], st.path[n - 2])] {
             for k in near.crossed(q, q) {
@@ -297,6 +312,8 @@ pub(in crate::urban) fn gates(path: &[Point], streets: &[Street]) -> Vec<Point> 
 /// older circuit becomes a ring boulevard (`fossil: street`) or stays as an inner
 /// wall (`fossil: wall`). Quarters are split along both lines, so tissue streets
 /// never cross a curtain and gates are the real crossings of the main network.
+/// `roads` are the regional roads of the request, unclipped: a main road the armature clipped short of
+/// a curtain runs on along its own line (`reach_through`).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn fortify(
     plan: &mut macroplan::Plan,
@@ -305,6 +322,7 @@ pub(super) fn fortify(
     site: &Site,
     cfg: &LayoutConfig,
     surface: Surface<'_>,
+    roads: &[Street],
     morph: &Morph,
     small: bool,
     metropolis: bool,
@@ -348,10 +366,15 @@ pub(super) fn fortify(
                 surface,
             )
         });
-        // A hamlet-sized outlier gets no circuit of its own.
+        // Even the smallest walled village keeps its principal outline.
+        let village = (site.population < fortification::VILLAGE).then(|| outline.iter().enumerate()
+            .max_by(|(_, a), (_, b)| g::contains(a, site.center).cmp(&g::contains(b, site.center))
+                .then_with(|| g::area(a).total_cmp(&g::area(b)))).map(|(i, _)| i)).flatten();
         outline
             .iter()
-            .filter(|s| g::area(s) > 15_000.0)
+            .enumerate()
+            .filter(|(i, s)| Some(*i) == village || g::area(s) > 15_000.0)
+            .map(|(_, s)| s)
             .map(|s| match trace {
                 "hill" => Some(if small { fortification::village_trace(s, cell, true) }
                     else { fortification::hill_trace(s, cell) }),
@@ -506,6 +529,10 @@ pub(super) fn fortify(
         improvisation: cfg.street_improvisation,
     };
     let squared = !(square || attached || cave || style.id == "bastioned");
+    // Walls and moats first: a main street that stops short of a curtain, or a road that stops at it
+    // outside, runs on through it before the gates are decided (`reach_through`), as far as the
+    // works of the wall and the moat reach.
+    let traced: Vec<Shape> = walls.iter().chain(castle.iter()).cloned().collect();
     let mut passages = vec![];
     let mut decided = Vec::with_capacity(walls.len());
     for (i, wall) in walls.into_iter().enumerate() {
@@ -516,7 +543,10 @@ pub(super) fn fortify(
             continue;
         }
         let own = style.for_wall(edit, cfg, culture, site.population);
-        let (wall, kept, shut) = fortification::decide_gates(&wall, &mut plan.streets, &gated("", own.curtain_width, own.ditch_width[1], edit.and_then(|e| e.gates), squared, !(attached || cave)), surface);
+        let others: Vec<Shape> = traced.iter().enumerate().filter(|&(j, _)| j != i).map(|(_, s)| s.clone()).collect();
+        let beyond = own.curtain_width + own.berm + own.ditch_width[1] + 20.0;
+        let reached = if cave { vec![] } else { fortification::reach_through(&wall, &mut plan.streets, beyond, &others, roads, edit.and_then(|v| v.gates), surface) };
+        let (wall, kept, shut) = fortification::decide_reached(&wall, &mut plan.streets, &gated("", own.curtain_width, own.ditch_width[1], edit.and_then(|e| e.gates), squared, !(attached || cave)), &reached, surface);
         passages.push((kept, shut));
         decided.push(wall);
     }
@@ -643,6 +673,7 @@ pub(super) fn fortify(
         }),
     };
     let castle_at = walls.len() + inner_walls.len();
+    let circuits: Vec<Shape> = walls.iter().chain(&inner_walls).chain(castle.iter()).cloned().collect();
     for (i, wall) in walls.iter().chain(&inner_walls).chain(castle.iter()).enumerate() {
         // An older circuit and the castle open their gates by the same budget, on their trace as it is.
         let purpose = if i >= castle_at { "castle" } else if citadel && i >= outer { "citadel" } else { "" };
@@ -652,11 +683,33 @@ pub(super) fn fortify(
         let own = if i < outer || i >= castle_at { &style } else { &inner_style };
         let own = own.for_wall(edit, cfg, culture, site.population);
         let (kept, shut) = if i < outer { std::mem::take(&mut passages[i]) } else {
-            let (_, kept, shut) = fortification::decide_gates(wall, &mut plan.streets, &gated(purpose, own.curtain_width, own.ditch_width[1], edit.and_then(|e| e.gates), false, false), surface);
+            // An inner ring is reached through like the town wall; a castle keeps its own two gates.
+            let reached = if i < castle_at && !cave {
+                let others: Vec<Shape> = circuits.iter().enumerate().filter(|&(j, _)| j != i).map(|(_, s)| s.clone()).collect();
+                fortification::reach_through(wall, &mut plan.streets, own.curtain_width + own.berm + own.ditch_width[1] + 20.0, &others, roads, edit.and_then(|v| v.gates), surface)
+            } else {
+                vec![]
+            };
+            let (_, kept, shut) = fortification::decide_reached(wall, &mut plan.streets, &gated(purpose, own.curtain_width, own.ditch_width[1], edit.and_then(|e| e.gates), false, false), &reached, surface);
             (kept, shut)
         };
         let path = closed(&wall.outer);
-        let gates = gates(&path, &plan.streets);
+        let gates = if edit.is_some_and(|v| v.gates.is_some()) {
+            kept.iter().map(|p| p.at).collect()
+        } else {
+            // One gate per front: a crossing within `GATE_GAP` of another (two streets through one
+            // gatehouse, a few metres apart) opens none; the crossing of a kept passage comes first.
+            let apart = |a: Point, b: Point| (a.x - b.x).hypot(a.y - b.y);
+            let mut found = gates(&path, &plan.streets);
+            found.sort_by_key(|&c| !kept.iter().any(|k| apart(k.at, c) < 8.0));
+            let mut gates: Vec<Point> = vec![];
+            for c in found {
+                if site.population < fortification::VILLAGE || gates.iter().all(|&q| apart(q, c) >= fortification::GATE_GAP) {
+                    gates.push(c);
+                }
+            }
+            gates
+        };
         let land = gates.len();
         // Where the curtain crosses a channel it opens on a water gate (`fortification::build`).
         let banks = water_gates(&path, surface);
@@ -670,7 +723,8 @@ pub(super) fn fortify(
         // Towers, gatehouses, bastions, outworks, ditch and lean-tos, clipped
         // by the same rules; an older inner circuit is one step plainer. The
         // lanes serving the faubourg lean-tos join the plan streets.
-        let lanes = fortification::build(
+        let neighbour = (attached && outer >= 2 && i < 2 && !cfg.overrides.walls.get(&format!("outer-{}", 1 - i)).is_some_and(|v| v.present == Some(false))).then(|| &walls[1 - i]);
+        let lanes = fortification::build_beside(
             &mut enclosure,
             land,
             &banks,
@@ -680,10 +734,13 @@ pub(super) fn fortify(
             site.population,
             &predicted,
             &base.fork(&format!("enc:{i}")),
+            neighbour,
         );
         plan.streets.extend(lanes);
         // A main road the budget shut out goes round outside the moat to a kept gate.
-        fortification::divert(&enclosure, &kept, &shut, &mut plan.streets, surface, cfg.max_street_grade);
+        let laid = plan.streets.len();
+        fortification::divert(&enclosure, &kept, &shut, &mut plan.streets, surface, cfg.max_street_grade, &[]);
+        fortification::reserve_approaches(&mut enclosure, &plan.streets[laid..]);
         plan.enclosures.push(enclosure);
     }
     laps.lap("build");

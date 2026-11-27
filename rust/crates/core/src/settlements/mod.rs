@@ -487,7 +487,10 @@ impl Terrain {
         } else {
             vec![]
         };
-        self.urban_geometry = Some(crate::urban::Geography::with_solid(input, rock, self.fields.r.width)?);
+        let mut geography = crate::urban::Geography::with_solid(input, rock, self.fields.r.width)?;
+        let r = &self.fields.r;
+        geography.set_water_levels(r.n, r.width, &r.water, &r.water_level);
+        self.urban_geometry = Some(geography);
         Ok(())
     }
     pub fn place(&self, seed: &str, cfg: &Config) -> Result<Output, String> {

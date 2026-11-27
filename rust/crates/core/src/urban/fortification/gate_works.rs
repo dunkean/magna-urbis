@@ -84,7 +84,9 @@ pub(super) fn land_gatehouses(
     let &BuildContext { style, h, c, inner_core, height, tower_height, clear, .. } = ctx;
     let Works { towers, gatehouses, occupied, .. } = works;
     // --- gatehouses (land gates), the most important crossings first: a
-    // crossing too close to a built gatehouse stays a plain opening.
+    // crossing whose masses would stand on a gatehouse (or another work)
+    // already built stays a plain opening (`free`); `gate_budget::GATE_GAP`
+    // keeps the gates themselves apart.
     let mut order: Vec<usize> = (0..infos.len()).collect();
     order.sort_by(|&a, &b| {
         infos[b]

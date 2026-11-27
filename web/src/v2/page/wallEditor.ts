@@ -8,7 +8,7 @@ import { options, tri, wallStyles } from './dom';
 
 registerMessages({
   'Land gate target': { en: 'Land gate target', fr: 'Nombre de portes terrestres souhaité' },
-  'Required road and water crossings stay open.': { en: 'Required road and water crossings stay open.', fr: 'Les passages routiers indispensables et les portes d’eau restent ouverts.' },
+  'Land gates need a street approach. Water gates are counted separately.': { en: 'Land gates need a street approach. Water gates are counted separately.', fr: 'Une porte terrestre nécessite une rue d’accès. Les portes d’eau sont comptées séparément.' },
 });
 
 async function wallDialog(state: PageState, actions: PageActions, town: string, key: string): Promise<void> {
@@ -37,7 +37,7 @@ async function wallDialog(state: PageState, actions: PageActions, town: string, 
   const result = await chooseAction({
     id: 'wall-editor',
     title: 'Fortifications',
-    message: 'Required road and water crossings stay open.',
+    message: 'Land gates need a street approach. Water gates are counted separately.',
     details: [state.world?.settlements?.find(s => s.key === town)?.name ?? town, key],
     content: form,
     choices: [

@@ -268,6 +268,7 @@ pub(super) fn generate_modern(
         site,
         cfg,
         surface,
+        roads,
         &morph,
         small,
         kind == Some(Kind::Metropolis),

@@ -118,17 +118,6 @@ pub(in super::super) struct Predicted {
     /// faubourg lean-to is laid at least this size, so it can be built.
     pub dwelling: [f64; 2],
 }
-/// Street centre segments within `reach` of the curtain (wall-lanes aside).
-pub(super) fn street_segments(path: &[Point], streets: &[Street], reach: f64) -> Vec<(Point, Point)> {
-    let near = Near::new(path, reach);
-    streets
-        .iter()
-        .filter(|s| s.role != "wall-lane")
-        .flat_map(|s| s.path.windows(2).map(|w| (w[0], w[1])))
-        .filter(|&(a, b)| near.distance(a, b).is_finite())
-        .collect()
-}
-
 /// Street ribbons (+1 m) within `reach` of the curtain.
 pub(super) fn street_clear(
     path: &[Point],

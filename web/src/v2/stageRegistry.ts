@@ -555,6 +555,7 @@ export const STAGES: readonly StageDef[] = [
     controls: [
       'main:sprawl',
       'main:walls',
+      'main:wallStyle',
       'main:moat',
       'main:monasteries',
       'main:port',

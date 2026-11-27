@@ -35,6 +35,9 @@ pub struct Geography {
     states: Vec<std::sync::atomic::AtomicU8>,
     fine: f64,
     side: usize,
+    /// Water levels of the terrain raster (side, map width, level per cell, NaN on dry cells), when the
+    /// caller has them (`set_water_levels`).
+    levels: Option<(usize, f64, Vec<f32>)>,
 }
 /// Clearance (m) of a cell `wet_reading` tells free of a shore or of the outline it reads: more
 /// than an overlay moves a vertex (its integer grid, or the 1 cm grid of its last retry).
@@ -145,6 +148,25 @@ impl Geography {
     pub(super) fn solid(&self, p: Point) -> bool {
         self.solid_index.iter().any(|s| s.contains(p))
     }
+    /// Gives the geography the water levels of the terrain raster (side `n` over `width` m): `level` on the
+    /// cells `water` marks wet. `Surface` carries heights only.
+    pub fn set_water_levels(&mut self, n: usize, width: f64, water: &[u8], level: &[f32]) {
+        if n > 0 && water.len() == n * n && level.len() == n * n {
+            self.levels = Some((n, width, water.iter().zip(level).map(|(&w, &l)| if w != 0 { l } else { f32::NAN }).collect()));
+        }
+    }
+    /// Level of the water at or beside `p`: the lowest of the wet raster cells within one cell of it.
+    pub fn water_level(&self, p: Point) -> Option<f64> {
+        let (n, width, levels) = self.levels.as_ref()?;
+        let cell = |v: f64| ((v / width * *n as f64).floor().max(0.0) as usize).min(n - 1);
+        let (cx, cy) = (cell(p.x), cell(p.y));
+        (cy.saturating_sub(1)..=(cy + 1).min(n - 1))
+            .flat_map(|y| (cx.saturating_sub(1)..=(cx + 1).min(n - 1)).map(move |x| y * n + x))
+            .map(|i| levels[i])
+            .filter(|l| l.is_finite())
+            .map(f64::from)
+            .reduce(f64::min)
+    }
     /// Index already resolved land and water shapes. Water shapes may share
     /// edges (tiles of one body); containment and clipping treat them as a union.
     fn build(land: Vec<Shape>, water: Vec<Shape>, width: f64) -> Self {
@@ -162,6 +184,7 @@ impl Geography {
             states: vec![],
             fine: (width / 1024.0).max(2.0),
             side: 0,
+            levels: None,
         };
         result.side = (width / result.fine).ceil() as usize;
         for (id, w) in result.water.iter().enumerate() {

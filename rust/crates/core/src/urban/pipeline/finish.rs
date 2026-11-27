@@ -26,60 +26,78 @@ pub(super) fn finish(at: &Attempt<'_, '_>, layout: &mut Layout) -> Result<(), St
     }
     network::bridge_water_on_ground(&mut layout.streets, surface, physical, config.max_street_grade);
     laps.lap("bridge_water_on_ground");
+    fortification::trace_gates("bridge_water_on_ground", &layout);
     let gates: Vec<Point> = layout.enclosures.iter().flat_map(|e| e.gates.iter().copied()).collect();
     if config.polish_road_ends {
         network::polish_ends(&mut layout.streets, &gates, config.road_remnants);
     }
     laps.lap("polish_ends");
+    fortification::trace_gates("polish_ends", &layout);
     if config.road_mouths {
         network::seat_mouths(&mut layout.streets);
     }
     laps.lap("seat_mouths");
+    fortification::trace_gates("seat_mouths", &layout);
     if config.deep_block_lanes {
         deep_blocks::run(layout);
     }
     laps.lap("deep_blocks");
+    fortification::trace_gates("deep_blocks", &layout);
     access::summarize(layout, config);
     laps.lap("access.summarize");
+    fortification::trace_gates("access.summarize", &layout);
     fortification::prepare_options(layout, config, surface);
     laps.lap("prepare_options");
+    fortification::trace_gates("prepare_options", &layout);
     programme::prepare(layout, site.population, &config.programme, surface)?;
     laps.lap("programme.prepare.1");
+    fortification::trace_gates("programme.prepare.1", &layout);
     fortification::finish_options(layout, config, surface);
     laps.lap("finish_options");
+    fortification::trace_gates("finish_options", &layout);
     kinds::finish(layout, at.kind, town.original);
     laps.lap("kinds.finish");
+    fortification::trace_gates("kinds.finish", &layout);
     if layout.structure.as_ref().is_some_and(|s| s.mechanism != "legacy") {
         let built = trim::finish(town.seed, layout, physical);
         laps.lap("trim.finish");
+        fortification::trace_gates("trim.finish", &layout);
         if !built.is_empty() && layout.enclosures.iter().any(|e| e.purpose.is_empty()) {
             refit_built_circuits(at, layout, &built)?;
             laps.lap("fit_enclosures.final");
+            fortification::trace_gates("fit_enclosures.final", &layout);
         }
     }
     laps.lap("trim.finish");
+    fortification::trace_gates("trim.finish", &layout);
     if config.street_frontage {
         network::join_bank_networks(layout, physical);
     }
     laps.lap("join_bank_networks");
+    fortification::trace_gates("join_bank_networks", &layout);
     if config.village_bridge_budget && network::village_crossings(site.population) {
         network::tie_banks_to_road(layout, town.roads, physical, config);
     }
     laps.lap("tie_banks_to_road");
+    fortification::trace_gates("tie_banks_to_road", &layout);
     network::select_bridges_graded(layout, site.population, physical, town.roads, config.max_street_grade);
     laps.lap("select_bridges_graded");
+    fortification::trace_gates("select_bridges_graded", &layout);
     if needs_bridgeheads(at, layout) {
         let reserved = network::reserved_streets(layout);
         trim::bridgeheads(town.seed, layout, physical, town.roads);
         network::remap_reservations(layout, &reserved);
     }
     laps.lap("trim.bridgeheads");
+    fortification::trace_gates("trim.bridgeheads", &layout);
     network::bridge_leads(layout, physical, config);
     laps.lap("bridge_leads");
+    fortification::trace_gates("bridge_leads", &layout);
     if macroplan::harbour::port_town(config) {
         macroplan::harbour::protect_navigation(layout, physical, town.roads);
     }
     laps.lap("protect_navigation");
+    fortification::trace_gates("protect_navigation", &layout);
     fortification::sync_gates(layout, surface);
     laps.lap("sync_gates");
     network::ensure_regional_access(layout, town.roads, physical, config);
@@ -108,17 +126,13 @@ pub(super) fn finish(at: &Attempt<'_, '_>, layout: &mut Layout) -> Result<(), St
 /// transport network: the layout keeps their corrected decks and ramps.
 fn keep_regional_spans(layout: &mut Layout, town: &Town<'_>) {
     let site = town.site;
-    layout.streets.extend(
-        town.roads
-            .iter()
-            .filter(|s| {
-                matches!(s.role.as_str(), "bridge" | "causeway" | "approach")
-                    && s.path.first().zip(s.path.last()).is_some_and(|(&a, &b)| {
-                        ((a.x + b.x) * 0.5 - site.center.x).hypot((a.y + b.y) * 0.5 - site.center.y) <= site.radius * 1.6
-                    })
+    let spans = town.roads.iter().filter(|s| {
+        matches!(s.role.as_str(), "bridge" | "causeway" | "approach")
+            && s.path.first().zip(s.path.last()).is_some_and(|(&a, &b)| {
+                ((a.x + b.x) * 0.5 - site.center.x).hypot((a.y + b.y) * 0.5 - site.center.y) <= site.radius * 1.6
             })
-            .cloned(),
-    );
+    });
+    fortification::add_regional_spans(&layout.enclosures, &mut layout.streets, spans);
 }
 
 /// The lots that show a building are known on the final cadastre: a circuit

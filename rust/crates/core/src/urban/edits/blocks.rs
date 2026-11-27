@@ -28,7 +28,7 @@ use super::super::{
     Block, BlockEdits, BlockOrigin, BlockOverride, Layout, OriginalBlock, ParcelConfig, Shape,
 };
 use super::{
-    Outline, bbox_hit, clean, enclosure_ribbon, fnv, largest, max_width, overlap_area, path_bbox,
+    Outline, bbox_hit, circuit_ground, clean, fnv, largest, max_width, overlap_area, path_bbox,
     redraw, served, subtract, valid_shape,
 };
 use std::borrow::Cow;
@@ -297,8 +297,8 @@ fn obstacles(l: &Layout, own: usize, reach: BBox) -> Vec<(Shape, BBox)> {
         .chain(
             l.enclosures
                 .iter()
-                .filter(|e| bbox_hit(path_bbox(&e.path), reach, 3.0 + pad))
-                .flat_map(enclosure_ribbon),
+                .flat_map(circuit_ground)
+                .filter(|s| bbox_hit(g::bbox(s), reach, pad)),
         )
         .collect();
     out.extend(

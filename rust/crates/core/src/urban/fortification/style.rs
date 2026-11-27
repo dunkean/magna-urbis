@@ -54,7 +54,7 @@ pub(in super::super) struct Style {
     pub ditch_width: [f64; 2],
     /// Ditch depth (m), for the 3D moat; 0: from its width (`build`).
     pub ditch_depth: f64,
-    /// Form of the ditch: an id of the `moats` table (`moat::spec`), the one a circuit digs when none of
+    /// Form of the ditch: an id of the `moats` table (`moat::form`), the one a circuit digs when none of
     /// `moat_forms` suits its site.
     pub moat_form: String,
     /// Forms of the culture and their weights (`moatForms`): a circuit draws one among those its site allows

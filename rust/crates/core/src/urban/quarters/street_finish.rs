@@ -31,7 +31,11 @@ pub(super) fn finish_streets(
         if matches!(s.role.as_str(), "bridge" | "ford" | "causeway") {
             return true;
         }
-        let limit = if s.rank >= 3 {
+        // A regional road is the request's: its grade was accepted with it. Dropping it for a steep
+        // stretch would take its gate away (a road carried through a wall down a slope).
+        let limit = if s.role == "regional" {
+            f64::INFINITY
+        } else if s.rank >= 3 {
             cfg.max_lane_grade
         } else {
             cfg.max_street_grade

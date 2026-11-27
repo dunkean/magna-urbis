@@ -39,6 +39,43 @@ export interface Block {
   zone?: string;
   phase?: number;
 }
+/** A reach of a moat run: stations `from..=to`, one supply, one water level (m, frame of `MoatRun.rim`). */
+export interface MoatReach {
+  from: number;
+  to: number;
+  supply: 'fed' | 'pool' | 'dry' | string;
+  level?: number;
+}
+/** One continuous stretch of ditch (Rust `urban::types::MoatRun`). Station `k` runs from `inner[k]` (scarp lip, curtain side)
+ * to `outer[k]` (counterscarp lip). `rim`: ground of the lower lip; `bed`: the bottom; both in the height frame of the urban request. */
+export interface MoatRun {
+  closed?: boolean;
+  inner: Point[];
+  outer: Point[];
+  rim: number[];
+  bed: number[];
+  ends: ['closed' | 'water' | 'slope' | 'work' | string, 'closed' | 'water' | 'slope' | 'work' | string];
+  reaches: MoatReach[];
+}
+/** Where a street crosses a run; it never interrupts the ditch. `path`: from the curtain side to 3 m beyond the outer lip. */
+export interface MoatCrossing {
+  run: number;
+  path: Point[];
+  half_width_m: number;
+  kind: 'bridge' | 'causeway' | string;
+  gate?: number;
+}
+/** The ditch of a circuit (Rust `urban::types::MoatSpec`). */
+export interface MoatSpec {
+  form: string;
+  sluices?: [Point, Point][];
+  dams?: [Point, Point][];
+  state?: string;
+  width_m?: number;
+  depth_m?: number;
+  runs?: MoatRun[];
+  crossings?: MoatCrossing[];
+}
 export interface Enclosure {
   edit_key?: string;
   path: Point[];
@@ -56,7 +93,9 @@ export interface Enclosure {
   gatehouses?: { gate: number; kind: 'timber' | 'tower' | 'twin-tower' | 'bab' | 'ravelin' | 'water' | 'postern' | string; shape: Shape; masses?: Shape[]; passage: [Point, Point]; passage_width_m: number; height_m: number }[];
   bastions?: { kind: string; shape: Shape; height_m: number; passage?: [Point, Point] }[];
   outworks?: { kind: 'outer-wall' | 'barbican' | 'antemural' | 'wengcheng' | 'ravelin' | 'citadel' | 'glacis' | string; shape: Shape; height_m: number; passage?: [Point, Point] }[];
-  ditch?: { kind: 'dry' | 'wet' | string; shape: Shape; height_m: number; passage?: [Point, Point] }[];
+  /** One polygon per reach of `moat.runs`, plus the detached ditches of outworks. */
+  ditch?: { kind: 'dry' | 'wet' | 'pool' | string; shape: Shape; height_m: number; passage?: [Point, Point] }[];
+  moat?: MoatSpec;
   attached?: { kind: 'lean-to' | string; side: 'out' | string; shape: Shape; height_m: number }[];
   reserve?: Shape[];
 }

@@ -66,7 +66,7 @@ fn walls16_minor_crossings_end_at_the_wall_on_both_sides() {
     let e = Enclosure { path: path.clone(), kind: "wall".into(), style: "curtain".into(), curtain_width_m: 3.0, ..Default::default() };
     let mut streets = vec![street(&[(1000.0, 1000.0), (1500.0, 1020.0)], 2, 4.0), street(&[(1000.0, 1000.0), (1000.0, 1500.0)], 1, 8.0)];
     let (h, w) = (vec![0.0; N * N], vec![0; N * N]);
-    close_crossings(&mut streets, std::slice::from_ref(&e), false, surface(&h, &w));
+    close_crossings(&mut streets, std::slice::from_ref(&e), false, surface(&h, &w), None);
     let crosses = |s: &Street| s.path.windows(2).any(|w| path.windows(2).any(|c| g::segment_hit(w[0], w[1], c[0], c[1]).is_some()));
     let minor: Vec<_> = streets.iter().filter(|s| s.rank == 2).collect();
     assert_eq!(minor.len(), 2, "the minor street is split in two");
@@ -78,7 +78,7 @@ fn walls16_minor_crossings_end_at_the_wall_on_both_sides() {
     let mut through = vec![street(&[(1000.0, 1000.0), (1500.0, 1000.0)], 2, 4.0)];
     let hit = through[0].path.windows(2).flat_map(|w| path.windows(2).filter_map(|c| g::segment_hit(w[0], w[1], c[0], c[1]).map(|h| h.1))).next().unwrap();
     let gated = Enclosure { gates: vec![hit], ..e.clone() };
-    close_crossings(&mut through, std::slice::from_ref(&gated), false, surface(&h, &w));
+    close_crossings(&mut through, std::slice::from_ref(&gated), false, surface(&h, &w), None);
     assert_eq!(through.len(), 1);
 }
 
@@ -86,15 +86,12 @@ fn walls16_minor_crossings_end_at_the_wall_on_both_sides() {
 /// gates; only a street crossing or a water passage keeps one.
 #[test]
 fn walls16_bank_points_without_a_street_are_no_gates() {
-    let height = vec![10.0f32; N * N];
-    let water = river(1300.0, 1400.0);
-    let s = surface(&height, &water);
     let path = octagon();
     let bank = pt(1296.0, 1100.0);
     let crossing = streets()[0].clone();
     let hit = crossing.path.windows(2).flat_map(|w| path.windows(2).filter_map(|c| g::segment_hit(w[0], w[1], c[0], c[1]).map(|h| h.1))).next().unwrap();
     let mut e = Enclosure { path, kind: "wall".into(), style: "curtain".into(), gates: vec![hit, bank], ..Default::default() };
-    let remap = reconcile_gates(&mut e, &[crossing], s);
+    let remap = reconcile_gates(&mut e, &[crossing], false);
     assert_eq!(remap, vec![Some(0), None]);
     assert!(e.gates.iter().all(|&q| dist(q, bank) > 8.0), "a bank point stayed a gate");
 }
@@ -334,7 +331,8 @@ fn dead_ends_stop_at_the_wall_face() {
         street(&[(100.0, 180.0), (206.0, 180.0)], 2, 4.0),
     ];
     let before = streets.clone();
-    stop_at_curtains(&mut streets, &mut enclosures);
+    let (h, w) = (vec![10.0; N * N], vec![0; N * N]);
+    stop_at_curtains(&mut streets, &mut enclosures, surface(&h, &w), true);
     let end = |s: &Street| *s.path.last().unwrap();
     assert!(
         (end(&streets[0]).x - 198.5).abs() < 0.3,
@@ -355,4 +353,101 @@ fn dead_ends_stop_at_the_wall_face() {
     );
     // The corridor freed on the curtain body is the fortification's again.
     assert!(enclosures[0].reserve.len() > 1);
+}
+
+/// A dead end cut back to its mouth goes whole: a close running into an inner berm is not left as a
+/// 1 m stub on its host street (medina 10k: closes of 1.1 m beside the gates).
+#[test]
+fn a_dead_end_cut_back_to_a_stub_goes() {
+    let square: Vec<Point> = [(0.0, 0.0), (200.0, 0.0), (200.0, 200.0), (0.0, 200.0), (0.0, 0.0)].iter().map(|&(x, y)| pt(x, y)).collect();
+    let mut enclosures = vec![Enclosure { path: square, kind: "wall".into(), style: "curtain".into(), reserve: vec![g::rectangle(185.0, 0.0, 200.0, 200.0)], ..Default::default() }];
+    let host = street(&[(184.0, 10.0), (184.0, 190.0)], 2, 4.0);
+    let mut streets = vec![host.clone(), street(&[(184.0, 100.0), (196.0, 100.0)], 4, 3.0)];
+    let (h, w) = (vec![10.0; N * N], vec![0; N * N]);
+    stop_at_curtains(&mut streets, &mut enclosures, surface(&h, &w), true);
+    assert_eq!(streets.len(), 1, "a stub is left: {:?}", streets.iter().map(|s| &s.path).collect::<Vec<_>>());
+    assert_eq!(streets[0].path, host.path);
+}
+
+/// No cul-de-sac beside a gate: a street shut at the wall joins the gate street behind the gatehouse
+/// (a shared vertex), and a street ending on another street's segment (a T) is no dead end.
+#[test]
+fn an_end_shut_at_the_wall_joins_the_gate_street() {
+    let square: Vec<Point> = [(0.0, 0.0), (200.0, 0.0), (200.0, 200.0), (0.0, 200.0), (0.0, 0.0)].iter().map(|&(x, y)| pt(x, y)).collect();
+    let mut enclosures = vec![Enclosure { path: square, kind: "wall".into(), style: "curtain".into(), reserve: vec![g::rectangle(198.0, 0.0, 202.0, 200.0)], ..Default::default() }];
+    // The gate street through the east curtain at y = 100, a street shut at the wall 12 m north
+    // of it, and a street ending in the reserve on the gate street's segment.
+    let gate = street(&[(100.0, 100.0), (300.0, 100.0)], 1, 6.0);
+    let shut = street(&[(150.0, 160.0), (180.0, 112.0), (200.0, 112.0)], 2, 4.0);
+    let tee = street(&[(150.0, 60.0), (199.0, 99.7)], 2, 4.0);
+    let mut streets = vec![gate.clone(), shut, tee.clone()];
+    let (h, w) = (vec![10.0; N * N], vec![0; N * N]);
+    stop_at_curtains(&mut streets, &mut enclosures, surface(&h, &w), true);
+    let end = *streets[1].path.last().unwrap();
+    assert!((end.y - 100.0).abs() < 1e-6 && end.x < 198.0, "the shut street joins the gate street: {:?}", streets[1].path);
+    assert!(streets[0].path.contains(&end), "the junction is a vertex of the gate street");
+    assert_eq!((streets[0].path[0], *streets[0].path.last().unwrap()), (gate.path[0], gate.path[1]));
+    assert_eq!(streets[2].path, tee.path, "a T is no dead end");
+}
+
+/// A main road shut at the wall stays out of the moat: its outer piece, ending on the berm, is cut back
+/// `LIP_MARGIN` m beyond the outer lip and joins the gate street there at a shared vertex (medina 10k:
+/// a regional road crossed the ditch and ended against the wall beside the gate).
+#[test]
+fn a_road_shut_at_the_wall_stays_out_of_the_moat() {
+    use crate::urban::MoatSpec;
+    use crate::urban::types::{MoatReach, MoatRun};
+    let square: Vec<Point> = [(0.0, 0.0), (200.0, 0.0), (200.0, 200.0), (0.0, 200.0), (0.0, 0.0)].iter().map(|&(x, y)| pt(x, y)).collect();
+    let lip = |d: f64| vec![pt(-d, -d), pt(200.0 + d, -d), pt(200.0 + d, 200.0 + d), pt(-d, 200.0 + d)];
+    let run = MoatRun {
+        closed: true,
+        inner: lip(10.0),
+        outer: lip(20.0),
+        rim: vec![0.0; 4],
+        bed: vec![-3.0; 4],
+        ends: ["closed".into(), "closed".into()],
+        reaches: vec![MoatReach { from: 0, to: 0, supply: "dry".into(), level: None }],
+    };
+    let moat = MoatSpec { form: "earth".into(), width_m: 10.0, depth_m: 3.0, runs: vec![run], ..Default::default() };
+    let mut enclosures = vec![Enclosure { path: square, kind: "wall".into(), style: "curtain".into(), moat: Some(moat), ..Default::default() }];
+    let gate = street(&[(100.0, 100.0), (300.0, 100.0)], 1, 6.0);
+    let shut = street(&[(300.0, 140.0), (205.0, 140.0)], 1, 4.0);
+    let mut streets = vec![gate.clone(), shut];
+    let (h, w) = (vec![10.0; N * N], vec![0; N * N]);
+    stop_at_curtains(&mut streets, &mut enclosures, surface(&h, &w), true);
+    let end = *streets[1].path.last().unwrap();
+    assert!((end.y - 100.0).abs() < 1e-6 && end.x > 220.0 && end.x < 224.0, "the shut road joins the gate street beyond the lip: {:?}", streets[1].path);
+    assert!(streets[1].path.iter().all(|p| p.x > 220.0), "the shut road enters the moat: {:?}", streets[1].path);
+    assert!(streets[0].path.contains(&end), "the junction is a vertex of the gate street");
+}
+
+/// Walls and moats first: a street lying in the moat band away from a gate leaves it, and a gate
+/// street ending in the ditch runs on beyond the outer lip to the street outside.
+#[test]
+fn streets_obey_the_moat_band() {
+    use crate::urban::MoatSpec;
+    use crate::urban::types::{MoatReach, MoatRun};
+    let square: Vec<Point> = [(0.0, 0.0), (200.0, 0.0), (200.0, 200.0), (0.0, 200.0), (0.0, 0.0)].iter().map(|&(x, y)| pt(x, y)).collect();
+    let lip = |d: f64| vec![pt(-d, -d), pt(200.0 + d, -d), pt(200.0 + d, 200.0 + d), pt(-d, 200.0 + d)];
+    let run = MoatRun {
+        closed: true,
+        inner: lip(10.0),
+        outer: lip(20.0),
+        rim: vec![0.0; 4],
+        bed: vec![-3.0; 4],
+        ends: ["closed".into(), "closed".into()],
+        reaches: vec![MoatReach { from: 0, to: 0, supply: "dry".into(), level: None }],
+    };
+    let moat = MoatSpec { form: "earth".into(), width_m: 10.0, depth_m: 3.0, runs: vec![run], ..Default::default() };
+    let enclosures = vec![Enclosure { path: square, kind: "wall".into(), style: "curtain".into(), gates: vec![pt(200.0, 100.0)], moat: Some(moat), ..Default::default() }];
+    let gate = street(&[(100.0, 100.0), (212.0, 100.0)], 1, 6.0);
+    let along = street(&[(215.0, 20.0), (215.0, 60.0)], 2, 4.0);
+    let outside = street(&[(250.0, 50.0), (250.0, 150.0)], 1, 6.0);
+    let mut streets = vec![gate, along, outside];
+    let (h, w) = (vec![10.0; N * N], vec![0; N * N]);
+    super::obey::obey_moats(&mut streets, &enclosures, &[], surface(&h, &w));
+    assert_eq!(streets.len(), 2, "the street along the band stays: {:?}", streets.iter().map(|s| &s.path).collect::<Vec<_>>());
+    let link = pt(250.0, 100.0);
+    assert!(streets[0].path.iter().any(|p| p.x > 222.9 && p.x < 224.1) && streets[0].path.last() == Some(&link), "the gate street is not carried over the ditch: {:?}", streets[0].path);
+    assert!(streets[1].path.contains(&link), "the link is no vertex of the street outside");
 }

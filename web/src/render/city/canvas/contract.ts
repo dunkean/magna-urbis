@@ -44,6 +44,9 @@ export interface CityDrawOptions {
   /** The host draws stepped streets as 3D flights (city3dStairs.ts): the ground keeps a plain strip under them, painted as
    * an ordinary street, without the plan's tread hatching. */
   stairMeshes?: boolean;
+  /** The host digs the moats in its 3D ground (ui/urbanGroundCuts.ts): the relief shows their scarps, so the plan paints
+   * their bed and banks without hachures or near-view detail. */
+  dugMoats?: boolean;
   roadLook?: import('../../composition').RoadLook;
   /** Contrast of the roads against their ground, 0.5–1.5 (roadStyle.ts). */
   roadEmphasis?: number;

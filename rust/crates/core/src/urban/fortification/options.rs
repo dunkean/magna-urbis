@@ -19,33 +19,6 @@ pub(in super::super) fn keeps_citadel(culture: &str) -> bool {
         .or_else(|| group(culture)["innerEnclosure"].as_str()) == Some("citadel")
 }
 
-/// Supply must be local and downhill from a nearby water level. A low wet
-/// plain has several nearby wet samples; high terraces cannot acquire a moat.
-pub(super) fn ditch_kind(shape: &Shape, surface: Surface<'_>, rng: &Rng) -> &'static str {
-    let p = g::interior_point(shape);
-    let h = surface.height_at(p);
-    let mut supply = false;
-    let mut wet_plain = 0;
-    let mut relief = 0.0_f64;
-    for k in 0..16 {
-        let a = k as f64 * std::f64::consts::TAU / 16.0;
-        let n = (a.cos(), a.sin());
-        relief = relief.max((surface.height_at(add(p, n, 20.0)) - h).abs());
-        for d in [12.0, 24.0, 48.0, 72.0] {
-            let q = add(p, n, d);
-            if surface.wet(q) {
-                let wh = surface.height_at(q);
-                supply |= h <= wh + 2.0;
-                if d <= 24.0 && h <= wh + 1.0 { wet_plain += 1; }
-                break;
-            }
-        }
-    }
-    let probability = if wet_plain >= 4 { 0.5 } else { 0.25 };
-    let key = format!("ditch-supply:{:.0}:{:.0}", (p.x / 48.0).floor(), (p.y / 48.0).floor());
-    if supply && relief < 1.5 && rng.fork(&key).chance(probability) { "wet" } else { "dry" }
-}
-
 /// An actual gate square is public land; service selection then locates inns
 /// and a suburb church around these same nuclei, using existing cultural demand.
 pub(in super::super) fn prepare_options(layout: &mut Layout, cfg: &LayoutConfig, surface: Surface<'_>) {
@@ -221,10 +194,8 @@ pub(in super::super) fn finish_options(layout:&mut Layout,cfg:&LayoutConfig,surf
                 let circuit = super::Circuit { gates: Some(count), pop, purpose, kind: &e.kind, curtain_width: own.curtain_width,
                     moat: own.ditch_width[1], grade: cfg.max_street_grade, squared: false, streets_turn: false,
                     key: &layout.key, improvisation: cfg.street_improvisation };
-                super::decide_gates(&inner, &mut layout.streets, &circuit, surface);
-                let mut gates = composition::gates(&e.path, &layout.streets);
-                if gates.is_empty() && count > 0 { gates = e.gates; }
-                e.gates = gates;
+                let (_, kept, _) = super::decide_with_gates(&inner, &mut layout.streets, &circuit, &e.gates, &[], surface);
+                e.gates = kept.iter().map(|p| p.at).collect();
             }
             if v.style.is_some() || v.moat.is_some() {
                 let predicted = super::Predicted {widths:[9.0,8.0,5.0,3.5,3.0],arterial:1,dwelling:[5.0;2]};

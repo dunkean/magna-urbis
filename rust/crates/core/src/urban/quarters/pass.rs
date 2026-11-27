@@ -110,7 +110,7 @@ pub(super) fn generate_once(
     let land: f64 = quarters.iter().map(|q| g::area(&q.shape)).sum();
     let open_edge = enclosures.is_empty()
         || cfg.footprint.mechanism != "legacy"
-            && walled.iter().map(g::area).sum::<f64>() < 0.95 * land;
+            && g::union(&walled).iter().map(g::area).sum::<f64>() < 0.95 * land;
     influences::apply(&mut phases, &mut quarters, site, cfg);
     influences::zone_overrides(&mut phases, site, cfg);
     if !cfg.mix_culture.is_empty()

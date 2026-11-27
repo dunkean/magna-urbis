@@ -359,16 +359,15 @@ pub(super) fn qualify(
                 .filter(|f| !f.shared || small.shared_access)
                 .copied()
                 .collect();
-            let found = DEGENERATE_SCALES[1..].iter().find_map(|k| {
-                lot_envelopes::free_envelope(
+            let found = DEGENERATE_SCALES[1..].iter().copied()
+                .find_map(|k| lot_envelopes::free_envelope(
                     &p.shape,
                     &allowed,
                     small.min_frontage * k,
                     small.min_depth * k,
                     small.min_access_width,
                     POLYGONAL_REACH,
-                )
-            });
+                ));
             if let Some(e) = found {
                 p.envelope = Some(e);
                 p.provenance.push(DEGENERATE.into());

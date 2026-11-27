@@ -5,13 +5,16 @@
 //! streets with the trace are ranked and the gate budget keeps the most important ones, spaced along the
 //! circuit (`choose`). A historical walled town opens few gates: about 2 to 4 main gates under 5 000
 //! inhabitants, 5 at 10 000, 6 to 8 for a large city, plus at most `POSTERNS` posterns (`gate_budget`).
+//! - Walls and moats first: a main road that stops short of the curtain runs on through it before the
+//!   budget reads the crossings (`reach_through`); the extensions the budget shuts are taken back.
 //! - At a kept passage the curtain stays straight or turns gently and its street turns square to it,
 //!   over its last metres, while nothing is built along it (`fit_passages`): the gatehouse, the lanes
 //!   and the lots that follow stand on a square gate, and no gate folds its curtain. A bent-axis gate
 //!   is a passage inside its gatehouse (`bab`), never a bend of the wall.
 //! - Every other crossing closes (`close_crossings`): the street ends at the wall on both sides, and a
 //!   main road shut out goes round the wall to a kept gate along a through road (`divert`). A main
-//!   road with no way round keeps its gate, over the budget (`way_round`).
+//!   road with no way round keeps its gate, over the budget (`way_round`), unless a kept gate stands
+//!   within `GATE_GAP`: that gate serves it.
 //!
 //! Streets drawn later open no gate of their own: `enforce` closes whatever crosses a curtain away from
 //! its gates before the first trim reads the plan. `drop_dead_gates`, last of the pipeline, closes every
@@ -26,7 +29,7 @@ use super::shore::water_passages;
 
 /// A walled place under this population is a village: it keeps a gate on each of its few roads, and its
 /// ways pass the hedge, the palisade or the wall as they are trodden.
-const VILLAGE: u32 = 2_000;
+pub(in super::super) const VILLAGE: u32 = 2_000;
 /// Posterns a circuit keeps besides its main gates.
 const POSTERNS: usize = 2;
 /// Main gates for `pop` inhabitants: 2 + sqrt(pop / 1500), rounded, 2 to 8 (2 000 → 3, 5 000 → 4,
@@ -71,6 +74,8 @@ pub(in super::super) struct Passage {
     square: f64,
     /// A street of this crossing lands on a quay: a harbour gate.
     harbour: bool,
+    /// The exterior part of a clipped road was recovered for this passage.
+    reached_road: bool,
 }
 
 /// Cumulated lengths of `path`, from 0.
@@ -89,7 +94,7 @@ fn segment_of(path: &[Point], p: Point) -> usize {
 /// Arc position of `p` along the closed `path` (cumulated lengths `cum`).
 fn arc_of(path: &[Point], cum: &[f64], p: Point) -> f64 {
     let k = segment_of(path, p);
-    cum[k] + dist(path[k], p).min(dist(path[k], path[k + 1]))
+    cum[k] + dist(path[k], g::distance(p, path[k], path[k + 1]).2)
 }
 
 /// Point of the closed `path` at arc `s` (any real: it wraps), and its segment.
@@ -125,9 +130,12 @@ fn crossings(path: &[Point], cum: &[f64], streets: &[Street], surface: Surface<'
                 }
                 harbour |= passes && st.path.iter().any(|&q| quays.iter().any(|&f| dist(q, f) < 1.0));
             }
+            if best.is_none() && std::env::var("URBAN_PROFILE").is_ok() {
+                eprintln!("  gate budget: crossing ({:.0},{:.0}) wet {wet} carries no land street", p.x, p.y);
+            }
             let (priority, width, rank, along) = best?;
             let k = segment_of(path, p);
-            Some(Passage { at: p, along, width, rank, priority, arc: arc_of(path, cum, p), square: cross(along, dir(path[k], path[k + 1])).abs(), harbour })
+            Some(Passage { at: p, along, width, rank, priority, arc: arc_of(path, cum, p), square: cross(along, dir(path[k], path[k + 1])).abs(), harbour, reached_road: false })
         })
         .collect()
 }
@@ -142,15 +150,35 @@ const GRAZING: f64 = 0.26;
 
 /// The gate budget on the closed `path`: the crossings kept as gates and the ones that close. Main
 /// roads first (regional roads, then main streets, a grazing one last, then the widest), at most the
-/// budget and spaced by about a third of an even share of the circuit; then `POSTERNS` lesser streets.
+/// budget and spaced by about a third of an even share of the circuit, `GATE_SPACING` at most; then
+/// `POSTERNS` lesser streets.
 /// A walled `VILLAGE` keeps a gate on each of its few roads.
-fn choose(path: &[Point], streets: &[Street], pop: u32, purpose: &str, requested: Option<usize>, surface: Surface<'_>) -> (Vec<Passage>, Vec<Passage>) {
+fn choose(path: &[Point], streets: &[Street], pop: u32, purpose: &str, requested: Option<usize>, previous: &[Point], reached: &[Reached], surface: Surface<'_>) -> (Vec<Passage>, Vec<Passage>) {
     let cum = cumulated(path);
     let total = cum[path.len() - 1].max(1.0);
     let mut all = crossings(path, &cum, streets, surface);
+    // A gate of the circuit before it was rebuilt moves onto the street crossing within `STRAIGHT` m
+    // of it: a road laid for the old trace keeps its gate instead of being cut a few metres off it.
+    let mut prior_at: Vec<Point> = vec![];
+    for &point in previous {
+        let k = segment_of(path, point);
+        let (gap, _, at) = g::distance(point, path[k], path[k + 1]);
+        if let Some(c) = all.iter().filter(|p| dist(p.at, point) < STRAIGHT && !prior_at.iter().any(|&q| dist(q, p.at) < 1e-6)).min_by(|a, b| dist(a.at, point).total_cmp(&dist(b.at, point))) {
+            prior_at.push(c.at);
+            continue;
+        }
+        if gap > 1.0 || surface.wet(at) { continue; }
+        let tangent = dir(path[k], path[k + 1]);
+        all.push(Passage { at, arc: arc_of(path, &cum, at), along: (-tangent.1, tangent.0), width: 4.0,
+            rank: 1, priority: 2, square: 1.0, harbour: false, reached_road: false });
+        prior_at.push(at);
+    }
+    let prior = |p: &Passage| prior_at.iter().any(|&q| dist(q, p.at) < 1e-6);
+    let extended = |p: &Passage| reached.iter().any(|r| dist(r.at, p.at) < 8.0);
     all.sort_by(|a, b| {
-        b.priority.cmp(&a.priority)
+        prior(b).cmp(&prior(a)).then(b.priority.cmp(&a.priority))
             .then((a.square < GRAZING).cmp(&(b.square < GRAZING)))
+            .then(extended(a).cmp(&extended(b)))
             .then(b.width.total_cmp(&a.width))
             .then(a.arc.total_cmp(&b.arc))
     });
@@ -160,25 +188,33 @@ fn choose(path: &[Point], streets: &[Street], pop: u32, purpose: &str, requested
     }
     let village = pop < VILLAGE;
     let (budget, posterns) = if village { (usize::MAX, usize::MAX) } else { (gate_budget(pop, purpose), POSTERNS) };
-    let spacing = if village { 0.0 } else { (total / budget as f64 * 0.35).clamp(40.0, 250.0) };
+    // Main roads stand `GATE_SPACING` apart at most; lesser streets keep the wider share of the circuit,
+    // so posterns do not multiply.
+    let spread = if village { 0.0 } else { (total / budget as f64 * 0.35).clamp(40.0, 250.0) };
+    let spacing = spread.min(GATE_SPACING);
     let apart = |kept: &[Passage], c: &Passage, s: f64| {
         kept.iter().all(|k| {
             let d = (k.arc - c.arc).rem_euclid(total);
             d.min(total - d) >= s
         })
     };
-    let (mut kept, mut dropped): (Vec<Passage>, Vec<Passage>) = (vec![], vec![]);
-    // The landing streets first: the harbour keeps its own gates, whatever the budget of the roads.
-    for c in all.iter().filter(|c| c.harbour) {
-        if kept.len() < HARBOUR_GATES && apart(&kept, c, HARBOUR_SPACING.min(spacing.max(1.0))) { kept.push(*c) } else { dropped.push(*c) }
-    }
-    let harbour = kept.len();
-    for c in all.iter().filter(|c| !c.harbour && c.priority >= 2) {
-        if kept.len() - harbour < budget && apart(&kept, c, spacing) { kept.push(*c) } else { dropped.push(*c) }
-    }
-    let main = kept.len();
-    for c in all.iter().filter(|c| !c.harbour && c.priority < 2) {
-        if kept.len() - main < posterns && apart(&kept, c, spacing * 0.5) { kept.push(*c) } else { dropped.push(*c) }
+    // Keep surviving entrances first. Count them against their own class when admitting new roads.
+    let (mut kept, candidates): (Vec<_>, Vec<_>) = all.into_iter().partition(&prior);
+    let mut dropped = vec![];
+    // Outside a village no two gates of any class stand nearer than `GATE_GAP`.
+    let floor = if village { 0.0 } else { GATE_GAP };
+    for (class, limit, gap) in [(0, HARBOUR_GATES, HARBOUR_SPACING.min(spacing.max(1.0))), (1, budget, spacing), (2, posterns, spread * 0.5)] {
+        let gap = gap.max(floor);
+        let group = |p: &Passage| if p.harbour { 0 } else if p.priority >= 2 { 1 } else { 2 };
+        let mut count = kept.iter().filter(|p| group(p) == class).count();
+        for &p in candidates.iter().filter(|p| group(p) == class) {
+            if count < limit && apart(&kept, &p, gap) {
+                kept.push(p);
+                count += 1;
+            } else {
+                dropped.push(p);
+            }
+        }
     }
     (kept, dropped)
 }
@@ -396,9 +432,10 @@ fn front_across(ring: &[Point], path: &[Point], cum: &[f64], p: &Passage, (from,
 ///   probability `improvisation` (one seeded draw per gate point), and where it cannot turn: the
 ///   passage is then oblique in its straight curtain. So is the passage of a `VILLAGE`, and of a street
 ///   that is already built on.
-fn fit_passages(mut ring: Vec<Point>, passages: &mut [Passage], streets: &mut [Street], c: &Circuit<'_>, surface: Surface<'_>) -> Vec<Point> {
+fn fit_passages(mut ring: Vec<Point>, passages: &mut [Passage], previous: &[Point], streets: &mut [Street], c: &Circuit<'_>, surface: Surface<'_>) -> Vec<Point> {
     let turning = c.streets_turn && c.pop >= VILLAGE;
     for i in 0..passages.len() {
+        if previous.iter().any(|&q| dist(q, passages[i].at) < 8.0) { continue; }
         let others: Vec<Point> = passages.iter().enumerate().filter(|&(j, _)| j != i).map(|(_, q)| q.at).collect();
         let mut path = closed(&ring);
         let mut cum = cumulated(&path);
@@ -472,29 +509,367 @@ pub(in super::super) struct Circuit<'a> {
     pub(in super::super) improvisation: f64,
 }
 
+/// Longest gap (m) between a main street's dead end and the curtain it points at that
+/// `reach_through` closes, and the sine (30°) under which the street grazes the curtain instead.
+const REACH_GAP: f64 = 80.0;
+const REACH_SINE: f64 = 0.5;
+/// How far (m) a main street ending outside runs on into the circuit.
+const REACH_IN: f64 = 20.0;
+/// Longest stretch of water (m) a reaching street may pass (a stream; `clear_water` bridges it).
+const REACH_WADE: f64 = 16.0;
+/// A dead end of another main street across the wall within this distance (m) of the line is where the
+/// reaching street runs to: the two make one road.
+const REACH_JOIN: f64 = 15.0;
+/// A street end this near (m) a regional road of the request was clipped from it.
+const ROAD_MATCH: f64 = 3.0;
+
+/// A main street `reach_through` ran through a curtain: `added` vertices were added at its last end
+/// (`back`) or its first, crossing the curtain at `at`.
+pub(in super::super) struct Reached {
+    street: usize,
+    back: bool,
+    added: usize,
+    outside_road: bool,
+    at: Point,
+}
+
+/// Walls and moats first, the rest adapts: before the gates of the circuit `wall` are decided, every
+/// main street (`priority` 2 and more) that ends dead (no other street within 1 m of its end) and
+/// reaches the curtain within `REACH_GAP` m runs on through it, to `beyond` m outside (curtain, berm,
+/// moat and 20 m) from an end inside, to `REACH_IN` m inside from an end outside. In order:
+/// - to the dead end of another main street waiting across the wall near its line (`REACH_JOIN`):
+///   the two make one road;
+/// - along the regional road of the request `roads` it was clipped from (`ROAD_MATCH`);
+/// - straight on, where it points at the curtain at more than 30°.
+///
+/// No extension ends in water, passes more than `REACH_WADE` m of it, crosses another street or one
+/// of the `others` circuits, or crosses the curtain twice. The crossing is then a candidate of the
+/// budget like any other; `decide_reached` takes back the extensions whose crossing it shuts.
+/// An end within this distance (m) of the curtain line counts as lying on it.
+const ON_WALL: f64 = 2.0;
+
+pub(in super::super) fn reach_through(wall: &Shape, streets: &mut [Street], beyond: f64, others: &[Shape], roads: &[Street], requested: Option<usize>, surface: Surface<'_>) -> Vec<Reached> {
+    let mut out: Vec<Reached> = vec![];
+    if wall.outer.len() < 3 {
+        return out;
+    }
+    let path = closed(&wall.outer);
+    let ring = g::normalized(Shape { outer: wall.outer.clone(), holes: vec![] });
+    let dead = |streets: &[Street], si: usize, p: Point| streets.iter().enumerate().all(|(sj, t)| sj == si || !t.path.windows(2).any(|w| g::distance(p, w[0], w[1]).0 < 1.0));
+    let main = |s: &Street| priority(s) >= 2 && !water_way(s, false) && s.path.len() >= 2;
+    let profile = std::env::var("URBAN_PROFILE").is_ok();
+    // Inner ends first: a road arriving outside is met by the street it continues.
+    // An explicit count may use a lesser street already approaching the wall as a postern.
+    // Main streets get both passes first. Stop reaching lesser ends once the request is met.
+    for (inner, lesser) in [(true, false), (false, false), (true, true), (false, true)] {
+        let mut needed = if lesser {
+            let Some(count) = requested else { break };
+            count.saturating_sub(crossings(&path, &cumulated(&path), streets, surface).len())
+        } else { usize::MAX };
+        for si in 0..streets.len() {
+            if needed == 0 { break; }
+            if lesser && (!matches!(streets[si].role.as_str(), "street" | "lane" | "approach") || streets[si].path.len() < 2)
+                || main(&streets[si]) == lesser {
+                continue;
+            }
+            for back in [true, false] {
+                if needed == 0 || out.iter().any(|r| r.street == si && r.back == back) {
+                    continue;
+                }
+                let s = &streets[si];
+                let n = s.path.len();
+                let end = if back { s.path[n - 1] } else { s.path[0] };
+                // The direction the street leaves by: from its last vertex a metre or more back.
+                let Some(from) = (0..n - 1).map(|j| if back { s.path[n - 2 - j] } else { s.path[j + 1] }).find(|&q| dist(q, end) >= 1.0) else { continue };
+                let u = dir(from, end);
+                // The armature often ends on the trace itself: the side of a street is the side of its
+                // body, `ON_WALL` m back from its end, and its lines are probed from there.
+                let back_off = add(end, u, -ON_WALL);
+                if g::contains(&ring, back_off) != inner || !dead(&*streets, si, end) {
+                    continue;
+                }
+                let extra = if inner { beyond } else { REACH_IN };
+                // Straight on: the distance to the curtain it points at.
+                let probe = add(end, u, REACH_GAP);
+                let ray = path
+                    .windows(2)
+                    .filter_map(|w| g::segment_hit(back_off, probe, w[0], w[1]).map(|(t, _)| ((t * (REACH_GAP + ON_WALL) - ON_WALL).max(0.0), dir(w[0], w[1]))))
+                    .min_by(|a, b| a.0.total_cmp(&b.0))
+                    .filter(|&(_, side)| cross(u, side).abs() >= REACH_SINE)
+                    .map(|(d, _)| d);
+                // Along the request road, as far beyond its first crossing.
+                let road = along_road(roads, end, u, REACH_GAP + extra / REACH_SINE).and_then(|line| {
+                    let from_body: Vec<Point> = std::iter::once(back_off).chain(line.iter().copied()).collect();
+                    let a = (first_hit(&path, &from_body)? - ON_WALL).max(0.0);
+                    if a > REACH_GAP { return None; }
+                    if !inner { return Some(prefix(&line, a + extra)); }
+                    // A skew approach needs more road length to clear the same width of moat.
+                    let clearance = |q| path.windows(2).map(|w| g::distance(q, w[0], w[1]).0).fold(f64::INFINITY, f64::min);
+                    let cum = cumulated(&line);
+                    let j = (1..line.len()).find(|&j| cum[j] > a && !g::contains(&ring, line[j]) && clearance(line[j]) >= extra)?;
+                    let (mut lo, mut hi) = (cum[j - 1].max(a), cum[j]);
+                    for _ in 0..12 {
+                        let mid = (lo + hi) * 0.5;
+                        if clearance(at_arc_open(&line, &cum, mid).0) >= extra { hi = mid; } else { lo = mid; }
+                    }
+                    Some(prefix(&line, hi))
+                });
+                if profile {
+                    eprintln!("  reach: ({:.0},{:.0}) ray {:?} road {}", end.x, end.y, ray.map(f64::round), road.is_some());
+                }
+                if ray.is_none() && road.is_none() {
+                    continue;
+                }
+                let partner = ray.and_then(|d| {
+                    let across = |q: Point| {
+                        let v = (q.x - end.x, q.y - end.y);
+                        let along = dot(v, u);
+                        along >= d - 1.0 && along <= d + extra + REACH_JOIN && cross(u, v).abs() <= REACH_JOIN
+                    };
+                    streets
+                        .iter()
+                        .enumerate()
+                        .filter(|&(sj, t)| sj != si && main(t))
+                        .flat_map(|(sj, t)| [(sj, t.path[0]), (sj, t.path[t.path.len() - 1])])
+                        .filter(|&(sj, q)| across(q) && dead(&*streets, sj, q))
+                        .map(|(_, q)| q)
+                        .min_by(|a, b| dist(*a, end).total_cmp(&dist(*b, end)))
+                });
+                // The crossing of `line` (from `end`), if it passes the curtain once, dry at its end, by
+                // no long water, clear of the other streets and circuits; a `straight` line also at more
+                // than 30° to the curtain and within 30° of the street's way.
+                let fits = |line: &[Point], straight: bool| -> Option<Point> {
+                    let to = *line.last()?;
+                    let from_body: Vec<Point> = std::iter::once(back_off).chain(line.iter().copied()).collect();
+                    let mut hits: Vec<(Point, V, V)> = from_body
+                        .windows(2)
+                        .flat_map(|s| path.windows(2).filter_map(move |w| reach_hit(s[0], s[1], w[0], w[1]).map(|h| (h.1, dir(s[0], s[1]), dir(w[0], w[1])))))
+                        .collect();
+                    // One crossing met at the joint of two segments counts once.
+                    hits.dedup_by(|a, b| dist(a.0, b.0) < 0.5);
+                    let &[(at, v, side)] = hits.as_slice() else {
+                        if profile {
+                            eprintln!("  reach: ({:.0},{:.0}) meets the curtain {} times", end.x, end.y, hits.len());
+                        }
+                        return None;
+                    };
+                    if surface.wet(to) || straight && (cross(v, u).abs() >= 0.5 || dot(v, u) <= 0.0 || cross(v, side).abs() < REACH_SINE) {
+                        if profile {
+                            eprintln!("  reach: ({:.0},{:.0}) wet end {} or skew {:.2}", end.x, end.y, surface.wet(to), cross(v, side).abs());
+                        }
+                        return None;
+                    }
+                    let (mut wade, mut longest) = (0.0_f64, 0.0_f64);
+                    for s in line.windows(2) {
+                        let steps = dist(s[0], s[1]).ceil().max(1.0) as usize;
+                        let step = dist(s[0], s[1]) / steps as f64;
+                        for j in 1..=steps {
+                            wade = if surface.wet(add(s[0], dir(s[0], s[1]), step * j as f64)) { wade + step } else { 0.0 };
+                            longest = longest.max(wade);
+                        }
+                    }
+                    let crossed = streets.iter().enumerate().any(|(sj, t)| {
+                        sj != si
+                            && t.path.windows(2).any(|w| line.windows(2).any(|s| g::segment_hit(s[0], s[1], w[0], w[1]).is_some_and(|(_, x)| dist(x, end) > 1.0 && dist(x, to) > 1.0)))
+                    });
+                    let other = others.iter().any(|o| line.windows(2).any(|s| (0..o.outer.len()).any(|j| g::segment_hit(s[0], s[1], o.outer[j], o.outer[(j + 1) % o.outer.len()]).is_some())));
+                    if profile && (longest > REACH_WADE || crossed || other) {
+                        eprintln!("  reach: ({:.0},{:.0}) water {longest:.0} m, crosses a street {crossed}, another circuit {other}", end.x, end.y);
+                    }
+                    (longest <= REACH_WADE && !crossed && !other).then_some(at)
+                };
+                let chosen = partner
+                    .and_then(|q| fits(&[end, q], true).map(|x| (vec![q], x)))
+                    .or_else(|| road.as_ref().and_then(|line| fits(line, false).map(|x| (line[1..].to_vec(), x))))
+                    .or_else(|| {
+                        // Straight on only for a regional road (it has somewhere to go beyond the wall) or when
+                        // the gate count is requested (the owner of the town asks for the gate). A
+                        // town street ending at the wall would open a gate onto nothing, which closes
+                        // again later and takes the street's inner gate with it.
+                        ray.filter(|_| streets[si].role == "regional" || requested.is_some()).and_then(|d| {
+                            let q = add(end, u, d + extra);
+                            fits(&[end, q], true).map(|x| (vec![q], x))
+                        })
+                    });
+                let Some((added, at)) = chosen else {
+                    if profile {
+                        eprintln!("  reach: ({:.0},{:.0}) no line fits", end.x, end.y);
+                    }
+                    continue;
+                };
+                let s = &mut streets[si];
+                // An end lying on the trace steps back onto the street's body: the street then crosses
+                // the curtain instead of touching it.
+                if path.windows(2).any(|w| g::distance(end, w[0], w[1]).0 < 0.5) && dist(from, end) > 2.0 * ON_WALL {
+                    let k = if back { s.path.len() - 1 } else { 0 };
+                    s.path[k] = back_off;
+                }
+                let w = (if back { s.widths.last() } else { s.widths.first() }).copied().unwrap_or(4.0);
+                for &q in &added {
+                    if back {
+                        s.path.push(q);
+                        s.widths.push(w);
+                    } else {
+                        s.path.insert(0, q);
+                        s.widths.insert(0, w);
+                    }
+                }
+                needed -= 1;
+                out.push(Reached { street: si, back, added: added.len(), outside_road: !inner || road.is_some() || s.role == "regional", at });
+            }
+        }
+    }
+    if profile && !out.is_empty() {
+        eprintln!("  gate budget: reached through {}", out.iter().map(|r| format!("({:.0},{:.0}) +{}", r.at.x, r.at.y, r.added)).collect::<Vec<_>>().join(" "));
+    }
+    out
+}
+
+/// The regional road of `roads` that passes within `ROAD_MATCH` m of `end`, followed from there the
+/// way `u` for `limit` m: `end` first.
+fn along_road(roads: &[Street], end: Point, u: V, limit: f64) -> Option<Vec<Point>> {
+    let (_, r, j) = roads
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.role == "regional")
+        .flat_map(|(ri, r)| r.path.windows(2).enumerate().filter(|(_, w)| dist(w[0], w[1]) > 1e-6).map(move |(j, w)| (g::distance(end, w[0], w[1]).0, ri, j)))
+        .filter(|x| x.0 < ROAD_MATCH)
+        .min_by(|a, b| a.0.total_cmp(&b.0))?;
+    let line = &roads[r].path;
+    let next: Vec<Point> = if dot(dir(line[j], line[j + 1]), u) >= 0.0 { line[j + 1..].to_vec() } else { line[..=j].iter().rev().copied().collect() };
+    let mut out = vec![end];
+    let mut left = limit;
+    for p in next {
+        let last = out[out.len() - 1];
+        let l = dist(last, p);
+        if l < 1e-6 {
+            continue;
+        }
+        if l >= left {
+            out.push(add(last, dir(last, p), left));
+            left = 0.0;
+            break;
+        }
+        left -= l;
+        out.push(p);
+    }
+    // The request road stops short (a deck or another piece takes over there): straight on for the rest.
+    if left > 1.0 && out.len() >= 2 {
+        let (a, b) = (out[out.len() - 2], out[out.len() - 1]);
+        out.push(add(b, dir(a, b), left));
+    }
+    (out.len() >= 2).then_some(out)
+}
+
+/// Include both ends when a clipped street and its continuation meet on the curtain.
+fn reach_hit(a: Point, b: Point, c: Point, d: Point) -> Option<(f64, Point)> {
+    g::segment_hit(a, b, c, d).or_else(|| g::segment_hit(b, a, c, d).map(|(t, p)| (1.0 - t, p)))
+}
+
+/// Arc (m along `line`) of its first crossing of the closed `path`.
+fn first_hit(path: &[Point], line: &[Point]) -> Option<f64> {
+    let cum = cumulated(line);
+    line.windows(2)
+        .enumerate()
+        .filter_map(|(j, w)| path.windows(2).filter_map(|c| reach_hit(w[0], w[1], c[0], c[1]).map(|(t, _)| cum[j] + t * dist(w[0], w[1]))).reduce(f64::min))
+        .reduce(f64::min)
+}
+
+/// The first `s` m of `line`.
+fn prefix(line: &[Point], s: f64) -> Vec<Point> {
+    let cum = cumulated(line);
+    if s >= cum[line.len() - 1] {
+        return line.to_vec();
+    }
+    let (p, k) = at_arc_open(line, &cum, s);
+    let mut out = line[..=k].to_vec();
+    out.push(p);
+    out
+}
+
+/// The extensions of `reached` whose crossing the budget did not keep, taken back: the street ends
+/// where it ended, and no main road is shut there.
+fn take_back(streets: &mut [Street], reached: &[Reached], kept: &[Passage], shut: &mut Vec<Passage>) {
+    // Within the merge distance of `composition::gates`.
+    const SAME: f64 = 8.0;
+    for r in reached.iter().rev().filter(|r| kept.iter().all(|k| dist(k.at, r.at) >= SAME)) {
+        if r.outside_road && shut.iter().any(|p| dist(p.at, r.at) < SAME) {
+            continue; // The exterior road is needed by the diversion after the curtain is built.
+        }
+        let s = &mut streets[r.street];
+        if r.back {
+            s.path.truncate(s.path.len().saturating_sub(r.added));
+            s.widths.truncate(s.widths.len().saturating_sub(r.added));
+        } else {
+            s.path.drain(..r.added.min(s.path.len()));
+            s.widths.drain(..r.added.min(s.widths.len()));
+        }
+        shut.retain(|p| dist(p.at, r.at) >= SAME);
+    }
+}
+
 /// The land gates of the circuit `wall`, decided on `streets` as they stand: the budget keeps the
 /// passages (`choose`), a main road it shuts out with no way round keeps its gate all the same
 /// (`way_round`), the gates are fitted to the curtain (`fit_passages`), and every other street crossing
 /// ends at the wall on both sides. Returns the circuit, its passages and the main roads shut
 /// out (for `divert`, once the works of the circuit are built).
+#[cfg(test)]
 pub(in super::super) fn decide(wall: &Shape, streets: &mut Vec<Street>, c: &Circuit<'_>, surface: Surface<'_>) -> (Shape, Vec<Passage>, Vec<Passage>) {
+    decide_reached(wall, streets, c, &[], surface)
+}
+
+/// `decide` after `reach_through`: an extension whose crossing is not kept is taken back before the
+/// crossings close, so no stub is left in the moat band.
+pub(in super::super) fn decide_reached(wall: &Shape, streets: &mut Vec<Street>, c: &Circuit<'_>, reached: &[Reached], surface: Surface<'_>) -> (Shape, Vec<Passage>, Vec<Passage>) {
+    decide_with_gates(wall, streets, c, &[], reached, surface)
+}
+
+/// Budget the land gates left on the same front of a rebuilt circuit.
+pub(in super::super) fn decide_with_gates(wall: &Shape, streets: &mut Vec<Street>, c: &Circuit<'_>, previous: &[Point], reached: &[Reached], surface: Surface<'_>) -> (Shape, Vec<Passage>, Vec<Passage>) {
     if wall.outer.len() < 3 {
+        take_back(streets, reached, &[], &mut vec![]);
         return (wall.clone(), vec![], vec![]);
     }
     let path = closed(&wall.outer);
-    let (mut kept, dropped) = choose(&path, streets, c.pop, c.purpose, c.gates, surface);
+    let (mut kept, dropped) = choose(&path, streets, c.pop, c.purpose, c.gates, previous, reached, surface);
+    let profile = std::env::var("URBAN_PROFILE").is_ok();
+    if profile {
+        let show = |ps: &[Passage]| ps.iter().map(|p| format!("({:.0},{:.0}) p{} w{:.1} sq{:.2}", p.at.x, p.at.y, p.priority, p.width, p.square)).collect::<Vec<_>>().join("; ");
+        eprintln!("  gate budget: pop {} requested {:?} candidates {} | kept {} | dropped {}", c.pop, c.gates, composition::gates(&path, streets).len(), show(&kept), show(&dropped));
+    }
     if kept.is_empty() && dropped.is_empty() {
+        take_back(streets, reached, &[], &mut vec![]);
         return (wall.clone(), kept, dropped);
     }
     let outside = Outside::new(&path, c.curtain_width + c.moat + 8.0);
     let mut shut = vec![];
-    for p in dropped.into_iter().filter(|p| p.priority >= 2) {
-        match way_round(&outside, &kept, &p, streets, surface, c.grade, false) {
-            WayRound::Blocked => kept.push(p),
+    for mut p in dropped.into_iter().filter(|p| p.priority >= 2) {
+        p.reached_road = reached.iter().any(|r| r.outside_road && dist(r.at, p.at) < 8.0);
+        // A gate kept beside another would stand in its front: the road shut there reaches the
+        // town through that gate, way round or not.
+        let crowded = kept.iter().any(|k| dist(k.at, p.at) < GATE_GAP);
+        let way = way_round(&outside, &kept, &p, streets, surface, c.grade, false);
+        if profile {
+            eprintln!("  gate budget: dropped main ({:.0},{:.0}) crowded {crowded} way round {}", p.at.x, p.at.y, match way { WayRound::Served => "served", WayRound::Blocked => "blocked", WayRound::Road { .. } => "road" });
+        }
+        match way {
+            WayRound::Blocked if !crowded && c.gates.is_none() && !p.reached_road => kept.push(p),
             _ => shut.push(p),
         }
     }
-    let ring = if c.squared || c.streets_turn { fit_passages(wall.outer.clone(), &mut kept, streets, c, surface) } else { wall.outer.clone() };
+    take_back(streets, reached, &kept, &mut shut);
+    // `URBAN_PROFILE`: how far the nearest street crossing of `ring` lies from each kept gate.
+    let served = |stage: &str, ring: &[Point], kept: &[Passage], streets: &[Street]| {
+        if profile {
+            let crossings = composition::gates(&closed(ring), streets);
+            eprintln!("  gate budget: {stage}: {}", kept.iter().map(|k| format!("({:.0},{:.0}) {:.0} m", k.at.x, k.at.y, crossings.iter().map(|&x| dist(x, k.at)).fold(f64::INFINITY, f64::min))).collect::<Vec<_>>().join("; "));
+        }
+    };
+    served("after the budget", &wall.outer, &kept, streets);
+    // A previous gate moved onto its street crossing (`choose`) is fitted no more than it was.
+    let held: Vec<Point> = kept.iter().map(|k| k.at).filter(|&a| previous.iter().any(|&q| dist(q, a) < STRAIGHT)).chain(previous.iter().copied()).collect();
+    let ring = if c.squared || c.streets_turn { fit_passages(wall.outer.clone(), &mut kept, &held, streets, c, surface) } else { wall.outer.clone() };
+    served("after the passages are fitted", &ring, &kept, streets);
     let e = Enclosure {
         path: closed(&ring),
         kind: c.kind.into(),
@@ -506,7 +881,8 @@ pub(in super::super) fn decide(wall: &Shape, streets: &mut Vec<Street>, c: &Circ
     // A water passage already serves its channel before the gatehouses are built.
     let banks = composition::water_gates(&e.path, surface);
     let passages: Vec<_> = water_passages(&banks).collect();
-    close_crossings_at(streets, std::slice::from_ref(&e), true, surface, &passages);
+    close_crossings_at(streets, std::slice::from_ref(&e), true, surface, &passages, |_| c.gates.is_some());
+    served("after the other crossings close", &ring, &kept, streets);
     (Shape { outer: ring, holes: wall.holes.clone() }, kept, shut)
 }
 
@@ -515,6 +891,14 @@ pub(in super::super) fn decide(wall: &Shape, streets: &mut Vec<Street>, c: &Circ
 fn throat(width: f64) -> f64 {
     (2.0 * width).max(12.0)
 }
+
+/// Widest spacing (m) the budget asks between two gates along the curtain: two roads arriving further
+/// apart than this each get their gate, within the budget.
+const GATE_SPACING: f64 = 80.0;
+
+/// Land gates stand at least this far apart (m): two gate fronts (`gate_reach`). A main road shut out
+/// nearer than that to a kept gate keeps no gate of its own, even with no way round.
+pub(in super::super) const GATE_GAP: f64 = 2.0 * STRAIGHT;
 
 /// A diversion longer than this (m), or than half the circuit, is no way round: the road ends at the wall.
 const DIVERSION_MAX: f64 = 600.0;
@@ -702,6 +1086,16 @@ fn joined_outside(streets: &[Street], ring: &Shape, a: Point, b: Point, budget: 
     false
 }
 
+/// Land gates of the old circuit that still lie on the new trace, including one-sided approaches.
+pub(in super::super) fn old_gates(e: &Enclosure, path: &[Point]) -> Vec<Point> {
+    e.gates.iter().enumerate().filter_map(|(i, &p)| {
+        if e.gatehouses.iter().any(|g| matches!(g.kind.as_str(), "water" | "shore")
+            && (g.gate == i || g.passage.iter().any(|&q| dist(q, p) < 1.0))) { return None; }
+        let (gap, _, at) = path.windows(2).map(|w| g::distance(p, w[0], w[1])).min_by(|a, b| a.0.total_cmp(&b.0))?;
+        (gap < 1.0).then_some(at)
+    }).collect()
+}
+
 /// The outside of a circuit, for the roads that go round it: the closed path, its ring, the arc
 /// positions and outward normals of its segments, and the distance at which a road clears the moat.
 struct Outside<'a> {
@@ -779,16 +1173,48 @@ fn way_round(o: &Outside<'_>, kept: &[Passage], c: &Passage, streets: &[Street],
 /// the end of the shut-out road, which stops there instead of running on to the wall, and joins the
 /// gate road at a vertex beyond the gate throat; it has the width and rank of the road it carries and
 /// the role `approach`, which no trim prunes or narrows for want of doors.
-pub(in super::super) fn divert(e: &Enclosure, kept: &[Passage], shut: &[Passage], streets: &mut Vec<Street>, surface: Surface<'_>, grade: f64) {
+pub(in super::super) fn divert(e: &Enclosure, kept: &[Passage], shut: &[Passage], streets: &mut Vec<Street>, surface: Surface<'_>, grade: f64, built: &[crate::urban::Block]) {
     if e.path.len() < 4 || shut.is_empty() {
         return;
     }
     let from_wall = |q: Point| e.path.windows(2).map(|w| g::distance(q, w[0], w[1]).0).fold(f64::INFINITY, f64::min);
-    let off = e.ditch.iter().flat_map(|d| d.shape.outer.iter()).map(|&p| from_wall(p)).fold(e.curtain_width_m + 4.0, f64::max) + 4.0;
-    let outside = Outside::new(&e.path, off);
+    // Only the front between the two roads sets their setback; a distant bastion may reach much farther.
+    let wall_arc = cumulated(&e.path);
+    let total = *wall_arc.last().unwrap();
+    let arc_gap = |a: f64, b: f64| { let d = (a - b).rem_euclid(total); d.min(total - d) };
+    let lips: Vec<_> = e.moat.iter().flat_map(|m| &m.runs).flat_map(|r| &r.outer)
+        .chain(e.ditch.iter().skip(e.moat.as_ref().map_or(0, |m| super::moat_line::reach_count(&m.runs))).flat_map(|d| &d.shape.outer))
+        .map(|&p| (arc_of(&e.path, &wall_arc, p), from_wall(p))).collect();
+    let barred: Vec<_> = e.ditch.iter().map(|d| &d.shape)
+        .chain(built.iter().filter(|b| matches!(b.kind.as_str(), "block" | "place")).map(|b| &b.shape))
+        .map(|s| (g::bbox(s), s)).collect();
     let width_at = |s: &Street, i: usize| s.widths.get(i).or(s.widths.last()).copied().unwrap_or(4.0);
     for c in shut {
-        let WayRound::Road { from: (sc, ic, start), to: (sk, ik, end), line } = way_round(&outside, kept, c, streets, surface, grade, true) else { continue };
+        let start = arc_of(&e.path, &wall_arc, c.at);
+        let end = kept.iter().filter(|p| p.priority >= 2).map(|p| arc_of(&e.path, &wall_arc, p.at))
+            .min_by(|a, b| arc_gap(*a, start).total_cmp(&arc_gap(*b, start))).unwrap_or(start);
+        let front = arc_gap(start, end);
+        let reach = lips.iter().filter(|(s, _)| arc_gap(*s, start) + arc_gap(*s, end) <= front + 24.0)
+            .map(|(_, d)| *d).fold(e.curtain_width_m + 4.0, f64::max);
+        let off = reach + (c.width * 0.5 + 1.0).max(4.0);
+        let outside = Outside::new(&e.path, off);
+        let way = way_round(&outside, kept, c, streets, surface, grade, true);
+        // Simplifying an offset line around a corner may take its carriageway back over the lip.
+        let way = match way {
+            WayRound::Road { ref line, .. } if !barred.is_empty() && g::ribbon(line, &[c.width]).iter().any(|strip| {
+                let bounds = g::bbox(strip);
+                barred.iter().any(|(b, s)| g::boxes_meet(bounds, *b) && !g::intersection(strip, s).is_empty())
+            }) => WayRound::Blocked,
+            way => way,
+        };
+        let (sc, ic, start, junction) = match way {
+            WayRound::Road { from: (s, i, p), to, line } => (s, i, p, Some((to, line))),
+            _ if c.reached_road && e.moat.is_some() => {
+                let Some((s, i, p, _)) = outward(streets, &e.path, &outside.ring, c, off, true) else { continue };
+                (s, i, p, None)
+            }
+            _ => continue,
+        };
         // The shut-out road stops where the diversion leaves it: its stub towards the wall goes.
         let s = &mut streets[sc];
         let n = s.path.len();
@@ -803,6 +1229,10 @@ pub(in super::super) fn divert(e: &Enclosure, kept: &[Passage], shut: &[Passage]
             s.path.splice(ic + 1.., [start]);
             s.widths.splice(ic + 1.., [wd]);
         }
+        if std::env::var("URBAN_PROFILE").is_ok() {
+            eprintln!("  gate diversion: ({:.0},{:.0}) stops at ({:.0},{:.0}), joins gate road {}", c.at.x, c.at.y, start.x, start.y, junction.is_some());
+        }
+        let Some(((sk, ik, end), line)) = junction else { continue };
         // The gate road gains the junction as a vertex.
         let s = &mut streets[sk];
         if s.path.iter().all(|&q| dist(q, end) > 0.05) {

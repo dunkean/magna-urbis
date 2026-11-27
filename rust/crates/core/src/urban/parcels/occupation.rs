@@ -278,7 +278,7 @@ pub(in super::super) fn preview_parts_resolved(p:&Parcel,o:&Occupancy,resolved:O
                     Point { x:c.x+r*a.cos(), y:c.y+r*a.sin() } }).collect()
             } else { vec![at(s0,t0),at(s1,t0),at(s1,t1),at(s0,t1)] };
             let label = if mosque { "prayer-hall" } else { "building" };
-            let fallback = finish(&p.shape, vec![(ring,None,label)], 3.);
+            let fallback = finish(&p.shape, vec![(ring,None,label)], super::lot_envelopes::MIN_BODY_SIDE);
             if !fallback.is_empty() {
                 parts = fallback;
                 form = match kind(o) {

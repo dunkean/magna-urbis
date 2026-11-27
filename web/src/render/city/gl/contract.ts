@@ -46,6 +46,9 @@ export interface CityGlDrawOptions {
    * its streets are not drawn: the river shows above them. Bridges and fords (crossing strokes), quays and
    * landings, walls and buildings are drawn as before, above the water. */
   water?: Float32Array;
+  /** The moats are dug in the 3D ground this plan is draped on (ui/urbanGroundCuts.ts): their bed and banks without the
+   * near-view detail and hachures (cityWalls.ts moatDetailDrawn). */
+  dugMoats?: boolean;
   /** Shared context (live compositor): the framebuffer and its size in device pixels. The draw binds it, sets every
    * state it relies on and clears nothing; without it the draw clears and fills the renderer's own canvas. */
   target?: { framebuffer: WebGLFramebuffer | null; width: number; height: number };

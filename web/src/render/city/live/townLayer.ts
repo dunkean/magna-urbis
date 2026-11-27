@@ -218,9 +218,10 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     return rest.gaps;
   }
   /** The map drape's tiles hold the town of this revision: bumped whenever what a tile shows changes (the look, the plan
-   * of a new scene, a building tier uploaded, the lot enclosures, the water). */
+   * of a new scene, a building tier uploaded, the lot enclosures, the dug moats, the water). */
   let drapeRevision = 0,
-    drapeYardsAsMeshes = false;
+    drapeYardsAsMeshes = false,
+    drapeDugMoats = false;
   /** The colour tables of the plan as the drape draws it at a level of detail, being computed in slices by `work`. */
   let drapePreparing: { level: CityLod; steps: Generator<void, void> } | undefined;
   const unprepare = (): void => {
@@ -453,6 +454,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       metresPerPixel: mpp,
       lod: selectCityLod(mpp),
       water: env.water?.(),
+      // The tiles lie on the 3D ground: where it digs the moats, their scarps are relief, not hachures.
+      dugMoats: drapeDugMoats,
       target: target && { framebuffer: target, width: tile.pixels, height: tile.pixels },
     };
   };
@@ -461,9 +464,11 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     revision(): number {
       // A new appearance is a new look, which drops the tables.
       lookNow();
-      const yardsAsMeshes = env.volumeYards?.() ?? false;
-      if (yardsAsMeshes !== drapeYardsAsMeshes) {
+      const yardsAsMeshes = env.volumeYards?.() ?? false,
+        dugMoats = env.dugMoats?.() ?? false;
+      if (yardsAsMeshes !== drapeYardsAsMeshes || dugMoats !== drapeDugMoats) {
         drapeYardsAsMeshes = yardsAsMeshes;
+        drapeDugMoats = dugMoats;
         drapeRevision++;
       }
       return drapeRevision;

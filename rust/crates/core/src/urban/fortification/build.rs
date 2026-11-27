@@ -8,13 +8,13 @@ use super::geometry::{
     Cut, TILE, V, area, buffer, curtain_body, dist,
     normals, ribbon_half, segment_relief, tiles, wet_outward,
 };
-use super::moat::{self, choose_moat, continuous_moat, dig_moat, natural_stops, rounded_ends};
+use super::moat::{assemble, choose_moat, dig_moat};
 use super::outworks::{citadel, outer_works};
 use super::shore::{WallWalk, shore_gaps};
-use super::street_clearance::{Predicted, street_clear, street_segments};
+use super::street_clearance::{Predicted, street_clear};
 use super::style::Style;
 use super::towers::towers_and_bastions;
-use super::water::{bare_beach, gate_spans, short_of_water};
+use super::water::{bare_beach, gate_spans};
 
 /// Every structure of one circuit. `e.gates` holds its `land` gates (street
 /// crossings); the ends of its water gates are added here. `banks` are the
@@ -33,6 +33,23 @@ pub(in super::super) fn build(
     pop: u32,
     predicted: &Predicted,
     rng: &Rng,
+) -> Vec<Street> {
+    build_beside(e, land, banks, streets, surface, style, pop, predicted, rng, None)
+}
+
+/// An attached neighbour holds its land before the ditch and its water supply are resolved.
+#[allow(clippy::too_many_arguments)]
+pub(in super::super) fn build_beside(
+    e: &mut Enclosure,
+    land: usize,
+    banks: &[(Point, bool)],
+    streets: &[Street],
+    surface: Surface<'_>,
+    style: &Style,
+    pop: u32,
+    predicted: &Predicted,
+    rng: &Rng,
+    neighbour: Option<&Shape>,
 ) -> Vec<Street> {
     let path = e.path.clone();
     let n_seg = path.len().saturating_sub(1);
@@ -69,7 +86,6 @@ pub(in super::super) fn build(
     let reach =
         face + style.berm + dw + 25.0 + style.court_radius[1].max(style.outer_gap[1] + 16.0) + 45.0;
     let clear = Cut::new(street_clear(&path, streets, reach, predicted));
-    let street_lines = street_segments(&path, streets, reach);
     // Per-segment terrain: steep runs and runs with water outside keep no
     // ditch (water is the moat), get no bastion and a wider tower spacing.
     let steep: Vec<bool> = (0..n_seg)
@@ -80,7 +96,7 @@ pub(in super::super) fn build(
         .collect();
     let ctx = BuildContext {
         path: &path, ring: &ring, poly: &poly, n_seg, ns: &ns, h, c, face,
-        height, tower_height, streets, street_lines: &street_lines,
+        height, tower_height, streets,
         inner_core: &inner_core, clear: &clear, surface, style, predicted,
         steep: &steep, wet: &wet,
     };
@@ -119,47 +135,39 @@ pub(in super::super) fn build(
         })
     };
     works.towers.retain(|t| !in_gap(t.anchor));
-    let moat_core = outer_works(&ctx, e, &infos, &major_land, &mut works, rng);
+    let hull = outer_works(&ctx, e, &infos, &major_land, &mut works, rng);
     let moat = choose_moat(&ctx, &mut dr, size, dw);
-    let GateFronts { attached, lanes, fronts } =
-        lean_tos(&ctx, &walk, e, &infos, &major_land, &works, moat, rng);
-    let mut ditch = dig_moat(
-        &ctx, &walk, e, &infos, &major_land, &mut works, moat, moat_core, fronts, &shore_gaps, rng,
-    );
-    citadel(&ctx, moat, &mut works.outworks, &mut ditch, rng);
+    let GateFronts { attached, lanes } = lean_tos(&ctx, &walk, e, &infos, &major_land, &works, moat, rng);
+    let (runs, mut detached) = dig_moat(&ctx, &walk, e, &infos, &major_land, &mut works, moat, hull, &shore_gaps, neighbour);
+    citadel(&ctx, moat, &mut works.outworks, &mut detached, rng);
 
     let Works { towers, gatehouses, bastions, outworks, extra_reserve, .. } = works;
-    // Rule: the moat stops short of natural water on a round end, and is a ring or nothing (no stubs
-    // between cuts).
-    let ditch = rounded_ends(short_of_water(ditch, surface), natural_stops(&ctx, moat, 1.0), moat.dw, surface);
-    let ditch = continuous_moat(ditch, &[], &path, surface);
     // Same bounded mitres as the drawn curtain, with a quantisation margin.
     // Rounded buffers leave buildable wedges under its corners.
     let body = curtain_body(&path,c,h);
     let mut reserve: Vec<Shape> = clear.from(tiles(body, TILE));
+    // The berm, the ditch runs and the outer bank (`dig_moat`), the inner side of the outer works.
     reserve.extend(extra_reserve);
     reserve.extend(clear.from(inner_core.from(tiles(bare_beach(&path, &ns, face, streets, surface), TILE))));
     reserve.extend(towers.iter().map(|t| t.footprint.clone()));
     reserve.extend(gatehouses.iter().flat_map(|gh| gh.masses.clone()));
     reserve.extend(bastions.iter().map(|b| b.shape.clone()));
     reserve.extend(outworks.iter().map(|w| w.shape.clone()));
-    reserve.extend(ditch.iter().map(|d| d.shape.clone()));
+    reserve.extend(detached.iter().map(|d| d.shape.clone()));
     reserve.extend(attached.iter().map(|a| a.shape.clone()));
     let reserve: Vec<Shape> = tiles(g::union(&reserve), TILE)
         .into_iter()
         .filter(|s| g::area(s) > 0.5)
         .collect();
-    // The reserve holds the whole ditch; its water lies in reaches, a dam between two.
-    let (ditch, dams) = moat::reaches(&ctx, &walk, moat, ditch);
     e.towers = towers.iter().map(|t| t.anchor).collect();
     e.towers_detail = towers;
     e.gatehouses = gatehouses;
     e.bastions = bastions;
     e.outworks = outworks;
-    e.moat = moat::spec(moat.form, &ditch, dams, "", surface);
-    e.ditch = ditch;
     e.attached = attached;
     e.reserve = reserve;
+    // The ditch, its crossings by the streets as they stand, its dams and sluices.
+    assemble(e, moat, runs, detached, streets, surface);
     lanes
 }
 
@@ -176,7 +184,6 @@ pub(super) struct BuildContext<'a> {
     pub(super) height: f64,
     pub(super) tower_height: f64,
     pub(super) streets: &'a [Street],
-    pub(super) street_lines: &'a [(Point, Point)],
     pub(super) inner_core: &'a Cut,
     pub(super) clear: &'a Cut,
     pub(super) surface: Surface<'a>,

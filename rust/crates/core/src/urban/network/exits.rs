@@ -233,8 +233,10 @@ pub(in crate::urban) fn resolve_exits(
                     path.dedup_by(|a, b| distance(*a, *b) < 1e-6);
                     // A section along a circuit would ride its curtain and
                     // weave through it, or run in the ditch or on the glacis:
-                    // it is moved off them, along the reserve edge (or the
-                    // outer face where no ditch runs); a section with no
+                    // it is moved off them, outside the reserve (or along the
+                    // outer face where no ditch runs). The ditch is
+                    // continuous and only gate streets cross it: no section
+                    // crosses a moat lip (`Curtains::crosses`); one with no
                     // clear route left leaves the fringe there open.
                     let clear = path
                         .windows(2)

@@ -61,7 +61,7 @@ export function city3dStructures(
       layouts.flatMap((layout, li) => {
         const circuits = layout.enclosures;
         if (!circuits?.length) return [];
-        const inputs = wallReuse ? [layout.culture, waterColor, engraved, ...circuits.flatMap(e => [e, ...moatMeshInputs(e, waterColor, engraved)])] : [];
+        const inputs = wallReuse ? [layout.culture, waterColor, engraved, ...circuits.flatMap(e => [e, ...moatMeshInputs(e)])] : [];
         return batch(String(li), inputs, ground.height, at => city3dWalls(circuits, at, String(li), layout.culture, waterColor, engraved));
       }),
     ),
