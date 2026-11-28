@@ -9,9 +9,48 @@ use super::subdivision::split_quarter;
 use super::vacancy::{drop_vacant_quarters, peel_vacant_edges};
 use crate::urban::{
     Block, Layout, LayoutConfig, Morph, Point, Quarter, Shape, Site, Street, Surface, edits,
-    footprint::capacity, fortification, geography, geometry as g, kinds, macroplan, par, profile::Lap, roles, warnings,
+    footprint::capacity, fortification, geometry as g, kinds, macroplan, par, profile::Lap, roles, warnings,
 };
 use crate::{noise::Noise, rng::Rng};
+use std::sync::{Arc, Mutex};
+
+/// The last capacity-corrected drawing of this town's original site. The
+/// town supplies the same seed, terrain and roads for its entire lifetime.
+#[derive(Default)]
+pub(in crate::urban) struct RetryMemo(Mutex<Option<(Vec<u8>, Arc<Layout>)>>);
+
+impl RetryMemo {
+    fn draw(
+        &self, seed: &str, site: &Site, cfg: &LayoutConfig, morph: &Morph,
+        surface: Surface<'_>, roads: &[Street],
+    ) -> Result<Layout, String> {
+        // Serde omits the internal capacity settings and the signs of the two
+        // optional variations at zero. Keep their original bits in the key.
+        let key = serde_json::to_vec(&(
+            cfg, &morph.value,
+            cfg.capacity_yield.to_bits(), cfg.capacity_floor.to_bits(),
+            cfg.organic_branch_variation.to_bits(), cfg.ribbon_width_variation.to_bits(),
+        )).expect("serialisable quarter configuration");
+        let hit = self.0.lock().unwrap_or_else(|e| e.into_inner())
+            .as_ref().filter(|(old, _)| old == &key).map(|(_, layout)| Arc::clone(layout));
+        if let Some(layout) = hit {
+            #[cfg(not(target_arch = "wasm32"))]
+            if std::env::var_os("URBAN_PROFILE").is_some() {
+                eprintln!("  quarters.capacity_retry.hit");
+            }
+            return Ok((*layout).clone());
+        }
+        let layout = generate_once(seed, site, cfg, morph, surface, roads)?;
+        // Retain at most one drawing. Large plans can use the same path
+        // without keeping an extra street and block graph in memory.
+        if layout.blocks.len() <= 1500 && layout.streets.len() <= 4000 {
+            let saved = Arc::new(layout.clone());
+            *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some((key, saved));
+        }
+        Ok(layout)
+    }
+}
+
 
 /// Quarters of one site. Closed loop of the adaptive capacity: when the
 /// measure of the real blocks falls short of the plan by more than 5 % (10 %
@@ -28,9 +67,10 @@ pub(in crate::urban) fn generate(
     surface: Surface<'_>,
     roads: &[Street],
     stilt_grounded: bool,
+    retry: Option<&RetryMemo>,
 ) -> Result<Layout, String> {
     let mut laps = Lap::new("quarters");
-    let mut layout = generate_planned(seed, site, cfg, m, surface, roads, stilt_grounded)?;
+    let mut layout = generate_planned(seed, site, cfg, m, surface, roads, stilt_grounded, retry)?;
     laps.lap("planned");
     // A minimum of one household per enclosed block must fit the +30 %
     // programme. Replan the land budget; wall tracing remains unchanged.
@@ -52,7 +92,7 @@ pub(in crate::urban) fn generate(
         let mut smaller = cfg.clone();
         smaller.footprint.budget = "population".into();
         smaller.footprint.gross_density = site.population as f64 * 10_000.0 / target;
-        let mut next = generate_planned(seed, site, &smaller, m, surface, roads, stilt_grounded)?;
+        let mut next = generate_planned(seed, site, &smaller, m, surface, roads, stilt_grounded, retry)?;
         let next_count = enclosed_blocks(&next);
         if next_count >= count { break; }
         next.warnings.push(warnings::walled_land_reduced());
@@ -78,11 +118,9 @@ fn generate_planned(
     surface: Surface<'_>,
     roads: &[Street],
     stilt_grounded: bool,
+    retry: Option<&RetryMemo>,
 ) -> Result<Layout, String> {
-    // Raster-only callers clip against the water's cell-scale contour, not its
-    // right-angle staircase (geography.rs; vector geography is kept as given).
-    let shoreline = geography::raster_shoreline(&surface);
-    let surface = shoreline.as_ref().map_or(surface, |s| s.surface(surface));
+    let original_site = site;
     // The common entry already owns the stilt site/surface. Preserve the
     // existing priority of that shore over a second harbour relocation.
     // A ring camp (tents, huts round a byre) has no quay: it keeps its own ground.
@@ -154,7 +192,14 @@ fn generate_planned(
         capacity_floor: t,
         ..cfg.clone()
     };
-    let second = generate_once(seed, site, &again, m, surface, roads)?;
+    let second = if let Some(retry) = retry
+        && std::ptr::eq(site, original_site)
+        && crate::urban::probe_cache::enabled()
+    {
+        retry.draw(seed, site, &again, m, surface, roads)?
+    } else {
+        generate_once(seed, site, &again, m, surface, roads)?
+    };
     let short = |l: &Layout| capacity::of(l).map_or(f64::INFINITY, |p| p.shortfall);
     Ok(if short(&second) < short(&first) {
         second

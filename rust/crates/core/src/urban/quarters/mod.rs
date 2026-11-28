@@ -24,7 +24,7 @@ mod vacancy;
 #[cfg(test)]
 mod stage_tests;
 
-pub(super) use capacity::{generate, probe_quarter};
+pub(super) use capacity::{RetryMemo, generate, probe_quarter};
 pub(super) use frames::outline_frame;
 #[cfg(test)]
 pub(super) use frames::enclosure_frame;

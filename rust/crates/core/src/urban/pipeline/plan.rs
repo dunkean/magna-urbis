@@ -118,7 +118,12 @@ fn lay_quarters(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Res
         .flatten();
     match small {
         Some(layout) => Ok(layout),
-        None => quarters::generate(&town.key_seed, site, config, &at.morph, town.surface, town.roads, town.stilt.is_some()),
+        None => {
+            let shoreline = town.raster_shoreline.get_or_init(|| super::geography::raster_shoreline(&town.surface));
+            let surface = shoreline.as_ref().map_or(town.surface, |s| s.surface(town.surface));
+            let retry = std::ptr::eq(site, town.site).then_some(&town.quarter_retry);
+            quarters::generate(&town.key_seed, site, config, &at.morph, surface, town.roads, town.stilt.is_some(), retry)
+        },
     }
 }
 

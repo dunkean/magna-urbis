@@ -51,7 +51,7 @@ pub(super) fn relax_slopes(town: &Town<'_>) -> Result<Relaxed, String> {
     let mountain_village = (15..1000).contains(&site.population) && slopes::eligible(site, config, town.surface, kind);
     // The look-ahead reads the quarter grammar: a fixed single structure keeps its own plot (`plan::lay_quarters`).
     let start = if relaxable && (!kind.small() || (town.fixed && !town.single_structure()) || mountain_village) {
-        footprint::slope_relax_ahead(&town.key_seed, site, config, town.surface, town.roads)
+        footprint::slope_relax_ahead(&town.key_seed, site, config, town.surface, town.roads, &town.raster_shoreline)
     } else {
         footprint::SlopeStart::Level(0.0)
     };

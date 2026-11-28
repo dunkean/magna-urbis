@@ -30,6 +30,7 @@ pub(super) use parcels::{cut_parcels, probe_parcels, validate_parcels};
 pub(super) use validate::{valid_sites, validate};
 
 use super::geography::StiltGround;
+use std::sync::OnceLock;
 use super::kinds::{self, Kind};
 use super::{LayoutConfig, Layout, ParcelConfig, Site, Street, Surface, edits, geography, neighbours};
 
@@ -58,6 +59,10 @@ pub(super) struct Town<'a> {
     pub surface: Surface<'a>,
     /// The physical terrain.
     pub physical: Surface<'a>,
+    /// Constructed on demand from the fixed planning raster, shared by its
+    /// slope survey, quarter edits and retries. Other stages keep their surface.
+    pub raster_shoreline: OnceLock<Option<geography::Geography>>,
+    pub quarter_retry: super::quarters::RetryMemo,
     /// The regional roads, bridged over water and joined to the neighbours.
     pub roads: &'a [Street],
     pub stilt: Option<&'a StiltGround>,
@@ -129,6 +134,8 @@ pub(super) fn lay_out(
         culture,
         surface: planning,
         physical: surface,
+        raster_shoreline: OnceLock::new(),
+        quarter_retry: super::quarters::RetryMemo::default(),
         roads,
         stilt: stilt.as_ref(),
         neighbour_land: neighbours::Mask::of(planned),

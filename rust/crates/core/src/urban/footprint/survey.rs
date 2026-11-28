@@ -132,7 +132,9 @@ fn block_shares(taken: &Taken, gate: terrain::Gate, surface: Surface<'_>) -> [f6
 /// its houses may use `profiles::SLOPE_RELAX_GOAL` of the land
 /// (`terrain::Survey::relaxation`) and the lowest at which that land houses
 /// the town (`housing_relaxation`).
-pub(in crate::urban) fn slope_relax_ahead(seed: &str, site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, roads: &[Street]) -> SlopeStart {
+pub(in crate::urban) fn slope_relax_ahead(seed: &str, site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, roads: &[Street],
+    raster_shoreline: &std::sync::OnceLock<Option<geography::Geography>>,
+) -> SlopeStart {
     let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
     let small = crate::settlements::demographics::below(site.population, "town");
     // The morph the footprint is sized with (`composition`): the founding recipe.
@@ -162,7 +164,7 @@ pub(in crate::urban) fn slope_relax_ahead(seed: &str, site: &Site, cfg: &LayoutC
     // The first pass's inputs (`quarters::generate_once`): stairs as the
     // culture allows them, water at its raster shoreline.
     let first = LayoutConfig { allow_stairs: profiles::stairs_allowed(cfg, culture), ..cfg.clone() };
-    let shoreline = geography::raster_shoreline(&surface);
+    let shoreline = raster_shoreline.get_or_init(|| geography::raster_shoreline(&surface));
     let drawn_surface = shoreline.as_ref().map_or(surface, |s| s.surface(surface));
     let footprint = generate(seed, site, &first, &morph, drawn_surface, roads, radius);
     #[cfg(not(target_arch = "wasm32"))]
