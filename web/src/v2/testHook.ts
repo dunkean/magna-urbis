@@ -65,6 +65,8 @@ export interface V2TestRequest {
   /** Footprint family (sheet `formes`), or footprint fields (megacities: `{ nuclei, separation }`), and fortification override. */
   footprint?: string | Record<string, string | number>;
   fortification?: string;
+  /** Building architecture (render/cityContract.ts): absent keeps the page's own, `detailed` draws native detailed houses. */
+  architecture?: import('../render/cityContract').CityArchitecture;
 }
 
 /** Review options without a V2 setting yet: render toggles of City Bench's own drawing code. */
@@ -207,7 +209,7 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
       const savedRoads = meta.roadConfig ? (({ exits: _exits, ...rest }) => rest)(meta.roadConfig) : undefined;
       settings.region = { placement, ...(savedRoads ? { roads: savedRoads } : {}), resolution: Math.max(64, Math.min(1024, decor.raster.n)) };
       const urban = urbanSettings(req, defaultCityLayoutConfig() as unknown as Record<string, unknown>, defaultParcelConfig() as unknown as Record<string, unknown>);
-      settings.urban = { ...settings.urban, layout: urban.layout, parcels: urban.parcels };
+      settings.urban = { ...settings.urban, layout: urban.layout, parcels: urban.parcels, ...(req.architecture ? { architecture: req.architecture } : {}) };
       delete settings.urban.local;
       request = req;
       await bindings.load({ settings, mods: [] });
