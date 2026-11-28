@@ -310,8 +310,10 @@ fn small_settlement_keeps_disjoint_quarters_and_dry_paths() {
         "quarters",
     )
     .unwrap();
-    let a = generate("small-radius-regression", &site, &cfg, &m, surface, &[], false).unwrap();
-    let b = generate("small-radius-regression", &site, &cfg, &m, surface, &[], false).unwrap();
+    let shoreline = crate::urban::geography::raster_shoreline(&surface);
+    let planning = shoreline.as_ref().map_or(surface, |s| s.surface(surface));
+    let a = generate("small-radius-regression", &site, &cfg, &m, planning, &[], false, None).unwrap().layout;
+    let b = generate("small-radius-regression", &site, &cfg, &m, planning, &[], false, None).unwrap().layout;
     assert_eq!(
         serde_json::to_string(&a).unwrap(),
         serde_json::to_string(&b).unwrap()
@@ -345,11 +347,12 @@ fn small_settlement_keeps_disjoint_quarters_and_dry_paths() {
         &tiny_site,
         &tiny_cfg,
         &m,
-        surface,
+        planning,
         &[],
         false,
+        None,
     )
-    .unwrap();
+    .unwrap().layout;
     assert_eq!(tiny.quarters.len(), 8);
     for (i, q) in tiny.quarters.iter().enumerate() {
         for r in tiny.quarters.iter().skip(i + 1) {
@@ -373,8 +376,9 @@ fn small_settlement_keeps_disjoint_quarters_and_dry_paths() {
         dry_surface,
         &[],
         false,
+        None,
     )
-    .unwrap();
+    .unwrap().layout;
     assert_eq!(dense.quarters.len(), 64);
     for (i, q) in dense.quarters.iter().enumerate() {
         let r = &dense.quarters[(i + 1) % dense.quarters.len()];
