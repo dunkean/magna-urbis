@@ -259,7 +259,7 @@ impl Geography {
     }
     /// Water shapes whose box meets this box, in index order.
     fn water_near(&self, bb: (f64, f64, f64, f64)) -> BTreeSet<usize> {
-        let mut ids = BTreeSet::new();
+        let mut ids: BTreeSet<usize> = BTreeSet::new();
         for y in (bb.1 / self.cell).floor() as i64..=(bb.3 / self.cell).floor() as i64 {
             for x in (bb.0 / self.cell).floor() as i64..=(bb.2 / self.cell).floor() as i64 {
                 if let Some(bin) = self.water_bins.get(&(x, y)) {
@@ -268,7 +268,7 @@ impl Geography {
             }
         }
         ids.retain(|&i| {
-            let w = g::bbox(&self.water[i]);
+            let w = self.water_index[i].bounds();
             w.0 <= bb.2 && w.2 >= bb.0 && w.1 <= bb.3 && w.3 >= bb.1
         });
         ids
@@ -291,16 +291,20 @@ impl Geography {
             }
         }
     }
-    fn candidates(&self, bb: (f64, f64, f64, f64)) -> BTreeSet<usize> {
-        let mut ids = BTreeSet::new();
+    /// The existence test is independent of repeated edge ids across bins.
+    fn has_edge_in(&self, bb: (f64, f64, f64, f64)) -> bool {
         for y in (bb.1 / self.cell).floor() as i64..=(bb.3 / self.cell).floor() as i64 {
             for x in (bb.0 / self.cell).floor() as i64..=(bb.2 / self.cell).floor() as i64 {
-                if let Some(bin) = self.bins.get(&(x, y)) {
-                    ids.extend(bin);
+                if self.bins.get(&(x, y)).is_some_and(|ids| ids.iter().any(|&i| {
+                    let (a, b) = self.edges[i];
+                    a.x.min(b.x) <= bb.2 && a.x.max(b.x) >= bb.0
+                        && a.y.min(b.y) <= bb.3 && a.y.max(b.y) >= bb.1
+                })) {
+                    return true;
                 }
             }
         }
-        ids
+        false
     }
     /// Whether no land/water edge can cross the segment: every half-cell sample
     /// lies in a cell no edge comes within about one cell of.
@@ -362,14 +366,7 @@ impl Geography {
     }
     pub(super) fn clip(&self, shape: &Shape) -> Vec<Shape> {
         let bb = g::bbox(shape);
-        let nearby = self.candidates(bb).into_iter().any(|i| {
-            let (a, b) = self.edges[i];
-            a.x.min(b.x) <= bb.2
-                && a.x.max(b.x) >= bb.0
-                && a.y.min(b.y) <= bb.3
-                && a.y.max(b.y) >= bb.1
-        });
-        if !nearby {
+        if !self.has_edge_in(bb) {
             return if self.wet(g::interior_point(shape)) {
                 vec![]
             } else {
@@ -380,11 +377,12 @@ impl Geography {
         let mut land: Vec<_> = self
             .land
             .iter()
-            .filter(|s| {
-                let b = g::bbox(s);
+            .zip(&self.land_index)
+            .filter(|(_, index)| {
+                let b = index.bounds();
                 !(b.2 < bb.0 || bb.2 < b.0 || b.3 < bb.1 || bb.3 < b.1)
             })
-            .flat_map(|s| g::intersection(shape, s))
+            .flat_map(|(s, _)| g::intersection(shape, s))
             .collect();
         for i in self.water_near(bb) {
             land = land

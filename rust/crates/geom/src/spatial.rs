@@ -234,6 +234,11 @@ impl ContainmentIndex {
         }
         index
     }
+    /// The original shape's bounds, retained with its parity index.
+    pub fn bounds(&self) -> (f64, f64, f64, f64) {
+        self.bounds
+    }
+
     fn row(&self, y: f64) -> usize {
         (((y - self.bounds.1) / (self.bounds.3 - self.bounds.1).max(1e-12) * self.rows.len() as f64)
             .floor() as usize)

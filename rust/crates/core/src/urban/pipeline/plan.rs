@@ -1,6 +1,7 @@
 //! The formal plan of an attempt: the quarter pass, its trim and its circuits,
 //! then the finish, within the quarter edits wrapper and the stilt balance.
 use super::Town;
+use std::sync::{Arc, Mutex, Weak};
 use super::finish::finish;
 use crate::urban::kinds::{self, Kind};
 use crate::urban::network;
@@ -32,7 +33,63 @@ pub(super) fn formal(town: &Town<'_>, config: &LayoutConfig) -> Result<(Layout, 
     let zone = if config.zone == "auto" { "core" } else { &config.zone };
     let morph = resolve(town.culture, &config.preset, &config.recipe, zone, config.density, &config.params, "quarters")?;
     let at = Attempt { town, config, kind, morph: with_tissue(morph, &config.tissue) };
+    // The source identity ties equal recalibrated layouts to equal drawing
+    // inputs. In the plain workflow only the internal capacity floor and
+    // yield can differ between the attempts that arrive at the same drawing.
+    if town.stilt.is_none() && config.overrides.quarters.is_empty()
+        && config.quarter_edits.is_none() && crate::urban::probe_cache::enabled()
+    {
+        edits::validate_quarters(config)?;
+        return finish_plain(at).map(|layout| (layout, None));
+    }
     edits::with_quarter_edits(config, |c| plan(&at, c), |l| finish(&at, l))
+}
+
+/// The formal continuation of one retained drawing, in the same town.
+#[derive(Default)]
+pub(super) struct FinishedRetry(Mutex<Option<(Weak<Layout>, Arc<Layout>)>>);
+
+fn finish_plain(at: Attempt<'_, '_>) -> Result<Layout, String> {
+    let town = at.town;
+    let mut laps = Lap::new("tail");
+    let quarters::Drawing { layout, retry_source } = lay_quarters(&at, at.config, town.site)?;
+    laps.lap("quarters.generate");
+    let Some(source) = retry_source else {
+        let mut layout = finish_quarter_pass(&at, at.config, town.site, layout, laps);
+        finish(&at, &mut layout)?;
+        return Ok(layout);
+    };
+    let identity = Arc::downgrade(&source);
+    let previous = town.finished_retry.0.lock().unwrap_or_else(|e| e.into_inner())
+        .as_ref().filter(|(old, _)| old.ptr_eq(&identity)).map(|(_, result)| Arc::clone(result));
+    let verify = std::env::var_os("URBAN_VERIFY_MEMO").is_some_and(|v| v == "1");
+    if let Some(previous) = previous.as_ref() {
+        #[cfg(not(target_arch = "wasm32"))]
+        if std::env::var_os("URBAN_PROFILE").is_some() {
+            eprintln!("  quarters.formal_retry.hit");
+        }
+        if !verify {
+            return Ok((**previous).clone());
+        }
+    }
+    // Capacity controls are inputs to drawing. The continuation takes its
+    // stable inputs explicitly once the drawing has been chosen.
+    let config = LayoutConfig { capacity_floor: 0.0, capacity_yield: 0.0, ..at.config.clone() };
+    let at = Attempt { config: &config, ..at };
+    let mut layout = finish_quarter_pass(&at, at.config, town.site, layout, laps);
+    finish(&at, &mut layout)?;
+    if let Some(previous) = previous.as_ref() {
+        assert!(
+            serde_json::to_vec(previous.as_ref()).expect("serialisable retained layout")
+                == serde_json::to_vec(&layout).expect("serialisable recalculated layout"),
+            "formal continuation of the same drawing must be identical",
+        );
+    }
+    if layout.blocks.len() <= 1500 && layout.streets.len() <= 4000 {
+        let saved = Arc::new(layout.clone());
+        *town.finished_retry.0.lock().unwrap_or_else(|e| e.into_inner()) = Some((identity, saved));
+    }
+    Ok(layout)
 }
 
 /// The quarter pass at `config` (the attempt's, or a quarter edits variant of
@@ -52,11 +109,20 @@ fn plan(at: &Attempt<'_, '_>, config: &LayoutConfig) -> Result<Layout, String> {
 /// the quarters, their access, the trim of unbuilt blocks and the circuits
 /// fitted to the lots built.
 fn quarter_pass(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Result<Layout, String> {
-    let town = at.town;
-    // One lap per call, each with its own duration (`URBAN_PROFILE`).
     let mut laps = Lap::new("tail");
-    let mut layout = lay_quarters(at, config, site)?;
+    let layout = lay_quarters(at, config, site)?.layout;
     laps.lap("quarters.generate");
+    Ok(finish_quarter_pass(at, config, site, layout, laps))
+}
+
+fn finish_quarter_pass(
+    at: &Attempt<'_, '_>,
+    config: &LayoutConfig,
+    site: &Site,
+    mut layout: Layout,
+    mut laps: Lap,
+) -> Layout {
+    let town = at.town;
     kinds::stamp(&mut layout, at.kind, town.original);
     trim::prepare(&mut layout);
     laps.lap("trim.prepare");
@@ -101,7 +167,7 @@ fn quarter_pass(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Res
     if rebuilt && trimmed {
         retrim(&mut layout, config, site, town, &mut laps);
     }
-    Ok(layout)
+    layout
 }
 
 /// The quarters of the pass: a small kind's own plan (`kinds::lay_out`), else
@@ -110,14 +176,14 @@ fn quarter_pass(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Res
 /// itself: a camp laid round its centre, and a single structure
 /// (`Town::single_structure`); under the quarter grammar an activity reserves no
 /// block and an isolated building no plot of its own, and both stand empty.
-fn lay_quarters(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Result<Layout, String> {
+fn lay_quarters(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Result<quarters::Drawing, String> {
     let town = at.town;
     let own_plan = !town.fixed || at.kind.centred() || town.single_structure();
     let small = (at.kind.small() && own_plan && config.footprint.mechanism != "legacy")
         .then(|| kinds::lay_out(&town.key_seed, site, config, at.kind, &at.morph, town.surface, town.roads))
         .flatten();
     match small {
-        Some(layout) => Ok(layout),
+        Some(layout) => Ok(layout.into()),
         None => {
             let shoreline = town.raster_shoreline.get_or_init(|| super::geography::raster_shoreline(&town.surface));
             let surface = shoreline.as_ref().map_or(town.surface, |s| s.surface(town.surface));

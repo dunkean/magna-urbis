@@ -63,6 +63,7 @@ pub(super) struct Town<'a> {
     /// slope survey, quarter edits and retries. Other stages keep their surface.
     pub raster_shoreline: OnceLock<Option<geography::Geography>>,
     pub quarter_retry: super::quarters::RetryMemo,
+    pub finished_retry: plan::FinishedRetry,
     /// The regional roads, bridged over water and joined to the neighbours.
     pub roads: &'a [Street],
     pub stilt: Option<&'a StiltGround>,
@@ -136,6 +137,7 @@ pub(super) fn lay_out(
         physical: surface,
         raster_shoreline: OnceLock::new(),
         quarter_retry: super::quarters::RetryMemo::default(),
+        finished_retry: plan::FinishedRetry::default(),
         roads,
         stilt: stilt.as_ref(),
         neighbour_land: neighbours::Mask::of(planned),

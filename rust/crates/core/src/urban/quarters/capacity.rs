@@ -19,17 +19,30 @@ use std::sync::{Arc, Mutex};
 #[derive(Default)]
 pub(in crate::urban) struct RetryMemo(Mutex<Option<(Vec<u8>, Arc<Layout>)>>);
 
+pub(in crate::urban) struct Drawing {
+    pub layout: Layout,
+    /// Identity of the retained exact recalibration. No identity after an
+    /// enclosure-budget redraw, which can add state specific to that attempt.
+    pub retry_source: Option<Arc<Layout>>,
+}
+impl From<Layout> for Drawing {
+    fn from(layout: Layout) -> Self {
+        Self { layout, retry_source: None }
+    }
+}
+
 impl RetryMemo {
     fn draw(
         &self, seed: &str, site: &Site, cfg: &LayoutConfig, morph: &Morph,
         surface: Surface<'_>, roads: &[Street],
-    ) -> Result<Layout, String> {
+    ) -> Result<Drawing, String> {
         // Serde omits the internal capacity settings and the signs of the two
         // optional variations at zero. Keep their original bits in the key.
         let key = serde_json::to_vec(&(
             cfg, &morph.value,
             cfg.capacity_yield.to_bits(), cfg.capacity_floor.to_bits(),
             cfg.organic_branch_variation.to_bits(), cfg.ribbon_width_variation.to_bits(),
+            cfg.programme.slope_relax.to_bits(),
         )).expect("serialisable quarter configuration");
         let hit = self.0.lock().unwrap_or_else(|e| e.into_inner())
             .as_ref().filter(|(old, _)| old == &key).map(|(_, layout)| Arc::clone(layout));
@@ -38,16 +51,19 @@ impl RetryMemo {
             if std::env::var_os("URBAN_PROFILE").is_some() {
                 eprintln!("  quarters.capacity_retry.hit");
             }
-            return Ok((*layout).clone());
+            return Ok(Drawing { layout: (*layout).clone(), retry_source: Some(layout) });
         }
         let layout = generate_once(seed, site, cfg, morph, surface, roads)?;
         // Retain at most one drawing. Large plans can use the same path
         // without keeping an extra street and block graph in memory.
-        if layout.blocks.len() <= 1500 && layout.streets.len() <= 4000 {
+        let retry_source = if layout.blocks.len() <= 1500 && layout.streets.len() <= 4000 {
             let saved = Arc::new(layout.clone());
-            *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some((key, saved));
-        }
-        Ok(layout)
+            *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some((key, Arc::clone(&saved)));
+            Some(saved)
+        } else {
+            None
+        };
+        Ok(Drawing { layout, retry_source })
     }
 }
 
@@ -68,9 +84,10 @@ pub(in crate::urban) fn generate(
     roads: &[Street],
     stilt_grounded: bool,
     retry: Option<&RetryMemo>,
-) -> Result<Layout, String> {
+) -> Result<Drawing, String> {
     let mut laps = Lap::new("quarters");
-    let mut layout = generate_planned(seed, site, cfg, m, surface, roads, stilt_grounded, retry)?;
+    let Drawing { mut layout, mut retry_source } =
+        generate_planned(seed, site, cfg, m, surface, roads, stilt_grounded, retry)?;
     laps.lap("planned");
     // A minimum of one household per enclosed block must fit the +30 %
     // programme. Replan the land budget; wall tracing remains unchanged.
@@ -92,11 +109,12 @@ pub(in crate::urban) fn generate(
         let mut smaller = cfg.clone();
         smaller.footprint.budget = "population".into();
         smaller.footprint.gross_density = site.population as f64 * 10_000.0 / target;
-        let mut next = generate_planned(seed, site, &smaller, m, surface, roads, stilt_grounded, retry)?;
+        let mut next = generate_planned(seed, site, &smaller, m, surface, roads, stilt_grounded, retry)?.layout;
         let next_count = enclosed_blocks(&next);
         if next_count >= count { break; }
         next.warnings.push(warnings::walled_land_reduced());
         layout = next;
+        retry_source = None;
         count = next_count;
     }
     laps.lap("enclosed");
@@ -108,7 +126,7 @@ pub(in crate::urban) fn generate(
     if dropped + peeled > 0 {
         layout.warnings.push(warnings::vacant_land_released(dropped, peeled));
     }
-    Ok(layout)
+    Ok(Drawing { layout, retry_source })
 }
 fn generate_planned(
     seed: &str,
@@ -119,7 +137,7 @@ fn generate_planned(
     roads: &[Street],
     stilt_grounded: bool,
     retry: Option<&RetryMemo>,
-) -> Result<Layout, String> {
+) -> Result<Drawing, String> {
     let original_site = site;
     // The common entry already owns the stilt site/surface. Preserve the
     // existing priority of that shore over a second harbour relocation.
@@ -151,7 +169,7 @@ fn generate_planned(
     // Villages move to their landing; towns retain their nucleus and grow a
     // connected waterfront nucleus (footprint), with the same total demand.
     let Some(p) = capacity::of(&first) else {
-        return Ok(first);
+        return Ok(first.into());
     };
     // A town whose wall stands along water keeps its drawing up to 10 % short (the capacity
     // warning says so): its circuit stands back from the bank, and a trace moved by a few metres
@@ -163,7 +181,7 @@ fn generate_planned(
         || p.shortfall <= tolerance
         || p.measured_plan <= 0.0
     {
-        return Ok(first);
+        return Ok(first.into());
     }
     // Probe and measure at the same densification: the lots as finally
     // densified on the real blocks, against the probed forecast at that level.
@@ -184,7 +202,7 @@ fn generate_planned(
     // when the measured blocks cannot accommodate the households themselves.
     if planned == 1.0 && p.extension >= capacity::EXTENSION
         && measured >= p.households && measured >= at - tolerance {
-        return Ok(first);
+        return Ok(first.into());
     }
     let ratio = (measured / at.max(1e-9)).clamp(0.3, 0.99);
     let again = LayoutConfig {
@@ -198,13 +216,13 @@ fn generate_planned(
     {
         retry.draw(seed, site, &again, m, surface, roads)?
     } else {
-        generate_once(seed, site, &again, m, surface, roads)?
+        generate_once(seed, site, &again, m, surface, roads)?.into()
     };
     let short = |l: &Layout| capacity::of(l).map_or(f64::INFINITY, |p| p.shortfall);
-    Ok(if short(&second) < short(&first) {
+    Ok(if short(&second.layout) < short(&first) {
         second
     } else {
-        first
+        first.into()
     })
 }
 
