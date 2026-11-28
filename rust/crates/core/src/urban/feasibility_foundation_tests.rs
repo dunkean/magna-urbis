@@ -102,8 +102,15 @@ fn foundation_sweep_matches_the_reference_search_bit_for_bit() {
             {for w in ws.iter().copied() {
                 for step in [0.5,1.] {if shape.outer.len()>100 && step<1. {continue;} for stop in [-1.,MAX_FOUNDATION_STEP+0.02,f64::INFINITY] {
                     let old=pose_lower_bound_step_mode(surface,shape,&dirs,w,stop,step,false);
-                    let new=pose_lower_bound_sweep(surface,shape,&dirs,w,stop,step).unwrap();
+                    let new=pose_lower_bound_sweep(surface,shape,&dirs,w,stop,step,f64::INFINITY).unwrap();
                     assert_eq!(old.to_bits(),new.to_bits(),"{}, step={step}, stop={stop}: {old} vs {new}",w.style_id);
+                    if step == 1.0 && stop.is_finite() {
+                        assert_eq!(
+                            pose_within_foundation_step(surface, shape, &dirs, w, stop),
+                            old <= stop,
+                            "{}, threshold={stop}", w.style_id,
+                        );
+                    }
                 }}
             }}
         }

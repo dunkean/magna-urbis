@@ -615,8 +615,21 @@ pub(super) fn pose_lower_bound(
     w: &Witness,
     stop_below: f64,
 ) -> f64 {
-    pose_lower_bound_step(surface, lot, dirs, w, stop_below, 1.0)
+    pose_lower_bound_step(surface, lot, dirs, w, stop_below, 1.0, f64::INFINITY)
 }
+/// Whether a source has a contained pose within the permitted foundation step.
+/// A sampled range can only grow. A pose above the limit cannot qualify, so its
+/// remaining heights and the minimum among unsuccessful poses are unnecessary.
+pub(super) fn pose_within_foundation_step(
+    surface: Surface<'_>,
+    lot: &Shape,
+    dirs: &[Point],
+    w: &Witness,
+    limit: f64,
+) -> bool {
+    pose_lower_bound_step(surface, lot, dirs, w, limit, 1.0, limit.next_up()) <= limit
+}
+
 /// The bound on a `step`-metre position grid (rectangles shrunk by half a step).
 fn pose_lower_bound_step(
     surface: Surface<'_>,
@@ -625,9 +638,10 @@ fn pose_lower_bound_step(
     w: &Witness,
     stop_below: f64,
     step: f64,
+    initial_bound: f64,
 ) -> f64 {
     (!geometry::reference_search())
-        .then(|| pose_lower_bound_sweep(surface, lot, dirs, w, stop_below, step))
+        .then(|| pose_lower_bound_sweep(surface, lot, dirs, w, stop_below, step, initial_bound))
         .flatten()
         .unwrap_or_else(|| pose_lower_bound_step_mode(surface, lot, dirs, w, stop_below, step, true))
 }
@@ -649,6 +663,7 @@ fn pose_lower_bound_sweep(
     w: &Witness,
     stop_below: f64,
     step: f64,
+    initial_bound: f64,
 ) -> Option<f64> {
     const EPS: f64 = 1e-4;
     let Some([width, depth]) = w.footing() else {
@@ -693,7 +708,7 @@ fn pose_lower_bound_sweep(
         .collect();
     let (mut certain, mut possible, mut crossings, mut inside) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    let mut best = f64::INFINITY;
+    let mut best = initial_bound;
     let mut seen: Vec<Point> = Vec::new();
     for &u in dirs {
         // A repeated direction repeats the same positions and samples.

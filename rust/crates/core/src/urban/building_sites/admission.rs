@@ -170,7 +170,7 @@ pub(in crate::urban) fn recipe_foundable(
             return false;
         }
         searched.push(key);
-        feasibility::pose_lower_bound(surface, shape, dirs, w, limit) <= limit
+        feasibility::pose_within_foundation_step(surface, shape, dirs, w, limit)
     });
     FOUNDABLE.put(key, found);
     found

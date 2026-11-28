@@ -68,12 +68,18 @@ impl Surface<'_> {
             ];
             let wx = weights(x - ix as f64);
             let wy = weights(y - iy as f64);
+            // The height and its two derivatives use the same stencil.
+            // Keep the row-major sums and the order of their multiplications.
+            let clamped = |origin: isize, offset: isize| (origin + offset - 1).clamp(0, n as isize - 1) as usize;
+            let cols = std::array::from_fn::<_, 4, _>(|i| clamped(ix, i as isize));
+            let controls = std::array::from_fn::<_, 4, _>(|j| {
+                let row = clamped(iy, j as isize) * n;
+                cols.map(|col| f64::from(self.height[row + col]))
+            });
             let mut value = 0.0;
             for (j, weight_y) in wy.into_iter().enumerate() {
-                let row = (iy + j as isize - 1).clamp(0, n as isize - 1) as usize;
                 for (i, weight_x) in wx.into_iter().enumerate() {
-                    let col = (ix + i as isize - 1).clamp(0, n as isize - 1) as usize;
-                    value += self.height[row * n + col] as f64 * weight_x * weight_y;
+                    value += controls[j][i] * weight_x * weight_y;
                 }
             }
             if !shore {
@@ -84,10 +90,8 @@ impl Surface<'_> {
             let (dx, dy) = (slopes(x - ix as f64), slopes(y - iy as f64));
             let (mut sx, mut sy) = (0.0, 0.0);
             for j in 0..4 {
-                let row = (iy + j as isize - 1).clamp(0, n as isize - 1) as usize;
                 for i in 0..4 {
-                    let col = (ix + i as isize - 1).clamp(0, n as isize - 1) as usize;
-                    let h = self.height[row * n + col] as f64;
+                    let h = controls[j][i];
                     sx += h * dx[i] * wy[j];
                     sy += h * wx[i] * dy[j];
                 }
