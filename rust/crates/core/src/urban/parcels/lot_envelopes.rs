@@ -140,6 +140,54 @@ pub(super) fn clear_probe_cache() {
     ENVELOPES.clear();
 }
 
+/// Consecutive edges of one ring, with a shared world-space box. The
+/// edges stay in ring order, including the edge crossing a chunk boundary.
+struct BoundaryChunk<'a> {
+    first: Point,
+    rest: &'a [Point],
+    low: Point,
+    high: Point,
+}
+
+impl<'a> BoundaryChunk<'a> {
+    fn of(shape: &'a Shape) -> Vec<Self> {
+        let rings = || std::iter::once(shape.outer.as_slice()).chain(shape.holes.iter().map(Vec::as_slice));
+        if rings().map(<[Point]>::len).sum::<usize>() < 48
+            || !rings().flatten().all(|p| p.x.is_finite() && p.y.is_finite())
+        {
+            return Vec::new();
+        }
+        let mut chunks = Vec::new();
+        for ring in rings() {
+            let Some(&first) = ring.first() else { continue };
+            let mut previous = first;
+            for rest in ring[1..].chunks(16).chain(std::iter::once(&ring[..1])) {
+                let (mut low, mut high) = (previous, previous);
+                for &p in rest {
+                    low.x = low.x.min(p.x);
+                    low.y = low.y.min(p.y);
+                    high.x = high.x.max(p.x);
+                    high.y = high.y.max(p.y);
+                }
+                chunks.push(Self { first: previous, rest, low, high });
+                previous = rest[rest.len() - 1];
+            }
+        }
+        chunks
+    }
+
+    fn outside(&self, origin: Point, axis: Point, low: f64, high: f64) -> bool {
+        let (x0, x1) = if axis.x < 0.0 { (self.high.x, self.low.x) } else { (self.low.x, self.high.x) };
+        let (y0, y1) = if axis.y < 0.0 { (self.high.y, self.low.y) } else { (self.low.y, self.high.y) };
+        // The same monotone subtract, multiply and add as on an endpoint.
+        // Finite extrema bound each descendant without a tolerance or a
+        // change of frame. Nonfinite projections use the original edge test.
+        let a = dot(sub(Point { x: x0, y: y0 }, origin), axis);
+        let b = dot(sub(Point { x: x1, y: y1 }, origin), axis);
+        a.is_finite() && b.is_finite() && (b <= low || a >= high)
+    }
+}
+
 /// Exact convex-rectangle containment, holes included: no boundary edge enters
 /// the rectangle shrunk by 0.1 mm, and its centre lies inside. One Liang-Barsky
 /// clip per boundary edge tests those crossings.
@@ -151,6 +199,18 @@ pub(super) fn rect_within(
     width: f64,
     depth: f64,
 ) -> bool {
+    rect_within_chunks(shape, a, u, v, width, depth, &[])
+}
+
+fn rect_within_chunks(
+    shape: &Shape,
+    a: Point,
+    u: Point,
+    v: Point,
+    width: f64,
+    depth: f64,
+    chunks: &[BoundaryChunk<'_>],
+) -> bool {
     const EPS: f64 = 1e-4;
     let (s0, s1, t0, t1) = (EPS, width - EPS, EPS, depth - EPS);
     if s1 <= s0 || t1 <= t0 {
@@ -160,35 +220,48 @@ pub(super) fn rect_within(
         let d = sub(p, a);
         (dot(d, u), dot(d, v))
     };
-    for ring in std::iter::once(&shape.outer).chain(shape.holes.iter()) {
-        for (&p, &q) in ring
-            .iter()
-            .zip(ring.iter().cycle().skip(1))
-            .take(ring.len())
-        {
-            let ((px, py), (qx, qy)) = (local(p), local(q));
-            if px.max(qx) <= s0 || px.min(qx) >= s1 || py.max(qy) <= t0 || py.min(qy) >= t1 {
-                continue;
-            }
-            let (dx, dy) = (qx - px, qy - py);
-            let (mut enter, mut exit) = (0.0_f64, 1.0_f64);
-            let mut inside = true;
-            for (pk, qk) in [(-dx, px - s0), (dx, s1 - px), (-dy, py - t0), (dy, t1 - py)] {
-                if pk.abs() < 1e-15 {
-                    if qk < 0.0 {
-                        inside = false;
-                        break;
-                    }
-                } else if pk < 0.0 {
-                    enter = enter.max(qk / pk);
-                } else {
-                    exit = exit.min(qk / pk);
+    let crossing = |(px, py): (f64, f64), (qx, qy): (f64, f64)| {
+        if px.max(qx) <= s0 || px.min(qx) >= s1 || py.max(qy) <= t0 || py.min(qy) >= t1 {
+            return false;
+        }
+        let (dx, dy) = (qx - px, qy - py);
+        let (mut enter, mut exit) = (0.0_f64, 1.0_f64);
+        for (pk, qk) in [(-dx, px - s0), (dx, s1 - px), (-dy, py - t0), (dy, t1 - py)] {
+            if pk.abs() < 1e-15 {
+                if qk < 0.0 {
+                    return false;
                 }
-            }
-            if inside && enter <= exit {
-                return false;
+            } else if pk < 0.0 {
+                enter = enter.max(qk / pk);
+            } else {
+                exit = exit.min(qk / pk);
             }
         }
+        enter <= exit
+    };
+    let crosses = |first: Point, rest: &[Point]| {
+        let mut previous = local(first);
+        rest.iter().any(|&p| {
+            let current = local(p);
+            let hit = crossing(previous, current);
+            previous = current;
+            hit
+        })
+    };
+    let boundary = if chunks.is_empty() {
+        std::iter::once(&shape.outer).chain(&shape.holes).any(|ring| {
+            let Some((&first, rest)) = ring.split_first() else { return false };
+            crosses(first, rest) || crossing(local(*ring.last().unwrap()), local(first))
+        })
+    } else {
+        chunks.iter().any(|chunk| {
+            !chunk.outside(a, u, s0, s1)
+                && !chunk.outside(a, v, t0, t1)
+                && crosses(chunk.first, chunk.rest)
+        })
+    };
+    if boundary {
+        return false;
     }
     super::super::geometry::contains(
         shape,
@@ -348,6 +421,7 @@ pub(super) fn free_envelope(
     };
     let mut best: Option<(f64, Shape)> = None;
     let mut swapped = false;
+    let boundary = BoundaryChunk::of(shape);
     for u in axes {
         let v0 = normal(u);
         for (w, d) in [(width, depth), (depth, width)] {
@@ -368,7 +442,7 @@ pub(super) fn free_envelope(
                     let mut t = t0;
                     while t <= t1 - d + 1e-9 {
                         let a = add(scale(u, s), scale(v, t));
-                        if rect_within(shape, a, u, v, w, d) {
+                        if rect_within_chunks(shape, a, u, v, w, d, &boundary) {
                             let r = rect(a, u, v, w, d);
                             let c = [r.outer[0], r.outer[1], r.outer[2], r.outer[3]];
                             let g = gap(&c);
@@ -402,5 +476,37 @@ pub(super) fn rect(a: Point, u: Point, v: Point, width: f64, depth: f64) -> Shap
             add(a, scale(v, depth)),
         ],
         holes: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod rectangle_tests {
+    use super::*;
+
+    #[test]
+    fn boundary_chunks_match_the_direct_predicate() {
+        let mut shape: Shape = serde_json::from_str(include_str!("../fixtures/foundation-medina-block27.json")).unwrap();
+        let (x0, y0, x1, y1) = crate::urban::geometry::bbox(&shape);
+        shape.holes.push(crate::urban::geometry::rectangle(
+            x0 + (x1 - x0) * 0.25, y0 + (y1 - y0) * 0.25,
+            x0 + (x1 - x0) * 0.5, y0 + (y1 - y0) * 0.5,
+        ).outer);
+        let chunks = BoundaryChunk::of(&shape);
+        assert!(chunks.len() > 2);
+        for u in [Point { x: 1.0, y: 0.0 }, Point { x: 0.6, y: 0.8 }, Point { x: -0.8, y: 0.6 }] {
+            for v in [normal(u), scale(normal(u), -1.0)] {
+                for i in 0..=20 {
+                    for j in 0..=20 {
+                        let a = Point { x: x0 + (x1 - x0) * i as f64 / 20.0, y: y0 + (y1 - y0) * j as f64 / 20.0 };
+                        for (width, depth) in [(4.0, 1.0), (4.0, 6.0), (18.0, 22.0)] {
+                            assert_eq!(
+                                rect_within_chunks(&shape, a, u, v, width, depth, &chunks),
+                                rect_within(&shape, a, u, v, width, depth),
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 }
