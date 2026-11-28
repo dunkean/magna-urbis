@@ -115,39 +115,44 @@ pub(in crate::plans) fn gross_floor_inventory(building: &PlanBuilding) -> Result
 /// exact common retained source witness; never accept a geometric epsilon or
 /// derive floor area from the source, a nominal footprint or a floor count.
 pub(in crate::plans) fn retained_source_inventory_matches(building: &PlanBuilding) -> bool {
+    retained_source_inventory_mismatch(building).is_none()
+}
+
+/// The first retained-source check that fails, for diagnostics; `None` when the inventory matches.
+pub(in crate::plans) fn retained_source_inventory_mismatch(building: &PlanBuilding) -> Option<String> {
     if !building.transform.origin.x.is_finite()
         || !building.transform.origin.y.is_finite()
         || !building.transform.orientation_deg.is_finite()
         || !building.ground_z_m.is_finite() {
-        return false;
+        return Some("non-finite pose".into());
     }
-    let Ok(source) = building.resolved.unpack() else { return false; };
-    if source.plan.bodies.len() != building.volumes.len()
-        || source.plan.bodies.is_empty()
-        || super::super::map_surface(&super::super::body_domain(&source), &building.transform)
-            != building.footprint {
-        return false;
+    let Ok(source) = building.resolved.unpack() else { return Some("source archive does not unpack".into()); };
+    if source.plan.bodies.is_empty() || source.plan.bodies.len() != building.volumes.len() {
+        return Some(format!("{} source bodies for {} volumes", source.plan.bodies.len(), building.volumes.len()));
+    }
+    if super::super::map_surface(&super::super::body_domain(&source), &building.transform) != building.footprint {
+        return Some("footprint differs from the transformed source body domain".into());
     }
     for (index, (body, volume)) in source.plan.bodies.iter().zip(&building.volumes).enumerate() {
         let height = crate::engine::body_level_height(body);
-        if volume.id != format!("{}:body:{index}", building.id)
-            || body.levels.len() != volume.levels.len()
-            || body.levels.is_empty()
-            || volume.footprint != super::super::map_surface(&body.footprint, &building.transform)
-            || volume.z_m != building.ground_z_m + body.z
-            || volume.wall_height_m != height * body.levels.len() as f64 {
-            return false;
+        if volume.id != format!("{}:body:{index}", building.id) { return Some(format!("body {index}: volume id {}", volume.id)); }
+        if body.levels.is_empty() || body.levels.len() != volume.levels.len() {
+            return Some(format!("body {index}: {} source levels for {} volume levels", body.levels.len(), volume.levels.len()));
+        }
+        if volume.footprint != super::super::map_surface(&body.footprint, &building.transform) { return Some(format!("body {index}: footprint differs")); }
+        if volume.z_m != building.ground_z_m + body.z { return Some(format!("body {index}: z {} != ground {} + body {}", volume.z_m, building.ground_z_m, body.z)); }
+        if volume.wall_height_m != height * body.levels.len() as f64 {
+            return Some(format!("body {index}: wall height {} != {} x {}", volume.wall_height_m, height, body.levels.len()));
         }
         for (level_index, (local, level)) in body.levels.iter().zip(&volume.levels).enumerate() {
-            if level.index as usize != level_index
-                || level.footprint != super::super::map_surface(local, &building.transform)
-                || level.z_m != building.ground_z_m + body.z + level_index as f64 * height
-                || level.height_m != height {
-                return false;
+            if level.index as usize != level_index { return Some(format!("body {index} level {level_index}: index {}", level.index)); }
+            if level.footprint != super::super::map_surface(local, &building.transform) { return Some(format!("body {index} level {level_index}: footprint differs")); }
+            if level.z_m != building.ground_z_m + body.z + level_index as f64 * height || level.height_m != height {
+                return Some(format!("body {index} level {level_index}: z {} height {} (expected level height {height})", level.z_m, level.height_m));
             }
         }
     }
-    true
+    None
 }
 
 #[cfg(test)]

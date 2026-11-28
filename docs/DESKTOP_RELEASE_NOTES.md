@@ -4,6 +4,7 @@
 - Detailed town walls and moats render faster on large maps. Moat generation also avoids repeated shoreline checks.
 - Import a local OpenStreetMap extract, choose the area to keep and fetch its AWS elevation. The OpenStreetMap dialog also provides the query for downloading the data yourself.
 - Open an Azgaar FMG `.map` file and draw a square on its preview to generate a region from its terrain and burgs.
+- With detailed buildings, a house the native generator cannot archive leaves its lot empty instead of cancelling every building in the town.
 
 - Copper Bastide joins the culture picker with its own building colours and a 3D covered market hall for sites that fit it.
 - Town generation reuses street-frontage measurements when placing services and trimming unused streets.

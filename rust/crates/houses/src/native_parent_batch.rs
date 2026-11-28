@@ -96,9 +96,11 @@ fn validate_parent(p:&NativeParentPlan)->Result<(),String>{
                 .chain(building.structural_features.iter().map(|f|&f.surface))
                 .chain(building.volumes.iter().flat_map(|v|std::iter::once(&v.footprint).chain(v.levels.iter().map(|l|&l.footprint)))))?;
             let source=building.resolved.unpack()?;
-            if source.recipe_id!=building.recipe_id||source.parameters.variant_id!=building.variant_id
-                ||!plan_programme_outcome::housing_floor_outcome::retained_source_inventory_matches(building){
-                return Err("Native Single parent inventory differs from exact retained source/pose".into());
+            if source.recipe_id!=building.recipe_id||source.parameters.variant_id!=building.variant_id{
+                return Err(format!("Native Single parent {} recipe/variant differs from its retained source",building.id));
+            }
+            if let Some(why)=plan_programme_outcome::housing_floor_outcome::retained_source_inventory_mismatch(building){
+                return Err(format!("Native Single parent {} inventory differs from exact retained source/pose: {why}",building.id));
             }
             if let Some(p)=programme {p.validate()?;}
             let measured=PlanProgrammeOutcome::from_programme(programme.as_ref(),building);
@@ -243,11 +245,19 @@ fn plan_parent_batch_impl(input:ParentPlanBatchRequest,attempt_compounds:bool)->
             Err(error)=>{attempts.push(Some(AssemblyAttemptReport{reason:format!("Complete assembly attempt refused; finalized Single retained: {error}"),errors:vec![error],..Default::default()}));},
         }
     }
-    let counts=ParentBatchCounts{requests:requests.len(),admitted:ParentMemberCounts::from_plans(plans.iter()),refusals:old.refusals.len(),open_spaces:old.open_spaces.len()};
+    // A parent that cannot be archived is refused alone: one invalid building must not empty the whole batch (and city).
+    let mut parents=Vec::with_capacity(plans.len());
+    for(plan,attempt)in plans.into_iter().zip(attempts){
+        match NativeParentArchive::pack(&plan){
+            Ok(archive)=>parents.push(ParentRecord{plan,archive,attempt}),
+            Err(message)=>{
+                let parcel_id=requests.iter().find(|r|r.id==plan.id()).map(|r|r.parcel_id.clone()).unwrap_or_default();
+                old.refusals.push(PlacementRefusal{id:plan.id().to_string(),parcel_id,code:"parent_refused".into(),message,attempts:0});
+            }
+        }
+    }
+    let counts=ParentBatchCounts{requests:requests.len(),admitted:ParentMemberCounts::from_plans(parents.iter().map(|p|&p.plan)),refusals:old.refusals.len(),open_spaces:old.open_spaces.len()};
     if counts.admitted.admitted_parents+counts.refusals+counts.open_spaces!=counts.requests{return Err("Native parent/request accounting mismatch".into());}
-    let parents=plans.into_iter().zip(attempts).map(|(plan,attempt)|{
-        let archive=NativeParentArchive::pack(&plan)?;Ok(ParentRecord{plan,archive,attempt})
-    }).collect::<Result<Vec<_>,String>>()?;
     Ok(ParentPlanBatch{schema_version:PARENT_BATCH_SCHEMA.into(),generator_version:PARENT_BATCH_VERSION.into(),parents,
         refusals:old.refusals,open_spaces:old.open_spaces,materials:old.materials,counts})
 }
