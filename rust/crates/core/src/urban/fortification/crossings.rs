@@ -543,6 +543,18 @@ pub(super) fn close_crossings_at(streets: &mut Vec<Street>, enclosures: &[Enclos
     }
     let heads: Vec<Point> = streets.iter().filter(|s| s.role == "bridge")
         .flat_map(|s| s.path.first().into_iter().chain(s.path.last()).copied()).collect();
+    // Street vertices by 1 m cell, for the streets that meet on a curtain (the last pass, which holds
+    // every street): a point is joined when two vertices or more lie within 0.6 m of it.
+    let mut vertices: std::collections::HashMap<(i64, i64), Vec<Point>> = Default::default();
+    if main_too {
+        for &p in streets.iter().flat_map(|s| s.path.iter()) {
+            vertices.entry((p.x.floor() as i64, p.y.floor() as i64)).or_default().push(p);
+        }
+    }
+    let joined = |p: Point| {
+        let (cx, cy) = (p.x.floor() as i64, p.y.floor() as i64);
+        (-1..=1).flat_map(|dx| (-1..=1).map(move |dy| (cx + dx, cy + dy))).filter_map(|c| vertices.get(&c)).flatten().filter(|&&q| dist(q, p) < 0.6).count() >= 2
+    };
     let mut bridge_gates: Vec<Point> = vec![];
     let mut landings = std::collections::HashSet::new();
     if main_too {
@@ -581,8 +593,11 @@ pub(super) fn close_crossings_at(streets: &mut Vec<Street>, enclosures: &[Enclos
                 for k in near.crossed(w[0], w[1]) {
                     let (a, b) = (e.path[k], e.path[k + 1]);
                     let Some((t, x)) = g::segment_hit(w[0], w[1], a, b) else { continue };
-                    // A street end resting on the curtain is no crossing.
-                    if (i == 0 && t * l < 0.6) || (i + 2 == n && (1.0 - t) * l < 0.6) {
+                    // A street end resting on the curtain is no crossing, unless another street takes it up
+                    // there (the last pass): two streets that meet on the curtain cross it together, and a
+                    // stub hung through the wall on a street of the other side does too.
+                    let resting = if i == 0 && t * l < 0.6 { Some(w[0]) } else if i + 2 == n && (1.0 - t) * l < 0.6 { Some(w[1]) } else { None };
+                    if resting.is_some_and(|end| !joined(end)) {
                         continue;
                     }
                     if e.gates.iter().any(|&q| dist(q, x) < GATE_REACH)
@@ -681,8 +696,9 @@ pub(in super::super) fn tidy_wall_ends(layout: &mut Layout, surface: Surface<'_>
     if layout.enclosures.iter().all(|e| e.style.is_empty() || e.path.len() < 4) {
         return;
     }
-    // A wall is cut only by its gates: a path or a lane the late stages laid (informal housing, dry
-    // streets) across a curtain away from a gate ends at the wall on both sides.
-    close_at_works(&mut layout.streets, &layout.enclosures, &layout.blocks, false, surface, layout.config.as_ref());
+    // A wall is cut only by its gates: whatever the late stages laid across a curtain away from a gate
+    // (a path or a lane of informal housing, a street moved off the water) ends at the wall on both
+    // sides, a main street too: no gate opens for it any more.
+    close_at_works(&mut layout.streets, &layout.enclosures, &layout.blocks, true, surface, layout.config.as_ref());
     stop_at_curtains(&mut layout.streets, &mut layout.enclosures, surface, false);
 }

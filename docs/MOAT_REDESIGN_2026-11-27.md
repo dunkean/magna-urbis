@@ -292,6 +292,14 @@ Closed in the same night (fourth batch):
 - **A road in the ditch in front of a gate** (gnomish town, 47 m): a street that enters and leaves the band on the far side from the wall runs along it, beside a gate too; it moves out beyond the bank, or is cut at the bank where a block or water stands right behind. A street that crosses is told apart by where it comes from (the wall or its berm), on open runs as on closed ones.
 - **Delta town** (Byzantine case): no crossing of a ditch or a curtain away from a gate by a land street. Decks and waterside ways that also span a short ditch pass by their water passage: the audit and the probe no longer count them.
 
+Waterside towns of the bench, 28 November (landed after the first push): the audit names the gates a run faces without a crossing (`uncrossed_gates`), and `web/out/moat-redesign/faults.py` lists them with the stray crossings. Twenty faults on ten archived towns went to none:
+
+- the band of an open run includes its berm for the street rules, so a gate street that ends between the curtain and the ditch is carried over or cut like the others;
+- the gates follow the final network once more at the very end (`sync_gates` before `drop_dead_gates`): the late stages lay decks, move streets off the water and house squatters after the gates were last reconciled; a bridge head opens its gate there, a gate whose street cannot cross closes;
+- the last pass at the walls holds main streets too, and counts as a crossing two streets that meet on a curtain or a stub hung through the wall on a street of the other side;
+- a channel that flows where the ditch would be dug, over half the section and 40 m of wall, is the moat of that front;
+- the audit expects a moat crossing only of a gate a ditch really faces (in front of it, or on both sides) and that does not open on natural water; the two ends of a water passage are no gates; decks and waterside ways are not counted as streets in a ditch.
+
 Left as it is:
 
 - Roman coast town: the planner's choice of land with the coast definition of 26 November, recorded as issue #27 (the wall follows what is built).

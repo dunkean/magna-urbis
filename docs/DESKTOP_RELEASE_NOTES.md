@@ -28,6 +28,7 @@
 - A moat fed by a river, a lake or the sea stands at the level of that water. A stream that flows through a walled town is taken in by the moat like any stream, which runs on unbroken instead of stopping at a short pond between two dams.
 - Canal moats hold water all round, in long reaches between locks, and street canals join them through water gates.
 - A gate bridge over a wide moat runs square to its gate and lands on the far bank beside the houses that stand there. A gate whose road cannot cross the moat, or ends just beyond it, closes.
+- In towns on rivers, deltas and harbours, the gates are checked once more against the finished streets: a bridge head opens its gate, a gate left without a way across its ditch closes, and no street or leftover stub passes a wall away from a gate. A channel that already flows along a wall is that wall's moat.
 
 - The outer bank of a moat follows a smooth, slightly uneven line instead of copying every tower. Formal moats (Chinese, Khmer, Japanese, bastioned) keep their regular outline.
 - Moat water is coherent: a reach holds water only where a river, the sea or a canal feeds it and the ground allows, at one level per reach. A dam holds each wet reach: between two wet reaches, and where the water would run out into a dry one.

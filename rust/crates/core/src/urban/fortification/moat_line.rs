@@ -548,7 +548,7 @@ const STREAM_SHARE: f64 = 0.25;
 /// corner that merely looks at the water is dug on to it.
 pub(super) const WATERFRONT: f64 = 60.0;
 const WATERFRONT_WATER: f64 = 10.0;
-const WATERFRONT_STEP: f64 = 3.0;
+const WATERFRONT_STEP: f64 = 2.0;
 const WATERFRONT_MIN: f64 = 40.0;
 /// Width (m, along the wall) from which a channel that passes the curtain stops the ditch as a water body.
 const CHANNEL_BODY: f64 = 8.0;
@@ -892,20 +892,26 @@ fn section(inner: Point, outer: Point, n: (f64, f64), within: Point, w: f64, sur
         let h = 0.5 * w;
         [(0.0, 0.0), (n.0, n.1), (-n.0, -n.1), (-n.1, n.0), (n.1, -n.0)].iter().all(|&(dx, dy)| open(pt(far.x + dx * h, far.y + dy * h)))
     };
-    // A waterfront: within `WATERFRONT` m beyond the outer lip the normal runs over open water for a ditch
-    // width or more (a stream is narrower).
+    // A waterfront: from the inner lip to `WATERFRONT` m beyond the outer one, the normal runs over open
+    // water for a ditch width or more (a stream is narrower); or a channel flows where the ditch would be
+    // dug, over half the section: it is the moat of that front.
     let front = {
-        let (mut span, mut widest) = (0.0_f64, 0.0_f64);
+        let band = dist(inner, outer);
+        let (mut span, mut widest, mut in_band) = (0.0_f64, 0.0_f64, 0.0_f64);
         let mut d = 0.0;
-        while d <= WATERFRONT + w.max(WATERFRONT_WATER) {
-            span = if open(pt(outer.x + n.0 * d, outer.y + n.1 * d)) { span + WATERFRONT_STEP } else { 0.0 };
+        while d <= band + WATERFRONT + w.max(WATERFRONT_WATER) {
+            let wet = open(pt(inner.x + n.0 * d, inner.y + n.1 * d));
+            span = if wet { span + WATERFRONT_STEP } else { 0.0 };
             // The water starts within the strip.
-            if span > 0.0 && d - span <= WATERFRONT {
+            if span > 0.0 && d - span <= band + WATERFRONT {
                 widest = widest.max(span);
+            }
+            if wet && d <= band {
+                in_band += WATERFRONT_STEP;
             }
             d += WATERFRONT_STEP;
         }
-        widest >= w.max(WATERFRONT_WATER)
+        widest >= w.max(WATERFRONT_WATER) || in_band >= 0.5 * band
     };
     // A channel that passes the curtain, `CHANNEL_BODY` m across or more along the wall: a stream is
     // narrower, and the ditch takes it in.

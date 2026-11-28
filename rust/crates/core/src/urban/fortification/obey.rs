@@ -271,8 +271,14 @@ struct Works {
 impl Works {
     fn new(e: &Enclosure) -> Self {
         let ring = g::normalized(Shape { outer: e.path[..e.path.len() - 1].to_vec(), holes: vec![] });
+        let foot = |p: Point| e.path.windows(2).map(|w| g::distance(p, w[0], w[1])).min_by(|a, b| a.0.total_cmp(&b.0)).map_or(p, |d| d.2);
         let bands = e.moat.iter().flat_map(|m| m.runs.iter()).filter(|r| r.inner.len() >= 3).map(|r| {
-            let fill = moat_line::outer_fill(r);
+            // An open run with its berm: from the curtain to the outer lip.
+            let fill = if r.closed {
+                moat_line::outer_fill(r)
+            } else {
+                g::normalized(Shape { outer: r.outer.iter().copied().chain(r.inner.iter().rev().map(|&p| foot(p))).collect(), holes: vec![] })
+            };
             let bbox = g::bbox(&fill);
             let mut lip = r.outer.clone();
             if r.closed {

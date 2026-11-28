@@ -54,12 +54,18 @@ pub struct MoatAudit {
     pub curtain_m: f64,
     pub covered_m: f64,
     pub uncovered: Vec<Uncovered>,
+    /// The land gates a run faces that no crossing serves.
+    pub uncrossed_gates: Vec<Point>,
 }
 
 /// The audit of the moat of `e` (one of `enclosures`, whose other circuits it may face) against
 /// `streets`, on `surface`.
 pub fn moat_audit(e: &Enclosure, enclosures: &[Enclosure], streets: &[Street], surface: Surface<'_>) -> MoatAudit {
-    let water_gates: Vec<usize> = e.gatehouses.iter().filter(|gh| matches!(gh.kind.as_str(), "water" | "shore")).map(|gh| gh.gate).collect();
+    // Water gates, and the gate points that are the two ends of a water passage.
+    let passages: Vec<Point> = e.gatehouses.iter().filter(|gh| matches!(gh.kind.as_str(), "water" | "shore")).flat_map(|gh| gh.passage).collect();
+    let water_gates: Vec<usize> = (0..e.gates.len())
+        .filter(|&i| e.gatehouses.iter().any(|gh| gh.gate == i && matches!(gh.kind.as_str(), "water" | "shore")) || passages.iter().any(|&p| dist(p, e.gates[i]) < 1.0))
+        .collect();
     let mut found = MoatAudit {
         ring_m: e.path.windows(2).map(|w| dist(w[0], w[1])).sum(),
         gates: (0..e.gates.len()).filter(|i| !water_gates.contains(i)).count(),
@@ -72,10 +78,22 @@ pub fn moat_audit(e: &Enclosure, enclosures: &[Enclosure], streets: &[Street], s
     // A land gate needs a crossing only where a run faces it: a gate on a front without ditch (water,
     // the neighbour circuit, a harbour) does not count.
     let faced = Facing::new(e);
-    found.gates = (0..e.gates.len()).filter(|i| !water_gates.contains(i)).filter(|&i| faced.gate(&e.path, e.gates[i])).count();
+    // A gate that opens on natural water (a channel that is the moat of its front) is reached by a deck of
+    // the bridges, not by a moat crossing.
+    let ns = normals(&e.path);
+    let on_water = |q: Point| {
+        let k = e.path.windows(2).enumerate().min_by(|a, b| g::distance(q, a.1[0], a.1[1]).0.total_cmp(&g::distance(q, b.1[0], b.1[1]).0)).map_or(0, |(k, _)| k);
+        (1..=(faced.reach / 2.0) as usize).any(|j| {
+            let p = add(q, ns[k], 2.0 * j as f64);
+            surface.wet(p) && !surface.solid(p)
+        })
+    };
+    let facing: Vec<usize> = (0..e.gates.len()).filter(|i| !water_gates.contains(i)).filter(|&i| faced.gate(&e.path, e.gates[i]) && !on_water(e.gates[i])).collect();
+    found.gates = facing.len();
     let mut gates: Vec<usize> = records.iter().filter_map(|c| c.gate).collect();
     gates.sort_unstable();
     gates.dedup();
+    found.uncrossed_gates = facing.iter().filter(|i| !gates.contains(i)).map(|&i| e.gates[i]).collect();
     found.runs = m.runs.len();
     found.gate_crossings = gates.len();
     // A deck or a waterside way that also spans a ditch passes by its water passage, not a gate.
@@ -160,12 +178,14 @@ impl Facing {
         let ns = normals(path);
         let k = path.windows(2).enumerate().min_by(|a, b| g::distance(q, a.1[0], a.1[1]).0.total_cmp(&g::distance(q, b.1[0], b.1[1]).0)).map_or(0, |(k, _)| k);
         let n = ns[k];
-        // The gatehouse may stand in front of the ditch: a little along the curtain on both sides too.
+        // In front of the gate, or on both sides of it (the gatehouse may stand in front of the ditch): a
+        // ditch that stops beside a gate does not face it.
         let t = (n.1, -n.0);
-        [-GATE_SIDE, 0.0, GATE_SIDE].iter().any(|&s| {
+        let faced = |s: f64| {
             let p = add(q, t, s);
             self.enters(p, add(p, n, self.reach))
-        })
+        };
+        faced(0.0) || (faced(-GATE_SIDE) && faced(GATE_SIDE))
     }
 }
 

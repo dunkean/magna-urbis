@@ -2,7 +2,7 @@
 //! layout and draws the engine's moat of every circuit: its runs (reaches by supply, lips, dams,
 //! sluices) and its crossings, over the reserve and the final streets; writes the audit and metrics.
 //!
-//! Usage: moat_probe <fixture> <out_dir> [--zoom x,y,radius ...] [--pop N] [--culture C] [--style S] [--moat M] [--seed S] [--key K] [--canals SHARE] [--tag T]
+//! Usage: moat_probe <fixture> <out_dir> [--zoom x,y,radius ...] [--pop N] [--culture C] [--style S] [--moat M] [--seed S] [--key K] [--canals SHARE] [--shore on|off] [--tag T]
 //!
 //! `<fixture>` is one of:
 //! - a V2 capture `<case>-request-1-raster.bin` (raster upload; the quarters request
@@ -31,7 +31,7 @@ use std::time::Instant;
 type Bounds = (f64, f64, f64, f64);
 type View = (f64, f64, f64);
 
-const USAGE: &str = "moat_probe <fixture> <out_dir> [--zoom x,y,radius ...] [--pop N] [--culture C] [--style S] [--moat M] [--seed S] [--key K] [--canals SHARE] [--tag T]";
+const USAGE: &str = "moat_probe <fixture> <out_dir> [--zoom x,y,radius ...] [--pop N] [--culture C] [--style S] [--moat M] [--seed S] [--key K] [--canals SHARE] [--shore on|off] [--tag T]";
 /// Side (px) of every SVG.
 const PX: f64 = 1600.0;
 /// Radius (m) of the automatic gate zooms.
@@ -84,6 +84,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (mut culture, mut style, mut moat, mut tag): (Option<String>, Option<String>, Option<String>, Option<String>) = (None, None, None, None);
     // `--key`: the site key, which seeds the draws made once per site (wall style, moat form).
     let (mut seed_override, mut key, mut canals): (Option<String>, Option<String>, Option<f64>) = (None, None, None);
+    // `--shore off`: the ground of a coastal B-spline field without the shore detail of the drawn coast.
+    let mut shore = true;
     let mut i = 3;
     while i < args.len() {
         let value = args.get(i + 1).ok_or(USAGE)?;
@@ -101,6 +103,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "--moat" => moat = Some(value.clone()),
             "--seed" => seed_override = Some(value.clone()),
             "--key" => key = Some(value.clone()),
+            "--shore" => shore = value != "off",
             "--canals" => canals = Some(value.parse::<f64>()?),
             "--tag" => tag = Some(value.clone()),
             other => return Err(format!("unknown argument {other}; {USAGE}").into()),
@@ -126,7 +129,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         n: input.n,
         height: &input.height,
         water: &input.water,
-        interpolation: input.interpolation,
+        interpolation: match input.interpolation {
+            HeightInterpolation::BSpline { floor, shore: coastal } => HeightInterpolation::BSpline { floor, shore: coastal && shore },
+            other => other,
+        },
     };
     let started = Instant::now();
     let (layouts, pops, generation_ms, roads) = match input.source {
@@ -372,7 +378,7 @@ fn metrics(scene: &Scene<'_>, surface: Surface<'_>, roads: &[Street]) -> Value {
                   "vertices": e.ditch.iter().map(|d| d.shape.outer.len() + d.shape.holes.iter().map(Vec::len).sum::<usize>()).sum::<usize>()},
         "ditchOutsideReserveM2": r2(escape),
         "ditchOverBlocksM2": r2(on_blocks),
-        "audit": {"runs": a.runs, "ringM": r2(a.ring_m), "runM": r2(a.run_m), "gates": a.gates, "gateCrossings": a.gate_crossings,
+        "audit": {"runs": a.runs, "ringM": r2(a.ring_m), "runM": r2(a.run_m), "gates": a.gates, "gateCrossings": a.gate_crossings, "uncrossedGates": a.uncrossed_gates.iter().map(|p| json!([r2(p.x), r2(p.y)])).collect::<Vec<_>>(),
                   "otherCrossings": a.other_crossings, "streetsAlongM": r2(a.streets_along_m), "wetReaches": a.wet_reaches,
                   "poolReaches": a.pool_reaches, "wetWithoutSource": a.wet_without_source, "dams": a.dams, "invalid": a.invalid,
                   "curtainM": r2(a.curtain_m), "coveredM": r2(a.covered_m),
@@ -382,7 +388,7 @@ fn metrics(scene: &Scene<'_>, surface: Surface<'_>, roads: &[Street]) -> Value {
 }
 
 /// RMS turn angle (degrees) of the chains resampled every `TURN_STEP` m.
-/// Where a street crosses the curtain of `e` more than `GATE_AT` m from every gate: the wall is cut only by gates.
+/// Where a land street crosses the curtain of `e` more than `GATE_AT` m from every gate and every gatehouse passage: the wall is cut only by gates.
 fn ungated(e: &Enclosure, layout: &Layout) -> Vec<(Point, String)> {
     const GATE_AT: f64 = 12.0;
     let mut out: Vec<(Point, String)> = vec![];
@@ -393,8 +399,16 @@ fn ungated(e: &Enclosure, layout: &Layout) -> Vec<(Point, String)> {
             for c in e.path.windows(2) {
                 if let Some((_, p)) = geom::segment_hit(w[0], w[1], c[0], c[1])
                     && e.gates.iter().all(|&q| dist(q, p) > GATE_AT)
+                    // The passage of a gatehouse, a water or a shore passage too: the curtain is open along it.
+                    && e.gatehouses.iter().all(|gh| geom::distance(p, gh.passage[0], gh.passage[1]).0 > GATE_AT)
                     && out.iter().all(|(q, _)| dist(*q, p) > 2.0)
                 {
+                    if std::env::var("URBAN_PROFILE").is_ok() {
+                        let gate = e.gates.iter().map(|&q| dist(q, p)).fold(f64::INFINITY, f64::min);
+                        let passage = e.gatehouses.iter().map(|gh| (geom::distance(p, gh.passage[0], gh.passage[1]).0, gh.kind.clone())).min_by(|a, b| a.0.total_cmp(&b.0));
+                        let ends = layout.streets.iter().flat_map(|t| [t.path[0], t.path[t.path.len() - 1]]).filter(|&q| dist(q, p) < 0.6).count();
+                        eprintln!("  ungated: {} ({:.1},{:.1}) of {} points, widths {:?}, from ({:.1},{:.1}) to ({:.1},{:.1}); nearest gate {gate:.1} m, passage {passage:?}, street ends there {ends}, segment ({:.2},{:.2})-({:.2},{:.2})", s.role, p.x, p.y, s.path.len(), s.widths.first(), s.path[0].x, s.path[0].y, s.path[s.path.len() - 1].x, s.path[s.path.len() - 1].y, w[0].x, w[0].y, w[1].x, w[1].y);
+                    }
                     out.push((p, s.role.clone()));
                 }
             }

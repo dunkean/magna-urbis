@@ -34,7 +34,10 @@ pub(super) fn complete(town: &Town<'_>, mut layout: Layout, baseline: Option<Lay
     // (the town's own seed, as for its quarters: the planner drew the same harbour type).
     harbour_furniture::furnish(&town.key_seed, &mut layout, population, config, town.physical);
     laps.lap("harbour.furnish");
-    // Last: a gate no street uses any more closes (the curtain opens only where a street passes).
+    // Last: the gates follow the final network once more (the late stages moved streets off the water,
+    // laid decks and informal housing): the streets obey the works, a bridge head opens its gate, a gate
+    // whose street cannot cross its ditch closes; then a gate no street uses any more closes.
+    fortification::sync_gates(&mut layout, town.surface);
     fortification::drop_dead_gates(&mut layout);
     laps.lap("drop_dead_gates");
     // The street ends at the walls on the final network: no stub beside a gate, no road in a moat.
@@ -63,6 +66,7 @@ pub(super) fn complete(town: &Town<'_>, mut layout: Layout, baseline: Option<Lay
         network::clear_water(&mut baseline, population, town.physical, reclaimed, config.max_street_grade);
         network::uncross_decks(&mut baseline, town.physical, config);
         harbour_furniture::furnish(&town.key_seed, &mut baseline, population, config, town.physical);
+        fortification::sync_gates(&mut baseline, town.surface);
         fortification::drop_dead_gates(&mut baseline);
         fortification::tidy_wall_ends(&mut baseline, town.surface);
         fortification::resolve_moats(&mut baseline, town.surface);
